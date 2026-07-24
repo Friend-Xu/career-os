@@ -1,0 +1,183 @@
+---
+name: career-advisor
+description: >
+  职业决策分析系统：从方向探索、转行评估、城市选择、公司筛选、公司尽调到JD分析。
+  当用户提到"转行""选方向""去哪个城市""分析JD""面试准备""出结论"时自动触发。
+  Use when user wants career planning, job transition analysis, city selection,
+  company research, or JD analysis.
+allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, WebSearch, WebFetch]
+---
+
+# career-advisor
+
+**职业决策分析系统。一个入口，六个子流程，从方向探索到综合结论。**
+
+---
+
+## 会话启动协议
+
+每次会话开始时，按顺序执行：
+
+### 1. 首次运行检查
+
+```
+Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
+→ 不存在 → "首次使用 career-advisor。需要初始化工作目录 workspace/career-advisor/。"
+  → 用户同意 → 复制 assets/templates/ 到 workspace/career-advisor/
+  → 用户不同意 → 仅给出当前建议，不持久化
+→ 存在 → 继续
+```
+
+### 2. 错误恢复
+
+```
+扫描 workspace/career-advisor/decisions/ 中 status=partial 或 status=draft 的文件
+→ 无 → 继续
+→ 有 → 列出未完成的分析，让用户选择：
+  A. 继续执行 → 读 partial 文件，从中断点恢复
+  B. 重新开始 → 旧文件重命名为 .archived-{原名}
+  C. 忽略 → 保留 partial 文件
+→ partial 文件 >7 天 → 自动建议重新开始
+```
+
+### 3. 了解当前状态
+
+```
+读 workspace/career-advisor/INDEX.md → 了解当前用户和分析进度
+```
+
+### 4. 偏好变更检测
+
+```
+读 profiles/{用户}.md 的关键字段（目标方向、目标城市、薪资底线）
+对比 INDEX.md 中该用户的"最后已知偏好"列
+→ 一致 → 跳过
+→ 不一致 → 扫描 decisions/ 引用旧值的记录 → 输出级联影响清单 → 询问是否重跑
+```
+
+---
+
+## 子流程路由
+
+根据用户意图，加载对应子流程的 SKILL.md 并按决策树执行：
+
+| 用户说 | 加载 | 子流程 |
+|--------|------|--------|
+| "选方向"/"方向探索"/"我该做什么" | sub-skills/career-path/SKILL.md | 方向探索 |
+| "转行"/"换赛道"/"从X转到Y" | sub-skills/career-transition/SKILL.md | 转行分析 |
+| "去哪个城市"/"城市选择" | sub-skills/city-advisor/SKILL.md | 城市评估 |
+| "有什么公司"/"公司筛选"/"扫一下" | sub-skills/company-screener/SKILL.md | 公司筛选 |
+| "这家公司怎么样"/"尽调" | sub-skills/company-research/SKILL.md | 公司尽调 |
+| "分析JD"/"这个岗位" | sub-skills/jd-analysis/SKILL.md | JD分析 |
+| "出结论"/"总结"/"下一步" | 本文件的决策汇总协议 | 综合评估 |
+
+如果意图不明确 → 先问用户当前处于哪个阶段，展示 6 个可用步骤。
+如果用户提供了多个意图 → 按链路顺序依次执行。
+
+---
+
+## 管理层通信模型
+
+**子模块之间不直接通信。** 所有数据通过管理层经由信息池中转：
+
+```
+子模块结束 → 写 workspace/career-advisor/decisions/{日期}-{主题}.md
+           → 更新 workspace/career-advisor/INDEX.md
+
+会话启动 → 读 INDEX.md → 管理层知道池子里有哪些数据
+
+子模块被路由到 → 管理层告知 workspace 位置 → 子模块读所需数据
+```
+
+**子模块只知道 workspace 的目录结构，不知道其他子模块的存在。**
+
+---
+
+## 输出标准
+
+所有子流程遵守。完整规则见 `references/protocols/output-standard.md`。
+
+### 每个子流程结束时必须：
+
+1. 写 `workspace/career-advisor/decisions/{YYYY-MM-DD}-{主题}.md`
+   - 文件开头必须包含 `## 分析摘要` 表格（14 字段）
+2. 更新 `workspace/career-advisor/INDEX.md` 对应行
+3. 如需更新用户画像 → 写 `workspace/career-advisor/profiles/{用户名}.md`
+
+### 摘要字段
+
+| 字段 | 必需？ | 说明 |
+|------|:--:|------|
+| skill | 是 | 来源子流程名称 |
+| direction | 否 | career-path/transition/jd-analysis 必填 |
+| direction_match | 否 | 匹配度% |
+| direction_confidence | 否 | 高/中/低 |
+| city | 否 | city-advisor/company-screener 必填 |
+| city_score | 否 | X/10 |
+| city_confidence | 否 | 高/中/低 |
+| salary_feasible | 否 | true/false |
+| companies | 否 | 涉及的公司名列表。company-research/jd-analysis 必填 |
+| company_rating | 否 | 推荐/谨慎推荐/不推荐 |
+| risk_level | 是 | 低/中/中高/高 |
+| key_risk | 是 | ≤30字 |
+| status | 是 | complete/partial/draft |
+| protocol_version | 是 | 2.0 |
+
+### 置信度
+
+- **高**：≥3 个独立来源交叉验证，或官方一手数据
+- **中**：1-2 个来源，有推断成分但逻辑自洽
+- **低**：单一来源、大量推断、或数据 >1 年
+
+### 文件命名约定
+
+| 约定 | 规则 |
+|------|------|
+| 日期格式 | YYYY-MM-DD（统一） |
+| decisions/ 命名 | `{YYYY-MM-DD}-{主题}.md`（不可变） |
+| 缺失值 | 填 `-`，不填 `暂无`/`N/A` |
+
+---
+
+## 决策汇总协议
+
+触发：用户说"出结论"/"总结"/"下一步"
+
+完整流程见 `references/protocols/decision-summary.md`。
+
+精简流程：
+
+1. 读 workspace/career-advisor/INDEX.md → 枚举已完成分析
+2. Grep "## 分析摘要" 在每个 decisions/*.md → 构建汇总矩阵
+3. 一致性检查（→ `references/protocols/consistency-check.md`）
+4. 缺失分析 → 标注未完成的步骤
+5. 输出两份文件：
+   - `workspace/career-advisor/decisions/{日期}-综合结论.md`（内部格式，含摘要表）
+   - `workspace/career-advisor/exports/{日期}-综合结论.md`（用户交付物）
+6. 置信度降级：基准 = 已完成数/6 × 最低置信度；矛盾→低；≤2 skill→低；5-6+无矛盾→可升为"高"
+
+---
+
+## 文件导航
+
+```
+career-advisor/
+├── SKILL.md                           ← 本文件（管理层入口）
+├── sub-skills/                        ← 6 个子流程
+│   ├── career-path/SKILL.md
+│   ├── career-transition/SKILL.md
+│   ├── city-advisor/SKILL.md
+│   ├── company-screener/SKILL.md
+│   ├── company-research/SKILL.md
+│   └── jd-analysis/SKILL.md
+├── references/
+│   ├── protocols/                     ← 协议规则
+│   │   ├── output-standard.md
+│   │   ├── consistency-check.md
+│   │   └── decision-summary.md
+│   └── directions/                    ← 方向画像卡（8 个专业）
+├── examples/                          ← 填充好的示例
+└── assets/templates/                  ← 空白模板
+```
+
+**运行时数据**：`${CLAUDE_PROJECT_DIR}/workspace/career-advisor/`（首次运行自动创建）
