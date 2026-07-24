@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+workspace/
+
+# Archives
+*.zip
+
+# Docs & design docs
+docs/
+
+# Test artifacts
+.playwright-mcp/
+tests/e2e-test-*.md
+tests/SKILL-company-research-design.md
+
+# Local scripts
+__启动脚本.bat

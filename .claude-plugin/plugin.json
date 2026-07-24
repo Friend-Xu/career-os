@@ -1,0 +1,9 @@
+{
+  "name": "career-advisor",
+  "version": "2.1.0",
+  "description": "职业决策分析系统：方向探索、转行评估、城市选择、公司筛选、公司尽调、JD分析",
+  "author": { "name": "Friend" },
+  "license": "MIT",
+  "keywords": ["career", "job-search", "company-research", "city-selection", "jd-analysis", "career-transition"],
+  "mcpServers": "./.mcp.json"
+}
