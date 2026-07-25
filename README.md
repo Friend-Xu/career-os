@@ -75,8 +75,8 @@ career-advisor/
 │   │   ├── city-advisor/        ├─ 每个含 SKILL.md + references/
 │   │   ├── company-screener/    │
 │   │   ├── company-research/    │
-│   │   ├── jd-analysis/         ┐
-│   │   └── resume-writing/       ┘
+│   │   ├── jd-analysis/         │
+│   │   └── resume-writing/      ┘
 │   ├── references/              ← 共享参考数据（8 专业画像卡 + 3 协议）
 │   ├── assets/templates/        ← workspace 初始化模板
 │   └── examples/                ← 完整示例（虚拟用户"李明"）
