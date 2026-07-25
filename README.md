@@ -9,14 +9,14 @@
 ```mermaid
 flowchart TD
     User["一句话输入"] --> Router{"主 SKILL.md 路由"}
+    Router -->|" 简历"| RW["简历撰写<br/>resume-writing"]
+    Router -->|" JD"| JA["JD 分析<br/>jd-analysis"]
     Router -->|" 选方向"| CP["方向探索<br/>career-path"]
     Router -->|" 转行"| CT["转行分析<br/>career-transition"]
     Router -->|" 城市"| CA["城市评估<br/>city-advisor"]
     Router -->|" 公司"| CS["公司筛选<br/>company-screener"]
     Router -->|" 尽调"| CR["公司尽调<br/>company-research"]
-    Router -->|" JD"| JA["JD 分析<br/>jd-analysis"]
-    Router -->|" 简历"| RW["简历撰写<br/>resume-writing"]
-    CP & CT & CA & CS & CR & JA & RW --> Pool[("信息池")]
+    RW & JA & CP & CT & CA & CS & CR --> Pool[("信息池")]
     Pool --> Summary["综合结论"]
 ```
 
@@ -24,13 +24,13 @@ flowchart TD
 
 | 步骤 | 你能问 | 输出 |
 |------|--------|------|
+| 简历撰写 | "帮我把工作经历写成简历" | frontier 追问挖掘 + STAR 重构 + 双版本输出 |
+| JD 分析 | "看看这个 JD 靠不靠谱" | 匹配度 + 委婉语翻译 + 简历定制 + 面试预测 |
 | 方向探索 | "我该做什么方向？" / "我是机械专业的" | 职业方向排序 + ikigai 匹配 |
 | 转行分析 | "机械设计转机器人可行吗" | 技能审计 + 差距分析 + 行动计划 |
 | 城市评估 | "机械工程师去苏州还是深圳" | 城市评分 + 产业匹配 + 薪资对比 |
 | 公司筛选 | "苏州有什么好公司" | 专精特新/融资/招聘多维信号清单 |
 | 公司尽调 | "这家公司怎么样" | 7 章节背调报告 + 面试反问十问 |
-| JD 分析 | "看看这个 JD 靠不靠谱" | 匹配度 + 委婉语翻译 + 简历定制 + 面试预测 |
-| 简历撰写 | "帮我把工作经历写成简历" | frontier 追问挖掘 + STAR 重构 + 双版本输出 |
 | 综合结论 | "出个结论" | 汇总矩阵 + 一致性检查 + 最终建议 |
 
 ## 快速开始
@@ -50,13 +50,13 @@ claude --plugin-dir .
 直接说你的需求：
 
 ```
+"帮我写简历"
+"分析一下这个 JD"
 "我该做什么方向"
 "机械设计转机器人可行吗"
 "去哪个城市发展比较好"
 "苏州有什么好公司"
 "帮我查一下 XX 公司"
-"分析一下这个 JD"
-"帮我写简历"
 ```
 
 首次使用系统会自动创建工作目录，无需手动配置。
@@ -70,13 +70,13 @@ career-advisor/
 ├── skills/career-advisor/
 │   ├── SKILL.md                 ← 主入口（路由 + 输出标准 + 汇总协议）
 │   ├── sub-skills/              ← 7 个子模块
-│   │   ├── career-path/         ┐
-│   │   ├── career-transition/   │
-│   │   ├── city-advisor/        ├─ 每个含 SKILL.md + references/
-│   │   ├── company-screener/    │
-│   │   ├── company-research/    │
+│   │   ├── resume-writing/      ┐
 │   │   ├── jd-analysis/         │
-│   │   └── resume-writing/      ┘
+│   │   ├── career-path/         ├─ 每个含 SKILL.md + references/
+│   │   ├── career-transition/   │
+│   │   ├── city-advisor/        │
+│   │   ├── company-screener/    │
+│   │   └── company-research/    ┘
 │   ├── references/              ← 共享参考数据（8 专业画像卡 + 3 协议）
 │   ├── assets/templates/        ← workspace 初始化模板
 │   └── examples/                ← 完整示例（虚拟用户"李明"）
