@@ -1,8 +1,8 @@
 ---
 name: career-advisor
 description: >
-  职业决策分析系统：从方向探索、转行评估、城市选择、公司筛选、公司尽调到JD分析。
-  当用户提到"转行""选方向""去哪个城市""分析JD""面试准备""出结论"时自动触发。
+  职业决策分析系统：从方向探索、转行评估、城市选择、公司筛选、公司尽调、JD分析到简历撰写。
+  当用户提到"转行""选方向""去哪个城市""分析JD""写简历""面试准备""出结论"时自动触发。
   Use when user wants career planning, job transition analysis, city selection,
   company research, or JD analysis.
 allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, WebSearch, WebFetch]
@@ -10,7 +10,7 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, WebSearch, WebFetch]
 
 # career-advisor
 
-**职业决策分析系统。一个入口，六个子流程，从方向探索到综合结论。**
+**职业决策分析系统。一个入口，七个子流程，从方向探索到简历撰写。**
 
 ---
 
@@ -69,9 +69,10 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 | "有什么公司"/"公司筛选"/"扫一下" | sub-skills/company-screener/SKILL.md | 公司筛选 |
 | "这家公司怎么样"/"尽调" | sub-skills/company-research/SKILL.md | 公司尽调 |
 | "分析JD"/"这个岗位" | sub-skills/jd-analysis/SKILL.md | JD分析 |
+| "写简历"/"简历"/"帮我把经历写成简历"/"整理简历" | sub-skills/resume-writing/SKILL.md | 简历撰写 |
 | "出结论"/"总结"/"下一步" | 本文件的决策汇总协议 | 综合评估 |
 
-如果意图不明确 → 先问用户当前处于哪个阶段，展示 6 个可用步骤。
+如果意图不明确 → 先问用户当前处于哪个阶段，展示 7 个可用步骤。
 如果用户提供了多个意图 → 按链路顺序依次执行。
 
 ---
@@ -163,13 +164,14 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 ```
 career-advisor/
 ├── SKILL.md                           ← 本文件（管理层入口）
-├── sub-skills/                        ← 6 个子流程
+├── sub-skills/                        ← 7 个子流程
 │   ├── career-path/SKILL.md
 │   ├── career-transition/SKILL.md
 │   ├── city-advisor/SKILL.md
 │   ├── company-screener/SKILL.md
 │   ├── company-research/SKILL.md
-│   └── jd-analysis/SKILL.md
+│   ├── jd-analysis/SKILL.md
+│   └── resume-writing/SKILL.md
 ├── references/
 │   ├── protocols/                     ← 协议规则
 │   │   ├── output-standard.md
