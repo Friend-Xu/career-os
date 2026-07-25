@@ -20,6 +20,7 @@ flowchart TD
         CS["公司筛选"]
         CR["公司尽调"]
         JA["JD 分析"]
+        RW["简历撰写"]
     end
 
     subgraph 信息池
@@ -35,7 +36,7 @@ flowchart TD
     end
 
     User["用户输入"] --> Router
-    Router --> CP & CT & CA & CS & CR & JA
+    Router --> CP & CT & CA & CS & CR & JA & RW
 
     CP -->|写| DEC
     CT -->|写| DEC & PRO
@@ -44,6 +45,7 @@ flowchart TD
     CR -->|写| DEC & COM
     JA -->|读| COM & PRO
     JA -->|写| DEC
+    RW -->|写| PRO & DEC
 
     Pool --> Summary
 

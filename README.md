@@ -2,7 +2,7 @@
 
 **Claude Code 插件 — 职业决策分析系统。**
 
-一句话输入，输出可执行的职业决策。从方向探索到 JD 分析，覆盖求职决策全链路。
+一句话输入，输出可执行的职业决策。从方向探索到简历撰写，覆盖求职决策全链路。
 
 ## 工作流
 
@@ -15,7 +15,8 @@ flowchart TD
     Router -->|" 公司"| CS["公司筛选<br/>company-screener"]
     Router -->|" 尽调"| CR["公司尽调<br/>company-research"]
     Router -->|" JD"| JA["JD 分析<br/>jd-analysis"]
-    CP & CT & CA & CS & CR & JA --> Pool[("信息池")]
+    Router -->|" 简历"| RW["简历撰写<br/>resume-writing"]
+    CP & CT & CA & CS & CR & JA & RW --> Pool[("信息池")]
     Pool --> Summary["综合结论"]
 ```
 
@@ -29,6 +30,7 @@ flowchart TD
 | 公司筛选 | "苏州有什么好公司" | 专精特新/融资/招聘多维信号清单 |
 | 公司尽调 | "这家公司怎么样" | 7 章节背调报告 + 面试反问十问 |
 | JD 分析 | "看看这个 JD 靠不靠谱" | 匹配度 + 委婉语翻译 + 简历定制 + 面试预测 |
+| 简历撰写 | "帮我把工作经历写成简历" | frontier 追问挖掘 + STAR 重构 + 双版本输出 |
 | 综合结论 | "出个结论" | 汇总矩阵 + 一致性检查 + 最终建议 |
 
 ## 快速开始
@@ -54,6 +56,7 @@ claude --plugin-dir .
 "苏州有什么好公司"
 "帮我查一下 XX 公司"
 "分析一下这个 JD"
+"帮我写简历"
 ```
 
 首次使用系统会自动创建工作目录，无需手动配置。
@@ -66,13 +69,14 @@ career-advisor/
 ├── .claude/settings.local.json  ← Hook 配置
 ├── skills/career-advisor/
 │   ├── SKILL.md                 ← 主入口（路由 + 输出标准 + 汇总协议）
-│   ├── sub-skills/              ← 6 个子模块
+│   ├── sub-skills/              ← 7 个子模块
 │   │   ├── career-path/         ┐
 │   │   ├── career-transition/   │
 │   │   ├── city-advisor/        ├─ 每个含 SKILL.md + references/
 │   │   ├── company-screener/    │
 │   │   ├── company-research/    │
-│   │   └── jd-analysis/         ┘
+│   │   ├── jd-analysis/         ┐
+│   │   └── resume-writing/       ┘
 │   ├── references/              ← 共享参考数据（8 专业画像卡 + 3 协议）
 │   ├── assets/templates/        ← workspace 初始化模板
 │   └── examples/                ← 完整示例（虚拟用户"李明"）
