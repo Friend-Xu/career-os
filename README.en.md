@@ -1,0 +1,87 @@
+<div align="center">
+
+# career-advisor
+
+**The most expensive part of a job search isn't sending resumes. It's picking the wrong direction.**
+
+Describe your situation in one sentence. Get an executable, data-backed career decision —
+from direction exploration to resume writing, covering the full decision chain.
+
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
+
+[English](README.en.md) | [中文](README.md)
+
+</div>
+
+---
+
+## What You Get
+
+| You say | What the system does | What you get |
+|---------|----------------------|--------------|
+| "Help me write a resume" | Frontier interrogation → STAR reconstruction → direction-specific standards | A resume with quantified achievements, ready to submit |
+| "Is this JD legit?" | Match scoring + euphemism translation + interview prediction | The JD's real intent + your odds |
+| "What direction should I go?" | Skills / interest / market profile → ikigai matching | Ranked candidate directions |
+| "Can I move from mechanical design to robotics?" | Skill overlap + financial model + risk adjustment | Whether to switch, how, and the first step |
+| "Suzhou or Shenzhen?" | City scoring + industry fit + salary comparison | A data-backed city choice |
+| "What good companies are in Suzhou?" | Specialty / funding / hiring signal scanning | A shortlist of target companies |
+| "What about this company?" | 7-chapter due diligence + 10 interview questions to ask | A due-diligence report |
+| "Give me a conclusion" | Aggregation matrix + consistency check | Final recommendation |
+
+## A Completed Decision Chain
+
+**Li Ming, 28, non-standard automation mechanical engineer (Changzhou), wants to move into robotics after a 10-month grad-school gap.**
+Walked the full chain with career-advisor: transition feasibility (75% match, soft landing in Suzhou) → city evaluation (Suzhou 8.2/10) → company screening → due diligence → final conclusion.
+
+→ Read the full case study: [docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md) (Chinese, virtual test user)
+
+## Quick Start
+
+```bash
+git clone https://github.com/Friend-Xu/career-advisor.git
+cd career-advisor
+claude --plugin-dir .
+```
+
+Or run `/plugin install` inside Claude Code and then type `/career-advisor`.
+
+Then just say what you need:
+
+```
+"帮我写简历"
+"分析一下这个 JD"
+"我该做什么方向"
+"机械设计转机器人可行吗"
+"去哪个城市发展比较好"
+"苏州有什么好公司"
+"帮我查一下 XX 公司"
+"出个结论"
+```
+
+The `workspace/` directory is created automatically on first run. No setup required. Full workflow: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## What We Believe
+
+Career decisions are low-frequency, high-impact events — so quality rules are built into every module:
+
+- **No comfort, no false hope** — hard is hard; give "how to start," not "you can do it"
+- **Human in the loop** — AI analyzes, you decide; a "don't switch yet" verdict keeps warning in every output, never bypassed
+- **Financial constraints are the hardest** — with less than 3 months of runway and family obligations, no quitting without a job
+- **If we can't find it, we say so** — every data point carries a source and year; inferences are labeled `[inference]`
+
+Full principles: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
+## Use with Other AI CLIs
+
+All career-advisor skills are plain Markdown, so they can be copied to any CLI that supports agent skills:
+
+```bash
+bash scripts/install-to-cli.sh --codex   # copy to Codex skills directory
+```
+
+Search-tool support varies by CLI — see the [CLI compatibility matrix](docs/CLI-COMPATIBILITY.md).
+
+## License
+
+MIT

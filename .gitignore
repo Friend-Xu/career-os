@@ -7,8 +7,11 @@ workspace/
 # Archives
 *.zip
 
-# Docs & design docs
-docs/
+# Docs & design docs（内部开发文档不入库；P0 公开交付物除外）
+docs/*
+!docs/CLI-COMPATIBILITY.md
+!docs/PRINCIPLES.md
+!docs/case-studies/
 
 # Test artifacts
 .playwright-mcp/

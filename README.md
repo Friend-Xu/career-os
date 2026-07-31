@@ -1,41 +1,43 @@
+<div align="center">
+
 # career-advisor
 
-**Claude Code 插件 — 职业决策分析系统。**
+**求职最贵的不是投简历，是选错方向。**
 
-一句话输入，输出可执行的职业决策。从方向探索到简历撰写，覆盖求职决策全链路。
+一句话描述你的处境，输出有数据支撑、可执行的职业决策——
+从方向探索到简历撰写，覆盖求职决策全链路。
 
-## 工作流
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 
-```mermaid
-flowchart TD
-    User["一句话输入"] --> Router{"主 SKILL.md 路由"}
-    Router -->|" 简历"| RW["简历撰写<br/>resume-writing"]
-    Router -->|" JD"| JA["JD 分析<br/>jd-analysis"]
-    Router -->|" 选方向"| CP["方向探索<br/>career-path"]
-    Router -->|" 转行"| CT["转行分析<br/>career-transition"]
-    Router -->|" 城市"| CA["城市评估<br/>city-advisor"]
-    Router -->|" 公司"| CS["公司筛选<br/>company-screener"]
-    Router -->|" 尽调"| CR["公司尽调<br/>company-research"]
-    RW & JA & CP & CT & CA & CS & CR --> Pool[("信息池")]
-    Pool --> Summary["综合结论"]
-```
+[中文](README.md) | [English](README.en.md)
 
-## 功能
+</div>
 
-| 步骤 | 你能问 | 输出 |
-|------|--------|------|
-| 简历撰写 | "帮我把工作经历写成简历" | frontier 追问挖掘 + STAR 重构 + 双版本输出 |
-| JD 分析 | "看看这个 JD 靠不靠谱" | 匹配度 + 委婉语翻译 + 简历定制 + 面试预测 |
-| 方向探索 | "我该做什么方向？" / "我是机械专业的" | 职业方向排序 + ikigai 匹配 |
-| 转行分析 | "机械设计转机器人可行吗" | 技能审计 + 差距分析 + 行动计划 |
-| 城市评估 | "机械工程师去苏州还是深圳" | 城市评分 + 产业匹配 + 薪资对比 |
-| 公司筛选 | "苏州有什么好公司" | 专精特新/融资/招聘多维信号清单 |
-| 公司尽调 | "这家公司怎么样" | 7 章节背调报告 + 面试反问十问 |
-| 综合结论 | "出个结论" | 汇总矩阵 + 一致性检查 + 最终建议 |
+---
+
+## 你能得到什么
+
+| 你说 | 系统做什么 | 你得到 |
+|------|-----------|--------|
+| "帮我写简历" | frontier 追问挖掘经历 → STAR 重构 → 按方向标准定制 | 含量化成就、可直接投递的简历 |
+| "看看这个 JD 靠不靠谱" | 匹配度计算 + 委婉语翻译 + 面试预测 | JD 的真实意图 + 你的胜算 |
+| "我该做什么方向" | 技能 / 兴趣 / 市场三维画像 → ikigai 匹配 | 排序后的候选方向 |
+| "机械设计转机器人可行吗" | 技能重叠度 + 财务模型 + 风险调节 | 能不能转、怎么转、第一步做什么 |
+| "去苏州还是深圳" | 城市评分 + 产业匹配 + 薪资对比 | 有数据支撑的城市选择 |
+| "苏州有什么好公司" | 专精特新 / 融资 / 招聘多维信号 | 目标公司信号清单 |
+| "这家公司怎么样" | 7 章节背调 + 面试反问十问 | 尽调报告 |
+| "出个结论" | 汇总矩阵 + 一致性检查 | 最终建议 |
+
+## 一个走完的决策链
+
+**李明，28 岁，非标自动化机械工程师（常州），10 个月考研 Gap 后想转机器人方向。**
+用 career-advisor 走完：转行可行性分析（75% 匹配，苏州软着陆）→ 城市评估（苏州 8.2/10）→
+公司筛选 → 公司尽调 → 综合结论。
+
+→ 阅读完整案例：[docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md)
 
 ## 快速开始
-
-### 安装
 
 ```bash
 git clone https://github.com/Friend-Xu/career-advisor.git
@@ -45,9 +47,7 @@ claude --plugin-dir .
 
 或在 Claude Code 中 `/plugin install` 后直接输入 `/career-advisor`。
 
-### 使用
-
-直接说你的需求：
+然后直接说需求：
 
 ```
 "帮我写简历"
@@ -57,57 +57,31 @@ claude --plugin-dir .
 "去哪个城市发展比较好"
 "苏州有什么好公司"
 "帮我查一下 XX 公司"
+"出个结论"
 ```
 
-首次使用系统会自动创建工作目录，无需手动配置。
+首次使用自动创建 `workspace/` 工作目录，无需配置。完整工作流见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 项目结构
+## 我们相信什么
 
-```
-career-advisor/
-├── .claude-plugin/plugin.json   ← 插件定义
-├── .claude/settings.local.json  ← Hook 配置
-├── skills/career-advisor/
-│   ├── SKILL.md                 ← 主入口（路由 + 输出标准 + 汇总协议）
-│   ├── sub-skills/              ← 7 个子模块
-│   │   ├── resume-writing/      ┐
-│   │   ├── jd-analysis/         │
-│   │   ├── career-path/         ├─ 每个含 SKILL.md + references/
-│   │   ├── career-transition/   │
-│   │   ├── city-advisor/        │
-│   │   ├── company-screener/    │
-│   │   └── company-research/    ┘
-│   ├── references/              ← 共享参考数据（8 专业画像卡 + 3 协议）
-│   ├── assets/templates/        ← workspace 初始化模板
-│   └── examples/                ← 完整示例（虚拟用户"李明"）
-├── scripts/                     ← Hook 脚本
-├── AGENTS.md / CLAUDE.md        ← 项目入口
-└── ARCHITECTURE.md              ← 架构说明
+职业决策是低频、高影响的事——所以质量规则被写进每个模块：
+
+- **不做心理按摩，不给虚假希望**——难就是难，给"怎么开始"而不是"可以实现"
+- **人在环**——AI 分析、你决策；诊断出"先别转"时，警告持续显示，不可绕过
+- **财务约束最硬**——存款不足 3 个月 + 有家庭负担时，不推荐裸辞
+- **查不到就说查不到**——每条数据标注来源与年份，推断标注 `[推断]`
+
+完整原则见 [docs/PRINCIPLES.md](docs/PRINCIPLES.md)。
+
+## 在其他 AI CLI 中使用
+
+career-advisor 的 skill 全部是 Markdown，可复制到任何支持 agent skills 的 CLI：
+
+```bash
+bash scripts/install-to-cli.sh --codex   # 复制到 Codex skills 目录
 ```
 
-## 依赖
-
-| 工具 | 用途 | 来源 |
-|------|------|------|
-| WebSearch | 中文搜索 | Claude Code 内置 |
-| WebFetch | 深度阅读 | Claude Code 内置 |
-| Exa MCP | 语义搜索（推荐） | ECC 插件 / exa.ai |
-
-Exa MCP 可选但强烈推荐。在 `.mcp.json` 或 `~/.claude.json` 中配置：
-
-```json
-{
-  "mcpServers": {
-    "exa": {
-      "type": "http",
-      "url": "https://mcp.exa.ai/mcp",
-      "headers": { "Authorization": "Bearer <your-key>" }
-    }
-  }
-}
-```
-
-免费 API Key 在 [exa.ai](https://exa.ai) 注册。
+各 CLI 的搜索工具支持不同，见 [CLI 兼容性矩阵](docs/CLI-COMPATIBILITY.md)。
 
 ## License
 
