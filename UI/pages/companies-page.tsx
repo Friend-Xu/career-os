@@ -379,7 +379,7 @@ export function CompaniesPage() {
                 fullWidth
                 onClick={() => {
                   markCompanyContacted(selected.id)
-                  push('success', `已标记「${selected.name}」为已联系`)
+                  push('success', `已标记「${selected.name}」为已联系 · 投递管理已同步`)
                   setSelected(null)
                   setPage('applications')
                 }}

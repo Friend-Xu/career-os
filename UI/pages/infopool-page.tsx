@@ -214,6 +214,15 @@ export function InfoPoolPage() {
 
   const nodes = useMemo(() => INFO_NODES, [])
 
+  /** 节点 → 公司档案定位（无档案也进入公司页，由调用方给出语义提示）。 */
+  const locateFromNode = (node: InfoNode) => {
+    const target = companies.find((c) => c.name === node.label)
+    if (target) setLocateTarget(target.id)
+    setMenu(null)
+    setPage('companies')
+    return target
+  }
+
   const filteredNodes = useMemo(() => {
     const q = search.trim().toLowerCase()
     return nodes.filter((n) => {
@@ -337,18 +346,32 @@ export function InfoPoolPage() {
         <MenuItem
           onClick={() => {
             if (menu) {
-              const target = companies.find((c) => c.name === menu.node.label)
-              if (target) {
-                setLocateTarget(target.id)
-              } else {
-                push('info', `「${menu.node.label}」无对应公司档案，已进入公司页`)
-              }
+              const target = locateFromNode(menu.node)
+              push(
+                'info',
+                target
+                  ? `已定位「${target.name}」· 开始尽调`
+                  : `「${menu.node.label}」无对应公司档案，已进入公司页`,
+              )
             }
-            setMenu(null)
-            setPage('companies')
           }}
         >
-          尽调 / 加入投递
+          开始尽调
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menu) {
+              const target = locateFromNode(menu.node)
+              push(
+                'info',
+                target
+                  ? `已定位「${target.name}」· 投递写入将在阶段 3 接入`
+                  : `「${menu.node.label}」无对应公司档案，已进入公司页`,
+              )
+            }
+          }}
+        >
+          加入投递
         </MenuItem>
       </Menu>
 

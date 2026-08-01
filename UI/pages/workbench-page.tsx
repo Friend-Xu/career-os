@@ -1,7 +1,9 @@
 import {
   Box,
   Button,
+  IconButton,
   Stack,
+  Tooltip,
   Typography,
   LinearProgress,
   ToggleButton,
@@ -10,6 +12,7 @@ import {
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import {
@@ -165,6 +168,7 @@ function NextActionCard() {
 
 function DecisionTimeline() {
   const setPage = useAppStore((s) => s.setPage)
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
   const decisions = useAppStore((s) => s.decisions)
   const role = useAppStore((s) => s.currentRole())
   const roleDecisions = decisions.filter((d) => d.profile === role.name)
@@ -203,7 +207,12 @@ function DecisionTimeline() {
             key={d.id}
             direction="row"
             spacing={1.5}
-            sx={{ position: 'relative', pb: idx < items.length - 1 ? 2 : 0 }}
+            sx={{
+              position: 'relative',
+              pb: idx < items.length - 1 ? 2 : 0,
+              '&:hover .re-eval-btn': { opacity: 1 },
+              '&:focus-within .re-eval-btn': { opacity: 1 },
+            }}
           >
             {idx < items.length - 1 && (
               <Box
@@ -233,20 +242,41 @@ function DecisionTimeline() {
                 direction="row"
                 sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}
               >
-                <Typography sx={{ fontSize: 13, fontWeight: 500 }} noWrap>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0 }} noWrap>
                   {d.title}
                 </Typography>
-                <Typography
-                  sx={{
-                    fontSize: 11.5,
-                    color: COLORS.textMuted,
-                    fontFamily: COLORS.mono,
-                    ml: 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {dayjs(d.createdAt).format('MM-DD')}
-                </Typography>
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0, ml: 1 }}>
+                  <Tooltip title="重新评估（唤起 AI 面板）">
+                    <IconButton
+                      size="small"
+                      className="re-eval-btn"
+                      onClick={() =>
+                        startAnalysis(
+                          `请重新评估「${d.title}」：结合最新画像与市场信息，更新匹配度与风险`,
+                        )
+                      }
+                      sx={{
+                        opacity: 0,
+                        transition: `opacity 0.15s ${EASE}`,
+                        p: 0.25,
+                        color: COLORS.textMuted,
+                        '&:hover': { color: COLORS.accent },
+                        '&:focus-visible': { opacity: 1 },
+                      }}
+                    >
+                      <RefreshIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Typography
+                    sx={{
+                      fontSize: 11.5,
+                      color: COLORS.textMuted,
+                      fontFamily: COLORS.mono,
+                    }}
+                  >
+                    {dayjs(d.createdAt).format('MM-DD')}
+                  </Typography>
+                </Stack>
               </Stack>
               <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mt: 0.25 }} noWrap>
                 {d.keyRisk}

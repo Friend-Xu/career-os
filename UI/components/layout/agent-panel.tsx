@@ -183,9 +183,15 @@ export function AgentPanel() {
               borderRadius: '4px',
               bgcolor: alpha(COLORS.accent, 0.1),
               border: `1px dashed ${alpha(COLORS.accent, 0.3)}`,
+              animation: `fade-in 0.2s ${EASE}`,
             }}
           >
-            <Typography sx={{ fontSize: 11.5, color: COLORS.accent }}>已预置分析上下文</Typography>
+            <Typography sx={{ fontSize: 11.5, color: COLORS.accent, mb: 0.25 }}>
+              已预置上下文 · 回车发送
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }} noWrap>
+              {pendingPrompt}
+            </Typography>
           </Box>
         </Collapse>
         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-end' }}>
@@ -254,7 +260,14 @@ export function AgentPanel() {
             }
             addDecision(record)
             setDraft('')
-            push('success', `已写入决策记录「${record.title}」`)
+            const stages = useAppStore.getState().roleStages[role.id]
+            const current = stages?.find((s) => s.status === 'current')
+            push(
+              'success',
+              current
+                ? `决策已写入「${record.title}」· 时间线已更新 · 决策链推进至「${current.label}」`
+                : `决策已写入「${record.title}」· 时间线已更新`,
+            )
           }}
         >
           写入决策记录
