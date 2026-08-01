@@ -214,14 +214,8 @@ export function InfoPoolPage() {
 
   const nodes = useMemo(() => INFO_NODES, [])
 
-  /** 节点 → 公司档案定位（无档案也进入公司页，由调用方给出语义提示）。 */
-  const locateFromNode = (node: InfoNode) => {
-    const target = companies.find((c) => c.name === node.label)
-    if (target) setLocateTarget(target.id)
-    setMenu(null)
-    setPage('companies')
-    return target
-  }
+  /** 当前右键节点的公司档案（仅 company 节点可能命中）。 */
+  const menuCompany = menu ? companies.find((c) => c.name === menu.node.label) : undefined
 
   const filteredNodes = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -343,36 +337,40 @@ export function InfoPoolPage() {
         >
           重新评估
         </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (menu) {
-              const target = locateFromNode(menu.node)
-              push(
-                'info',
-                target
-                  ? `已定位「${target.name}」· 开始尽调`
-                  : `「${menu.node.label}」无对应公司档案，已进入公司页`,
-              )
-            }
-          }}
-        >
-          开始尽调
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (menu) {
-              const target = locateFromNode(menu.node)
-              push(
-                'info',
-                target
-                  ? `已定位「${target.name}」· 投递写入将在阶段 3 接入`
-                  : `「${menu.node.label}」无对应公司档案，已进入公司页`,
-              )
-            }
-          }}
-        >
-          加入投递
-        </MenuItem>
+        {/* 尽调/投递仅对公司节点开放：有档案 → 更新尽调 / 加入投递；无档案 → 提示先建档案 */}
+        {menu?.node.type === 'company' &&
+          (menuCompany ? (
+            <>
+              <MenuItem
+                onClick={() => {
+                  setLocateTarget(menuCompany.id)
+                  setMenu(null)
+                  setPage('companies')
+                  push('info', `已定位「${menuCompany.name}」· 更新尽调`)
+                }}
+              >
+                更新尽调
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenu(null)
+                  setPage('applications')
+                  push('info', `「${menuCompany.name}」· 投递写入将在阶段 3 接入`)
+                }}
+              >
+                加入投递
+              </MenuItem>
+            </>
+          ) : (
+            <MenuItem
+              onClick={() => {
+                setMenu(null)
+                push('info', `「${menu?.node.label}」无对应公司档案，尽调需先创建档案（阶段 3 接入）`)
+              }}
+            >
+              开始尽调
+            </MenuItem>
+          ))}
       </Menu>
 
       <Drawer

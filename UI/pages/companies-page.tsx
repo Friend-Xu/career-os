@@ -38,11 +38,17 @@ export function CompaniesPage() {
 
   useEffect(() => {
     if (!locateTarget) return
-    document
-      .getElementById(`company-${locateTarget}`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const target = companies.find((c) => c.id === locateTarget)
+    // 切到公司清单 tab（定位行仅存在于该视图）+ 直接打开档案抽屉
+    setTab(1)
+    if (target) setSelected(target)
+    setTimeout(() => {
+      document
+        .getElementById(`company-${locateTarget}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
     setLocateTarget(null)
-  }, [locateTarget, setLocateTarget])
+  }, [locateTarget, companies, setLocateTarget])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
