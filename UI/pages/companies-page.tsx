@@ -193,7 +193,7 @@ export function CompaniesPage() {
                 width: 260,
                 p: 2,
                 borderRadius: '10px',
-                bgcolor: 'rgba(20,23,31,0.95)',
+                bgcolor: alpha(COLORS.bgElevated, 0.95),
                 border: `1px solid ${COLORS.borderStrong}`,
               }}
             >

@@ -179,7 +179,7 @@ function GraphCanvas({
           px: 1.5,
           py: 0.75,
           borderRadius: '8px',
-          bgcolor: 'rgba(13,15,20,0.85)',
+          bgcolor: alpha(COLORS.canvas, 0.85),
           border: `1px solid ${COLORS.border}`,
         }}
       >

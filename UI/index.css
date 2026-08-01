@@ -12,6 +12,7 @@ body,
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * {
@@ -37,23 +38,26 @@ html.dark {
   --cos-risk-low: #7fd962;
   --cos-canvas: #0b0d12;
   --cos-on-accent: #0d0f14;
+  --cos-shadow: 0 8px 32px rgba(23, 19, 48, 0.55);
 }
 
+/* Swiss international style — paper white, hairline grid, strong type contrast */
 html.light {
-  --cos-bg: #f4f4f5;
+  --cos-bg: #f7f7f8;
   --cos-bg-elevated: #ffffff;
-  --cos-bg-hover: rgba(0, 0, 0, 0.04);
-  --cos-bg-active: rgba(0, 0, 0, 0.08);
-  --cos-border: rgba(0, 0, 0, 0.08);
-  --cos-border-strong: rgba(0, 0, 0, 0.14);
-  --cos-accent: #7b6ad8;
-  --cos-accent-muted: rgba(123, 106, 216, 0.14);
-  --cos-text: #09090b;
-  --cos-text-secondary: #5f5f6a;
+  --cos-bg-hover: rgba(0, 0, 0, 0.045);
+  --cos-bg-active: rgba(0, 0, 0, 0.09);
+  --cos-border: rgba(0, 0, 0, 0.1);
+  --cos-border-strong: rgba(0, 0, 0, 0.18);
+  --cos-accent: #6b5bd6;
+  --cos-accent-muted: rgba(107, 91, 214, 0.12);
+  --cos-text: #1a1a1e;
+  --cos-text-secondary: #5e5e6a;
   --cos-text-muted: #6e6e78;
-  --cos-risk-high: #dc2626;
-  --cos-risk-medium: #d97706;
-  --cos-risk-low: #059669;
-  --cos-canvas: #ececf0;
+  --cos-risk-high: #d6454e;
+  --cos-risk-medium: #c77b0f;
+  --cos-risk-low: #12805c;
+  --cos-canvas: #f1f1f3;
   --cos-on-accent: #ffffff;
+  --cos-shadow: 0 8px 32px rgba(23, 19, 48, 0.18);
 }

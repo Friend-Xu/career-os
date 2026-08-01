@@ -14,7 +14,8 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import { useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { ROLES, STAGES } from '../../data/mock-data'
-import { COLORS, LAYOUT } from '../../data/constants'
+import { alpha, COLORS, LAYOUT } from '../../data/constants'
+import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
   const currentRole = useAppStore((s) => s.currentRole())
@@ -40,7 +41,9 @@ export function TopBar() {
         gap: 2,
         px: 2,
         borderBottom: `1px solid ${COLORS.border}`,
-        bgcolor: COLORS.bg,
+        bgcolor: alpha(COLORS.bg, 0.78),
+        backdropFilter: 'blur(14px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(14px) saturate(160%)',
         zIndex: 20,
       }}
     >
@@ -151,6 +154,8 @@ export function TopBar() {
         <CircleIcon sx={{ fontSize: 8, color: COLORS.riskLow }} />
         <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>Agent 在线</Typography>
       </Stack>
+
+      <ThemeToggle />
 
       <Tooltip title="全局搜索 ⌘K">
         <Button

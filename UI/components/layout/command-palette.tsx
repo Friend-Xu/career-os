@@ -108,7 +108,7 @@ export function CommandPalette() {
             overflow: 'hidden',
             bgcolor: COLORS.bgElevated,
             border: `1px solid ${COLORS.borderStrong}`,
-            boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
+            boxShadow: 'var(--cos-shadow)',
           },
         },
       }}

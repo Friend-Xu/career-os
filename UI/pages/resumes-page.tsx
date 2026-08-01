@@ -325,7 +325,7 @@ export function ResumesPage() {
               bgcolor: COLORS.bgElevated,
               border: `1px solid ${COLORS.borderStrong}`,
               borderRadius: '10px',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+              boxShadow: 'var(--cos-shadow)',
             }}
           >
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1 }}>

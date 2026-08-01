@@ -30,7 +30,7 @@ export function ToastHost() {
             borderRadius: '8px',
             bgcolor: COLORS.bgElevated,
             border: `1px solid ${COLORS.borderStrong}`,
-            boxShadow: '0 8px 32px rgba(23,19,48,0.55)',
+            boxShadow: 'var(--cos-shadow)',
             fontSize: 13,
             animation: `fade-in 0.25s ${EASE}`,
             '& .MuiAlert-icon': { fontSize: 18 },
