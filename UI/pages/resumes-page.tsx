@@ -97,7 +97,7 @@ export function ResumesPage() {
         spacing={1.5}
         sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
       >
-        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>简历中心</Typography>
+        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>简历中心</Typography>
         <Chip size="small" label={resume.name} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
         {resume.targetCompany && (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
@@ -166,7 +166,7 @@ export function ResumesPage() {
           }}
         >
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
-            编辑区 · 划词可触发 AI 改写 · 拖拽排序
+            编辑区 · 划词可触发 AI 改写 · 使用 ↑↓ 调整模块顺序
           </Typography>
           <Stack spacing={1.5}>
             {modules.map((m, idx) => (

@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles'
+import { EASE } from './data/constants'
 
 /** Career OS design tokens — dark-first IDE aesthetic (Claude/Linear/Obsidian) */
 const theme = createTheme({
@@ -25,7 +26,7 @@ const theme = createTheme({
         info: { main: '#3b82f6', light: '#60a5fa', dark: '#2563eb' },
         success: { main: '#10b981', light: '#34d399', dark: '#059669' },
         background: { default: '#f4f4f5', paper: '#ffffff' },
-        text: { primary: '#09090b', secondary: '#71717a' },
+        text: { primary: '#09090b', secondary: '#5f5f6a' },
         divider: 'rgba(0,0,0,0.08)',
       },
     },
@@ -155,7 +156,7 @@ const theme = createTheme({
           fontSize: '0.8125rem',
           padding: '6px 14px',
           minHeight: 34,
-          transition: 'background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease',
+          transition: `background-color 0.2s ${EASE}, border-color 0.2s ${EASE}, opacity 0.2s ${EASE}, transform 0.15s ${EASE}`,
           '&:active': { transform: 'scale(0.98)' },
         },
         sizeSmall: { padding: '4px 12px', fontSize: '0.8125rem', minHeight: 30 },
@@ -180,7 +181,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 6,
-          transition: 'background-color 0.15s ease',
+          transition: `background-color 0.2s ${EASE}`,
           '&:hover': { backgroundColor: 'rgba(255,255,255,0.06)' },
         },
       },

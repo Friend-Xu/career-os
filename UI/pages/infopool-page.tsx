@@ -21,15 +21,19 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import { INFO_EDGES, INFO_NODES, POOL_HEALTH } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, RISK_COLOR } from '../data/constants'
+import { alpha, COLORS, EASE, RISK_COLOR } from '../data/constants'
 import type { InfoNode } from '../types'
 
+/**
+ * 类型色与风险色（绿/黄/红）完全错开，避免红色节点被误读为高风险。
+ * role 紫 / decision 蓝 / direction 橙 / city 青 / company 粉
+ */
 const TYPE_COLOR: Record<InfoNode['type'], string> = {
   role: '#9081E4',
-  decision: '#7FD962',
-  direction: '#E6B450',
-  city: '#59C2FF',
-  company: '#F07178',
+  decision: '#59C2FF',
+  direction: '#F29A5E',
+  city: '#5CE0B0',
+  company: '#E77FC3',
 }
 
 function GraphCanvas({
@@ -68,7 +72,7 @@ function GraphCanvas({
           height: '100%',
           transform: `scale(${scale})`,
           transformOrigin: 'center',
-          transition: 'transform 0.12s ease',
+          transition: `transform 0.15s ${EASE}`,
         }}
       >
       <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
@@ -113,7 +117,15 @@ function GraphCanvas({
         return (
           <Box
             key={n.id}
+            role="button"
+            tabIndex={0}
             onClick={() => onNodeClick(n)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onNodeClick(n)
+              }
+            }}
             onContextMenu={(e) => {
               e.preventDefault()
               onNodeContext(e, n)
@@ -130,11 +142,15 @@ function GraphCanvas({
               border: `1.5px solid ${hit ? color : 'transparent'}`,
               opacity: hit ? 1 : 0.25,
               cursor: 'pointer',
-              transition: 'opacity 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
-              animation: `fade-in 0.4s ease ${i * 0.04}s both`,
+              transition: `opacity 0.2s ${EASE}, border-color 0.2s ${EASE}, transform 0.15s ${EASE}`,
+              animation: `fade-in 0.4s ${EASE} ${i * 0.04}s both`,
               '&:hover': {
                 transform: 'translate(-50%, -50%) scale(1.06)',
                 bgcolor: alpha(color, 0.16),
+              },
+              '&:focus-visible': {
+                outline: `2px solid ${color}`,
+                outlineOffset: 2,
               },
               zIndex: n.type === 'role' ? 5 : 2,
               boxShadow: n.type === 'role' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
@@ -209,7 +225,7 @@ export function InfoPoolPage() {
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
-        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>信息池</Typography>
+        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>信息池</Typography>
         <Chip
           size="small"
           label={`健康 ${POOL_HEALTH.healthPercent}% · ${POOL_HEALTH.totalNodes} 节点`}

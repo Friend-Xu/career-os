@@ -17,7 +17,8 @@ import { useEffect, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { NEXT_ACTION } from '../../data/mock-data'
-import { COLORS, LAYOUT, alpha } from '../../data/constants'
+import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
+import type { DecisionRecord } from '../../types'
 
 export function AgentPanel() {
   const open = useAppStore((s) => s.agentPanelOpen)
@@ -25,6 +26,7 @@ export function AgentPanel() {
   const draft = useAppStore((s) => s.agentDraft)
   const setDraft = useAppStore((s) => s.setAgentDraft)
   const send = useAppStore((s) => s.sendAgentMessage)
+  const addDecision = useAppStore((s) => s.addDecision)
   const expandToFull = useAppStore((s) => s.expandToFullAgent)
   const contextFiles = useAppStore((s) => s.agentContextFiles)
   const sessions = useAppStore((s) => s.sessions)
@@ -55,7 +57,7 @@ export function AgentPanel() {
         flexDirection: 'column',
         overflow: 'hidden',
         zIndex: 10,
-        animation: 'fade-in 0.2s ease',
+        animation: `fade-in 0.25s ${EASE}`,
       }}
     >
       <Stack
@@ -230,9 +232,28 @@ export function AgentPanel() {
           size="small"
           sx={{ mt: 1, fontSize: 12.5, color: COLORS.textSecondary }}
           onClick={() => {
-            if (draft.trim()) send(draft.trim())
-            else send('请将当前分析结果写入决策记录')
-            push('success', '已写入决策记录')
+            const content = draft.trim() || '当前分析结果'
+            const record: DecisionRecord = {
+              id: `d-${Date.now()}`,
+              title: content.slice(0, 24) || '未命名决策',
+              skill: 'agent-write',
+              direction: '机器人',
+              directionMatch: 0,
+              directionConfidence: 'medium',
+              city: '深圳',
+              cityScore: 0,
+              salaryFeasible: true,
+              riskLevel: 'medium',
+              keyRisk: '待评估',
+              status: 'completed',
+              profile: '机器人研发',
+              summary: content,
+              createdAt: new Date().toISOString(),
+              protocolVersion: '2.1',
+            }
+            addDecision(record)
+            setDraft('')
+            push('success', `已写入决策记录「${record.title}」`)
           }}
         >
           写入决策记录

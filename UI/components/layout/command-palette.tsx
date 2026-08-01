@@ -12,7 +12,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { COMPANIES, DECISIONS } from '../../data/mock-data'
 import type { NavPageId } from '../../types'
 import { COLORS } from '../../data/constants'
 
@@ -29,6 +28,8 @@ export function CommandPalette() {
   const setOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const setPage = useAppStore((s) => s.setPage)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
+  const decisions = useAppStore((s) => s.decisions)
+  const companies = useAppStore((s) => s.companies)
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
 
@@ -42,14 +43,14 @@ export function CommandPalette() {
       { id: 'nav-app', label: '投递管理', group: '导航', page: 'applications' },
       { id: 'nav-cv', label: '简历中心', group: '导航', page: 'resumes' },
       { id: 'nav-set', label: '设置', group: '导航', page: 'settings' },
-      ...DECISIONS.map((d) => ({
+      ...decisions.map((d) => ({
         id: d.id,
         label: d.title,
         group: '决策记录',
         page: 'agent' as NavPageId,
         meta: d.city || d.direction,
       })),
-      ...COMPANIES.map((c) => ({
+      ...companies.map((c) => ({
         id: c.id,
         label: c.name,
         group: '公司',
@@ -66,7 +67,7 @@ export function CommandPalette() {
           (i.meta?.toLowerCase().includes(q) ?? false),
       )
       .slice(0, 20)
-  }, [query])
+  }, [query, decisions, companies])
 
   useEffect(() => {
     setActiveIdx(0)

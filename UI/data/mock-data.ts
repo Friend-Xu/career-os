@@ -589,6 +589,7 @@ const AGENT_MESSAGES: ChatMessage[] = [
     content:
       '已读取你的 profile 与最近决策。当前阶段：**公司筛选**。\n\n基于深圳 86 分、技能画像（量化→算法）与薪资约束，我建议优先这三家：\n\n1. **大疆创新** — 匹配 91，算法岗密度高\n2. **优必选** — 匹配 88，人形/感知方向契合\n3. **腾讯机器人** — 匹配 85，研究氛围好、风险较低\n\n需要我生成完整目标企业列表并写入决策记录吗？',
     timestamp: '2026-08-01T09:00:12',
+    reportCard: DECISIONS[0],
     thinking:
       '读取 profile.md、decision.md、company DB…\n过滤 city=深圳, direction=机器人…\n按 matchScore 排序…',
     toolCalls: [

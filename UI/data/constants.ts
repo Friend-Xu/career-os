@@ -61,3 +61,9 @@ export function alpha(color: string, opacity: number): string {
   const pct = Math.round(Math.min(1, Math.max(0, opacity)) * 100)
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`
 }
+
+/**
+ * 统一缓动曲线（Linear 风格）——替代标准 ease。
+ * 短促起步 + 长尾收尾，交互反馈"先快后稳"。
+ */
+export const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'

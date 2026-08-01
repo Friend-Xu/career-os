@@ -1,7 +1,10 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import type {
   Application,
   ChatMessage,
+  Company,
+  DecisionRecord,
   MainWidthMode,
   NavPageId,
   Role,
@@ -9,6 +12,8 @@ import type {
 } from '../types'
 import {
   APPLICATIONS,
+  COMPANIES,
+  DECISIONS,
   ROLES,
   SESSIONS,
 } from '../data/mock-data'
@@ -22,6 +27,8 @@ interface AppState {
   sessions: Session[];
   currentSessionId: string;
   applications: Application[];
+  decisions: DecisionRecord[];
+  companies: Company[];
   agentDraft: string;
   agentContextFiles: string[];
   pendingPrompt: string | null;
@@ -49,30 +56,36 @@ interface AppState {
   setCurrentSession: (id: string) => void;
   createSession: (title?: string) => void;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
+  addDecision: (record: DecisionRecord) => void;
+  markCompanyContacted: (id: string) => void;
   setInfopoolFilter: (filter: string) => void;
   setCompaniesFilter: (filter: string) => void;
   setApplicationsFilter: (filter: string) => void;
   setLocateTarget: (target: string | null) => void;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  currentRoleId: 1,
-  currentPage: 'workbench',
-  agentPanelOpen: true,
-  mainWidthMode: 'narrow',
-  commandPaletteOpen: false,
-  sessions: SESSIONS,
-  currentSessionId: 's-current',
-  applications: APPLICATIONS,
-  agentDraft: '',
-  agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
-  pendingPrompt: null,
-  roleSwitchDialogOpen: false,
-  pendingRoleId: null,
-  infopoolFilter: 'all',
-  companiesFilter: 'all',
-  applicationsFilter: '全部',
-  locateTarget: null,
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      currentRoleId: 1,
+      currentPage: 'workbench',
+      agentPanelOpen: true,
+      mainWidthMode: 'narrow',
+      commandPaletteOpen: false,
+      sessions: SESSIONS,
+      currentSessionId: 's-current',
+      applications: APPLICATIONS,
+      decisions: DECISIONS,
+      companies: COMPANIES,
+      agentDraft: '',
+      agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
+      pendingPrompt: null,
+      roleSwitchDialogOpen: false,
+      pendingRoleId: null,
+      infopoolFilter: 'all',
+      companiesFilter: 'all',
+      applicationsFilter: '全部',
+      locateTarget: null,
 
   currentRole: () => {
     const { currentRoleId } = get()
@@ -272,6 +285,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
   },
 
+  addDecision: (record) => {
+    set((state) => ({ decisions: [record, ...state.decisions] }))
+  },
+
+  markCompanyContacted: (id) => {
+    set((state) => ({
+      companies: state.companies.map((c) =>
+        c.id === id ? { ...c, contacted: true } : c,
+      ),
+    }))
+  },
+
   setInfopoolFilter: (filter) => set({ infopoolFilter: filter }),
 
   setCompaniesFilter: (filter) => set({ companiesFilter: filter }),
@@ -279,4 +304,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setApplicationsFilter: (filter) => set({ applicationsFilter: filter }),
 
   setLocateTarget: (target) => set({ locateTarget: target }),
-}))
+    }),
+    {
+      name: 'career-os',
+      partialize: (s) => ({
+        currentRoleId: s.currentRoleId,
+        currentPage: s.currentPage,
+        agentPanelOpen: s.agentPanelOpen,
+        mainWidthMode: s.mainWidthMode,
+        applications: s.applications,
+        decisions: s.decisions,
+        companies: s.companies,
+        infopoolFilter: s.infopoolFilter,
+        companiesFilter: s.companiesFilter,
+        applicationsFilter: s.applicationsFilter,
+      }),
+    },
+  ),
+)

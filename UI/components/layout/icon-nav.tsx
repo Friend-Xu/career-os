@@ -10,7 +10,7 @@ import type { ComponentType } from 'react'
 import type { SvgIconProps } from '@mui/material/SvgIcon'
 import type { NavPageId } from '../../types'
 import { useAppStore } from '../../store/app-store'
-import { COLORS, LAYOUT } from '../../data/constants'
+import { COLORS, EASE, LAYOUT } from '../../data/constants'
 
 interface NavItem {
   id: NavPageId;
@@ -81,7 +81,7 @@ export function IconNav() {
                 cursor: 'pointer',
                 bgcolor: active ? COLORS.accentMuted : 'transparent',
                 color: active ? COLORS.accent : COLORS.textSecondary,
-                transition: 'background-color 0.15s ease, color 0.15s ease',
+                transition: `background-color 0.2s ${EASE}, color 0.2s ${EASE}`,
                 position: 'relative',
                 '&:hover': {
                   bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,

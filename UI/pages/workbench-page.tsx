@@ -14,12 +14,11 @@ import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import {
   APPLICATION_STATS,
-  DECISIONS,
   NEXT_ACTION,
   POOL_HEALTH,
   STAGES,
 } from '../data/mock-data'
-import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, RiskLevel } from '../types'
 
 function ModeSwitcher() {
@@ -87,7 +86,7 @@ function NextActionCard() {
         borderRadius: '10px',
         border: `1.5px solid ${COLORS.accent}`,
         bgcolor: alpha(COLORS.accent, 0.06),
-        animation: 'fade-in 0.3s ease',
+        animation: `fade-in 0.3s ${EASE}`,
       }}
     >
       <Typography
@@ -165,7 +164,8 @@ function NextActionCard() {
 
 function DecisionTimeline() {
   const setPage = useAppStore((s) => s.setPage)
-  const items = DECISIONS.slice(0, 3)
+  const decisions = useAppStore((s) => s.decisions)
+  const items = decisions.slice(0, 3)
 
   return (
     <Box
@@ -242,7 +242,7 @@ function DecisionTimeline() {
           </Stack>
         ))}
       </Stack>
-      {DECISIONS.length > 3 && (
+      {decisions.length > 3 && (
         <Button
           size="small"
           onClick={() => setPage('agent')}

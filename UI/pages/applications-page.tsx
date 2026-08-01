@@ -145,7 +145,7 @@ export function ApplicationsPage() {
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
-        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>投递管理</Typography>
+        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>投递管理</Typography>
         <Chip size="small" label={`${applications.length} 条`} sx={{ height: 22, fontSize: 12 }} />
         {urgent.length > 0 && (
           <Chip

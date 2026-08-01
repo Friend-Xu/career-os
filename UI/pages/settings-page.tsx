@@ -29,7 +29,18 @@ export function SettingsPage() {
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
       <Box sx={{ maxWidth: 720 }}>
-        <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 0.5 }}>设置</Typography>
+        <Stack direction="row" sx={{ alignItems: 'center', mb: 0.5 }}>
+          <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>设置</Typography>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => push('success', '设置已保存（演示模式）')}
+            sx={{ fontSize: 12.5 }}
+          >
+            保存设置
+          </Button>
+        </Stack>
         <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 3 }}>
           角色管理 / 模型配置 / 数据 / 外观
         </Typography>

@@ -18,6 +18,7 @@ import BuildIcon from '@mui/icons-material/Build'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
+import { useToastStore } from '../store/toast-store'
 import { STAGES } from '../data/mock-data'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord } from '../types'
@@ -61,6 +62,8 @@ function ContextCapsule() {
 
 function ReportCard({ record }: { record: DecisionRecord }) {
   const setPage = useAppStore((s) => s.setPage)
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const push = useToastStore((s) => s.push)
 
   return (
     <Box
@@ -114,7 +117,15 @@ function ReportCard({ record }: { record: DecisionRecord }) {
         ))}
       </Box>
       <Stack direction="row" spacing={1}>
-        <Button size="small" startIcon={<RefreshIcon sx={{ fontSize: 14 }} />} sx={{ fontSize: 12.5 }}>
+        <Button
+          size="small"
+          startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
+          onClick={() => {
+            startAnalysis(`请重新评估决策「${record.title}」：更新匹配度、风险与结论`)
+            push('info', '已预置「重新评估」上下文')
+          }}
+          sx={{ fontSize: 12.5 }}
+        >
           重新评估
         </Button>
         <Button
@@ -258,7 +269,7 @@ export function AgentPage() {
         direction="row"
         sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
       >
-        <Typography sx={{ fontSize: 14, fontWeight: 600, flex: 1 }}>
+        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', flex: 1 }}>
           {session?.title ?? '决策 Agent'}
         </Typography>
         <Button size="small" onClick={() => createSession()} sx={{ fontSize: 12 }}>

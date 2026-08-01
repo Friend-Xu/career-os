@@ -1,6 +1,6 @@
 import { Alert, Stack } from '@mui/material'
 import { useToastStore } from '../store/toast-store'
-import { COLORS, LAYOUT } from '../data/constants'
+import { COLORS, EASE, LAYOUT } from '../data/constants'
 
 export function ToastHost() {
   const toasts = useToastStore((s) => s.toasts)
@@ -32,7 +32,7 @@ export function ToastHost() {
             border: `1px solid ${COLORS.borderStrong}`,
             boxShadow: '0 8px 32px rgba(23,19,48,0.55)',
             fontSize: 13,
-            animation: 'fade-in 0.2s ease',
+            animation: `fade-in 0.25s ${EASE}`,
             '& .MuiAlert-icon': { fontSize: 18 },
           }}
         >

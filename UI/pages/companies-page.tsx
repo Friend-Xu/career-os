@@ -16,10 +16,10 @@ import CloseIcon from '@mui/icons-material/Close'
 import MapIcon from '@mui/icons-material/Map'
 import ViewListIcon from '@mui/icons-material/ViewList'
 import { useEffect, useMemo, useState } from 'react'
-import { COMPANIES, PARKS } from '../data/mock-data'
+import { PARKS } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { Company } from '../types'
 
 export function CompaniesPage() {
@@ -29,6 +29,8 @@ export function CompaniesPage() {
   const [parkId, setParkId] = useState<number | null>(null)
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const companies = useAppStore((s) => s.companies)
+  const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
   const companiesFilter = useAppStore((s) => s.companiesFilter)
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
@@ -45,14 +47,14 @@ export function CompaniesPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     const base = q
-      ? COMPANIES.filter(
+      ? companies.filter(
           (c) =>
             c.name.toLowerCase().includes(q) ||
             c.city.includes(q) ||
             c.industry.includes(q) ||
             c.tags.some((t) => t.includes(q)),
         )
-      : COMPANIES
+      : companies
     switch (companiesFilter) {
     case 'sz':
       return base.filter((c) => c.city === '深圳')
@@ -69,15 +71,15 @@ export function CompaniesPage() {
     default:
       return base
     }
-  }, [search, companiesFilter])
+  }, [search, companiesFilter, companies])
 
   const activePark = PARKS.find((p) => p.id === parkId)
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
-        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>公司探索</Typography>
-        <Chip size="small" label={`${COMPANIES.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
+        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>公司探索</Typography>
+        <Chip size="small" label={`${companies.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
         <Box sx={{ flex: 1 }} />
         <TextField
           size="small"
@@ -168,7 +170,7 @@ export function CompaniesPage() {
                   bgcolor: active ? COLORS.accentMuted : COLORS.bgElevated,
                   border: `1.5px solid ${active ? COLORS.accent : COLORS.border}`,
                   cursor: 'pointer',
-                  animation: `fade-in 0.35s ease ${i * 0.08}s both`,
+                  animation: `fade-in 0.35s ${EASE} ${i * 0.08}s both`,
                   '&:hover': { borderColor: COLORS.accent },
                   minWidth: 120,
                   textAlign: 'center',
@@ -207,7 +209,7 @@ export function CompaniesPage() {
               <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.75 }}>入驻企业</Typography>
               <Stack spacing={0.5}>
                 {activePark.companies.map((name) => {
-                  const co = COMPANIES.find((c) => c.name === name)
+                  const co = companies.find((c) => c.name === name)
                   return (
                     <Box
                       key={name}
@@ -267,7 +269,15 @@ export function CompaniesPage() {
             <Box
               key={c.id}
               id={`company-${c.id}`}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelected(c)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setSelected(c)
+                }
+              }}
               sx={{
                 display: 'grid',
                 gridTemplateColumns: '1.4fr 0.7fr 1fr 0.6fr 0.5fr 0.5fr',
@@ -277,6 +287,10 @@ export function CompaniesPage() {
                 cursor: 'pointer',
                 alignItems: 'center',
                 '&:hover': { bgcolor: COLORS.bgHover },
+                '&:focus-visible': {
+                  outline: `2px solid ${COLORS.accent}`,
+                  outlineOffset: -2,
+                },
               }}
             >
               <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{c.name}</Typography>
@@ -364,6 +378,8 @@ export function CompaniesPage() {
                 variant="outlined"
                 fullWidth
                 onClick={() => {
+                  markCompanyContacted(selected.id)
+                  push('success', `已标记「${selected.name}」为已联系`)
                   setSelected(null)
                   setPage('applications')
                 }}
