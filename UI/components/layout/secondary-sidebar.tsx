@@ -3,7 +3,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { STAGES, APPLICATION_STATS } from '../../data/mock-data'
+import { APPLICATION_STATS } from '../../data/mock-data'
 import { alpha, COLORS, LAYOUT, RISK_COLOR, RISK_LABEL } from '../../data/constants'
 
 const STAGE_PROMPTS: Record<string, string> = {
@@ -62,8 +62,10 @@ function WorkbenchSecondary() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
-  const completed = STAGES.filter((s) => s.status === 'completed').length
-  const progress = Math.round((completed / STAGES.length) * 100)
+  const roleStages = useAppStore((s) => s.roleStages[role.id])
+  const stages = roleStages ?? []
+  const completed = stages.filter((s) => s.status === 'completed').length
+  const progress = stages.length ? Math.round((completed / stages.length) * 100) : 0
 
   return (
     <Stack sx={{ height: '100%', overflow: 'hidden' }}>
@@ -158,7 +160,7 @@ function WorkbenchSecondary() {
           决策链
         </Typography>
         <Stack spacing={0.5}>
-          {STAGES.map((stage) => (
+          {stages.map((stage) => (
             <Stack
               key={stage.id}
               direction="row"
@@ -219,7 +221,7 @@ function WorkbenchSecondary() {
             <Typography
               sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
             >
-              {completed}/{STAGES.length} · {progress}%
+              {completed}/{stages.length} · {progress}%
             </Typography>
           </Stack>
           <LinearProgress
@@ -430,8 +432,9 @@ export function SecondarySidebar() {
       )
     case 'applications': {
       const statuses = ['全部', '面试中', '已投递', '已联系', '已回复', '已评估', '已拒绝'] as const
-      const counts: Record<string, number> = { 全部: applications.length }
-      applications.forEach((a) => {
+      const roleApps = applications.filter((a) => a.roleId === role.id)
+      const counts: Record<string, number> = { 全部: roleApps.length }
+      roleApps.forEach((a) => {
         counts[a.status] = (counts[a.status] ?? 0) + 1
       })
       return (

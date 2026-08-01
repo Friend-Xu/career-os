@@ -11,7 +11,11 @@ import {
 } from '@mui/material'
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban'
 import ViewListIcon from '@mui/icons-material/ViewList'
-import { useMemo, useState } from 'react'
+import ErrorIcon from '@mui/icons-material/Error'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import ScheduleIcon from '@mui/icons-material/Schedule'
+import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined'
+import { useMemo, useState, type ComponentType } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS } from '../data/constants'
@@ -29,18 +33,19 @@ const COLUMNS: ApplicationStatus[] = [
 
 const URGENCY_META: Record<
   FollowupUrgency,
-  { label: string; color: string; icon: string }
+  { label: string; color: string; icon: ComponentType<{ sx?: object }> }
 > = {
-  urgent: { label: '紧急', color: '#F07178', icon: '🔴' },
-  overdue: { label: '逾期', color: '#E6B450', icon: '🟡' },
-  waiting: { label: '等待中', color: '#59C2FF', icon: '🔵' },
-  cooled: { label: '已冷却', color: '#5C6370', icon: '⚪' },
+  urgent: { label: '紧急', color: COLORS.riskHigh, icon: ErrorIcon },
+  overdue: { label: '逾期', color: COLORS.riskMedium, icon: WarningAmberIcon },
+  waiting: { label: '等待中', color: COLORS.accent, icon: ScheduleIcon },
+  cooled: { label: '已冷却', color: COLORS.textMuted, icon: CircleOutlinedIcon },
 }
 
 function KanbanCard({ app }: { app: Application }) {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const push = useToastStore((s) => s.push)
   const u = URGENCY_META[app.urgency]
+  const UrgencyIcon = u.icon
 
   const changeStatus = (status: ApplicationStatus) => {
     update(app.id, status)
@@ -62,9 +67,9 @@ function KanbanCard({ app }: { app: Application }) {
         <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1, lineHeight: 1.35 }}>
           {app.company}
         </Typography>
-        <Typography sx={{ fontSize: 12 }} title={u.label}>
-          {u.icon}
-        </Typography>
+        <Box sx={{ display: 'grid', placeItems: 'center' }} title={u.label}>
+          <UrgencyIcon sx={{ fontSize: 14, color: u.color }} />
+        </Box>
       </Stack>
       <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mb: 1 }} noWrap>
         {app.position}
@@ -122,12 +127,15 @@ export function ApplicationsPage() {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const applicationsFilter = useAppStore((s) => s.applicationsFilter)
+  const role = useAppStore((s) => s.currentRole())
   const push = useToastStore((s) => s.push)
+
+  const roleApps = applications.filter((a) => a.roleId === role.id)
 
   const filtered =
     applicationsFilter === '全部'
-      ? applications
-      : applications.filter((a) => a.status === applicationsFilter)
+      ? roleApps
+      : roleApps.filter((a) => a.status === applicationsFilter)
 
   const byStatus = useMemo(() => {
     const map: Record<string, Application[]> = {}
@@ -140,13 +148,13 @@ export function ApplicationsPage() {
     return map
   }, [filtered])
 
-  const urgent = applications.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
+  const urgent = roleApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>投递管理</Typography>
-        <Chip size="small" label={`${applications.length} 条`} sx={{ height: 22, fontSize: 12 }} />
+        <Chip size="small" label={`${roleApps.length} 条`} sx={{ height: 22, fontSize: 12 }} />
         {urgent.length > 0 && (
           <Chip
             size="small"
@@ -289,6 +297,7 @@ export function ApplicationsPage() {
           </Box>
           {filtered.map((a) => {
             const u = URGENCY_META[a.urgency]
+            const UrgencyIcon = u.icon
             return (
               <Box
                 key={a.id}
@@ -327,9 +336,10 @@ export function ApplicationsPage() {
                     </MenuItem>
                   ))}
                 </Select>
-                <Typography sx={{ fontSize: 12, color: u.color }}>
-                  {u.icon} {u.label}
-                </Typography>
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                  <UrgencyIcon sx={{ fontSize: 13, color: u.color }} />
+                  <Typography sx={{ fontSize: 12, color: u.color }}>{u.label}</Typography>
+                </Stack>
                 <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
                   {a.followupDue?.slice(5) ?? '—'}
                 </Typography>

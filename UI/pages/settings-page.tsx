@@ -13,7 +13,7 @@ import {
 import { useColorScheme } from '@mui/material/styles'
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined'
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined'
-import { ROLES } from '../data/mock-data'
+import AddIcon from '@mui/icons-material/Add'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
@@ -22,9 +22,12 @@ import { ThemeToggle } from '../components/layout/theme-toggle'
 export function SettingsPage() {
   const currentRoleId = useAppStore((s) => s.currentRoleId)
   const setRole = useAppStore((s) => s.setRole)
+  const setRoleCreateDialogOpen = useAppStore((s) => s.setRoleCreateDialogOpen)
+  const archiveRole = useAppStore((s) => s.archiveRole)
   const push = useToastStore((s) => s.push)
   const { mode, setMode } = useColorScheme()
   const themeMode = mode === 'light' || mode === 'dark' ? mode : 'dark'
+  const roles = useAppStore((s) => s.roles).filter((r) => !r.archived)
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
@@ -48,7 +51,7 @@ export function SettingsPage() {
         {/* Roles */}
         <Section title="角色管理">
           <Stack spacing={1}>
-            {ROLES.map((role) => (
+            {roles.map((role) => (
               <Stack
                 key={role.id}
                 direction="row"
@@ -96,9 +99,22 @@ export function SettingsPage() {
                   }}
                 />
                 {role.id !== currentRoleId ? (
-                  <Button size="small" onClick={() => setRole(role.id)} sx={{ fontSize: 12 }}>
-                    切换
-                  </Button>
+                  <Stack direction="row" spacing={0.5}>
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => {
+                        archiveRole(role.id)
+                        push('info', `已归档角色「${role.name}」`)
+                      }}
+                      sx={{ fontSize: 12, color: COLORS.textMuted }}
+                    >
+                      归档
+                    </Button>
+                    <Button size="small" onClick={() => setRole(role.id)} sx={{ fontSize: 12 }}>
+                      切换
+                    </Button>
+                  </Stack>
                 ) : (
                   <Typography sx={{ fontSize: 12, color: COLORS.accent, px: 1 }}>当前</Typography>
                 )}
@@ -107,10 +123,11 @@ export function SettingsPage() {
             <Button
               variant="outlined"
               size="small"
+              startIcon={<AddIcon sx={{ fontSize: 14 }} />}
               sx={{ alignSelf: 'flex-start', mt: 0.5 }}
-              onClick={() => push('info', '演示模式：创建角色将在阶段 3 接入')}
+              onClick={() => setRoleCreateDialogOpen(true)}
             >
-              + 创建角色
+              创建角色
             </Button>
           </Stack>
         </Section>

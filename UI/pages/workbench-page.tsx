@@ -16,7 +16,6 @@ import {
   APPLICATION_STATS,
   NEXT_ACTION,
   POOL_HEALTH,
-  STAGES,
 } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, RiskLevel } from '../types'
@@ -53,7 +52,9 @@ function ModeSwitcher() {
 }
 
 function StageBanner() {
-  const current = STAGES.find((s) => s.status === 'current')
+  const role = useAppStore((s) => s.currentRole())
+  const roleStages = useAppStore((s) => s.roleStages[role.id])
+  const current = (roleStages ?? []).find((s) => s.status === 'current')
   return (
     <Box sx={{ py: 1.5, px: 0.5 }}>
       <Typography
@@ -165,7 +166,9 @@ function NextActionCard() {
 function DecisionTimeline() {
   const setPage = useAppStore((s) => s.setPage)
   const decisions = useAppStore((s) => s.decisions)
-  const items = decisions.slice(0, 3)
+  const role = useAppStore((s) => s.currentRole())
+  const roleDecisions = decisions.filter((d) => d.profile === role.name)
+  const items = roleDecisions.slice(0, 3)
 
   return (
     <Box
@@ -182,7 +185,19 @@ function DecisionTimeline() {
       <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 1.5, color: COLORS.textSecondary }}>
         决策时间线
       </Typography>
-      <Stack spacing={0} sx={{ flex: 1 }}>
+      {items.length === 0 ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+          <Typography
+            sx={{ fontSize: 12.5, color: COLORS.textMuted, textAlign: 'center', lineHeight: 1.6 }}
+          >
+            「{role.name}」尚无决策记录
+            <br />
+            从 AI 面板发起首个分析
+          </Typography>
+        </Box>
+      ) : (
+        <>
+          <Stack spacing={0} sx={{ flex: 1 }}>
         {items.map((d, idx) => (
           <Stack
             key={d.id}
@@ -242,7 +257,7 @@ function DecisionTimeline() {
           </Stack>
         ))}
       </Stack>
-      {decisions.length > 3 && (
+      {roleDecisions.length > 3 && (
         <Button
           size="small"
           onClick={() => setPage('agent')}
@@ -250,6 +265,8 @@ function DecisionTimeline() {
         >
           + 查看全部 →
         </Button>
+      )}
+        </>
       )}
     </Box>
   )

@@ -208,6 +208,8 @@ export function InfoPoolPage() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
+  const companies = useAppStore((s) => s.companies)
+  const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const push = useToastStore((s) => s.push)
 
   const nodes = useMemo(() => INFO_NODES, [])
@@ -334,6 +336,14 @@ export function InfoPoolPage() {
         </MenuItem>
         <MenuItem
           onClick={() => {
+            if (menu) {
+              const target = companies.find((c) => c.name === menu.node.label)
+              if (target) {
+                setLocateTarget(target.id)
+              } else {
+                push('info', `「${menu.node.label}」无对应公司档案，已进入公司页`)
+              }
+            }
             setMenu(null)
             setPage('companies')
           }}

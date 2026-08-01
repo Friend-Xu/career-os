@@ -11,21 +11,25 @@ import {
 import SearchIcon from '@mui/icons-material/Search'
 import CircleIcon from '@mui/icons-material/Circle'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
+import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt'
 import { useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { ROLES, STAGES } from '../../data/mock-data'
 import { alpha, COLORS, LAYOUT } from '../../data/constants'
 import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
   const currentRole = useAppStore((s) => s.currentRole())
+  const roles = useAppStore((s) => s.roles).filter((r) => !r.archived)
   const setRole = useAppStore((s) => s.setRole)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
+  const setRoleCreateDialogOpen = useAppStore((s) => s.setRoleCreateDialogOpen)
+  const roleStages = useAppStore((s) => s.roleStages[currentRole.id])
   const [anchor, setAnchor] = useState<null | HTMLElement>(null)
 
-  const completed = STAGES.filter((s) => s.status === 'completed').length
-  const total = STAGES.length
-  const currentStage = STAGES.find((s) => s.status === 'current')
+  const stages = roleStages ?? []
+  const completed = stages.filter((s) => s.status === 'completed').length
+  const total = stages.length
+  const currentStage = stages.find((s) => s.status === 'current')
 
   const openRoleMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)
   const closeRoleMenu = () => setAnchor(null)
@@ -99,7 +103,7 @@ export function TopBar() {
         </Typography>
       </Button>
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeRoleMenu}>
-        {ROLES.filter((r) => !r.archived).map((role) => (
+        {roles.map((role) => (
           <MenuItem
             key={role.id}
             selected={role.id === currentRole.id}
@@ -119,6 +123,17 @@ export function TopBar() {
             </Stack>
           </MenuItem>
         ))}
+        <MenuItem
+          onClick={() => {
+            setRoleCreateDialogOpen(true)
+            closeRoleMenu()
+          }}
+        >
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+            <PersonAddAltIcon sx={{ fontSize: 16, color: COLORS.textMuted }} />
+            <Typography sx={{ fontSize: 13, color: COLORS.textSecondary }}>创建新角色…</Typography>
+          </Stack>
+        </MenuItem>
       </Menu>
 
       <Chip

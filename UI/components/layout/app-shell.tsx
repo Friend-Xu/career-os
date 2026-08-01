@@ -1,7 +1,7 @@
 import { Box } from '@mui/material'
 import { useEffect } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { COLORS } from '../../data/constants'
+import { alpha, COLORS } from '../../data/constants'
 import { TopBar } from './top-bar'
 import { IconNav } from './icon-nav'
 import { SecondarySidebar } from './secondary-sidebar'
@@ -9,6 +9,7 @@ import { AgentPanel } from './agent-panel'
 import { StatusBar } from './status-bar'
 import { CommandPalette } from './command-palette'
 import { RoleSwitchDialog } from './role-switch-dialog'
+import { RoleCreateDialog } from './role-create-dialog'
 import { WorkbenchPage } from '../../pages/workbench-page'
 import { AgentPage } from '../../pages/agent-page'
 import { InfoPoolPage } from '../../pages/infopool-page'
@@ -39,6 +40,13 @@ function MainContent() {
   }
 }
 
+/** 计算 hex 颜色感知亮度（0-1），决定强调色按钮上的文字用深/浅。 */
+function luminance(hex: string): number {
+  const h = hex.replace('#', '')
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
 export function AppShell() {
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const toggleAgentPanel = useAppStore((s) => s.toggleAgentPanel)
@@ -46,6 +54,18 @@ export function AppShell() {
   const createSession = useAppStore((s) => s.createSession)
   const currentPage = useAppStore((s) => s.currentPage)
   const agentPanelOpen = useAppStore((s) => s.agentPanelOpen)
+  const role = useAppStore((s) => s.currentRole())
+
+  // 角色主题色 = 全局强调色（方案书 3.2）：切角色即换界面强调色
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--cos-accent', role.color)
+    root.style.setProperty('--cos-accent-muted', alpha(role.color, 0.14))
+    root.style.setProperty(
+      '--cos-on-accent',
+      luminance(role.color) > 0.6 ? '#1a1a1e' : '#ffffff',
+    )
+  }, [role.color])
 
   // Global shortcuts
   useEffect(() => {
@@ -118,6 +138,7 @@ export function AppShell() {
       <StatusBar />
       <CommandPalette />
       <RoleSwitchDialog />
+      <RoleCreateDialog />
     </Box>
   )
 }

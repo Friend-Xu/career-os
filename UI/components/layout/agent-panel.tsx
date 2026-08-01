@@ -34,6 +34,7 @@ export function AgentPanel() {
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
+  const role = useAppStore((s) => s.currentRole())
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
@@ -246,7 +247,7 @@ export function AgentPanel() {
               riskLevel: 'medium',
               keyRisk: '待评估',
               status: 'completed',
-              profile: '机器人研发',
+              profile: role.name,
               summary: content,
               createdAt: new Date().toISOString(),
               protocolVersion: '2.1',

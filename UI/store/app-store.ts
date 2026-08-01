@@ -5,10 +5,12 @@ import type {
   ChatMessage,
   Company,
   DecisionRecord,
+  DecisionStage,
   MainWidthMode,
   NavPageId,
   Role,
   Session,
+  StageStatus,
 } from '../types'
 import {
   APPLICATIONS,
@@ -16,7 +18,34 @@ import {
   DECISIONS,
   ROLES,
   SESSIONS,
+  STAGES,
 } from '../data/mock-data'
+
+/** 按角色构造决策链进度：角色 1 走完三步（演示主线），其余角色差异化。 */
+function makeRoleStages(statusMap: Record<string, StageStatus>): DecisionStage[] {
+  return STAGES.map((s) => ({
+    ...s,
+    status: statusMap[s.id] ?? 'pending',
+    completedAt: s.status === 'completed' && statusMap[s.id] === 'completed' ? s.completedAt : undefined,
+  }))
+}
+
+function buildInitialRoleStages(): Record<number, DecisionStage[]> {
+  return {
+    1: makeRoleStages({
+      direction: 'completed',
+      transfer: 'completed',
+      city: 'completed',
+      company: 'current',
+    }),
+    2: makeRoleStages({ direction: 'completed', transfer: 'current' }),
+    3: makeRoleStages({ direction: 'current' }),
+  }
+}
+
+function freshRoleStages(): DecisionStage[] {
+  return makeRoleStages({ direction: 'current' })
+}
 
 interface AppState {
   currentRoleId: number;
@@ -29,11 +58,14 @@ interface AppState {
   applications: Application[];
   decisions: DecisionRecord[];
   companies: Company[];
+  roles: Role[];
+  roleStages: Record<number, DecisionStage[]>;
   agentDraft: string;
   agentContextFiles: string[];
   pendingPrompt: string | null;
   roleSwitchDialogOpen: boolean;
   pendingRoleId: number | null;
+  roleCreateDialogOpen: boolean;
   infopoolFilter: string;
   companiesFilter: string;
   applicationsFilter: string;
@@ -44,6 +76,9 @@ interface AppState {
   setRole: (roleId: number) => void;
   confirmRoleSwitch: (keepSession: boolean) => void;
   cancelRoleSwitch: () => void;
+  setRoleCreateDialogOpen: (open: boolean) => void;
+  addRole: (role: Omit<Role, 'id'>) => number;
+  archiveRole: (roleId: number) => void;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setMainWidthMode: (mode: MainWidthMode) => void;
@@ -77,19 +112,22 @@ export const useAppStore = create<AppState>()(
       applications: APPLICATIONS,
       decisions: DECISIONS,
       companies: COMPANIES,
+      roles: ROLES,
+      roleStages: buildInitialRoleStages(),
       agentDraft: '',
       agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
       pendingPrompt: null,
       roleSwitchDialogOpen: false,
       pendingRoleId: null,
+      roleCreateDialogOpen: false,
       infopoolFilter: 'all',
       companiesFilter: 'all',
       applicationsFilter: '全部',
       locateTarget: null,
 
   currentRole: () => {
-    const { currentRoleId } = get()
-    return ROLES.find((r) => r.id === currentRoleId) ?? ROLES[0]
+    const { currentRoleId, roles } = get()
+    return roles.find((r) => r.id === currentRoleId) ?? roles[0]
   },
 
   setPage: (page) => {
@@ -175,6 +213,28 @@ export const useAppStore = create<AppState>()(
 
   cancelRoleSwitch: () => {
     set({ roleSwitchDialogOpen: false, pendingRoleId: null })
+  },
+
+  setRoleCreateDialogOpen: (open) => set({ roleCreateDialogOpen: open }),
+
+  addRole: (role) => {
+    const nextId = get().roles.reduce((m, r) => Math.max(m, r.id), 0) + 1
+    const full: Role = { ...role, id: nextId }
+    set((state) => ({
+      roles: [...state.roles, full],
+      roleStages: { ...state.roleStages, [nextId]: freshRoleStages() },
+      currentRoleId: nextId,
+    }))
+    return nextId
+  },
+
+  archiveRole: (roleId) => {
+    if (roleId === get().currentRoleId) return
+    set((state) => ({
+      roles: state.roles.map((r) =>
+        r.id === roleId ? { ...r, archived: true } : r,
+      ),
+    }))
   },
 
   toggleAgentPanel: () => {
@@ -286,7 +346,30 @@ export const useAppStore = create<AppState>()(
   },
 
   addDecision: (record) => {
-    set((state) => ({ decisions: [record, ...state.decisions] }))
+    // 写入决策 → 推进当前角色的决策链阶段（完成 → 下一阶段 current）
+    const { currentRoleId, roleStages } = get()
+    const stages = roleStages[currentRoleId]
+    let nextStages = stages
+    if (stages) {
+      const idx = stages.findIndex((s) => s.status === 'current')
+      nextStages = stages.map((s, i) => {
+        if (idx >= 0 && i === idx) {
+          return {
+            ...s,
+            status: 'completed' as const,
+            completedAt: new Date().toISOString().slice(0, 10),
+          }
+        }
+        if (idx >= 0 && i === idx + 1 && s.status === 'pending') {
+          return { ...s, status: 'current' as const }
+        }
+        return s
+      })
+    }
+    set((state) => ({
+      decisions: [record, ...state.decisions],
+      roleStages: { ...roleStages, [currentRoleId]: nextStages },
+    }))
   },
 
   markCompanyContacted: (id) => {
@@ -315,6 +398,8 @@ export const useAppStore = create<AppState>()(
         applications: s.applications,
         decisions: s.decisions,
         companies: s.companies,
+        roles: s.roles,
+        roleStages: s.roleStages,
         infopoolFilter: s.infopoolFilter,
         companiesFilter: s.companiesFilter,
         applicationsFilter: s.applicationsFilter,

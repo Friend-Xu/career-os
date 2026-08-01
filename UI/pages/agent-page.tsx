@@ -19,13 +19,13 @@ import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { STAGES } from '../data/mock-data'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord } from '../types'
 
 function ContextCapsule() {
   const role = useAppStore((s) => s.currentRole())
-  const current = STAGES.find((s) => s.status === 'current')
+  const roleStages = useAppStore((s) => s.roleStages[role.id])
+  const current = (roleStages ?? []).find((s) => s.status === 'current')
 
   return (
     <Stack
