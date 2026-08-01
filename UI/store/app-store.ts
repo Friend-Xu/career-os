@@ -66,6 +66,7 @@ interface AppState {
   roleSwitchDialogOpen: boolean;
   pendingRoleId: number | null;
   roleCreateDialogOpen: boolean;
+  activeResumeId: string;
   infopoolFilter: string;
   companiesFilter: string;
   applicationsFilter: string;
@@ -77,6 +78,7 @@ interface AppState {
   confirmRoleSwitch: (keepSession: boolean) => void;
   cancelRoleSwitch: () => void;
   setRoleCreateDialogOpen: (open: boolean) => void;
+  setActiveResumeId: (id: string) => void;
   addRole: (role: Omit<Role, 'id'>) => number;
   archiveRole: (roleId: number) => void;
   toggleAgentPanel: () => void;
@@ -120,6 +122,7 @@ export const useAppStore = create<AppState>()(
       roleSwitchDialogOpen: false,
       pendingRoleId: null,
       roleCreateDialogOpen: false,
+      activeResumeId: 'r-dji',
       infopoolFilter: 'all',
       companiesFilter: 'all',
       applicationsFilter: '全部',
@@ -216,6 +219,8 @@ export const useAppStore = create<AppState>()(
   },
 
   setRoleCreateDialogOpen: (open) => set({ roleCreateDialogOpen: open }),
+
+  setActiveResumeId: (id) => set({ activeResumeId: id }),
 
   addRole: (role) => {
     const nextId = get().roles.reduce((m, r) => Math.max(m, r.id), 0) + 1
@@ -400,6 +405,7 @@ export const useAppStore = create<AppState>()(
         companies: s.companies,
         roles: s.roles,
         roleStages: s.roleStages,
+        activeResumeId: s.activeResumeId,
         infopoolFilter: s.infopoolFilter,
         companiesFilter: s.companiesFilter,
         applicationsFilter: s.applicationsFilter,

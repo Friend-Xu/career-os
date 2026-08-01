@@ -39,8 +39,8 @@ const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
 export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
-  const [activeId, setActiveId] = useState('r-dji')
-  const resume = RESUMES.find((r) => r.id === activeId) ?? RESUMES[0]
+  const activeResumeId = useAppStore((s) => s.activeResumeId)
+  const resume = RESUMES.find((r) => r.id === activeResumeId) ?? RESUMES[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume.modules)
   /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
   const [selButton, setSelButton] = useState<{
@@ -73,16 +73,16 @@ export function ResumesPage() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
-  // Sync modules when switching version
-  const switchVersion = (id: string) => {
-    const r = RESUMES.find((x) => x.id === id)
+  // 版本切换由二级栏「版本 / 血缘」驱动（store），此处同步模块内容
+  useEffect(() => {
+    const r = RESUMES.find((x) => x.id === activeResumeId)
     if (r) {
-      setActiveId(id)
       setModules(r.modules.map((m) => ({ ...m })))
       setRevert(null)
       closeAll()
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeResumeId])
 
   const qualityScore = useMemo(() => {
     const totalLen = modules.reduce((s, m) => s + m.content.length, 0)
@@ -229,25 +229,7 @@ export function ResumesPage() {
         </Button>
       </Stack>
 
-      {/* Version switcher (compact, secondary already has tree) */}
-      <Stack direction="row" spacing={1} sx={{ px: 2, py: 1, borderBottom: `1px solid ${COLORS.border}` }}>
-        {RESUMES.map((r) => (
-          <Chip
-            key={r.id}
-            size="small"
-            label={r.name}
-            onClick={() => switchVersion(r.id)}
-            sx={{
-              height: 24,
-              fontSize: 12,
-              cursor: 'pointer',
-              bgcolor: r.id === activeId ? COLORS.accentMuted : COLORS.bgHover,
-              color: r.id === activeId ? COLORS.accent : COLORS.textSecondary,
-              border: `1px solid ${r.id === activeId ? alpha(COLORS.accent, 0.3) : COLORS.border}`,
-            }}
-          />
-        ))}
-      </Stack>
+      {/* 版本切换在二级栏「版本 / 血缘」——此处不重复提供入口 */}
 
       {/* Split editor / preview */}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>

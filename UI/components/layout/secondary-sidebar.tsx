@@ -3,7 +3,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { APPLICATION_STATS } from '../../data/mock-data'
+import { APPLICATION_STATS, RESUMES } from '../../data/mock-data'
 import { alpha, COLORS, LAYOUT, RISK_COLOR, RISK_LABEL } from '../../data/constants'
 
 const STAGE_PROMPTS: Record<string, string> = {
@@ -346,6 +346,8 @@ export function SecondarySidebar() {
   const setInfopoolFilter = useAppStore((s) => s.setInfopoolFilter)
   const setCompaniesFilter = useAppStore((s) => s.setCompaniesFilter)
   const setApplicationsFilter = useAppStore((s) => s.setApplicationsFilter)
+  const activeResumeId = useAppStore((s) => s.activeResumeId)
+  const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const push = useToastStore((s) => s.push)
 
   const content = (() => {
@@ -454,11 +456,13 @@ export function SecondarySidebar() {
       return (
         <ListSecondary
           title="版本 / 血缘"
-          items={[
-            { id: 'r-root', label: '原始简历 v1', meta: '根版本' },
-            { id: 'r-dji', label: '↳ 大疆-算法工程师', meta: '派生', active: true },
-            { id: 'r-ubtech', label: '↳ 优必选-感知算法', meta: '派生' },
-          ]}
+          items={RESUMES.map((r) => ({
+            id: r.id,
+            label: r.parentId ? `↳ ${r.name}` : r.name,
+            meta: r.parentId ? '派生' : '根版本',
+            active: r.id === activeResumeId,
+          }))}
+          onItemClick={setActiveResumeId}
         />
       )
     case 'settings':
