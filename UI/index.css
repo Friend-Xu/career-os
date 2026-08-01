@@ -1,0 +1,59 @@
+/* Career OS global resets — most styling via MUI sx + theme */
+@import '@fontsource-variable/geist';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Surface tokens — dark default; light overrides via MUI color-scheme class */
+:root,
+html.dark {
+  --cos-bg: #0d0f14;
+  --cos-bg-elevated: #14171f;
+  --cos-bg-hover: rgba(255, 255, 255, 0.04);
+  --cos-bg-active: rgba(255, 255, 255, 0.08);
+  --cos-border: rgba(255, 255, 255, 0.08);
+  --cos-border-strong: rgba(255, 255, 255, 0.16);
+  --cos-accent: #9081e4;
+  --cos-accent-muted: rgba(144, 129, 228, 0.14);
+  --cos-text: #e8eaed;
+  --cos-text-secondary: #8b92a5;
+  --cos-text-muted: #7e8699;
+  --cos-risk-high: #f07178;
+  --cos-risk-medium: #e6b450;
+  --cos-risk-low: #7fd962;
+  --cos-canvas: #0b0d12;
+  --cos-on-accent: #0d0f14;
+}
+
+html.light {
+  --cos-bg: #f4f4f5;
+  --cos-bg-elevated: #ffffff;
+  --cos-bg-hover: rgba(0, 0, 0, 0.04);
+  --cos-bg-active: rgba(0, 0, 0, 0.08);
+  --cos-border: rgba(0, 0, 0, 0.08);
+  --cos-border-strong: rgba(0, 0, 0, 0.14);
+  --cos-accent: #7b6ad8;
+  --cos-accent-muted: rgba(123, 106, 216, 0.14);
+  --cos-text: #09090b;
+  --cos-text-secondary: #71717a;
+  --cos-text-muted: #a1a1aa;
+  --cos-risk-high: #dc2626;
+  --cos-risk-medium: #d97706;
+  --cos-risk-low: #059669;
+  --cos-canvas: #ececf0;
+  --cos-on-accent: #ffffff;
+}
