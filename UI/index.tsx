@@ -13,7 +13,7 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement)
 root.render(
   <React.StrictMode>
-    <ThemeProvider theme={theme} defaultMode="dark" noSsr>
+    <ThemeProvider theme={theme} defaultMode="light" noSsr>
       <CssBaseline />
       <App />
     </ThemeProvider>

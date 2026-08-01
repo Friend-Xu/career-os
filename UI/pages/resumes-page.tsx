@@ -2,20 +2,21 @@ import {
   Box,
   Button,
   Chip,
+  IconButton,
   Stack,
   TextField,
   Typography,
-  Popover,
 } from '@mui/material'
 import PrintIcon from '@mui/icons-material/Print'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import CloseIcon from '@mui/icons-material/Close'
 import UndoIcon from '@mui/icons-material/Undo'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RESUMES } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS } from '../data/constants'
+import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
 
 /** 改写策略模板：候选基于选中原文生成（演示模式，规则驱动而非真实 LLM）。 */
@@ -41,14 +42,36 @@ export function ResumesPage() {
   const [activeId, setActiveId] = useState('r-dji')
   const resume = RESUMES.find((r) => r.id === activeId) ?? RESUMES[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume.modules)
-  const [anchor, setAnchor] = useState<{
+  /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
+  const [selButton, setSelButton] = useState<{
     top: number;
     left: number;
     moduleId: string;
     text: string;
   } | null>(null)
+  /** 候选卡片展开状态 */
+  const [cardOpen, setCardOpen] = useState(false)
+  const [cardPos, setCardPos] = useState<{ top: number; left: number } | null>(null)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const btnRef = useRef<HTMLDivElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+
+  const closeAll = () => {
+    setSelButton(null)
+    setCardOpen(false)
+  }
+
+  // 点击按钮/卡片之外 → 关闭候选卡片（非模态，不吞点击）
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement
+      if (cardRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      setCardOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
 
   // Sync modules when switching version
   const switchVersion = (id: string) => {
@@ -57,6 +80,7 @@ export function ResumesPage() {
       setActiveId(id)
       setModules(r.modules.map((m) => ({ ...m })))
       setRevert(null)
+      closeAll()
     }
   }
 
@@ -70,20 +94,31 @@ export function ResumesPage() {
     return Math.min(score, 96)
   }, [modules])
 
-  /** 划词/键盘选中 → 记录选区位置并弹出 AI 改写候选。 */
+  /** 划词/键盘选中 → 显示「✨ 改写」按钮（选区右下，不直接弹候选）。 */
   const onSelect = (el: HTMLTextAreaElement, moduleId: string) => {
     const sel = window.getSelection()
-    if (!sel) return
-    const text = sel.toString().trim()
-    if (text.length < 6) return
+    const text = sel ? sel.toString().trim() : ''
+    if (text.length < 6) {
+      // 选区无效（光标/点击/编辑）→ 隐藏按钮
+      setSelButton((prev) => (prev ? null : prev))
+      return
+    }
     // textarea 选区的 range 无布局信息（rect 为 0×0），回退到元素 rect
     let rect = null
-    if (sel.rangeCount > 0) {
+    if (sel && sel.rangeCount > 0) {
       const r = sel.getRangeAt(0).getBoundingClientRect()
       if (r.width > 0 && r.height > 0) rect = r
     }
     if (!rect) rect = el.getBoundingClientRect()
-    setAnchor({ top: rect.bottom + 6, left: rect.left, moduleId, text })
+    // 按钮右对齐选区底边，防止超出视口
+    const left = Math.min(rect.right - 92, window.innerWidth - 104)
+    setSelButton({ top: rect.bottom + 4, left, moduleId, text })
+  }
+
+  const openCard = () => {
+    if (!selButton) return
+    setCardPos({ top: selButton.top + 30, left: selButton.left })
+    setCardOpen(true)
   }
 
   // 原生 select 事件不冒泡，且 MUI 不会把 onSelect 透传到 textarea——
@@ -100,13 +135,11 @@ export function ResumesPage() {
     return () => els.forEach((el) => el.removeEventListener('select', handle))
   }, [moduleIds])
 
-  const closeCandidate = () => setAnchor(null)
-
-  const candidates = anchor ? CANDIDATE_RULES.map((r) => r.apply(anchor.text)) : []
+  const candidates = selButton ? CANDIDATE_RULES.map((r) => r.apply(selButton.text)) : []
 
   const applyCandidate = (text: string) => {
-    if (!anchor) return
-    const { moduleId, text: selectedText } = anchor
+    if (!selButton) return
+    const { moduleId, text: selectedText } = selButton
     let applied = false
     setModules((prev) =>
       prev.map((m) => {
@@ -129,7 +162,7 @@ export function ResumesPage() {
     } else {
       push('warning', '原文已变化，请重新划词')
     }
-    closeCandidate()
+    closeAll()
   }
 
   const undoRewrite = () => {
@@ -226,9 +259,10 @@ export function ResumesPage() {
             p: 2,
             borderRight: `1px solid ${COLORS.border}`,
           }}
+          onScroll={closeAll}
         >
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
-            编辑区 · 划词或 Shift+方向键选中 6 字以上 → AI 改写候选 · 使用 ↑↓ 调整模块顺序
+            编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
           </Typography>
           {revert && (
             <Box
@@ -418,28 +452,72 @@ export function ResumesPage() {
         </Typography>
       </Stack>
 
-      {/* AI rewrite popover — 定位到选区，候选基于选中原文生成 */}
-      <Popover
-        open={Boolean(anchor)}
-        anchorReference="anchorPosition"
-        anchorPosition={anchor ? { top: anchor.top, left: anchor.left } : undefined}
-        onClose={closeCandidate}
-        slotProps={{
-          paper: {
-            sx: {
-              width: 400,
-              mt: 1,
-              p: 1.5,
-              bgcolor: COLORS.bgElevated,
-              backgroundImage: 'none',
-              border: `1px solid ${COLORS.borderStrong}`,
-              borderRadius: '10px',
-              boxShadow: 'var(--cos-shadow)',
+      {/* AI 改写：选中 → ✨ 浮动按钮（不直接弹候选，避免干扰划词） */}
+      {selButton && !cardOpen && (
+        <Box
+          ref={btnRef}
+          role="button"
+          tabIndex={0}
+          onClick={openCard}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              openCard()
+            }
+          }}
+          sx={{
+            position: 'fixed',
+            top: selButton.top,
+            left: selButton.left,
+            zIndex: 1300,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            px: 1.25,
+            py: 0.5,
+            borderRadius: '8px',
+            cursor: 'pointer',
+            bgcolor: COLORS.bgElevated,
+            color: COLORS.accent,
+            border: `1px solid ${COLORS.borderStrong}`,
+            boxShadow: 'var(--cos-shadow)',
+            fontSize: 12,
+            fontWeight: 600,
+            userSelect: 'none',
+            animation: `fade-in 0.2s ${EASE}`,
+            '&:hover': { bgcolor: COLORS.accentMuted },
+            '&:focus-visible': {
+              outline: `2px solid ${COLORS.accent}`,
+              outlineOffset: 2,
             },
-          },
-        }}
-      >
-        <Stack>
+          }}
+        >
+          <AutoAwesomeIcon sx={{ fontSize: 14 }} />
+          <Typography component="span" sx={{ fontSize: 12, fontWeight: 600 }}>
+            改写
+          </Typography>
+        </Box>
+      )}
+
+      {/* 候选卡片：非模态（不吞点击），点外部/× 关闭 */}
+      {cardOpen && cardPos && selButton && (
+        <Box
+          ref={cardRef}
+          sx={{
+            position: 'fixed',
+            top: cardPos.top,
+            left: cardPos.left,
+            zIndex: 1300,
+            width: 400,
+            p: 1.5,
+            bgcolor: COLORS.bgElevated,
+            backgroundImage: 'none',
+            border: `1px solid ${COLORS.borderStrong}`,
+            borderRadius: '10px',
+            boxShadow: 'var(--cos-shadow)',
+            animation: `fade-in 0.2s ${EASE}`,
+          }}
+        >
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1 }}>
             <AutoAwesomeIcon sx={{ fontSize: 14, color: COLORS.accent }} />
             <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
@@ -448,6 +526,9 @@ export function ResumesPage() {
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
               基于选中原文生成
             </Typography>
+            <IconButton size="small" onClick={closeAll} aria-label="关闭候选" sx={{ p: 0.25 }}>
+              <CloseIcon sx={{ fontSize: 15, color: COLORS.textMuted }} />
+            </IconButton>
           </Stack>
           <Typography
             sx={{
@@ -461,8 +542,8 @@ export function ResumesPage() {
               overflow: 'hidden',
             }}
           >
-            原文: {anchor?.text.slice(0, 80)}
-            {(anchor?.text.length ?? 0) > 80 ? '…' : ''}
+            原文: {selButton.text.slice(0, 80)}
+            {selButton.text.length > 80 ? '…' : ''}
           </Typography>
           <Stack spacing={0.75}>
             {candidates.map((c, i) => (
@@ -487,8 +568,8 @@ export function ResumesPage() {
               </Box>
             ))}
           </Stack>
-        </Stack>
-      </Popover>
+        </Box>
+      )}
     </Box>
   )
 }
