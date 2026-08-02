@@ -17,14 +17,17 @@ import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import ListIcon from '@mui/icons-material/List'
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
+import { forceCenter, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import type { SimulationNodeDatum } from 'd3-force'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { Handle, MarkerType, Position, ReactFlow, useNodesState } from '@xyflow/react'
+import type { Edge, Node, NodeProps } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { INFO_EDGES, INFO_NODES, POOL_HEALTH } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
-import { alpha, COLORS, EASE, RISK_COLOR } from '../data/constants'
+import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 import type { InfoNode } from '../types'
 
 /**
@@ -44,6 +47,132 @@ const TYPE_COLOR: Record<InfoNode['type'], string> = {
 type ForceNode = InfoNode & SimulationNodeDatum
 type ForceLinkDatum = SimulationNodeDatum & { source: string; target: string }
 
+/** 节点渲染尺寸估算（与节点组件样式一致）——布局期矩形碰撞用（渲染后由 React Flow 实测） */
+function estimateSize(n: ForceNode): { w: number; h: number } {
+  return {
+    w: n.label.length * 12.5 + 24,
+    h: n.matchScore != null ? 46 : 28,
+  }
+}
+
+/**
+ * 矩形碰撞力（替代 forceCollide 圆形）：按节点文字矩形做 AABB 检测，
+ * 重叠则沿最小分离轴推离。长文本节点（决策标题等）不再互相贴边。
+ * - fixed=false：力随 alpha 衰减（布局期与其他力共同收敛）
+ * - fixed=true：固定强度推离（阶段 2 纯分离用，强制清除残留重叠）
+ */
+function rectCollide(estimate: (n: ForceNode) => { w: number; h: number }, fixed = false) {
+  let nodesArr: ForceNode[]
+  function force(alpha: number): void {
+    for (let i = 0; i < nodesArr.length; i++) {
+      const a = nodesArr[i]!
+      for (let j = i + 1; j < nodesArr.length; j++) {
+        const b = nodesArr[j]!
+        const ah = estimate(a)
+        const bh = estimate(b)
+        const dx = a.x! - b.x!
+        const dy = a.y! - b.y!
+        const ox = ah.w / 2 + bh.w / 2 - Math.abs(dx)
+        const oy = ah.h / 2 + bh.h / 2 - Math.abs(dy)
+        if (ox <= 0 || oy <= 0) continue
+        // 沿最小分离轴推离（更贴近矩形的分离方向）；fixed 模式强度不衰减（强制分离）
+        const push = Math.min(ox, oy) * (fixed ? 0.9 : alpha)
+        if (ox < oy) {
+          const dir = dx > 0 ? 1 : -1
+          a.x! += (push / 2) * dir
+          b.x! -= (push / 2) * dir
+        } else {
+          const dir = dy > 0 ? 1 : -1
+          a.y! += (push / 2) * dir
+          b.y! -= (push / 2) * dir
+        }
+      }
+    }
+  }
+  force.initialize = (nodes: SimulationNodeDatum[]) => {
+    nodesArr = nodes as ForceNode[]
+  }
+  return force
+}
+
+/** 检测布局中是否仍有矩形重叠（阶段 2 收敛判定） */
+function hasOverlap(nodes: ForceNode[], estimate: (n: ForceNode) => { w: number; h: number }): boolean {
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i]!
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j]!
+      const ah = estimate(a)
+      const bh = estimate(b)
+      const ox = ah.w / 2 + bh.w / 2 - Math.abs(a.x! - b.x!)
+      const oy = ah.h / 2 + bh.h / 2 - Math.abs(a.y! - b.y!)
+      if (ox > 0 && oy > 0) return true
+    }
+  }
+  return false
+}
+
+// ─── React Flow 图谱（节点拖拽/缩放平移/右键内置；布局用 d3-force 一次性收敛）──
+
+/** type 别名（非 interface）：满足 React Flow 12 的 Node data Record<string, unknown> 约束 */
+type PoolFlowNodeData = {
+  node: InfoNode & { isolated: boolean }
+  onOpen: () => void // 键盘无障碍入口（鼠标点击已取消，详情走右键菜单）
+}
+type PoolFlowNode = Node<PoolFlowNodeData, 'pool'>
+
+/** 节点组件：样式平移自原手写 Box（颜色/孤立虚线/hover/匹配度），MUI 浅色延续 */
+function PoolNodeView({ data }: NodeProps<PoolFlowNode>) {
+  const { node, onOpen } = data
+  const color = TYPE_COLOR[node.type]
+  return (
+    <Box
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && onOpen) {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      sx={{
+        position: 'relative',
+        px: 1.25,
+        py: 0.75,
+        borderRadius: node.type === 'person' ? '20px' : '8px',
+        bgcolor: alpha(color, 0.1),
+        border: `1.5px ${node.isolated ? 'dashed' : 'solid'} ${color}`,
+        cursor: 'grab',
+        width: 'max-content',
+        '&:hover': { bgcolor: alpha(color, 0.16) },
+        '&:focus-visible': { outline: `2px solid ${color}`, outlineOffset: 2 },
+        zIndex: node.type === 'person' ? 5 : 2,
+        boxShadow: node.type === 'person' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
+      }}
+    >
+      {/* 透明锚点：边附着必需（无连线交互，仅渲染边） */}
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Typography
+        sx={{
+          fontSize: 12.5,
+          fontWeight: node.type === 'person' ? 600 : 500,
+          color: COLORS.text,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {node.label}
+      </Typography>
+      {node.matchScore != null && (
+        <Typography sx={{ fontSize: 11.5, color: color, fontFamily: COLORS.mono, textAlign: 'center' }}>
+          {node.matchScore}
+        </Typography>
+      )}
+    </Box>
+  )
+}
+
+/** nodeTypes 必须模块级稳定引用（React Flow 要求，避免重挂载） */
+const NODE_TYPES = { pool: PoolNodeView }
+
 function GraphCanvas({
   nodes,
   edges,
@@ -59,21 +188,20 @@ function GraphCanvas({
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
   onNodeClick: (node: InfoNode) => void;
 }) {
-  const [scale, setScale] = useState(1)
+  const [flowNodes, setFlowNodes, onFlowNodesChange] = useNodesState<PoolFlowNode>([])
 
-  /** 力导向位置缓存：全量节点布局，搜索/类型过滤只影响渲染、不重启模拟 */
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() =>
-    Object.fromEntries(nodes.map((n) => [n.id, { x: n.x ?? 400, y: n.y ?? 280 }])),
-  )
-
-  /** 搜索/类型过滤（渲染层） */
-  const filtered = useMemo(() => {
+  /** 搜索/类型过滤（渲染层 hidden，布局保持稳定） */
+  const hiddenIds = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return nodes.filter((n) => {
-      const matchType = typeFilter === 'all' || n.type === typeFilter
-      const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
-      return matchType && matchSearch
-    })
+    return new Set(
+      nodes
+        .filter((n) => {
+          const matchType = typeFilter === 'all' || n.type === typeFilter
+          const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
+          return !(matchType && matchSearch)
+        })
+        .map((n) => n.id),
+    )
   }, [nodes, search, typeFilter])
 
   /** 孤立节点：edges 中无任何连接的节点（健康检查，桥接真实数据后自动生效） */
@@ -86,8 +214,12 @@ function GraphCanvas({
     return new Set(nodes.filter((n) => !linked.has(n.id)).map((n) => n.id))
   }, [nodes, edges])
 
-  // 力导向：静态坐标作种子（保留语义布局）+ 弱力微调防重叠；nodes 全量变化才重启
+  // 布局：静态坐标作种子 + 弱力微调 + 矩形碰撞，一次性收敛后喂给 React Flow（拖拽由它接管）
   useEffect(() => {
+    if (nodes.length === 0) {
+      setFlowNodes([])
+      return
+    }
     const cx = 520
     const cy = 300
     const sim = forceSimulation<ForceNode>(
@@ -103,30 +235,64 @@ function GraphCanvas({
           edges.map((e) => ({ source: e.source, target: e.target })),
         )
           .id((d) => d.id)
-          .distance(88)
+          .distance(100)
           .strength(0.55),
       )
-      .force('charge', forceManyBody<ForceNode>().strength(-85))
-      .force('collide', forceCollide(38))
+      .force('charge', forceManyBody<ForceNode>().strength(-110))
+      .force('collide', rectCollide(estimateSize))
       .force('center', forceCenter(cx, cy))
-      .alphaDecay(0.06)
-    sim.on('tick', () => {
-      setPositions(
-        Object.fromEntries(sim.nodes().map((d) => [d.id, { x: d.x ?? 0, y: d.y ?? 0 }])),
-      )
-    })
-    return () => {
-      sim.stop()
-    }
-  }, [nodes, edges])
+      .alphaDecay(0.03)
+      .stop()
+    for (let i = 0; i < 500 && sim.alpha() > 0.001; i++) sim.tick()
+    // 阶段 2：移除其余力，纯矩形分离固定强度收敛（清除 alpha 衰减期推不动的残留重叠）
+    sim
+      .force('link', null)
+      .force('charge', null)
+      .force('center', null)
+      .force('collide', rectCollide(estimateSize, true))
+      .alpha(1)
+      .stop()
+    for (let i = 0; i < 400 && hasOverlap(sim.nodes(), estimateSize); i++) sim.tick()
+    const pos = new Map(sim.nodes().map((d) => [d.id, { x: d.x ?? 0, y: d.y ?? 0 }]))
+    setFlowNodes(
+      nodes.map((n) => ({
+        id: n.id,
+        type: 'pool',
+        position: pos.get(n.id) ?? { x: n.x ?? 0, y: n.y ?? 0 },
+        data: {
+          node: { ...n, isolated: isolatedIds.has(n.id) },
+          onOpen: () => onNodeClick(n),
+        },
+      })),
+    )
+  }, [nodes, edges, isolatedIds, onNodeClick, setFlowNodes])
+
+  const flowEdges = useMemo<Edge[]>(
+    () =>
+      edges.map((e) => {
+        const stroke =
+          e.strength === 'high'
+            ? alpha('#7FD962', 0.45)
+            : e.strength === 'medium'
+              ? alpha('#59C2FF', 0.4)
+              : alpha(COLORS.text, 0.12)
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          style: {
+            stroke,
+            strokeWidth: e.strength === 'high' ? 2 : 1.2,
+            strokeDasharray: e.strength === 'low' ? '4 3' : undefined,
+          },
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
+        }
+      }),
+    [edges],
+  )
 
   return (
     <Box
-      onWheel={(e) => {
-        e.preventDefault()
-        setScale((s) => Math.min(2, Math.max(0.5, s - e.deltaY * 0.0015)))
-      }}
-      onDoubleClick={() => setScale(1)}
       sx={{
         flex: 1,
         position: 'relative',
@@ -136,104 +302,22 @@ function GraphCanvas({
         border: `1px solid ${COLORS.border}`,
       }}
     >
-      <Box
-        sx={{
-          width: '100%',
-          height: '100%',
-          transform: `scale(${scale})`,
-          transformOrigin: 'center',
-          transition: `transform 0.15s ${EASE}`,
+      <ReactFlow<PoolFlowNode>
+        nodes={flowNodes.map((n) => (hiddenIds.has(n.id) ? { ...n, hidden: true } : n))}
+        edges={flowEdges}
+        nodeTypes={NODE_TYPES}
+        nodeOrigin={[0.5, 0.5]}
+        onNodesChange={onFlowNodesChange}
+        onNodeContextMenu={(e, nd) => {
+          e.preventDefault()
+          onNodeContext(e as unknown as MouseEvent, nd.data.node)
         }}
-      >
-      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 Z" fill={alpha(COLORS.text, 0.15)} />
-          </marker>
-        </defs>
-        {edges.map((e) => {
-          const s = positions[e.source]
-          const t = positions[e.target]
-          if (!s || !t) return null
-          const stroke =
-            e.strength === 'high'
-              ? alpha('#7FD962', 0.45)
-              : e.strength === 'medium'
-                ? alpha('#59C2FF', 0.4)
-                : alpha(COLORS.text, 0.12)
-          const dash = e.strength === 'low' ? '4 3' : undefined
-          const width = e.strength === 'high' ? 2 : 1.2
-          return (
-            <line
-              key={e.id}
-              x1={s.x}
-              y1={s.y}
-              x2={t.x}
-              y2={t.y}
-              stroke={stroke}
-              strokeWidth={width}
-              strokeDasharray={dash}
-            />
-          )
-        })}
-      </svg>
-
-      {filtered.map((n, i) => {
-        const color = TYPE_COLOR[n.type]
-        const pos = positions[n.id] ?? { x: n.x ?? 0, y: n.y ?? 0 }
-        const isolated = isolatedIds.has(n.id)
-        return (
-          <Box
-            key={n.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onNodeClick(n)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                onNodeClick(n)
-              }
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              onNodeContext(e, n)
-            }}
-            sx={{
-              position: 'absolute',
-              left: pos.x,
-              top: pos.y,
-              transform: 'translate(-50%, -50%)',
-              px: 1.25,
-              py: 0.75,
-              borderRadius: n.type === 'person' ? '20px' : '8px',
-              bgcolor: alpha(color, 0.1),
-              border: `1.5px ${isolated ? 'dashed' : 'solid'} ${color}`,
-              cursor: 'pointer',
-              transition: `opacity 0.2s ${EASE}, border-color 0.2s ${EASE}, transform 0.15s ${EASE}`,
-              animation: `fade-in 0.4s ${EASE} ${i * 0.04}s both`,
-              '&:hover': {
-                transform: 'translate(-50%, -50%) scale(1.06)',
-                bgcolor: alpha(color, 0.16),
-              },
-              '&:focus-visible': {
-                outline: `2px solid ${color}`,
-                outlineOffset: 2,
-              },
-              zIndex: n.type === 'person' ? 5 : 2,
-              boxShadow: n.type === 'person' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
-            }}
-          >
-            <Typography sx={{ fontSize: 12.5, fontWeight: n.type === 'person' ? 600 : 500, color: COLORS.text, whiteSpace: 'nowrap' }}>
-              {n.label}
-            </Typography>
-            {n.matchScore != null && (
-              <Typography sx={{ fontSize: 11.5, color: color, fontFamily: COLORS.mono, textAlign: 'center' }}>
-                {n.matchScore}
-              </Typography>
-            )}
-          </Box>
-        )
-      })}
+        fitView
+        fitViewOptions={{ padding: 0.25 }}
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.3}
+        maxZoom={2}
+      />
 
       {/* Legend */}
       <Stack
@@ -243,6 +327,7 @@ function GraphCanvas({
           position: 'absolute',
           bottom: 12,
           left: 12,
+          zIndex: 5,
           px: 1.5,
           py: 0.75,
           borderRadius: '8px',
@@ -262,7 +347,6 @@ function GraphCanvas({
           绿线高配 · 蓝线中配 · 虚线低配/风险
         </Typography>
       </Stack>
-      </Box>
     </Box>
   )
 }

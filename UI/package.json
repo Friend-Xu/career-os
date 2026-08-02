@@ -9,6 +9,7 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@mui/icons-material": "9.2.0",
     "@mui/material": "9.2.0",
+    "@xyflow/react": "^12.11.2",
     "d3-force": "^3.0.0",
     "dayjs": "1.11.21",
     "react": "^19.0.0",
