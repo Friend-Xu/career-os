@@ -24,6 +24,29 @@ export interface GraphResult {
   edges: PoolEdge[]
 }
 
+export interface PoolStats {
+  total: number
+  isolated: number
+  byType: Record<string, number>
+  missing: number
+}
+
+/** 图谱派生统计（linked 孤立计算，健康角标/二级栏计数/健康卡共用） */
+export function computePoolStats(graph: GraphResult): PoolStats {
+  const linked = new Set<string>()
+  for (const e of graph.edges) {
+    linked.add(e.source)
+    linked.add(e.target)
+  }
+  const byType: Record<string, number> = {}
+  let isolated = 0
+  for (const n of graph.nodes) {
+    byType[n.type] = (byType[n.type] ?? 0) + 1
+    if (!linked.has(n.id)) isolated++
+  }
+  return { total: graph.nodes.length, isolated, byType, missing: 0 }
+}
+
 interface RpcResponse {
   id: string
   result?: unknown
@@ -180,7 +203,8 @@ export class EngineClient {
   }
 }
 
-export const ENGINE_EVENTS = EVENTS
+export { EVENTS }
+export { METHODS }
 
 export function createEngineClient(url = 'ws://127.0.0.1:5289'): EngineClient {
   return new EngineClient(url)

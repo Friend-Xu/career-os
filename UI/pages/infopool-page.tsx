@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { INFO_EDGES, INFO_NODES, POOL_HEALTH } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
+import { computePoolStats } from '../store/engine-client'
 import { alpha, COLORS, EASE, RISK_COLOR } from '../data/constants'
 import type { InfoNode } from '../types'
 
@@ -43,18 +44,19 @@ type ForceLinkDatum = SimulationNodeDatum & { source: string; target: string }
 
 function GraphCanvas({
   nodes,
+  edges,
   typeFilter,
   search,
   onNodeContext,
   onNodeClick,
 }: {
   nodes: InfoNode[];
+  edges: typeof INFO_EDGES;
   typeFilter: string;
   search: string;
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
   onNodeClick: (node: InfoNode) => void;
 }) {
-  const edges = INFO_EDGES
   const [scale, setScale] = useState(1)
 
   /** 力导向位置缓存：全量节点布局，搜索/类型过滤只影响渲染、不重启模拟 */
@@ -273,19 +275,20 @@ export function InfoPoolPage() {
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
   const companies = useAppStore((s) => s.companies)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
+  const engineStatus = useAppStore((s) => s.engineStatus)
+  const poolGraph = useAppStore((s) => s.poolGraph)
   const push = useToastStore((s) => s.push)
 
-  const nodes = useMemo(() => INFO_NODES, [])
+  const nodes = useMemo(() => poolGraph?.nodes ?? INFO_NODES, [poolGraph])
+  const edges = poolGraph?.edges ?? INFO_EDGES
 
-  /** 孤立节点数（真实计算，健康检查） */
-  const isolatedCount = useMemo(() => {
-    const linked = new Set<string>()
-    for (const e of INFO_EDGES) {
-      linked.add(e.source)
-      linked.add(e.target)
-    }
-    return INFO_NODES.filter((n) => !linked.has(n.id)).length
-  }, [])
+  /** 孤立节点数（真实计算：edges 无连接的节点） */
+  const isolatedCount = useMemo(() => (poolGraph ? computePoolStats(poolGraph).isolated : 0), [poolGraph])
+
+  const healthPercent =
+    engineStatus === 'connected' && nodes.length > 0
+      ? Math.round((1 - isolatedCount / nodes.length) * 100)
+      : POOL_HEALTH.healthPercent
 
   /** 当前右键节点的公司档案（仅 company 节点可能命中）。 */
   const menuCompany = menu ? companies.find((c) => c.name === menu.node.label) : undefined
@@ -306,7 +309,7 @@ export function InfoPoolPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>信息池</Typography>
         <Chip
           size="small"
-          label={`健康 ${POOL_HEALTH.healthPercent}% · ${nodes.length} 节点 · 孤立 ${isolatedCount}`}
+          label={`健康 ${healthPercent}% · ${nodes.length} 节点 · 孤立 ${isolatedCount}`}
           sx={{ height: 22, fontSize: 12, bgcolor: alpha(COLORS.riskLow, 0.1), color: COLORS.riskLow }}
         />
         <Box sx={{ flex: 1 }} />
@@ -335,6 +338,7 @@ export function InfoPoolPage() {
       {tab === 0 ? (
         <GraphCanvas
           nodes={nodes}
+          edges={edges}
           typeFilter={infopoolFilter}
           search={search}
           onNodeClick={setSelected}

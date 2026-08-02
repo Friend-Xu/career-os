@@ -15,6 +15,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
+import { computePoolStats } from '../store/engine-client'
 import {
   APPLICATION_STATS,
   NEXT_ACTION,
@@ -304,7 +305,22 @@ function DecisionTimeline() {
 
 function PoolHealthCard() {
   const setPage = useAppStore((s) => s.setPage)
-  const h = POOL_HEALTH
+  const poolGraph = useAppStore((s) => s.poolGraph)
+  const engineStatus = useAppStore((s) => s.engineStatus)
+
+  // connected：从引擎图谱真实计算（健康 = 1 - 孤立/总数）；offline：mock 静态值
+  const h = (() => {
+    if (poolGraph && engineStatus === 'connected' && poolGraph.nodes.length > 0) {
+      const stats = computePoolStats(poolGraph)
+      return {
+        healthPercent: Math.round((1 - stats.isolated / stats.total) * 100),
+        totalNodes: stats.total,
+        isolatedNodes: stats.isolated,
+        missingFields: stats.missing,
+      }
+    }
+    return POOL_HEALTH
+  })()
 
   return (
     <Box

@@ -20,6 +20,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
+import { EVENTS, createEngineClient, type EngineClient, type EngineStatus, type GraphResult } from './engine-client'
 
 /** 按人构造决策链进度：人 1 走完三步（演示主线），其余人差异化。 */
 function makePersonStages(statusMap: Record<string, StageStatus>): DecisionStage[] {
@@ -52,6 +53,8 @@ interface AppState {
   agentPanelOpen: boolean;
   mainWidthMode: MainWidthMode;
   commandPaletteOpen: boolean;
+  engineStatus: EngineStatus;
+  poolGraph: GraphResult | null;
   sessions: Session[];
   currentSessionId: string;
   applications: Application[];
@@ -108,6 +111,8 @@ export const useAppStore = create<AppState>()(
       agentPanelOpen: true,
       mainWidthMode: 'narrow',
       commandPaletteOpen: false,
+      engineStatus: 'offline',
+      poolGraph: null,
       sessions: SESSIONS,
       currentSessionId: 's-current',
       applications: APPLICATIONS,
@@ -415,3 +420,51 @@ export const useAppStore = create<AppState>()(
     },
   ),
 )
+
+// ─── 引擎接线（桥接联调）：连接 → 拉取真实数据 → 订阅变更信号 ─────────────
+// 事件是通知，状态是可拉的资源：data.decisions.changed 只作信号，数据经 RPC 拉取。
+// 离线降级：连接失败/断开 → engineStatus offline，UI 保持 mock/现有数据不假死。
+
+let engine: EngineClient | null = null
+
+export function getEngine(): EngineClient | null {
+  return engine
+}
+
+async function pullDecisions(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listDecisions()
+    useAppStore.setState({ decisions: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+async function pullGraph(): Promise<void> {
+  if (!engine) return
+  try {
+    const g = await engine.poolGraph()
+    useAppStore.setState({ poolGraph: g })
+  } catch {
+    // offline：保持 mock
+  }
+}
+
+export function connectEngine(): void {
+  if (engine) return
+  engine = createEngineClient()
+  engine.on('status', (s) => {
+    useAppStore.setState({ engineStatus: s as EngineStatus })
+    if (s === 'connected') {
+      void pullDecisions()
+      void pullGraph()
+    }
+  })
+  engine.on(EVENTS.decisionsChanged, () => {
+    void pullDecisions()
+    void pullGraph()
+  })
+  engine.on(EVENTS.poolChanged, () => void pullGraph())
+  engine.connect()
+}

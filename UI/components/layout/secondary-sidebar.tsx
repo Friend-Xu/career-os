@@ -3,6 +3,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
+import { computePoolStats } from '../../store/engine-client'
 import { APPLICATION_STATS, RESUMES } from '../../data/mock-data'
 import { alpha, COLORS, LAYOUT, RISK_COLOR, RISK_LABEL } from '../../data/constants'
 
@@ -399,23 +400,30 @@ export function SecondarySidebar() {
           )}
         </Stack>
       )
-    case 'infopool':
+    case 'infopool': {
+      // 引擎图谱真实计数（connected）；offline 用 mock 静态值
+      const poolGraph = useAppStore((s) => s.poolGraph)
+      const engineStatus = useAppStore((s) => s.engineStatus)
+      const live = engineStatus === 'connected' && poolGraph ? computePoolStats(poolGraph) : null
+      const meta = (key: string, mock: string): string =>
+        live ? String(key === 'all' ? live.total : key === 'isolated' ? live.isolated : key === 'missing' ? live.missing : live.byType[key] ?? 0) : mock
       return (
         <ListSecondary
           title="节点过滤"
           items={[
-            { id: 'all', label: '全部节点', meta: '342', active: infopoolFilter === 'all' },
-            { id: 'person', label: '人', meta: '2', active: infopoolFilter === 'person' },
-            { id: 'decision', label: '决策记录', meta: '28', active: infopoolFilter === 'decision' },
-            { id: 'direction', label: '方向', meta: '6', active: infopoolFilter === 'direction' },
-            { id: 'city', label: '城市', meta: '12', active: infopoolFilter === 'city' },
-            { id: 'company', label: '公司', meta: '156', active: infopoolFilter === 'company' },
-            { id: 'isolated', label: '⚠ 孤立节点', meta: '8', active: infopoolFilter === 'isolated' },
-            { id: 'missing', label: '⚠ 字段缺失', meta: '3', active: infopoolFilter === 'missing' },
+            { id: 'all', label: '全部节点', meta: meta('all', '342'), active: infopoolFilter === 'all' },
+            { id: 'person', label: '人', meta: meta('person', '2'), active: infopoolFilter === 'person' },
+            { id: 'decision', label: '决策记录', meta: meta('decision', '28'), active: infopoolFilter === 'decision' },
+            { id: 'direction', label: '方向', meta: meta('direction', '6'), active: infopoolFilter === 'direction' },
+            { id: 'city', label: '城市', meta: meta('city', '12'), active: infopoolFilter === 'city' },
+            { id: 'company', label: '公司', meta: meta('company', '156'), active: infopoolFilter === 'company' },
+            { id: 'isolated', label: '⚠ 孤立节点', meta: meta('isolated', '8'), active: infopoolFilter === 'isolated' },
+            { id: 'missing', label: '⚠ 字段缺失', meta: meta('missing', '3'), active: infopoolFilter === 'missing' },
           ]}
           onItemClick={setInfopoolFilter}
         />
       )
+    }
     case 'companies':
       return (
         <ListSecondary

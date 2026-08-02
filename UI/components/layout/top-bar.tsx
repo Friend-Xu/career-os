@@ -25,6 +25,7 @@ export function TopBar() {
   const setPersonCreateDialogOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
   const personStages = useAppStore((s) => s.personStages[currentPerson.id])
   const decisions = useAppStore((s) => s.decisions)
+  const engineStatus = useAppStore((s) => s.engineStatus)
   const [anchor, setAnchor] = useState<null | HTMLElement>(null)
 
   const stages = personStages ?? []
@@ -184,8 +185,12 @@ export function TopBar() {
       <Box sx={{ flex: 1 }} />
 
       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mr: 0.5 }}>
-        <CircleIcon sx={{ fontSize: 8, color: COLORS.riskLow }} />
-        <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>Agent 在线</Typography>
+        <CircleIcon
+          sx={{ fontSize: 8, color: engineStatus === 'connected' ? COLORS.riskLow : COLORS.riskHigh }}
+        />
+        <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
+          {engineStatus === 'connected' ? '引擎在线' : engineStatus === 'connecting' ? '引擎连接中' : '引擎离线'}
+        </Typography>
       </Stack>
 
       <ThemeToggle />
