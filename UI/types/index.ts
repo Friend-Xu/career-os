@@ -1,17 +1,35 @@
+/**
+ * 契约源引用：engine/ir/schema.ts（引擎 ↔ UI 共享契约源）
+ * 仅 `import type`（编译期擦除，validator 运行时代码不进前端 bundle）。
+ * 异名实体用别名 re-export，UI 其余代码从本文件取类型，零改动。
+ */
+import type {
+  Person,
+  DecisionRecord,
+  CompanyRecord,
+  PoolNode,
+  PoolEdge,
+  Application,
+  Session,
+  ChatMessage,
+  RiskLevel,
+  ApplicationStatus,
+  FollowupUrgency,
+} from '../../engine/ir/schema.ts';
+
+export type { Person };
+export type { DecisionRecord };
+export type { CompanyRecord as Company };
+export type { PoolNode as InfoNode };
+export type { PoolEdge as InfoEdge };
+export type { Application };
+export type { Session };
+export type { ChatMessage };
+export type { RiskLevel };
+export type { ApplicationStatus };
+export type { FollowupUrgency };
+
 export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped';
-
-export type RiskLevel = 'low' | 'medium' | 'high';
-
-export type ApplicationStatus =
-  | '已评估'
-  | '已投递'
-  | '已联系'
-  | '已回复'
-  | '面试中'
-  | '已录取'
-  | '已拒绝';
-
-export type FollowupUrgency = 'urgent' | 'overdue' | 'waiting' | 'cooled';
 
 export type MainWidthMode = 'narrow' | 'wide' | 'fullscreen';
 
@@ -24,18 +42,6 @@ export type NavPageId =
   | 'resumes'
   | 'settings';
 
-export interface Person {
-  id: number;
-  name: string;          // 对应 profiles/{name}.md（人）
-  color: string;
-  emoji: string;
-  matchScore: number;    // 综合画像匹配度
-  riskLevel: RiskLevel;
-  archived: boolean;
-  profilePath: string;
-  targetRoles?: string[]; // 目标岗位列表（创建人向导推荐确认）
-}
-
 export interface DecisionStage {
   id: string;
   label: string;
@@ -44,51 +50,6 @@ export interface DecisionStage {
   direction?: string;
   city?: string;
   nextActions?: string[];
-}
-
-export interface DecisionRecord {
-  id: string;
-  title: string;
-  skill: string;
-  direction: string;
-  directionMatch: number;
-  directionConfidence: 'high' | 'medium' | 'low';
-  city: string;
-  cityScore: number;
-  salaryFeasible: boolean;
-  riskLevel: RiskLevel;
-  keyRisk: string;
-  status: string;
-  profile: string;
-  summary: string;
-  createdAt: string;
-  protocolVersion: string;
-}
-
-export interface Company {
-  id: string;
-  name: string;
-  city: string;
-  industry: string;
-  matchScore: number;
-  riskLevel: RiskLevel;
-  source: string;
-  tags: string[];
-  contacted: boolean;
-  parkId?: number;
-}
-
-export interface Application {
-  id: number;
-  personId: number;
-  company: string;
-  position: string;
-  sourceDecision?: string;
-  status: ApplicationStatus;
-  appliedAt?: string;
-  followupDue?: string;
-  urgency: FollowupUrgency;
-  notes?: string;
 }
 
 export interface Park {
@@ -101,44 +62,6 @@ export interface Park {
   source: string;
   year: number;
   companies: string[];
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  personId: number;
-  createdAt: string;
-  updatedAt: string;
-  archived: boolean;
-  messages: ChatMessage[];
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  thinking?: string;
-  reportCard?: DecisionRecord;
-  toolCalls?: { name: string; status: 'running' | 'done' | 'error' }[];
-}
-
-export interface InfoNode {
-  id: string;
-  label: string;
-  type: 'person' | 'decision' | 'direction' | 'city' | 'company';
-  riskLevel?: RiskLevel;
-  matchScore?: number;
-  x?: number;
-  y?: number;
-}
-
-export interface InfoEdge {
-  id: string;
-  source: string;
-  target: string;
-  relation: string;
-  strength: 'high' | 'medium' | 'low';
 }
 
 export interface ResumeVersion {
