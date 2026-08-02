@@ -123,6 +123,11 @@ file(
 ## 结论
 
 - 机器人（置信度：高）
+
+## 复盘
+
+- 结论：方向决策正确，继续推进
+- 复盘日期：2026-08-03
 `,
 )
 
@@ -191,6 +196,7 @@ try {
   check('contexts 关联合法决策', contexts.result?.[0]?.records?.length === 1, JSON.stringify(contexts.result?.[0]?.records?.map((r) => r.id)))
   check('contexts 排除 invalid 决策', contexts.result?.[0]?.records?.every((r) => r.id !== '2026-08-03-坏决策'))
   check('contexts 段落透传', contexts.result?.[0]?.conclusion?.selected === '机器人', JSON.stringify(contexts.result?.[0]?.conclusion))
+  check('contexts 复盘透传', contexts.result?.[0]?.review?.date === '2026-08-03', JSON.stringify(contexts.result?.[0]?.review))
 
   const companies = await rpc(client, METHODS.listCompanies)
   const badCompany = companies.result?.find((c) => c.id === '坏公司')

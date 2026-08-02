@@ -80,6 +80,8 @@ export interface DecisionAggregate {
   evidence: { type: string; content: string; source?: string }[]
   conclusion?: { selected: string; confidence: number }
   risks: { description: string; mitigation?: string }[]
+  /** 复盘记录（`## 复盘` 段落，作者写入；存在时聚合视图展示"已复盘"派生状态） */
+  review?: { conclusion: string; date: string }
 }
 
 /** 决策记录（14 字段摘要表；profile = 人名，v2.1） */

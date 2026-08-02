@@ -56,6 +56,7 @@ export function buildAggregates(contexts: ParsedContext[], decisions: DecisionRe
       risks: ctx.sections.risks,
     }
     if (ctx.sections.conclusion) aggregate.conclusion = ctx.sections.conclusion
+    if (ctx.sections.review) aggregate.review = ctx.sections.review
     return aggregate
   })
 }

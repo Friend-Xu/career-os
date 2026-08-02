@@ -19,6 +19,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAppStore } from '../store/app-store'
+import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { DecisionAggregate, DecisionRecord } from '../../engine/ir/schema.ts'
 
@@ -99,6 +100,7 @@ export function DecisionAggregateDrawer({
   onClose: () => void
 }) {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const push = useToastStore((s) => s.push)
   // 展开的选项名（查看其对应决策记录摘要）；抽屉关闭时重置
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -142,6 +144,18 @@ export function DecisionAggregateDrawer({
               color: STATUS_META[aggregate.context.status].color,
             }}
           />
+          {aggregate.review && (
+            <Chip
+              size="small"
+              label="已复盘"
+              sx={{
+                ml: 0.75,
+                mb: 1,
+                bgcolor: alpha(RISK_COLOR.low, 0.13),
+                color: RISK_COLOR.low,
+              }}
+            />
+          )}
 
           {/* Options：状态标记 + rejected 原因 + 对应决策记录（点击展开） */}
           <Section title="选项">
@@ -294,6 +308,20 @@ export function DecisionAggregateDrawer({
             </Section>
           )}
 
+          {/* 复盘：作者写入 `## 复盘` 段落，引擎实时派生；存在时展示 + 已复盘标记 */}
+          {aggregate.review && (
+            <Section title="复盘">
+              <Stack spacing={0.25}>
+                <Typography sx={{ fontSize: 12.5, lineHeight: 1.55 }}>
+                  {aggregate.review.conclusion}
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                  复盘日期 {aggregate.review.date}
+                </Typography>
+              </Stack>
+            </Section>
+          )}
+
           {/* Review 入口：唤起 AI 面板（与「重新评估」同模式）；关闭抽屉露出面板 */}
           <Divider sx={{ my: 2.5 }} />
           <Button
@@ -301,6 +329,7 @@ export function DecisionAggregateDrawer({
             fullWidth
             onClick={() => {
               startAnalysis(`请复盘决策「${aggregate.context.question}」：回顾预期与结果，输出复盘结论`)
+              push('info', `复盘产出请写入 decision-contexts/ 的 ## 复盘 段落（结论 + 复盘日期）`)
               onClose()
             }}
             sx={{

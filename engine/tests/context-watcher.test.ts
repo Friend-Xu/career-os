@@ -37,6 +37,11 @@ const contextMd = `# 未来三年职业方向选择
 
 - 减速器经验为零（缓解：在职补强 3-6 个月）
 - 转型成本未知
+
+## 复盘
+
+- 结论：方向决策正确，补强减速器选型后继续推进
+- 复盘日期：2026-08-03
 `
 
 test('解析合法 context：字段映射 + status 中文映射 + related_decisions 拆分 + 无 validation', () => {
@@ -60,7 +65,7 @@ test('status 英文原值透传；question 表内缺失回退 H1', () => {
   assert.equal(p.record.question, '未来三年职业方向选择') // 回退 H1
 })
 
-test('正文段落解析：考虑因素/证据/结论/风险', () => {
+test('正文段落解析：考虑因素/证据/结论/风险/复盘', () => {
   const p = parseContextMarkdown(contextMd, '未来三年职业方向选择.md')
   assert.deepEqual(p.sections.factors, [
     { name: '技术延续性', description: '机械核心能力可迁移' },
@@ -72,6 +77,13 @@ test('正文段落解析：考虑因素/证据/结论/风险', () => {
     { description: '减速器经验为零', mitigation: '在职补强 3-6 个月' },
     { description: '转型成本未知' },
   ])
+  assert.deepEqual(p.sections.review, { conclusion: '方向决策正确，补强减速器选型后继续推进', date: '2026-08-03' })
+})
+
+test('复盘段落缺项 → 不产出（结论或日期缺失）', () => {
+  const md = contextMd.replace('- 结论：方向决策正确，补强减速器选型后继续推进\n- 复盘日期：2026-08-03\n', '- 结论：只有结论没有日期\n')
+  const p = parseContextMarkdown(md, '未来三年职业方向选择.md')
+  assert.equal(p.sections.review, undefined)
 })
 
 test('无正文段落 → 空数组/缺省，不崩', () => {

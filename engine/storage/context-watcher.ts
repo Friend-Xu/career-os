@@ -43,6 +43,7 @@ export interface ContextSections {
   evidence: { type: string; content: string; source?: string }[]
   conclusion?: { selected: string; confidence: number }
   risks: { description: string; mitigation?: string }[]
+  review?: { conclusion: string; date: string }
 }
 
 /** 解析产物：record + 校验标记 + 排除项（可选）+ 正文段落 */
@@ -134,12 +135,28 @@ function parseRisks(md: string): ContextSections['risks'] {
   })
 }
 
+/** 复盘段落：`## 复盘` 列表项 `- 结论：xxx` + `- 复盘日期：yyyy-mm-dd`（缺任一项 → 不产出） */
+function parseReview(md: string): ContextSections['review'] {
+  const fields: Record<string, string> = {}
+  for (const item of listItems(sectionLines(md, '复盘'))) {
+    const [key, value] = splitFirstColon(item)
+    if (key && value) fields[key] = value
+  }
+  const conclusion = fields['结论'] ?? fields['conclusion']
+  const date = fields['复盘日期'] ?? fields['date']
+  if (!conclusion || !date) return undefined
+  return { conclusion, date }
+}
+
 function parseSections(md: string): ContextSections {
-  return {
+  const sections: ContextSections = {
     factors: parseFactors(md),
     evidence: parseEvidence(md),
     risks: parseRisks(md),
   }
+  const review = parseReview(md)
+  if (review) sections.review = review
+  return sections
 }
 
 /** 单个 context md → ParsedContext（摘要表缺失 → invalid；必填缺失 → invalid；status 值域非法 → degraded） */
