@@ -56,7 +56,8 @@ export interface ParsedContext {
   sections: ContextSections
 }
 
-function splitList(v: string): string[] {
+/** 逗号/全角逗号拆分（knowledge 词表别名、related_decisions 等共用） */
+export function splitList(v: string): string[] {
   return v.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
 }
 
@@ -69,8 +70,8 @@ function deriveQuestion(md: string, fallback: string): string {
   return h1 ? h1[1].trim() : fallback
 }
 
-/** `## 标题` 起至下一个 `## ` 标题（或文尾）之间的非空行 */
-function sectionLines(md: string, heading: string): string[] {
+/** `## 标题` 起至下一个 `## ` 标题（或文尾）之间的非空行（knowledge 词表/岗位清单共用） */
+export function sectionLines(md: string, heading: string): string[] {
   const re = new RegExp(`^##\\s*${heading}\\s*$`, 'm')
   const m = md.match(re)
   if (!m) return []
@@ -84,8 +85,8 @@ function sectionLines(md: string, heading: string): string[] {
   return lines
 }
 
-/** 列表项：`- xxx` → xxx（段内非列表行跳过） */
-function listItems(lines: string[]): string[] {
+/** 列表项：`- xxx` → xxx（段内非列表行跳过；knowledge 词表/画像技能段落共用） */
+export function listItems(lines: string[]): string[] {
   const items: string[] = []
   for (const line of lines) {
     const m = line.match(/^-\s+(.+)$/)
@@ -94,8 +95,8 @@ function listItems(lines: string[]): string[] {
   return items
 }
 
-/** 首个中/英文冒号拆分（无冒号 → 左空右原值） */
-function splitFirstColon(s: string): [string, string] {
+/** 首个中/英文冒号拆分（无冒号 → 左空右原值；knowledge 词表/画像技能段落共用） */
+export function splitFirstColon(s: string): [string, string] {
   const i = s.search(/[：:]/)
   return i === -1 ? ['', s] : [s.slice(0, i).trim(), s.slice(i + 1).trim()]
 }

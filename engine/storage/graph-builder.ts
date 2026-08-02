@@ -6,15 +6,23 @@
  * - strength：directionMatch/cityScore ≥80 high、≥60 medium、否则 low
  * - matchScore/riskLevel 从决策字段取（同方向/同城市/同人多决策取最大匹配、最高风险）
  * - invalid 实体整体跳过（validator 契约：invalid 不参与图谱连线；决策与公司档案一致）
+ * V2 知识层（第 6 步）：roles/skills 入图——
+ * - 节点 +2 类：role:{岗位 id}（label=岗位名）/ skill:{技能名}（label=技能名，词表节点）
+ * - 边 +2 类：company→role（雇佣，medium，公司节点存在时连）/ role→skill（需求，essential ? high : medium）
+ * - 角色技能引用按词表别名归一化连线（如需求写"结构设计" → 连 skill:机械设计）；词表外技能无节点，边跳过
  */
-import type { EdgeStrength, PoolEdge, PoolNode, RiskLevel, Validation } from '../ir/schema.ts'
+import type { EdgeStrength, PoolEdge, PoolNode, RiskLevel, Role, Skill, Validation } from '../ir/schema.ts'
 import type { ParsedDecision } from './report-watcher.ts'
+import { buildSkillIndex } from './knowledge-watcher.ts'
 
 export interface GraphInput {
   decisions: ParsedDecision[]
   /** 公司档案（CompanyView）：带 validation 时 invalid 跳过 */
   companies: { id: string; name: string; matchScore?: number; riskLevel?: RiskLevel; validation?: Validation }[]
   profileNames: string[]
+  /** V2 知识层：技能词表（词表节点）+ 岗位清单（岗位节点与需求/雇佣边） */
+  skills?: Skill[]
+  roles?: Role[]
 }
 
 const RISK_ORDER: Record<RiskLevel, number> = { low: 0, medium: 1, high: 2 }
@@ -54,6 +62,27 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
   // 人节点（每份 profile）
   for (const name of input.profileNames) {
     addNode({ id: `person:${name}`, label: name, type: 'person' })
+  }
+
+  // V2 知识层：技能节点（词表）+ 岗位节点（雇佣/需求边；invalid 知识文件 → 空列表，无节点可加）
+  const skillIndex = buildSkillIndex(input.skills ?? [])
+  for (const s of input.skills ?? []) {
+    addNode({ id: `skill:${s.name}`, label: s.name, type: 'skill' })
+  }
+  const companyNodeByName = new Map<string, string>() // 公司名 → 节点 id（公司档案缺失的公司无雇佣边）
+  for (const c of input.companies) {
+    if (c.validation?.status !== 'invalid') companyNodeByName.set(c.name, `company:${c.id}`)
+  }
+  for (const r of input.roles ?? []) {
+    const rid = `role:${r.id}`
+    addNode({ id: rid, label: r.name, type: 'role' })
+    const cid = companyNodeByName.get(r.company)
+    if (cid) addEdge(cid, rid, '雇佣', 'medium')
+    for (const req of r.skills) {
+      const canonical = skillIndex.get(req.name) ?? req.name
+      const sid = `skill:${canonical}`
+      if (nodes.has(sid)) addEdge(rid, sid, '需求', req.essential ? 'high' : 'medium')
+    }
   }
 
   for (const p of input.decisions) {

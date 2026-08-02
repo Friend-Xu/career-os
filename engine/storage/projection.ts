@@ -18,6 +18,7 @@ import type {
   CompanyRecord,
   DecisionRecord,
   Person,
+  PersonSkill,
   PoolEdge,
   PoolNode,
   RiskLevel,
@@ -29,6 +30,7 @@ import type { Workspace } from './workspace.ts'
 import type { Logger } from '../logger.ts'
 import { parsePercent, parseRisk, parseSummaryTable, scanDecisions, type ParsedDecision } from './report-watcher.ts'
 import { buildGraph } from './graph-builder.ts'
+import { scanKnowledge, extractPersonSkills } from './knowledge-watcher.ts'
 import { ProtocolVersion } from '../ir/schema.ts'
 
 const SCHEMA = `
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS persons_projection (
   archived INTEGER NOT NULL DEFAULT 0,
   profile_path TEXT NOT NULL,
   target_roles TEXT,
+  skills TEXT,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS decisions_projection (
@@ -203,8 +206,29 @@ function extractTargetRoles(md: string): string[] {
   return roles
 }
 
+/** 画像最小扫描产物（profiles/{name}.md：H1 + 目标方向表 + `## 技能` 声明段落） */
+export interface ProfileScan {
+  name: string
+  profilePath: string
+  targetRoles: string[]
+  skills: PersonSkill[]
+}
+
+/** profiles/ 全量扫描（V2 起含技能声明；knowledge/gap 与投影共用） */
+export function scanProfiles(workspace: Workspace): ProfileScan[] {
+  return workspace.listMarkdown('profiles').sort().map((f) => {
+    const md = workspace.read(`profiles/${f}`)
+    return {
+      name: extractH1(md, f.replace(/\.md$/, '')),
+      profilePath: `profiles/${f}`,
+      targetRoles: extractTargetRoles(md),
+      skills: extractPersonSkills(md),
+    }
+  })
+}
+
 /** 投影 schema 版本：升级时 +1；旧版本 drop 重建（投影是 md 真相源的派生，重建零损失） */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
   const { dbPath, workspace, logger } = opts
@@ -234,14 +258,6 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     })
   }
 
-  function scanProfiles(): { name: string; profilePath: string; targetRoles: string[] }[] {
-    return workspace.listMarkdown('profiles').sort().map((f) => ({
-      name: extractH1(workspace.read(`profiles/${f}`), f.replace(/\.md$/, '')),
-      profilePath: `profiles/${f}`,
-      targetRoles: extractTargetRoles(workspace.read(`profiles/${f}`)),
-    }))
-  }
-
   // ─── 全量重建（单事务）───────────────────────────────────────────────
 
   const rebuild = db.transaction((parsed: ParsedDecision[]): void => {
@@ -264,9 +280,9 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
       VALUES (@id, @date, 'decision', @title, @summary, @direction, @city, @profile, @sortKey)
     `)
     const upsertPerson = db.prepare(`
-      INSERT INTO persons_projection (name, color, emoji, archived, profile_path, target_roles, updated_at)
-      VALUES (@name, @color, @emoji, 0, @profilePath, @targetRoles, @now)
-      ON CONFLICT(name) DO UPDATE SET profile_path = @profilePath, target_roles = @targetRoles, updated_at = @now
+      INSERT INTO persons_projection (name, color, emoji, archived, profile_path, target_roles, skills, updated_at)
+      VALUES (@name, @color, @emoji, 0, @profilePath, @targetRoles, @skills, @now)
+      ON CONFLICT(name) DO UPDATE SET profile_path = @profilePath, target_roles = @targetRoles, skills = @skills, updated_at = @now
     `)
 
     for (const p of parsed) {
@@ -294,8 +310,8 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     }
 
     const now = new Date().toISOString()
-    for (const p of scanProfiles()) {
-      upsertPerson.run({ name: p.name, color: '#4f6ef2', emoji: '👤', profilePath: p.profilePath, targetRoles: JSON.stringify(p.targetRoles), now })
+    for (const p of scanProfiles(workspace)) {
+      upsertPerson.run({ name: p.name, color: '#4f6ef2', emoji: '👤', profilePath: p.profilePath, targetRoles: JSON.stringify(p.targetRoles), skills: JSON.stringify(p.skills), now })
     }
   })
 
@@ -339,6 +355,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     id: number; name: string; color: string; emoji: string
     match_score: number | null; risk_level: string | null
     archived: number; profile_path: string; target_roles: string | null
+    skills: string | null
   }
 
   // ─── 服务 ───────────────────────────────────────────────────────────
@@ -384,14 +401,23 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
         if (row.target_roles) {
           try { person.targetRoles = JSON.parse(row.target_roles) as string[] } catch { /* 忽略 */ }
         }
+        if (row.skills) {
+          try {
+            const skills = JSON.parse(row.skills) as PersonSkill[]
+            if (skills.length > 0) person.skills = skills
+          } catch { /* 忽略 */ }
+        }
         return person
       })
     },
     graph() {
+      const knowledge = scanKnowledge(workspace)
       return buildGraph({
         decisions: lastParsed,
         companies: scanCompanies(),
-        profileNames: scanProfiles().map((p) => p.name),
+        profileNames: scanProfiles(workspace).map((p) => p.name),
+        skills: knowledge.skills,
+        roles: knowledge.roles,
       })
     },
     close() {

@@ -11,10 +11,13 @@ import type { IncomingMessage } from 'node:http'
 import type { EngineConfig } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionChain, DecisionRecord } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionChain, DecisionRecord, GapResult } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
+import { computeGap } from '../runtime/gap-calculator.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
+import { scanKnowledge } from '../storage/knowledge-watcher.ts'
+import { scanProfiles } from '../storage/projection.ts'
 import { METHODS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -81,6 +84,24 @@ export function listContexts(workspace: Workspace, store: BridgeStore): Decision
   return buildAggregates(scanContexts(workspace), store.listDecisions() as DecisionRecord[])
 }
 
+/** knowledge/gap 处理器派生：roleId 找 Role + person 找画像技能声明 → computeGap（纯派生，不落盘） */
+export function computeKnowledgeGap(workspace: Workspace, params: { person: string; roleId: string }): GapResult {
+  const { skills, roles } = scanKnowledge(workspace)
+  const role = roles.find((r) => r.id === params.roleId)
+  if (!role) throw new Error(`角色不存在：${params.roleId}`)
+  const personSkills = scanProfiles(workspace).find((p) => p.name === params.person)?.skills ?? []
+  return computeGap({ role, person: params.person, personSkills, skills })
+}
+
+/** knowledge/gap 入参校验（RPC 边界：用户输入校验，fail fast） */
+function gapParams(v: unknown): { person: string; roleId: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('knowledge/gap 需要 params { person, roleId }')
+  const p = v as Record<string, unknown>
+  if (typeof p.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
+  if (typeof p.roleId !== 'string' || p.roleId.length === 0) throw new Error('params.roleId 缺失（岗位 id）')
+  return { person: p.person, roleId: p.roleId }
+}
+
 /** 端口监听：EADDRINUSE → logger.warn + 端口 +1 重试，最多递增 MAX_PORT_RETRIES 次；其余错误立即抛 */
 async function listenWithRetry(opts: { host: string; port: number; logger: Logger }): Promise<{ wss: WebSocketServer; port: number }> {
   const { host, port, logger } = opts
@@ -113,7 +134,7 @@ export async function startServer(opts: {
   const { config, workspace, logger, store, runtime } = opts
   const { wss, port } = await listenWithRetry({ host: config.server.host, port: config.server.port, logger })
 
-  const handlers: Record<string, () => unknown> = {
+  const handlers: Record<string, (params?: unknown) => unknown> = {
     [METHODS.init]: () => store.init(),
     [METHODS.listDecisions]: () => store.listDecisions(),
     [METHODS.rescan]: () => store.rescan(),
@@ -122,6 +143,8 @@ export async function startServer(opts: {
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.chain]: () => computeChains(store.listDecisions() as DecisionRecord[], runtime),
     [METHODS.contexts]: () => listContexts(workspace, store),
+    [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
+    [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
   }
 
   function respond(ws: WebSocket, resp: RpcResponse): void {
@@ -153,7 +176,7 @@ export async function startServer(opts: {
         return
       }
       try {
-        respond(ws, { id: msg.id, result: handler() })
+        respond(ws, { id: msg.id, result: handler(msg.params) })
       } catch (err) {
         logger.error(`RPC ${msg.method} 失败：${err instanceof Error ? err.message : String(err)}`)
         respond(ws, { id: msg.id, error: { code: 'internal_error', message: err instanceof Error ? err.message : String(err) } })
