@@ -446,7 +446,7 @@ export function SecondarySidebar() {
             { id: 'sh', label: '上海', meta: countBy((c) => c.city === '上海'), active: companiesFilter === 'sh' },
             { id: 'hz', label: '杭州', meta: countBy((c) => c.city === '杭州'), active: companiesFilter === 'hz' },
             { id: 'bj', label: '北京', meta: countBy((c) => c.city === '北京'), active: companiesFilter === 'bj' },
-            { id: 'robot', label: '产业: 机器人', meta: countBy((c) => c.industry.includes('机器人')), active: companiesFilter === 'robot' },
+            { id: 'robot', label: '产业: 机器人', meta: countBy((c) => c.industry?.includes('机器人')), active: companiesFilter === 'robot' },
             { id: 'contacted', label: '已联系', meta: countBy((c) => c.contacted), active: companiesFilter === 'contacted' },
           ]}
           onItemClick={setCompaniesFilter}

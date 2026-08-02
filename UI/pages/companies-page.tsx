@@ -57,9 +57,9 @@ export function CompaniesPage() {
       ? companies.filter(
           (c) =>
             c.name.toLowerCase().includes(q) ||
-            c.city.includes(q) ||
-            c.industry.includes(q) ||
-            c.tags.some((t) => t.includes(q)),
+            (c.city ?? '').includes(q) ||
+            (c.industry ?? '').includes(q) ||
+            (c.tags ?? []).some((t) => t.includes(q)),
         )
       : companies
     switch (companiesFilter) {
@@ -72,7 +72,7 @@ export function CompaniesPage() {
     case 'bj':
       return base.filter((c) => c.city === '北京')
     case 'robot':
-      return base.filter((c) => c.industry.includes('机器人'))
+      return base.filter((c) => c.industry?.includes('机器人'))
     case 'contacted':
       return base.filter((c) => c.contacted)
     default:
@@ -370,7 +370,7 @@ export function CompaniesPage() {
             </Stack>
 
             <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 0.5 }}>
-              {selected.tags.map((t) => (
+              {(selected.tags ?? []).map((t) => (
                 <Chip key={t} size="small" label={t} sx={{ height: 22, fontSize: 12 }} />
               ))}
             </Stack>

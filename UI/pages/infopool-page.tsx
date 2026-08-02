@@ -304,10 +304,27 @@ export function InfoPoolPage() {
     })
   }, [nodes, search, infopoolFilter])
 
-  /** IR 降级：validation.invalid 的决策记录（引擎已把它们排除出图谱，列表视图单独呈现） */
-  const invalidDecisions = useMemo(
-    () => decisions.filter((d) => d.validation?.status === 'invalid'),
-    [decisions],
+  /** IR 降级：validation.invalid 的决策记录 + 公司档案（引擎已把它们排除出图谱，列表视图单独呈现） */
+  const invalidItems = useMemo(
+    () => [
+      ...decisions
+        .filter((d) => d.validation?.status === 'invalid')
+        .map((d) => ({
+          id: d.id,
+          kind: 'decision' as const,
+          label: d.title,
+          reason: (d.validation?.issues ?? []).map((i) => i.reason).join('；'),
+        })),
+      ...companies
+        .filter((c) => c.validation?.status === 'invalid')
+        .map((c) => ({
+          id: c.id,
+          kind: 'company' as const,
+          label: c.name,
+          reason: (c.validation?.issues ?? []).map((i) => i.reason).join('；'),
+        })),
+    ],
+    [decisions, companies],
   )
 
   return (
@@ -364,12 +381,12 @@ export function InfoPoolPage() {
           }}
         >
           {infopoolFilter === 'invalid' ? (
-            invalidDecisions.length === 0 ? (
+            invalidItems.length === 0 ? (
               <Typography sx={{ p: 4, textAlign: 'center', color: COLORS.textMuted, fontSize: 13 }}>
-                无待人工处理的决策记录
+                无待人工处理的记录
               </Typography>
             ) : (
-              invalidDecisions.map((d) => (
+              invalidItems.map((d) => (
                 <Stack
                   key={d.id}
                   direction="row"
@@ -385,15 +402,15 @@ export function InfoPoolPage() {
                   <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: RISK_COLOR.high, flexShrink: 0 }} />
                   <Stack sx={{ minWidth: 0, flex: 1 }}>
                     <Typography sx={{ fontSize: 13, fontWeight: 500 }} noWrap>
-                      {d.title}
+                      {d.label}
                     </Typography>
                     <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }} noWrap>
-                      {(d.validation?.issues ?? []).map((i) => i.reason).join('；')}
+                      {d.reason}
                     </Typography>
                   </Stack>
                   <Chip
                     size="small"
-                    label="待人工处理"
+                    label={d.kind === 'decision' ? '决策' : '公司'}
                     sx={{
                       height: 20,
                       fontSize: 11.5,
