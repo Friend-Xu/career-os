@@ -35,7 +35,8 @@ const RISK_MAP: Record<string, RiskLevel> = { 低: 'low', 中: 'medium', 中高:
 const CONFIDENCE_MAP: Record<string, Confidence> = { 高: 'high', 中: 'medium', 低: 'low' }
 const HIGHLOW: readonly string[] = ['high', 'medium', 'low']
 
-function parsePercent(v: string): number | undefined {
+/** 百分比解析：85% → 85、8.2/10 → 82（公司/决策摘要表共用） */
+export function parsePercent(v: string): number | undefined {
   if (v === '-' || v === '') return undefined
   const pct = v.match(/^(\d+(?:\.\d+)?)%$/)
   if (pct) return Math.round(Number(pct[1]))
@@ -44,7 +45,8 @@ function parsePercent(v: string): number | undefined {
   return undefined
 }
 
-function parseRisk(v: string): RiskLevel | undefined {
+/** 风险档解析：中文四档（低/中/中高/高）→ low/medium/high/high；英文原值透传（公司/决策摘要表共用） */
+export function parseRisk(v: string): RiskLevel | undefined {
   return RISK_MAP[v] ?? (HIGHLOW.includes(v) ? (v as RiskLevel) : undefined)
 }
 
@@ -78,7 +80,8 @@ function deriveSummary(md: string): string {
   return ''
 }
 
-function parseSummaryTable(md: string): Record<string, string> | null {
+/** 摘要表解析：`## 分析摘要` 两列表格 → { 字段: 值 }（决策/公司档案共用协议） */
+export function parseSummaryTable(md: string): Record<string, string> | null {
   const m = md.match(SUMMARY_RE)
   if (!m) return null
   const fields: Record<string, string> = {}

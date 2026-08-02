@@ -8,7 +8,8 @@ import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { createProjection } from './storage/projection.ts'
-import { startServer } from './transport/websocket.ts'
+import { DecisionRuntime } from './runtime/decision-runtime.ts'
+import { ServerError, startServer } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 
 async function main(args: string[]): Promise<void> {
@@ -51,8 +52,9 @@ async function main(args: string[]): Promise<void> {
     projection.syncFromDecisions(initial)
     logger.info(`投影就绪：decisions ${initial.length} 条（db ${config.paths.db}）`)
 
-    // ─── WebSocket 桥（RPC + 事件广播）─────────────────────────────────
-    const { port, broadcast } = await startServer({ config, workspace: ws, logger, store: projection })
+    // ─── WebSocket 桥（RPC + 事件广播；决策链状态机注入，derived 视图按需计算）──
+    const runtime = new DecisionRuntime()
+    const { port, broadcast } = await startServer({ config, workspace: ws, logger, store: projection, runtime })
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
@@ -70,7 +72,7 @@ async function main(args: string[]): Promise<void> {
 
     logger.info(`桥接服务就绪 ws://${config.server.host}:${port}`)
   } catch (err) {
-    if (err instanceof ConfigError || err instanceof WorkspaceError) {
+    if (err instanceof ConfigError || err instanceof WorkspaceError || err instanceof ServerError) {
       console.error(err.message)
     } else {
       console.error(`❌ 未知错误：${err instanceof Error ? err.message : String(err)}`)

@@ -5,14 +5,15 @@
  * - 边 3 类：decision→person（评估）/ decision→direction（归属）/ decision→city（位于）
  * - strength：directionMatch/cityScore ≥80 high、≥60 medium、否则 low
  * - matchScore/riskLevel 从决策字段取（同方向/同城市/同人多决策取最大匹配、最高风险）
- * - invalid 决策整体跳过（validator 契约：invalid 实体不参与图谱连线）
+ * - invalid 实体整体跳过（validator 契约：invalid 不参与图谱连线；决策与公司档案一致）
  */
-import type { EdgeStrength, PoolEdge, PoolNode, RiskLevel } from '../ir/schema.ts'
+import type { EdgeStrength, PoolEdge, PoolNode, RiskLevel, Validation } from '../ir/schema.ts'
 import type { ParsedDecision } from './report-watcher.ts'
 
 export interface GraphInput {
   decisions: ParsedDecision[]
-  companies: { id: string; name: string }[]
+  /** 公司档案（CompanyView）：带 validation 时 invalid 跳过 */
+  companies: { id: string; name: string; matchScore?: number; riskLevel?: RiskLevel; validation?: Validation }[]
   profileNames: string[]
 }
 
@@ -45,9 +46,10 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
     edges.push({ id: `${source}->${target}`, source, target, relation, strength })
   }
 
-  // 公司节点（companies/*.md 每个档案）
+  // 公司节点（companies/*.md 每个档案；invalid 档案跳过，与决策一致）
   for (const c of input.companies) {
-    addNode({ id: `company:${c.id}`, label: c.name, type: 'company' })
+    if (c.validation?.status === 'invalid') continue
+    addNode({ id: `company:${c.id}`, label: c.name, type: 'company', matchScore: c.matchScore, riskLevel: c.riskLevel })
   }
   // 人节点（每份 profile）
   for (const name of input.profileNames) {

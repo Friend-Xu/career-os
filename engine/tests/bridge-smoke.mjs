@@ -194,7 +194,27 @@ const companyPath = join(wsDir, 'companies', '苏舟智机器人.md')
 writeFileSync(join(wsDir, 'decisions', 'README.txt'), 'note', 'utf8') // 非 md 文件不应触发重扫
 writeFileSync(decisionPath, decisionMd, 'utf8')
 writeFileSync(profilePath, '# 李明\n\n## 目标方向\n| 方向 | 匹配度 |\n|------|:--:|\n| 机器人结构设计 | 75% |\n', 'utf8')
-writeFileSync(companyPath, '# 苏舟智机器人科技有限公司\n\n> 最后更新: 2026-07-22\n\n## 基本信息\n- 公司名称: 苏舟智机器人科技有限公司（化名）\n- 地点: 苏州工业园区\n', 'utf8')
+writeFileSync(companyPath, `# 苏舟智机器人科技有限公司
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| city | 苏州 |
+| industry | 机器人 |
+| match_score | 75% |
+| risk_level | 中 |
+| source | 产业园名录 |
+| tags | 工业机器人, 精密传动 |
+| contacted | 否 |
+| park_id | 2 |
+
+---
+
+## 基本信息
+- 公司名称: 苏舟智机器人科技有限公司（化名）
+- 地点: 苏州工业园区
+`, 'utf8')
 
 const evt = await waitEvent('data.decisions.changed')
 console.log('事件 →', evt.event)
@@ -206,6 +226,28 @@ if (rec.validation) fail(`合法决策不应带 validation：${JSON.stringify(re
 if (rec.directionMatch !== 75 || rec.cityScore !== 82) fail(`投影字段异常：${JSON.stringify(rec)}`)
 console.log('decisions/list → 新记录：', JSON.stringify({ id: rec.id, title: rec.title, direction: rec.direction, city: rec.city, directionMatch: rec.directionMatch, cityScore: rec.cityScore, riskLevel: rec.riskLevel }))
 
+// ─── decisions/chain：按人分组派生决策链 ─────────────────────────────────
+const chain1 = await rpc('decisions/chain')
+console.log('decisions/chain →', JSON.stringify(chain1))
+if (chain1.length !== 1 || chain1[0].person !== '李明') fail('chain 应返回 1 条（李明）')
+// 线性链语义：单条 career-transition 只 backfill 转行评估 completed，current 停在链首方向探索
+if (chain1[0].currentStage !== '方向探索') fail(`chain currentStage 异常：${chain1[0].currentStage}`)
+if (chain1[0].progressedAt !== '2026-08-01') fail(`chain progressedAt 异常：${chain1[0].progressedAt}`)
+if (chain1[0].stages.length !== 6) fail('chain 应为 6 阶段')
+const stage1 = chain1[0].stages.find((s) => s.stage === '转行评估')
+if (!stage1 || stage1.status !== 'completed') fail('转行评估应 backfill completed')
+console.log('decisions/chain → 李明：转行评估 completed、方向探索 current（进度 2026-08-01）')
+
+// ─── companies/list：完整 CompanyRecord + 无 validation（摘要表齐全）────
+const companies1 = await rpc('companies/list')
+console.log('companies/list →', JSON.stringify(companies1))
+const company = companies1.find((c) => c.id === '苏舟智机器人')
+if (!company) fail('companies/list 未返回公司档案')
+if (company.validation) fail(`合法公司不应带 validation：${JSON.stringify(company.validation)}`)
+if (company.matchScore !== 75 || company.city !== '苏州' || company.contacted !== false) fail(`公司字段解析异常：${JSON.stringify(company)}`)
+if (!Array.isArray(company.tags) || company.tags.length !== 2) fail(`公司 tags 解析异常：${JSON.stringify(company.tags)}`)
+console.log('companies/list → 新记录：', JSON.stringify({ id: company.id, name: company.name, city: company.city, matchScore: company.matchScore, riskLevel: company.riskLevel, tags: company.tags }))
+
 const graph2 = await rpc('pool/graph')
 const byType = {}
 for (const n of graph2.nodes) byType[n.type] = (byType[n.type] ?? 0) + 1
@@ -215,6 +257,8 @@ console.log('pool/graph →', graph2.nodes.length, '节点', JSON.stringify(byTy
 for (const want of ['person:李明', 'decision:2026-08-01-转行分析', 'direction:机器人结构设计', 'city:苏州', 'company:苏舟智机器人']) {
   if (!graph2.nodes.some((n) => n.id === want)) fail(`图谱缺节点 ${want}`)
 }
+const companyNode = graph2.nodes.find((n) => n.id === 'company:苏舟智机器人')
+if (companyNode.matchScore !== 75 || companyNode.riskLevel !== 'medium') fail(`company 节点 score/risk 异常：${JSON.stringify(companyNode)}`)
 const dirNode = graph2.nodes.find((n) => n.id === 'direction:机器人结构设计')
 if (dirNode.matchScore !== 75) fail(`direction 节点 matchScore 异常：${JSON.stringify(dirNode)}`)
 if (!graph2.edges.some((e) => e.source === 'decision:2026-08-01-转行分析' && e.target === 'city:苏州' && e.strength === 'high')) fail('city 边 strength 应为 high（cityScore=82）')
@@ -230,6 +274,18 @@ if (bad.validation?.status !== 'invalid') fail(`invalid 决策应带 validation.
 const graph3 = await rpc('pool/graph')
 if (graph3.nodes.some((n) => n.id === 'decision:2026-08-02-缺画像分析')) fail('invalid 决策不应出现在图谱')
 console.log('invalid 决策 → list 带 invalid 标记，图谱已排除')
+
+// ─── 写入 invalid 公司（无摘要表）→ 列表带标记、图谱跳过；chain 不受影响 ──
+writeFileSync(join(wsDir, 'companies', '无摘要公司.md'), '# 无摘要公司\n\n没有摘要表\n', 'utf8')
+const companies2 = await rpc('companies/list')
+const badCompany = companies2.find((c) => c.id === '无摘要公司')
+if (!badCompany) fail('companies/list 应返回全部公司（含 invalid）')
+if (badCompany.validation?.status !== 'invalid') fail(`无摘要表公司应带 invalid 标记：${JSON.stringify(badCompany.validation)}`)
+const graph4 = await rpc('pool/graph')
+if (graph4.nodes.some((n) => n.id === 'company:无摘要公司')) fail('invalid 公司不应出现在图谱')
+const chain2 = await rpc('decisions/chain')
+if (chain2.length !== 1) fail('invalid 决策不应产生新链')
+console.log('invalid 公司 → list 带 invalid 标记，图谱已排除；chain 仍 1 条')
 
 // ─── 直接查 SQLite 投影验证 ────────────────────────────────────────────
 db = new Database(join(tmp, 'career.db'))

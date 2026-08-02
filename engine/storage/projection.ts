@@ -6,8 +6,8 @@
  * - syncFromDecisions：全量重建 decisions_projection + timeline_projection（单事务）
  *   + persons_projection upsert（profiles/ 扫描，id 稳定保留）
  * - listDecisions：全部返回（含 validation 标记；invalid 实体由调用方决定过滤）
- * - listCompanies/listPersons：companies|profiles 目录最小扫描（H1 + 首段 / H1 + 目标方向表；
- *   companies IR 解析器未建，先最小实现）
+ * - listCompanies/listPersons：companies|profiles 目录扫描（公司走 parseCompanyMarkdown 完整 IR 解析 + validation；
+ *   profiles 为 H1 + 目标方向表最小扫描）
  * - graph：由最近一次投影的决策快照 + 目录扫描派生信息池图谱（graph-builder）
  * WAL 模式（better-sqlite3 文档标准做法）。
  */
@@ -15,6 +15,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type {
+  CompanyRecord,
   DecisionRecord,
   Person,
   PoolEdge,
@@ -23,9 +24,10 @@ import type {
   Validation,
   ValidationIssue,
 } from '../ir/schema.ts'
+import { finalize, type FieldCheck, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import type { Logger } from '../logger.ts'
-import { scanDecisions, type ParsedDecision } from './report-watcher.ts'
+import { parsePercent, parseRisk, parseSummaryTable, scanDecisions, type ParsedDecision } from './report-watcher.ts'
 import { buildGraph } from './graph-builder.ts'
 import { ProtocolVersion } from '../ir/schema.ts'
 
@@ -96,11 +98,8 @@ CREATE TABLE IF NOT EXISTS timeline_projection (
 );
 `
 
-export interface CompanyView {
-  id: string
-  name: string
-  summary: string
-}
+/** 公司档案视图：完整 CompanyRecord + validation 标记（invalid 由调用方决定过滤） */
+export type CompanyView = CompanyRecord & { validation?: Validation }
 
 export type DecisionView = DecisionRecord & { validation?: Validation }
 
@@ -112,23 +111,82 @@ export interface ProjectionStore {
   listCompanies(): CompanyView[]
   listPersons(): Person[]
   graph(): { nodes: PoolNode[]; edges: PoolEdge[] }
+  /** 关闭 SQLite 连接（释放文件锁；引擎随进程退出，测试/嵌入场景显式调用） */
+  close(): void
 }
 
-// ─── md 最小扫描（companies IR 解析器未建，H1 + 首段）─────────────────────
+// ─── 公司 IR 解析（companies/{name}.md → CompanyRecord；摘要表协议同决策文件）──
+
+/** 必填字段（parkId 可选）：缺失 → invalid（error） */
+const COMPANY_REQUIRED: readonly (keyof CompanyRecord)[] = ['city', 'industry', 'matchScore', 'riskLevel', 'source', 'tags', 'contacted']
+
+interface CompanyFieldSpec {
+  field: keyof CompanyRecord
+  parse: (raw: string) => unknown
+  legal: string
+}
+
+/** 摘要表字段 → IR 字段（snake_case → camelCase；% / X/10 / 风险档共用决策解析器） */
+const COMPANY_FIELD_MAP: Record<string, CompanyFieldSpec> = {
+  city: { field: 'city', parse: (raw) => raw, legal: '非空字符串' },
+  industry: { field: 'industry', parse: (raw) => raw, legal: '非空字符串' },
+  match_score: { field: 'matchScore', parse: (raw) => parsePercent(raw), legal: '百分比（如 85%）或 X/10（如 8.2/10）' },
+  risk_level: { field: 'riskLevel', parse: (raw) => parseRisk(raw), legal: '低/中/中高/高（或 low/medium/high）' },
+  source: { field: 'source', parse: (raw) => raw, legal: '非空字符串' },
+  tags: { field: 'tags', parse: (raw) => raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean), legal: '逗号分隔的标签列表' },
+  contacted: { field: 'contacted', parse: (raw) => parseContacted(raw), legal: '是/否' },
+  park_id: { field: 'parkId', parse: (raw) => parseParkId(raw), legal: '数字' },
+}
+
+function parseContacted(v: string): boolean | undefined {
+  if (v === '是' || v === 'true') return true
+  if (v === '否' || v === 'false') return false
+  return undefined
+}
+
+function parseParkId(v: string): number | undefined {
+  return /^\d+$/.test(v) ? Number(v) : undefined
+}
+
+/**
+ * 单个公司档案 md → CompanyRecord：
+ * - 摘要表缺失 → invalid；必填字段缺失 → invalid（error）
+ * - 字段存在但值域非法 → degraded（warn）保留原值展示（validator 降级惯例）
+ */
+export function parseCompanyMarkdown(md: string, sourceFile: string): Validated<CompanyRecord> {
+  const id = sourceFile.replace(/\.md$/, '')
+  const fields = parseSummaryTable(md)
+  if (!fields) {
+    // id/name 无条件派生：invalid 档案仍需在列表中按 id 可识别（图谱已跳过）
+    return finalize({ id, name: extractH1(md, id) } as CompanyRecord, [
+      { path: sourceFile, reason: '未找到 `## 分析摘要` 表格', severity: 'error' },
+    ])
+  }
+
+  const record: Record<string, unknown> = { id, name: extractH1(md, id) }
+  const checks: FieldCheck[] = []
+  for (const [tableField, spec] of Object.entries(COMPANY_FIELD_MAP)) {
+    const raw = fields[tableField]
+    if (raw === undefined || raw === '-' || raw === '') continue // 缺失填 - 属常态
+    const parsed = spec.parse(raw)
+    if (parsed !== undefined) {
+      record[spec.field] = parsed
+    } else {
+      record[spec.field] = raw // 保留原值展示，标记可疑
+      checks.push({ path: spec.field, reason: `非法值 ${JSON.stringify(raw)}（合法值：${spec.legal}）`, severity: 'warn' })
+    }
+  }
+  for (const field of COMPANY_REQUIRED) {
+    if (record[field] === undefined) checks.push({ path: field, reason: '缺失（摘要表未填或为 -）', severity: 'error' })
+  }
+  return finalize(record as CompanyRecord, checks)
+}
+
+// ─── md 最小扫描（profiles 目标方向表；公司走 parseCompanyMarkdown）─────────
 
 function extractH1(md: string, fallback: string): string {
   const h1 = md.match(/^#\s+(.+)$/m)
   return h1 ? h1[1].trim() : fallback
-}
-
-/** 首段：标题/表格/引用/分隔线之外的首个内容行（bullet 行保留并去 `- ` 前缀） */
-function firstContentLine(md: string, max = 120): string {
-  for (const line of md.split('\n')) {
-    const t = line.trim()
-    if (!t || t.startsWith('#') || t.startsWith('|') || t.startsWith('>') || t.startsWith('---')) continue
-    return t.replace(/^-\s*/, '').slice(0, max)
-  }
-  return ''
 }
 
 /** 目标岗位/目标方向段：表格首列去重 */
@@ -158,8 +216,10 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
 
   function scanCompanies(): CompanyView[] {
     return workspace.listMarkdown('companies').sort().map((f) => {
-      const md = workspace.read(`companies/${f}`)
-      return { id: f.replace(/\.md$/, ''), name: extractH1(md, f.replace(/\.md$/, '')), summary: firstContentLine(md) }
+      const parsed = parseCompanyMarkdown(workspace.read(`companies/${f}`), f)
+      const view: CompanyView = { ...parsed.value }
+      if (parsed.validation) view.validation = parsed.validation
+      return view
     })
   }
 
@@ -319,9 +379,12 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     graph() {
       return buildGraph({
         decisions: lastParsed,
-        companies: scanCompanies().map((c) => ({ id: c.id, name: c.name })),
+        companies: scanCompanies(),
         profileNames: scanProfiles().map((p) => p.name),
       })
+    },
+    close() {
+      db.close()
     },
   }
 }
