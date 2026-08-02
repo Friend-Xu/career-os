@@ -38,6 +38,10 @@ export const METHODS = {
   chain: 'decisions/chain',
   /** 决策聚合视图（V1.5：DecisionContext 问题绑定 + 运行时组装，不落盘） */
   contexts: 'contexts/list',
+  /** 知识层（V2）：技能词表 + 岗位清单（Skill[] + Role[]，图谱节点派生） */
+  knowledgeGraph: 'knowledge/graph',
+  /** 差距分析（V2）：params { person, roleId } → GapResult（满足/可迁移/缺失清单，纯派生不打分） */
+  knowledgeGap: 'knowledge/gap',
   /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
   /** 人列表（投影） */

@@ -10,9 +10,12 @@ import type {
   DecisionAggregate,
   DecisionChain,
   DecisionRecord,
+  GapResult,
   Person,
   PoolEdge,
   PoolNode,
+  Role,
+  Skill,
   Validation,
 } from '../../engine/ir/schema.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
@@ -205,6 +208,14 @@ export class EngineClient {
 
   listContexts(): Promise<DecisionAggregate[]> {
     return this.rpc<DecisionAggregate[]>(METHODS.contexts)
+  }
+
+  knowledgeGraph(): Promise<{ skills: Skill[]; roles: Role[] }> {
+    return this.rpc<{ skills: Skill[]; roles: Role[] }>(METHODS.knowledgeGraph)
+  }
+
+  knowledgeGap(params: { person: string; roleId: string }): Promise<GapResult> {
+    return this.rpc<GapResult>(METHODS.knowledgeGap, params)
   }
 
   listCompanies(): Promise<(CompanyRecord & { validation?: Validation })[]> {

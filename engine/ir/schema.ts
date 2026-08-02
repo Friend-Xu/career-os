@@ -19,7 +19,7 @@ export type ApplicationStatus =
   | '已录取'
   | '已拒绝'
 export type FollowupUrgency = 'urgent' | 'overdue' | 'waiting' | 'cooled'
-export type PoolNodeType = 'person' | 'decision' | 'direction' | 'city' | 'company'
+export type PoolNodeType = 'person' | 'decision' | 'direction' | 'city' | 'company' | 'role' | 'skill'
 export type EdgeStrength = 'high' | 'medium' | 'low'
 export type ChatRole = 'user' | 'assistant' | 'system'
 export type ToolCallStatus = 'running' | 'done' | 'error'
@@ -39,6 +39,7 @@ export interface Person {
   archived: boolean
   profilePath: string
   targetRoles?: string[] // 目标岗位列表（有名目；评估/投递另有挂载点）
+  skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
 }
 
 /** 决策链状态机（V1）：6 阶段线性链投影视图（decision-runtime 派生，不落盘） */
@@ -116,6 +117,44 @@ export interface CompanyRecord {
   tags: string[]
   contacted: boolean
   parkId?: number
+}
+
+// ─── V2 知识层：Skill/Role 领域对象（knowledge/*.md 真相源，V3 Capability 复用同一技能词表）──
+
+/** 技能（受控词表叶技能，别名归一化；不建技能树——个人规模扁平词表足够） */
+export interface Skill {
+  name: string
+  aliases: string[] // 别名归一化（LinkedIn Skills Graph 37 万别名归一化的小规模版）
+  anchor?: string[] // 熟练度 1-5 级行为锚点（SFIA 式：每级一句行为描述，可缺省）
+}
+
+/** 岗位（挂载在公司下；技能需求带必需/可选 + 来源引用） */
+export interface Role {
+  id: string
+  name: string
+  company: string
+  skills: { name: string; essential: boolean; source: string }[]
+}
+
+/** 画像技能声明（profiles/{名字}.md `## 技能` 段落，Open Badges Assertion 简化：{技能, 熟练度}） */
+export interface PersonSkill {
+  name: string
+  level: number // 1-5（SFIA 式行为锚点）
+}
+
+/** 差距分析（纯派生视图：目标 Role 技能矩阵 vs 画像技能声明；引擎不自己打分，只做清单） */
+export interface SkillGap {
+  name: string
+  essential: boolean
+  source: string // 为什么：Role 需求来源引用（JD/档案片段）
+  action: string // 怎么办：模板化补强动作（AI 可细化）
+}
+export interface GapResult {
+  role: Role
+  person: string
+  satisfied: { name: string; level: number }[] // 声明水平 ≥3（可独立产出）
+  transferable: { name: string; level: number }[] // 声明水平 1-2（有基础需补强）
+  missing: SkillGap[] // 未声明（需学习）
 }
 
 /** 画像摘要（Agent 上下文与聚合视图用，来自 profiles/{name}.md） */

@@ -37,6 +37,8 @@ const TYPE_COLOR: Record<InfoNode['type'], string> = {
   direction: '#F29A5E',
   city: '#5CE0B0',
   company: '#E77FC3',
+  role: '#C7A252',
+  skill: '#8AB4F8',
 }
 
 type ForceNode = InfoNode & SimulationNodeDatum
@@ -252,7 +254,7 @@ function GraphCanvas({
           <Stack key={type} direction="row" sx={{ alignItems: 'center' }} spacing={0.5}>
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              {{ person: '人', decision: '决策', direction: '方向', city: '城市', company: '公司' }[type]}
+              {{ person: '人', decision: '决策', direction: '方向', city: '城市', company: '公司', role: '岗位', skill: '技能' }[type]}
             </Typography>
           </Stack>
         ))}
