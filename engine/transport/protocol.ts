@@ -36,6 +36,8 @@ export const METHODS = {
   rescan: 'decisions/rescan',
   /** 决策链投影（按人分组的 computeChain 派生视图，6 阶段状态机） */
   chain: 'decisions/chain',
+  /** 决策聚合视图（V1.5：DecisionContext 问题绑定 + 运行时组装，不落盘） */
+  contexts: 'contexts/list',
   /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
   /** 人列表（投影） */

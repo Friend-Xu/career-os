@@ -57,6 +57,31 @@ export interface DecisionChain {
   progressedAt: string // 最近一次推进时间
 }
 
+// ─── V1.5：决策问题绑定与聚合（4.3 定稿；context 文件真相源，聚合运行时组装不落盘）──
+
+export type ContextStatus = 'exploring' | 'evaluating' | 'decided' | 'reviewing'
+
+/** 问题绑定（轻量文件 `decision-contexts/{问题}.md`，skill/用户维护，引擎只读解析） */
+export interface DecisionContext {
+  id: string // 文件名（无 .md）
+  person: string
+  question: string
+  relatedDecisions: string[] // decisions/ 下文件名（不含扩展名）
+  status: ContextStatus
+  createdAt: string
+}
+
+/** 聚合视图（引擎运行时组装：Record + Context 派生，不落盘、引擎不自己打分） */
+export interface DecisionAggregate {
+  context: DecisionContext
+  records: DecisionRecord[] // 一个问题的多个方向决策（Options 展开形态）
+  options: { name: string; status: 'candidate' | 'selected' | 'rejected'; reasons?: string[] }[]
+  factors: { name: string; description: string }[] // 只记概念，不评分
+  evidence: { type: string; content: string; source?: string }[]
+  conclusion?: { selected: string; confidence: number }
+  risks: { description: string; mitigation?: string }[]
+}
+
 /** 决策记录（14 字段摘要表；profile = 人名，v2.1） */
 export interface DecisionRecord {
   id: string

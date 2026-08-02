@@ -7,6 +7,7 @@
  */
 import type {
   CompanyRecord,
+  DecisionAggregate,
   DecisionChain,
   DecisionRecord,
   Person,
@@ -200,6 +201,10 @@ export class EngineClient {
 
   listChains(): Promise<DecisionChain[]> {
     return this.rpc<DecisionChain[]>(METHODS.chain)
+  }
+
+  listContexts(): Promise<DecisionAggregate[]> {
+    return this.rpc<DecisionAggregate[]>(METHODS.contexts)
   }
 
   listCompanies(): Promise<(CompanyRecord & { validation?: Validation })[]> {
