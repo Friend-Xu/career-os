@@ -32,10 +32,11 @@ npm test         # node:test（--test-isolation=none：本机 node 无 .exe 扩�
 3. 桥接 ✅：transport/websocket.ts（RPC + 事件广播，契约见 transport/protocol.ts）+ projection.ts（better-sqlite3 5 张投影）+ graph-builder.ts（图谱派生）+ watchDecisions（chokidar）；前端 engine-client.ts 已接线（App 挂载 connectEngine，connected 拉初始数据 + 订阅 data.* 重拉）
 4. agent/ 适配层 ✅：agent/adapter/claude.ts（SDK 封装 + 事件归一化 + 权限握手 + resume）——npm run smoke:adapter 真实 CLI 验证
 5. 领域编排 ✅：runtime/decision-runtime.ts（决策链状态机 V1，computeChain 纯投影 + stageOfSkill 映射 + stageProgressed 推进事件）
-V1.5 ✅：storage/context-watcher.ts（decision-contexts/{问题}.md 解析 + watch，摘要表协议复用）+ runtime/decision-aggregate.ts（buildAggregates 纯函数组装，只聚合不评分）+ contexts/list RPC
+V1.5 ✅：storage/context-watcher.ts（decision-contexts/{问题}.md 解析 + watch，摘要表协议复用）+ runtime/decision-aggregate.ts（buildAggregates 纯函数组装，只聚合不评分）+ contexts/list RPC + 复盘闭环（## 复盘 段落 → DecisionAggregate.review）
+V2（知识层 + Evaluation）✅：storage/knowledge-watcher.ts（knowledge/skills.md 词表 + roles.md 岗位，别名归一化 buildSkillIndex）+ runtime/gap-calculator.ts（computeGap 纯函数：满足≥3/可迁移 1-2/缺失未声明，不自己打分）+ knowledge/graph + knowledge/gap RPC + 图谱 role/skill 节点（雇佣/需求边）
 ```
 
-**V2 未做（勿提前）**：Evaluation/Recommendation Engine、知识层（Company/Role/Skill 领域对象）。review 挂点已留扩展点（context 正文段落按标题正则泛化，`## 复盘` 段落约定即可扩展）。
+**V3 未做（愿景，勿施工）**：Person Model 五维（profiles 协议升级）、决策发现、Career Map——计划见 `../docs/CAREER-OS-V2V3路线计划-v1.md`（V3 部分为愿景预留）。
 
 ## 惯例
 
