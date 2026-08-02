@@ -8,6 +8,7 @@ import type {
   DecisionStage,
   MainWidthMode,
   NavPageId,
+  PendingPermission,
   Person,
   Session,
   StageStatus,
@@ -20,7 +21,18 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import { EVENTS, createEngineClient, type EngineClient, type EngineStatus, type GraphResult } from './engine-client'
+import type { DecisionChain, Validation } from '../../engine/ir/schema.ts'
+import {
+  EVENTS,
+  createEngineClient,
+  type DecisionView,
+  type EngineClient,
+  type EngineStatus,
+  type GraphResult,
+} from './engine-client'
+
+/** 引擎公司档案（带 validation 降级标记）；mock COMPANIES 无 validation，结构兼容 */
+type CompanyView = Company & { validation?: Validation }
 
 /** 按人构造决策链进度：人 1 走完三步（演示主线），其余人差异化。 */
 function makePersonStages(statusMap: Record<string, StageStatus>): DecisionStage[] {
@@ -47,6 +59,54 @@ function freshPersonStages(): DecisionStage[] {
   return makePersonStages({ direction: 'current' })
 }
 
+// ─── 会话消息写入（权限/提问反馈进对话流；sessions 不持久化，不入 partialize）──
+
+/** 权限决策挂起：requestPermission 返回的 promise 由审批动作 resolve（真实流接入后 await 此值） */
+let resolvePending: ((ok: boolean) => void) | null = null
+
+function appendToSession(sessionId: string, message: ChatMessage): void {
+  useAppStore.setState((s) => ({
+    sessions: s.sessions.map((sess) =>
+      sess.id === sessionId
+        ? { ...sess, updatedAt: message.timestamp, messages: [...sess.messages, message] }
+        : sess,
+    ),
+  }))
+}
+
+/** 审批结果以 system 消息反馈进对话流（角色 system 渲染为居中浅注，非气泡） */
+function appendSystemMessage(sessionId: string, text: string): void {
+  appendToSession(sessionId, {
+    id: `msg-${Date.now()}`,
+    role: 'system',
+    content: text,
+    timestamp: new Date().toISOString(),
+  })
+}
+
+/** 权限请求消息的工具 chip 状态流转：waiting_approval → done（放行）/ denied（拒绝） */
+function patchToolCallStatus(
+  sessions: Session[],
+  pending: PendingPermission,
+  status: 'done' | 'denied',
+): Session[] {
+  return sessions.map((s) =>
+    s.id === pending.sessionId
+      ? {
+        ...s,
+        messages: s.messages.map((m) => ({
+          ...m,
+          toolCalls: m.toolCalls?.map((t) =>
+            t.name === pending.toolName && t.status === 'waiting_approval'
+              ? { ...t, status }
+              : t,
+          ),
+        })),
+      }
+      : s,
+  )
+}
+
 interface AppState {
   currentPersonId: number;
   currentPage: NavPageId;
@@ -58,8 +118,8 @@ interface AppState {
   sessions: Session[];
   currentSessionId: string;
   applications: Application[];
-  decisions: DecisionRecord[];
-  companies: Company[];
+  decisions: DecisionView[];
+  companies: CompanyView[];
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
@@ -73,6 +133,10 @@ interface AppState {
   companiesFilter: string;
   applicationsFilter: string;
   locateTarget: string | null;
+  /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
+  pendingPermission: PendingPermission | null;
+  /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
+  approvedTools: Record<string, string[]>;
 
   currentPerson: () => Person;
   setPage: (page: NavPageId) => void;
@@ -94,6 +158,14 @@ interface AppState {
   sendAgentMessage: (content: string) => void;
   setCurrentSession: (id: string) => void;
   createSession: (title?: string) => void;
+  /** 权限消费入口（真实 Agent 流 + 演示共用）：会话内已批量放行 → 立即放行；否则挂起弹窗等待决策 */
+  requestPermission: (toolName: string, description: string) => Promise<boolean>;
+  approvePermission: () => void;
+  denyPermission: () => void;
+  approveAllPermissions: () => void;
+  simulatePermissionRequest: (toolName: string, description: string) => void;
+  simulateQuestionRequest: (question: string, options: string[]) => void;
+  answerQuestion: (messageId: string, answer: string) => void;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
@@ -131,6 +203,8 @@ export const useAppStore = create<AppState>()(
       companiesFilter: 'all',
       applicationsFilter: '全部',
       locateTarget: null,
+      pendingPermission: null,
+      approvedTools: {},
 
   currentPerson: () => {
     const { currentPersonId, persons } = get()
@@ -355,11 +429,13 @@ export const useAppStore = create<AppState>()(
   },
 
   addDecision: (record) => {
-    // 写入决策 → 推进当前人的决策链阶段（完成 → 下一阶段 current）
-    const { currentPersonId, personStages } = get()
+    // 引擎 connected：决策真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉），
+    // 本地只保留内存写入（演示模式不写引擎），不本地推进阶段——避免与引擎派生打架。
+    // 引擎 offline：演示模式本地推进（当前 stage 完成 → 下一 pending 置 current）。
+    const { currentPersonId, personStages, engineStatus } = get()
     const stages = personStages[currentPersonId]
     let nextStages = stages
-    if (stages) {
+    if (engineStatus !== 'connected' && stages) {
       const idx = stages.findIndex((s) => s.status === 'current')
       nextStages = stages.map((s, i) => {
         if (idx >= 0 && i === idx) {
@@ -396,6 +472,116 @@ export const useAppStore = create<AppState>()(
   setApplicationsFilter: (filter) => set({ applicationsFilter: filter }),
 
   setLocateTarget: (target) => set({ locateTarget: target }),
+
+  requestPermission: (toolName, description) => {
+    const sessionId = get().currentSessionId
+    // 会话内已批量放行 → 不弹窗，直接放行并反馈
+    if (get().approvedTools[sessionId]?.includes(toolName)) {
+      appendSystemMessage(sessionId, `已自动放行工具「${toolName}」（会话内已授权）`)
+      return Promise.resolve(true)
+    }
+    set({ pendingPermission: { toolName, description, sessionId } })
+    return new Promise<boolean>((resolve) => {
+      resolvePending = resolve
+    })
+  },
+
+  approvePermission: () => {
+    const pending = get().pendingPermission
+    if (!pending) return
+    resolvePending?.(true)
+    resolvePending = null
+    set({
+      pendingPermission: null,
+      sessions: patchToolCallStatus(get().sessions, pending, 'done'),
+    })
+    appendSystemMessage(pending.sessionId, `已放行工具「${pending.toolName}」`)
+  },
+
+  denyPermission: () => {
+    const pending = get().pendingPermission
+    if (!pending) return
+    resolvePending?.(false)
+    resolvePending = null
+    set({
+      pendingPermission: null,
+      sessions: patchToolCallStatus(get().sessions, pending, 'denied'),
+    })
+    // permission_denied 不是错误：提示换一种问法，不渲染红色错误
+    appendSystemMessage(pending.sessionId, `已拒绝工具「${pending.toolName}」，可换一种问法`)
+  },
+
+  approveAllPermissions: () => {
+    const pending = get().pendingPermission
+    if (!pending) return
+    const { approvedTools } = get()
+    set({
+      approvedTools: {
+        ...approvedTools,
+        [pending.sessionId]: [...(approvedTools[pending.sessionId] ?? []), pending.toolName],
+      },
+    })
+    get().approvePermission()
+  },
+
+  /** 演示入口：模拟一次权限请求（真实 LLM 流接入后由 permission_request 事件自动触发） */
+  simulatePermissionRequest: (toolName, description) => {
+    const sessionId = get().currentSessionId
+    // 会话内已批量放行：不再弹窗，直接自动放行反馈
+    if (get().approvedTools[sessionId]?.includes(toolName)) {
+      void get().requestPermission(toolName, description)
+      return
+    }
+    appendToSession(sessionId, {
+      id: `msg-${Date.now()}`,
+      role: 'assistant',
+      content: `Agent 请求调用工具「${toolName}」`,
+      timestamp: new Date().toISOString(),
+      toolCalls: [{ name: toolName, status: 'waiting_approval' }],
+    })
+    void get().requestPermission(toolName, description)
+  },
+
+  /** 演示入口：模拟一次 AskUserQuestion 提问卡片（真实 LLM 流接入后由 Agent 提问触发） */
+  simulateQuestionRequest: (question, options) => {
+    const now = new Date().toISOString()
+    appendToSession(get().currentSessionId, {
+      id: `msg-${Date.now()}`,
+      role: 'assistant',
+      content: question,
+      timestamp: now,
+      question: { id: `q-${Date.now()}`, question, options, answered: false },
+    })
+  },
+
+  answerQuestion: (messageId, answer) => {
+    const { sessions, currentSessionId } = get()
+    const now = new Date().toISOString()
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: answer,
+      timestamp: now,
+    }
+    set({
+      sessions: sessions.map((s) =>
+        s.id === currentSessionId
+          ? {
+            ...s,
+            updatedAt: now,
+            messages: [
+              ...s.messages.map((m) =>
+                m.id !== messageId || !m.question
+                  ? m
+                  : { ...m, question: { ...m.question, answered: true, answer } },
+              ),
+              userMsg,
+            ],
+          }
+          : s,
+      ),
+    })
+  },
     }),
     {
       name: 'career-os',
@@ -441,6 +627,54 @@ async function pullDecisions(): Promise<void> {
   }
 }
 
+/** 引擎决策链 6 阶段中文名 → UI DecisionStage.id */
+const STAGE_ID_BY_NAME: Record<DecisionChain['stages'][number]['stage'], string> = {
+  方向探索: 'direction',
+  转行评估: 'transfer',
+  城市评估: 'city',
+  公司筛选: 'company',
+  JD分析: 'jd',
+  简历定制: 'resume',
+}
+
+/** 引擎链投影 → UI 阶段（label 直接用引擎中文名；direction/city 挂在当前阶段） */
+function chainToPersonStages(chain: DecisionChain): DecisionStage[] {
+  return chain.stages.map((s) => ({
+    id: STAGE_ID_BY_NAME[s.stage],
+    label: s.stage,
+    status: s.status,
+    ...(s.direction !== undefined ? { direction: s.direction } : {}),
+    ...(s.city !== undefined ? { city: s.city } : {}),
+  }))
+}
+
+async function pullChains(): Promise<void> {
+  if (!engine) return
+  try {
+    const chains = await engine.listChains()
+    const persons = useAppStore.getState().persons
+    const next: Record<number, DecisionStage[]> = {}
+    for (const chain of chains) {
+      const person = persons.find((p) => p.name === chain.person)
+      if (person) next[person.id] = chainToPersonStages(chain)
+    }
+    // 引擎是真相源：整体替换（引擎未建档的人无链 → 消费方按空链处理）
+    useAppStore.setState({ personStages: next })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+async function pullCompanies(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listCompanies()
+    useAppStore.setState({ companies: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 async function pullGraph(): Promise<void> {
   if (!engine) return
   try {
@@ -458,11 +692,15 @@ export function connectEngine(): void {
     useAppStore.setState({ engineStatus: s as EngineStatus })
     if (s === 'connected') {
       void pullDecisions()
+      void pullChains()
+      void pullCompanies()
       void pullGraph()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {
     void pullDecisions()
+    void pullChains()
+    void pullCompanies()
     void pullGraph()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())

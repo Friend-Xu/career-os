@@ -4,6 +4,8 @@ import {
   Chip,
   Collapse,
   IconButton,
+  Menu,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -20,7 +22,7 @@ import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import type { ChatMessage, DecisionRecord } from '../types'
+import type { ChatMessage, DecisionRecord, QuestionCard } from '../types'
 
 function ContextCapsule() {
   const person = useAppStore((s) => s.currentPerson())
@@ -149,8 +151,72 @@ function ReportCard({ record }: { record: DecisionRecord }) {
   )
 }
 
+/** AskUserQuestion 卡片：问题 + 选项；点击选项回填用户消息并标记已作答 */
+function QuestionCardView({ card, messageId }: { card: QuestionCard; messageId: string }) {
+  const answer = useAppStore((s) => s.answerQuestion)
+
+  return (
+    <Box
+      sx={{
+        mt: 1.5,
+        p: 2,
+        borderRadius: '10px',
+        border: `1px solid ${COLORS.border}`,
+        bgcolor: COLORS.bg,
+      }}
+    >
+      <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1.5 }}>{card.question}</Typography>
+      <Stack spacing={1}>
+        {card.options.map((opt) => (
+          <Button
+            key={opt}
+            fullWidth
+            size="small"
+            disabled={card.answered}
+            onClick={() => answer(messageId, opt)}
+            variant={card.answered && card.answer === opt ? 'contained' : 'outlined'}
+            sx={{
+              justifyContent: 'flex-start',
+              textAlign: 'left',
+              fontSize: 12.5,
+              textTransform: 'none',
+            }}
+          >
+            {opt}
+          </Button>
+        ))}
+      </Stack>
+      {card.answered && (
+        <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 1.25 }}>
+          已选择：{card.answer}
+        </Typography>
+      )}
+    </Box>
+  )
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const [showThinking, setShowThinking] = useState(false)
+
+  // system 角色（权限审批/自动放行反馈）：居中浅注，非气泡
+  if (msg.role === 'system') {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+        <Typography
+          sx={{
+            fontSize: 12,
+            color: COLORS.textMuted,
+            bgcolor: COLORS.bgHover,
+            px: 1.5,
+            py: 0.5,
+            borderRadius: '999px',
+          }}
+        >
+          {msg.content}
+        </Typography>
+      </Box>
+    )
+  }
 
   return (
     <Box
@@ -203,38 +269,68 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                 key={t.name}
                 size="small"
                 icon={<BuildIcon sx={{ fontSize: '12px !important' }} />}
-                label={t.name}
+                label={
+                  t.status === 'waiting_approval'
+                    ? `${t.name} · 等待授权`
+                    : t.status === 'denied'
+                      ? `${t.name} · 已拒绝`
+                      : t.name
+                }
                 sx={{
                   height: 22,
                   fontSize: 11.5,
                   fontFamily: COLORS.mono,
-                  bgcolor: t.status === 'done' ? alpha(COLORS.riskLow, 0.1) : COLORS.bgHover,
+                  bgcolor:
+                    t.status === 'done'
+                      ? alpha(COLORS.riskLow, 0.1)
+                      : t.status === 'waiting_approval'
+                        ? alpha(COLORS.riskMedium, 0.12)
+                        : t.status === 'denied'
+                          ? alpha(COLORS.riskHigh, 0.1)
+                          : COLORS.bgHover,
                   border: `1px solid ${
-                    t.status === 'done' ? alpha(COLORS.riskLow, 0.25) : COLORS.border
+                    t.status === 'done'
+                      ? alpha(COLORS.riskLow, 0.25)
+                      : t.status === 'waiting_approval'
+                        ? alpha(COLORS.riskMedium, 0.3)
+                        : t.status === 'denied'
+                          ? alpha(COLORS.riskHigh, 0.3)
+                          : COLORS.border
                   }`,
-                  color: t.status === 'done' ? COLORS.riskLow : COLORS.textSecondary,
+                  color:
+                    t.status === 'done'
+                      ? COLORS.riskLow
+                      : t.status === 'waiting_approval'
+                        ? COLORS.riskMedium
+                        : t.status === 'denied'
+                          ? COLORS.riskHigh
+                          : COLORS.textSecondary,
                 }}
               />
             ))}
           </Stack>
         )}
 
-        <Box
-          sx={{
-            px: 2,
-            py: 1.5,
-            borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-            bgcolor: msg.role === 'user' ? COLORS.accentMuted : COLORS.bgElevated,
-            border: `1px solid ${
-              msg.role === 'user' ? alpha(COLORS.accent, 0.25) : COLORS.border
-            }`,
-          }}
-        >
-          <Typography sx={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-            {msg.content}
-          </Typography>
-          {msg.reportCard && <ReportCard record={msg.reportCard} />}
-        </Box>
+        {msg.question ? (
+          <QuestionCardView card={msg.question} messageId={msg.id} />
+        ) : (
+          <Box
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+              bgcolor: msg.role === 'user' ? COLORS.accentMuted : COLORS.bgElevated,
+              border: `1px solid ${
+                msg.role === 'user' ? alpha(COLORS.accent, 0.25) : COLORS.border
+              }`,
+            }}
+          >
+            <Typography sx={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {msg.content}
+            </Typography>
+            {msg.reportCard && <ReportCard record={msg.reportCard} />}
+          </Box>
+        )}
         <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.5, px: 0.5 }}>
           {dayjs(msg.timestamp).format('HH:mm:ss')}
         </Typography>
@@ -252,6 +348,10 @@ export function AgentPage() {
   const createSession = useAppStore((s) => s.createSession)
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
+  const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
+  const simulateQuestionRequest = useAppStore((s) => s.simulateQuestionRequest)
+  const push = useToastStore((s) => s.push)
+  const [demoAnchor, setDemoAnchor] = useState<HTMLElement | null>(null)
 
   const session = sessions.find((s) => s.id === currentSessionId)
 
@@ -272,9 +372,18 @@ export function AgentPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', flex: 1 }}>
           {session?.title ?? '决策 Agent'}
         </Typography>
-        <Button size="small" onClick={() => createSession()} sx={{ fontSize: 12 }}>
-          + 新会话
-        </Button>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Button
+            size="small"
+            onClick={(e) => setDemoAnchor(e.currentTarget)}
+            sx={{ fontSize: 12, color: COLORS.textSecondary }}
+          >
+            演示交互
+          </Button>
+          <Button size="small" onClick={() => createSession()} sx={{ fontSize: 12 }}>
+            + 新会话
+          </Button>
+        </Stack>
       </Stack>
 
       <ContextCapsule />
@@ -360,6 +469,35 @@ export function AgentPage() {
           </Stack>
         </Box>
       </Box>
+
+      <Menu anchorEl={demoAnchor} open={Boolean(demoAnchor)} onClose={() => setDemoAnchor(null)}>
+        <MenuItem
+          onClick={() => {
+            setDemoAnchor(null)
+            simulatePermissionRequest(
+              'search_company_db',
+              '查询公司库中的匹配企业（只读操作）：读取 companies DB 并按匹配度排序',
+            )
+            push('info', '演示模式：权限事件将在真实 LLM 流接入后自动触发')
+          }}
+        >
+          模拟权限请求
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setDemoAnchor(null)
+            simulateQuestionRequest('请选择本次分析的重点方向', [
+              '深圳 vs 上海对比',
+              '机器人企业筛选',
+              'JD 匹配评估',
+              '综合结论',
+            ])
+            push('info', '演示模式：提问卡片将在真实 LLM 流接入后由 Agent 自动发起')
+          }}
+        >
+          模拟提问卡片
+        </MenuItem>
+      </Menu>
     </Box>
   )
 }
