@@ -48,20 +48,20 @@ CREATE TABLE IF NOT EXISTS decisions_projection (
   id TEXT PRIMARY KEY,
   source_file TEXT NOT NULL,
   title TEXT NOT NULL,
-  skill TEXT NOT NULL,
+  skill TEXT,
   direction TEXT,
   direction_match INTEGER,
   direction_confidence TEXT,
   city TEXT,
   city_score INTEGER,
   salary_feasible INTEGER,
-  risk_level TEXT NOT NULL,
-  key_risk TEXT NOT NULL,
-  status TEXT NOT NULL,
+  risk_level TEXT,
+  key_risk TEXT,
+  status TEXT,
   profile TEXT,
-  summary TEXT NOT NULL,
+  summary TEXT,
   created_at TEXT NOT NULL DEFAULT '',
-  protocol_version TEXT NOT NULL,
+  protocol_version TEXT,
   validation_status TEXT,
   validation_issues TEXT
 );
@@ -203,12 +203,23 @@ function extractTargetRoles(md: string): string[] {
   return roles
 }
 
+/** 投影 schema 版本：升级时 +1；旧版本 drop 重建（投影是 md 真相源的派生，重建零损失） */
+const SCHEMA_VERSION = 2
+
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
   const { dbPath, workspace, logger } = opts
   mkdirSync(dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
-  db.exec(SCHEMA)
+  // schema 演进：v1 决策列 NOT NULL 与 invalid 实体字段缺失矛盾（联调 smoke 发现），v2 放宽
+  const version = db.pragma('user_version', { simple: true }) as number
+  if (version < SCHEMA_VERSION) {
+    db.exec('DROP TABLE IF EXISTS timeline_projection; DROP TABLE IF EXISTS sessions_projection; DROP TABLE IF EXISTS applications_projection; DROP TABLE IF EXISTS decisions_projection; DROP TABLE IF EXISTS persons_projection;')
+    db.exec(SCHEMA)
+    db.pragma(`user_version = ${SCHEMA_VERSION}`)
+  } else {
+    db.exec(SCHEMA)
+  }
 
   let lastParsed: ParsedDecision[] = []
 

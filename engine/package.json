@@ -7,7 +7,8 @@
   "scripts": {
     "engine": "node main.ts",
     "test": "node --test --test-isolation=none \"tests/*.test.ts\"",
-    "smoke:bridge": "node tests/bridge-smoke.mjs"
+    "smoke:bridge": "node tests/bridge-smoke.mjs",
+    "smoke:handlers": "node tests/handlers-smoke.mjs"
   },
   "engines": {
     "node": ">=24"
