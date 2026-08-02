@@ -1,16 +1,17 @@
 /**
- * 引擎启动编排（骨架）：config → workspace → logger 串联。
+ * 引擎启动编排（第 3 步）：config → workspace → logger → projection → WS 桥 → decisions/ 监听。
  * 错误输出 `❌ 模块：字段 = 当前值（合法值：…）`，退出码非 0。
- * 骨架阶段无服务器监听（服务随第 3 步桥接接入）；验收 = 初始化成功 + 摘要打印。
  * `--scan-decisions`：一次性扫描 decisions/ → 控制台输出 IR + Validation（第 2 步验收入口）。
  */
 import { ConfigError, describeConfig, loadConfig } from './config.ts'
 import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
-import { scanDecisions } from './storage/report-watcher.ts'
-import { ProtocolVersion } from './ir/schema.ts'
+import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
+import { createProjection } from './storage/projection.ts'
+import { startServer } from './transport/websocket.ts'
+import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 
-function main(args: string[]): void {
+async function main(args: string[]): Promise<void> {
   try {
     const { config, firstRun, configPath } = loadConfig(args)
     const logger = createLogger({ logsDir: config.paths.logs, level: 'info' })
@@ -44,7 +45,30 @@ function main(args: string[]): void {
       return
     }
 
-    logger.info(`引擎骨架启动成功（端口 ${config.server.port}，服务监听随第 3 步桥接接入）`)
+    // ─── 投影层（SQLite，markdown 真相源的查询投影）──────────────────────
+    const projection = createProjection({ dbPath: config.paths.db, workspace: ws, logger })
+    const initial = scanDecisions(ws)
+    projection.syncFromDecisions(initial)
+    logger.info(`投影就绪：decisions ${initial.length} 条（db ${config.paths.db}）`)
+
+    // ─── WebSocket 桥（RPC + 事件广播）─────────────────────────────────
+    const { port, broadcast } = await startServer({ config, workspace: ws, logger, store: projection })
+
+    // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
+    // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
+    if (config.watcher.enabled) {
+      watchDecisions(ws, (parsed) => {
+        projection.syncFromDecisions(parsed)
+        broadcast({ event: EVENTS.decisionsChanged })
+        broadcast({ event: EVENTS.poolChanged })
+        logger.info(`decisions/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
+      logger.info('decisions/ 监听已启用（watcher.enabled=true）')
+    } else {
+      logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
+    }
+
+    logger.info(`桥接服务就绪 ws://${config.server.host}:${port}`)
   } catch (err) {
     if (err instanceof ConfigError || err instanceof WorkspaceError) {
       console.error(err.message)
@@ -55,4 +79,4 @@ function main(args: string[]): void {
   }
 }
 
-main(process.argv.slice(2))
+void main(process.argv.slice(2))

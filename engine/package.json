@@ -6,9 +6,18 @@
   "description": "Career OS 本地引擎（纯 Node 服务，零依赖，Node 24 原生 TS type-stripping）",
   "scripts": {
     "engine": "node main.ts",
-    "test": "node --test --test-isolation=none \"tests/*.test.ts\""
+    "test": "node --test --test-isolation=none \"tests/*.test.ts\"",
+    "smoke:bridge": "node tests/bridge-smoke.mjs"
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/ws": "^8.18.1",
+    "better-sqlite3": "^13.0.2",
+    "chokidar": "^5.0.0",
+    "ws": "^8.21.1"
   }
 }

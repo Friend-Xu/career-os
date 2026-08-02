@@ -1,6 +1,7 @@
 /**
- * report-watcher（第 2 步：一次性目录扫描）：md → IR。
- * - scanDecisions：decisions/*.md 全量扫描 + 解析 + 校验（chokidar 监听第 3 步引入）
+ * report-watcher：md → IR（第 2 步目录扫描，第 3 步加入文件监听）。
+ * - scanDecisions：decisions/*.md 全量扫描 + 解析 + 校验
+ * - watchDecisions：decisions/ 目录监听（add/change/unlink → 全量重扫，chokidar）
  * - parseDecisionMarkdown：单个 md → DecisionRecord（14 字段摘要表解析 + 版本分派校验）
  *
  * 摘要表协议（SKILL.md）：`## 分析摘要` 两列表格（字段|值），字段 snake_case；
@@ -9,6 +10,7 @@
 import type { Confidence, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
 import { validateByProtocol, type FieldCheck, type Validated, finalize } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
+import { watch } from 'chokidar'
 
 const SUMMARY_RE = /##\s*分析摘要\s*\n((?:\|[^\n]*\|\n)+)/
 const ROW_RE = /^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/
@@ -152,4 +154,23 @@ export function scanDecisions(ws: Workspace): ParsedDecision[] {
     const parsed = parseDecisionMarkdown(ws.read(`decisions/${f}`), f)
     return { sourceFile: f, record: parsed.value, validation: parsed.validation }
   })
+}
+
+/**
+ * decisions/ 目录监听（第 3 步）：add/change/unlink 任一触发 → 全量重扫 → onChanged(parsed)。
+ * 全量重扫是明确决策（个人工具文件量小，增量复杂度不值）；返回 { close } 供测试/退出。
+ */
+export function watchDecisions(ws: Workspace, onChanged: (parsed: ParsedDecision[]) => void): { close: () => Promise<void> } {
+  const watcher = watch(ws.paths.decisions, { ignoreInitial: true })
+  const rescan = (): void => onChanged(scanDecisions(ws))
+  watcher.on('add', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  watcher.on('change', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  watcher.on('unlink', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  return { close: () => watcher.close() }
 }
