@@ -21,9 +21,10 @@ export interface RpcResponse {
   error?: { code: string; message: string }
 }
 
-/** 服务端 → 客户端：单向事件（数据变更信号） */
+/** 服务端 → 客户端：单向事件（数据变更信号）；agent.event 帧带 taskId 标识任务归属 */
 export interface ServerEvent {
   event: string
+  taskId?: string
   data?: unknown
 }
 
@@ -48,6 +49,14 @@ export const METHODS = {
   listPersons: 'persons/list',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
+  /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送） */
+  agentStart: 'agent/start',
+  /** 回答 AskUserQuestion（params: { taskId, text }） */
+  agentAnswer: 'agent/answer',
+  /** 取消 Agent 任务（params: { taskId } → AbortController） */
+  agentCancel: 'agent/cancel',
+  /** 工具权限决策（params: { taskId, requestId, allow } → 引擎 resolve 挂起的 canUseTool） */
+  agentPermission: 'agent/permission',
 } as const
 
 export const EVENTS = {
@@ -55,6 +64,8 @@ export const EVENTS = {
   decisionsChanged: 'data.decisions.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
+  /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */
+  agentEvent: 'agent.event',
 } as const
 
 export interface InitResult {

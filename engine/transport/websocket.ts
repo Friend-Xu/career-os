@@ -13,12 +13,13 @@ import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
 import type { DecisionAggregate, DecisionChain, DecisionRecord, GapResult } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
+import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
-import { METHODS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
+import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
 const MAX_PORT_RETRIES = 5
@@ -124,6 +125,56 @@ async function listenWithRetry(opts: { host: string; port: number; logger: Logge
   throw new ServerError(`端口 ${port}-${port + MAX_PORT_RETRIES} 全部被占用，已递增重试 ${MAX_PORT_RETRIES} 次`)
 }
 
+/** agent/start 入参校验（RPC 边界：用户输入校验，fail fast） */
+function agentStartParams(v: unknown): AgentStartParams {
+  if (typeof v !== 'object' || v === null) throw new Error('agent/start 需要 params { task, ... }')
+  const p = v as Record<string, unknown>
+  if (typeof p.task !== 'string' || p.task.length === 0) throw new Error('params.task 缺失（任务指令）')
+  const out: AgentStartParams = { task: p.task }
+  if (p.context !== undefined) {
+    if (typeof p.context !== 'string') throw new Error('params.context 应为字符串')
+    out.context = p.context
+  }
+  if (p.resumeSessionId !== undefined) {
+    if (typeof p.resumeSessionId !== 'string') throw new Error('params.resumeSessionId 应为字符串')
+    out.resumeSessionId = p.resumeSessionId
+  }
+  if (p.permissionMode !== undefined) {
+    if (!['acceptEdits', 'ask', 'bypassPermissions'].includes(p.permissionMode as string)) {
+      throw new Error('params.permissionMode 应为 acceptEdits/ask/bypassPermissions')
+    }
+    out.permissionMode = p.permissionMode as AgentStartParams['permissionMode']
+  }
+  if (p.allowedTools !== undefined) {
+    if (!Array.isArray(p.allowedTools) || p.allowedTools.some((t) => typeof t !== 'string')) {
+      throw new Error('params.allowedTools 应为 string[]')
+    }
+    out.allowedTools = p.allowedTools as string[]
+  }
+  if (p.maxTurns !== undefined) {
+    if (typeof p.maxTurns !== 'number' || p.maxTurns < 1) throw new Error('params.maxTurns 应为正整数')
+    out.maxTurns = p.maxTurns
+  }
+  return out
+}
+
+/** agent/answer|cancel|permission 的 taskId 提取（RPC 边界） */
+function taskIdParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).taskId !== 'string') {
+    throw new Error('params.taskId 缺失')
+  }
+  return (v as Record<string, unknown>).taskId as string
+}
+
+/** agent/permission 的 requestId + allow 提取（RPC 边界） */
+function permissionParams(v: unknown): { taskId: string; requestId: string; allow: boolean } {
+  const taskId = taskIdParams(v)
+  const p = v as Record<string, unknown>
+  if (typeof p.requestId !== 'string' || p.requestId.length === 0) throw new Error('params.requestId 缺失')
+  if (typeof p.allow !== 'boolean') throw new Error('params.allow 应为 boolean')
+  return { taskId, requestId: p.requestId, allow: p.allow }
+}
+
 export async function startServer(opts: {
   config: EngineConfig
   workspace: Workspace
@@ -133,6 +184,18 @@ export async function startServer(opts: {
 }): Promise<ServerHandle> {
   const { config, workspace, logger, store, runtime } = opts
   const { wss, port } = await listenWithRetry({ host: config.server.host, port: config.server.port, logger })
+
+  // 事件广播（先定义：Agent 事件推送与监听器共用）
+  const broadcast = (event: ServerEvent): void => {
+    const payload = JSON.stringify(event)
+    for (const client of wss.clients) {
+      if (client.readyState === client.OPEN) client.send(payload)
+    }
+  }
+  // Agent 事件推送：广播（个人工具单客户端；与 data.* 事件同语义）
+  const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
+    broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
+  })
 
   const handlers: Record<string, (params?: unknown) => unknown> = {
     [METHODS.init]: () => store.init(),
@@ -145,6 +208,30 @@ export async function startServer(opts: {
     [METHODS.contexts]: () => listContexts(workspace, store),
     [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
+    [METHODS.agentStart]: (params) => ({
+      taskId: agentRuntime.start(agentStartParams(params), {
+        permissionMode: config.agent.permissionMode,
+        allowedTools: config.agent.allowedTools,
+        maxTurns: config.agent.maxTurns,
+        model: config.agent.model,
+      }, workspace.paths.root),
+    }),
+    [METHODS.agentAnswer]: (params) => {
+      const taskId = taskIdParams(params) // 返回字符串，不可解构
+      const p = params as Record<string, unknown>
+      if (typeof p.text !== 'string' || p.text.length === 0) throw new Error('params.text 缺失（回答内容）')
+      agentRuntime.answer(taskId, p.text)
+      return {}
+    },
+    [METHODS.agentCancel]: (params) => {
+      agentRuntime.cancel(taskIdParams(params))
+      return {}
+    },
+    [METHODS.agentPermission]: (params) => {
+      const { taskId, requestId, allow } = permissionParams(params)
+      agentRuntime.permission(taskId, requestId, allow)
+      return {}
+    },
   }
 
   function respond(ws: WebSocket, resp: RpcResponse): void {
@@ -186,13 +273,5 @@ export async function startServer(opts: {
 
   logger.info(`WebSocket 桥监听 ws://${config.server.host}:${port}`)
 
-  return {
-    port,
-    broadcast(event) {
-      const payload = JSON.stringify(event)
-      for (const client of wss.clients) {
-        if (client.readyState === client.OPEN) client.send(payload)
-      }
-    },
-  }
+  return { port, broadcast }
 }

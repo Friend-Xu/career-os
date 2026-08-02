@@ -53,9 +53,15 @@ async function main(args: string[]): Promise<void> {
     projection.syncFromDecisions(initial)
     logger.info(`投影就绪：decisions ${initial.length} 条（db ${config.paths.db}）`)
 
-    // ─── WebSocket 桥（RPC + 事件广播；决策链状态机注入，derived 视图按需计算）──
+    // ─── WebSocket 桥（RPC + 事件广播；决策链状态机 + Agent 运行时注入，derived 视图按需计算）──
     const runtime = new DecisionRuntime()
-    const { port, broadcast } = await startServer({ config, workspace: ws, logger, store: projection, runtime })
+    const { port, broadcast } = await startServer({
+      config,
+      workspace: ws,
+      logger,
+      store: projection,
+      runtime,
+    })
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
