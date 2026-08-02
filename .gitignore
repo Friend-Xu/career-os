@@ -28,3 +28,6 @@ graph-force-1.png
 
 # Local scripts
 __启动脚本.bat
+
+# Project-local runtime (.local/)
+.local/
