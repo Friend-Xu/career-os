@@ -41,7 +41,7 @@ AppShell 组装：top-bar（人选择/当前方向胶囊/决策链胶囊） · i
 - **预置上下文**：`startAnalysis(prompt)` 设置 agentDraft + pendingPrompt → AI 面板聚焦 + 「已预置上下文」胶囊。所有"唤起 AI"的按钮都走这个入口（Next Action / 时间线重新评估 / 尽调 / JD 派生…）。
 - **划词 AI 改写**（resumes-page）：MUI 的 onSelect 不透传到 textarea 且 select 不冒泡 → 必须用 `inputRef` + 原生 `addEventListener('select')`；textarea 选区的 `getBoundingClientRect()` 返回 0×0 → 回退元素 rect。选中即显浮动 ✨ 按钮（非模态，`document mousedown` 关闭）。
 - **非模态浮层**：MUI Popover 默认 modal 会吞掉第一次外部点击 → 需要"点外部关闭"的浮层用 fixed 定位 div + `document mousedown` + ref.contains 判断（AI 改写候选卡、右键菜单用 MUI Menu 则无此问题）。
-- **信息池图谱**：力导向布局（d3-force：静态坐标作种子弱力微调防重叠；**全量布局，搜索/类型过滤只影响渲染、不重启模拟**）；节点 5 类（person/decision/direction/city/company）分色，**孤立节点虚线标记**（健康角标真实计算，桥接真实数据后自动生效）；右键操作**仅对 company 节点**开放（尽调/投递），其余节点只有查看详情/重新评估。
+- **信息池图谱**：react-force-graph-2d 力导向布局（语义预设坐标作种子；**标签框矩形碰撞力防文字重叠**（position-based AABB 硬约束）+ **链接长度随标签宽自适应**；搜索/类型过滤重算布局并重新模拟）；节点 7 类（person/decision/direction/city/company/role/skill）分色，**孤立节点虚线标记**（健康角标真实计算，桥接真实数据后自动生效）；右键操作**仅对 company 节点**开放（尽调/投递），其余节点只有查看详情/重新评估。
 - **状态流转闭环**：公司「标记已联系」→ 投递管理同步；「写入决策记录」→ 工作台时间线 + 决策链推进；投递看板按人过滤。所有跨页联动都带 toast 反馈。
 
 ## 惯例

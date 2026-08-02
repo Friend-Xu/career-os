@@ -17,12 +17,9 @@ import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import ListIcon from '@mui/icons-material/List'
-import { forceCenter, forceLink, forceManyBody, forceSimulation } from 'd3-force'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import type { SimulationNodeDatum } from 'd3-force'
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { Handle, MarkerType, Position, ReactFlow, useNodesState } from '@xyflow/react'
-import type { Edge, Node, NodeProps } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import ForceGraph2D from 'react-force-graph-2d'
 import { INFO_EDGES, INFO_NODES, POOL_HEALTH } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
@@ -32,7 +29,7 @@ import type { InfoNode } from '../types'
 
 /**
  * 类型色与风险色（绿/黄/红）完全错开，避免红色节点被误读为高风险。
- * person 紫 / decision 蓝 / direction 橙 / city 青 / company 粉
+ * person 紫 / decision 蓝 / direction 橙 / city 青 / company 粉 / role 金 / skill 浅蓝
  */
 const TYPE_COLOR: Record<InfoNode['type'], string> = {
   person: '#9081E4',
@@ -44,134 +41,156 @@ const TYPE_COLOR: Record<InfoNode['type'], string> = {
   skill: '#8AB4F8',
 }
 
-type ForceNode = InfoNode & SimulationNodeDatum
-type ForceLinkDatum = SimulationNodeDatum & { source: string; target: string }
+// ─── 关系图谱（react-force-graph-2d）：实时力导向 + 拖拽让位 + hover 联动（Obsidian 关系图谱同款模式）──
+// 标签防重叠（调研 d3-force-registry / d3-bboxCollide 定案，手写实现、零新增依赖）：
+// 1. 标签框矩形碰撞力——AABB，position-based 硬约束（每 tick 直接改坐标、全强度 + 2 次迭代）
+// 2. 链接长度随两端标签宽自适应（d3LinkDistance 访问器）——相连节点线长拉够，标签不被拉回重叠
+// 3. 碰撞几何与绘制一致（离屏 measureText 实测字宽 + 标签框位于圆点上方）
 
-/** 节点渲染尺寸估算（与节点组件样式一致）——布局期矩形碰撞用（渲染后由 React Flow 实测） */
-function estimateSize(n: ForceNode): { w: number; h: number } {
-  return {
-    w: n.label.length * 12.5 + 24,
-    h: n.matchScore != null ? 46 : 28,
-  }
+type FgNode = InfoNode & { isolated: boolean }
+type FgLink = { id: string; source: string; target: string; strength: 'high' | 'medium' | 'low' }
+
+/** 边/节点强度配色（浅色主题，绿=高配 蓝=中配 灰=低配） */
+const LINK_COLOR: Record<FgLink['strength'], string> = {
+  high: '#7FD962',
+  medium: '#59C2FF',
+  low: '#9a9aa5',
 }
 
+/** 标签框碰撞几何：与 drawNode 绘制一致——label 框在圆点上方（高 22/24），下方可选 matchScore 小框。
+ * hw=实测字宽/2+余量（绘制 padding 16 + 字体测量误差 4），hh 覆盖上下全高，offY=框中心相对节点的纵向偏移（负=上方） */
+interface BoxGeom { hw: number; hh: number; offY: number }
+
+// 离屏 canvas 实测字宽（与绘制同字体；按 label 缓存，避免碰撞力每 tick 重复 measureText）
+let measureCtx: CanvasRenderingContext2D | null = null
+const widthCache = new Map<string, number>()
+function labelWidth(label: string, type: InfoNode['type']): number {
+  const cached = widthCache.get(label)
+  if (cached !== undefined) return cached
+  measureCtx ??= document.createElement('canvas').getContext('2d')!
+  measureCtx.font = `600 ${type === 'person' ? 13.5 : 13}px "Geist", system-ui, sans-serif`
+  const w = measureCtx.measureText(label).width
+  widthCache.set(label, w)
+  return w
+}
+
+/** 长标签像素截断（绘制 + 碰撞共用）：超长标签（"我 — 转行分析：xxx" 可到 297px）会把布局撑开，
+ * 截断显示、碰撞按截断宽算；完整标签由 hover 提示（nodeLabel）与侧边栏详情兜底 */
+const MAX_LABEL_PX = 110
+function displayLabel(label: string, type: InfoNode['type']): string {
+  if (labelWidth(label, type) <= MAX_LABEL_PX) return label
+  let s = label
+  while (s.length > 1 && labelWidth(s + '…', type) > MAX_LABEL_PX) s = s.slice(0, -1)
+  return s + '…'
+}
+
+function boxGeom(n: { type: InfoNode['type']; label: string; matchScore?: number }): BoxGeom {
+  const r = n.type === 'person' ? 8 : 6
+  const boxH = n.type === 'person' ? 24 : 22
+  const top = r + 8 + boxH // 标签框上沿
+  const bottom = n.matchScore != null ? r + 22 : r + 8 // matchScore 小框下沿；无则到圆点
+  return { hw: (labelWidth(displayLabel(n.label, n.type), n.type) + 20) / 2, hh: (top + bottom) / 2, offY: (bottom - top) / 2 }
+}
+
+/** 标签框之间的最小间距（px）——碰撞力与链接距离共用，保证链接目标 ≥ 碰撞需要 */
+const COLLIDE_PAD = 4
+
 /**
- * 矩形碰撞力（替代 forceCollide 圆形）：按节点文字矩形做 AABB 检测，
- * 重叠则沿最小分离轴推离。长文本节点（决策标题等）不再互相贴边。
- * - fixed=false：力随 alpha 衰减（布局期与其他力共同收敛）
- * - fixed=true：固定强度推离（阶段 2 纯分离用，强制清除残留重叠）
+ * 标签框矩形碰撞力（替代圆形 collide——d3 内置 forceCollide 只支持圆形）。
+ * d3-bboxCollide / d3.forceRectCollide 同款模式（position-based AABB + iterations(2)），
+ * 推离随 alpha 缩放：初始（alpha 高）强推散开、冷却（alpha→0）弱化——让链接力主导最终布局。
+ * 不重叠由"链接目标 ≥ 碰撞最小间距"保证（见 distance 访问器），碰撞力只负责过渡期与拖拽让位。
+ * 通过 d3Force 添加（新增力安全；替换 link/charge 会破坏 force-graph 内部渲染，勿动）。
  */
-function rectCollide(estimate: (n: ForceNode) => { w: number; h: number }, fixed = false) {
-  let nodesArr: ForceNode[]
+function labelRectCollide(pad = COLLIDE_PAD) {
+  let nodesArr: ForceNodeArr
+  const geom = new WeakMap<FgNode, BoxGeom>()
+  const geomOf = (n: FgNode): BoxGeom => {
+    let g = geom.get(n)
+    if (!g) {
+      g = boxGeom(n)
+      geom.set(n, g)
+    }
+    return g
+  }
   function force(alpha: number): void {
-    for (let i = 0; i < nodesArr.length; i++) {
-      const a = nodesArr[i]!
-      for (let j = i + 1; j < nodesArr.length; j++) {
-        const b = nodesArr[j]!
-        const ah = estimate(a)
-        const bh = estimate(b)
-        const dx = a.x! - b.x!
-        const dy = a.y! - b.y!
-        const ox = ah.w / 2 + bh.w / 2 - Math.abs(dx)
-        const oy = ah.h / 2 + bh.h / 2 - Math.abs(dy)
-        if (ox <= 0 || oy <= 0) continue
-        // 沿最小分离轴推离（更贴近矩形的分离方向）；fixed 模式强度不衰减（强制分离）
-        const push = Math.min(ox, oy) * (fixed ? 0.9 : alpha)
-        if (ox < oy) {
-          const dir = dx > 0 ? 1 : -1
-          a.x! += (push / 2) * dir
-          b.x! -= (push / 2) * dir
-        } else {
-          const dir = dy > 0 ? 1 : -1
-          a.y! += (push / 2) * dir
-          b.y! -= (push / 2) * dir
+    for (let iter = 0; iter < 2; iter++) {
+      for (let i = 0; i < nodesArr.length; i++) {
+        const a = nodesArr[i]!
+        const ga = geomOf(a)
+        for (let j = i + 1; j < nodesArr.length; j++) {
+          const b = nodesArr[j]!
+          const gb = geomOf(b)
+          const dx = a.x! - b.x!
+          const dy = a.y! + ga.offY - (b.y! + gb.offY) // 框中心（含纵向偏移）
+          const ox = ga.hw + gb.hw + pad - Math.abs(dx)
+          const oy = ga.hh + gb.hh + pad - Math.abs(dy)
+          if (ox <= 0 || oy <= 0) continue
+          // 沿最小分离轴各推一半（矩形最短分离方向）；推离随 alpha 衰减但保留最低强度——
+          // 冷却（alpha→0）时仍能消除被挤压产生的重叠（无链接节点对无链接力兜底，
+          // 拖拽钉住的节点压住邻居时也靠它把邻居推开）
+          const push = Math.min(ox, oy) * Math.max(alpha, 0.5)
+          if (ox < oy) {
+            const dir = dx > 0 ? 1 : -1
+            a.x! += (push / 2) * dir
+            b.x! -= (push / 2) * dir
+          } else {
+            const dir = dy > 0 ? 1 : -1
+            a.y! += (oy / 2) * dir
+            b.y! -= (oy / 2) * dir
+          }
         }
       }
     }
   }
   force.initialize = (nodes: SimulationNodeDatum[]) => {
-    nodesArr = nodes as ForceNode[]
+    nodesArr = nodes as ForceNodeArr
   }
   return force
 }
 
-/** 检测布局中是否仍有矩形重叠（阶段 2 收敛判定） */
-function hasOverlap(nodes: ForceNode[], estimate: (n: ForceNode) => { w: number; h: number }): boolean {
-  for (let i = 0; i < nodes.length; i++) {
-    const a = nodes[i]!
-    for (let j = i + 1; j < nodes.length; j++) {
-      const b = nodes[j]!
-      const ah = estimate(a)
-      const bh = estimate(b)
-      const ox = ah.w / 2 + bh.w / 2 - Math.abs(a.x! - b.x!)
-      const oy = ah.h / 2 + bh.h / 2 - Math.abs(a.y! - b.y!)
-      if (ox > 0 && oy > 0) return true
+type ForceNodeArr = (FgNode & SimulationNodeDatum)[]
+
+/**
+ * 语义预设布局：按节点类型摆位（人中心、决策环、方向/城市左簇、公司-角色-技能右簇）——
+ * 种子距离与链接目标（≤130）同量级，链接力只需微调即可收敛（种子过远 + 强度有限 = 拉不到）。
+ */
+function semanticLayout(nodes: InfoNode[]): Map<string, { x: number; y: number }> {
+  const pos = new Map<string, { x: number; y: number }>()
+  const byType: Record<string, InfoNode[]> = {}
+  for (const n of nodes) {
+    ;(byType[n.type] ??= []).push(n)
+  }
+  // 人：中心
+  ;(byType.person ?? []).forEach((n) => pos.set(n.id, { x: 0, y: 0 }))
+  // 决策：人周围环
+  ;(byType.decision ?? []).forEach((n, i) => {
+    const a = (i / Math.max(1, byType.decision!.length)) * 2 * Math.PI
+    pos.set(n.id, { x: Math.cos(a) * 150, y: Math.sin(a) * 130 })
+  })
+  // 方向/城市：左侧簇（贴近环，避免链式悬空）
+  ;(byType.direction ?? []).forEach((n, i) => pos.set(n.id, { x: -160, y: 50 + i * 100 }))
+  ;(byType.city ?? []).forEach((n, i) => pos.set(n.id, { x: -160, y: -60 - i * 100 }))
+  // 公司：右侧簇（上下分布）
+  ;(byType.company ?? []).forEach((n, i) => pos.set(n.id, { x: 200, y: -100 + i * 80 }))
+  // 角色：公司簇下方
+  ;(byType.role ?? []).forEach((n, i) => pos.set(n.id, { x: 200, y: 130 + i * 80 }))
+  // 技能：最右网格
+  ;(byType.skill ?? []).forEach((n, i) => {
+    const col = Math.floor(i / 4)
+    const row = i % 4
+    pos.set(n.id, { x: 320 + col * 150, y: -100 + row * 85 })
+  })
+  // 未分组兜底：中心附近随机
+  let fallback = 0
+  for (const n of nodes) {
+    if (!pos.has(n.id)) {
+      const a = (fallback++ / Math.max(1, nodes.length)) * 2 * Math.PI
+      pos.set(n.id, { x: Math.cos(a) * 200, y: Math.sin(a) * 180 })
     }
   }
-  return false
+  return pos
 }
-
-// ─── React Flow 图谱（节点拖拽/缩放平移/右键内置；布局用 d3-force 一次性收敛）──
-
-/** type 别名（非 interface）：满足 React Flow 12 的 Node data Record<string, unknown> 约束 */
-type PoolFlowNodeData = {
-  node: InfoNode & { isolated: boolean }
-  onOpen: () => void // 键盘无障碍入口（鼠标点击已取消，详情走右键菜单）
-}
-type PoolFlowNode = Node<PoolFlowNodeData, 'pool'>
-
-/** 节点组件：样式平移自原手写 Box（颜色/孤立虚线/hover/匹配度），MUI 浅色延续 */
-function PoolNodeView({ data }: NodeProps<PoolFlowNode>) {
-  const { node, onOpen } = data
-  const color = TYPE_COLOR[node.type]
-  return (
-    <Box
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && onOpen) {
-          e.preventDefault()
-          onOpen()
-        }
-      }}
-      sx={{
-        position: 'relative',
-        px: 1.25,
-        py: 0.75,
-        borderRadius: node.type === 'person' ? '20px' : '8px',
-        bgcolor: alpha(color, 0.1),
-        border: `1.5px ${node.isolated ? 'dashed' : 'solid'} ${color}`,
-        cursor: 'grab',
-        width: 'max-content',
-        '&:hover': { bgcolor: alpha(color, 0.16) },
-        '&:focus-visible': { outline: `2px solid ${color}`, outlineOffset: 2 },
-        zIndex: node.type === 'person' ? 5 : 2,
-        boxShadow: node.type === 'person' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
-      }}
-    >
-      {/* 透明锚点：边附着必需（无连线交互，仅渲染边） */}
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-      <Typography
-        sx={{
-          fontSize: 12.5,
-          fontWeight: node.type === 'person' ? 600 : 500,
-          color: COLORS.text,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {node.label}
-      </Typography>
-      {node.matchScore != null && (
-        <Typography sx={{ fontSize: 11.5, color: color, fontFamily: COLORS.mono, textAlign: 'center' }}>
-          {node.matchScore}
-        </Typography>
-      )}
-    </Box>
-  )
-}
-
-/** nodeTypes 必须模块级稳定引用（React Flow 要求，避免重挂载） */
-const NODE_TYPES = { pool: PoolNodeView }
 
 function GraphCanvas({
   nodes,
@@ -179,116 +198,199 @@ function GraphCanvas({
   typeFilter,
   search,
   onNodeContext,
-  onNodeClick,
 }: {
   nodes: InfoNode[];
   edges: typeof INFO_EDGES;
   typeFilter: string;
   search: string;
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
-  onNodeClick: (node: InfoNode) => void;
 }) {
-  const [flowNodes, setFlowNodes, onFlowNodesChange] = useNodesState<PoolFlowNode>([])
-
-  /** 搜索/类型过滤（渲染层 hidden，布局保持稳定） */
-  const hiddenIds = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return new Set(
-      nodes
-        .filter((n) => {
-          const matchType = typeFilter === 'all' || n.type === typeFilter
-          const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
-          return !(matchType && matchSearch)
-        })
-        .map((n) => n.id),
-    )
-  }, [nodes, search, typeFilter])
+  // hover 状态存 ref（非 React state）：force-graph 的 nodeCanvasObject prop 更新链路不可靠，
+  // drawNode 每帧执行时直接读 ref 最新值 → 重绘反映 hover（autoPauseRedraw=false 保证渲染循环常驻）
+  const hoveredRef = useRef<string | null>(null)
+  const fgRef = useRef<any>(undefined)
 
   /** 孤立节点：edges 中无任何连接的节点（健康检查，桥接真实数据后自动生效） */
-  const isolatedIds = useMemo(() => {
+  const linkedIds = useMemo(() => {
     const linked = new Set<string>()
     for (const e of edges) {
       linked.add(e.source)
       linked.add(e.target)
     }
-    return new Set(nodes.filter((n) => !linked.has(n.id)).map((n) => n.id))
-  }, [nodes, edges])
+    return linked
+  }, [edges])
 
-  // 布局：静态坐标作种子 + 弱力微调 + 矩形碰撞，一次性收敛后喂给 React Flow（拖拽由它接管）
-  useEffect(() => {
-    if (nodes.length === 0) {
-      setFlowNodes([])
-      return
+  /** hover 邻居索引：节点 id → { 邻居节点集, 相连边集 }（联动高亮用） */
+  const neighborSets = useMemo(() => {
+    const map = new Map<string, { nodes: Set<string>; links: Set<string> }>()
+    for (const e of edges) {
+      for (const id of [e.source, e.target]) {
+        let s = map.get(id)
+        if (!s) {
+          s = { nodes: new Set([id]), links: new Set() }
+          map.set(id, s)
+        }
+        s.nodes.add(e.source === id ? e.target : e.source)
+        s.links.add(e.id)
+      }
     }
-    const cx = 520
-    const cy = 300
-    const sim = forceSimulation<ForceNode>(
-      nodes.map((n) => ({
-        ...n,
-        x: n.x ?? cx + (Math.random() - 0.5) * 80,
-        y: n.y ?? cy + (Math.random() - 0.5) * 80,
-      })),
-    )
-      .force(
-        'link',
-        forceLink<ForceNode, ForceLinkDatum>(
-          edges.map((e) => ({ source: e.source, target: e.target })),
-        )
-          .id((d) => d.id)
-          .distance(100)
-          .strength(0.55),
-      )
-      .force('charge', forceManyBody<ForceNode>().strength(-110))
-      .force('collide', rectCollide(estimateSize))
-      .force('center', forceCenter(cx, cy))
-      .alphaDecay(0.03)
-      .stop()
-    for (let i = 0; i < 500 && sim.alpha() > 0.001; i++) sim.tick()
-    // 阶段 2：移除其余力，纯矩形分离固定强度收敛（清除 alpha 衰减期推不动的残留重叠）
-    sim
-      .force('link', null)
-      .force('charge', null)
-      .force('center', null)
-      .force('collide', rectCollide(estimateSize, true))
-      .alpha(1)
-      .stop()
-    for (let i = 0; i < 400 && hasOverlap(sim.nodes(), estimateSize); i++) sim.tick()
-    const pos = new Map(sim.nodes().map((d) => [d.id, { x: d.x ?? 0, y: d.y ?? 0 }]))
-    setFlowNodes(
-      nodes.map((n) => ({
-        id: n.id,
-        type: 'pool',
-        position: pos.get(n.id) ?? { x: n.x ?? 0, y: n.y ?? 0 },
-        data: {
-          node: { ...n, isolated: isolatedIds.has(n.id) },
-          onOpen: () => onNodeClick(n),
-        },
-      })),
-    )
-  }, [nodes, edges, isolatedIds, onNodeClick, setFlowNodes])
+    return map
+  }, [edges])
 
-  const flowEdges = useMemo<Edge[]>(
-    () =>
-      edges.map((e) => {
-        const stroke =
-          e.strength === 'high'
-            ? alpha('#7FD962', 0.45)
-            : e.strength === 'medium'
-              ? alpha('#59C2FF', 0.4)
-              : alpha(COLORS.text, 0.12)
+  /** 搜索/类型过滤：graphData 子集 + 语义预设布局（团簇间距可控，力导向微调） */
+  const data = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const visible = nodes.filter((n) => {
+      const matchType = typeFilter === 'all' || n.type === typeFilter
+      const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
+      return matchType && matchSearch
+    })
+    const visibleIds = new Set(visible.map((n) => n.id))
+    const layout = semanticLayout(visible)
+    return {
+      nodes: visible.map((n) => {
+        const p = layout.get(n.id) ?? { x: 0, y: 0 }
         return {
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          style: {
-            stroke,
-            strokeWidth: e.strength === 'high' ? 2 : 1.2,
-            strokeDasharray: e.strength === 'low' ? '4 3' : undefined,
-          },
-          markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
+          ...n,
+          isolated: !linkedIds.has(n.id),
+          x: p.x,
+          y: p.y,
+          // person 钉在中心（人中心布局的语义锚点；拖拽时 force-graph 以 fx/fy 跟随，松手后停在拖拽处）
+          fx: n.type === 'person' ? p.x : undefined,
+          fy: n.type === 'person' ? p.y : undefined,
         }
       }),
-    [edges],
+      links: edges
+        .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
+        .map((e) => ({ id: e.id, source: e.source, target: e.target, strength: e.strength })),
+    }
+  }, [nodes, edges, typeFilter, search, linkedIds])
+
+  // 布局平衡（整体居中 + 团簇间距 + 标签框防重叠）：
+  // - 标签框矩形碰撞力（position-based 硬约束，见 labelRectCollide）；随 data 重注册以绑定新节点数组
+  // - 链接长度随两端标签宽自适应——标签宽则线长，相连节点不会被 link 力拉回重叠
+  //   （react-force-graph-2d 类型未暴露 d3LinkDistance prop，forceLink.distance 访问器运行时具备，契约边界 cast）
+  // - zoomToFit 由 onEngineStop 触发（布局稳定后整体居中）
+  // 链接力参数（期望间距 + 统一强度）：每 tick 幂等重设——force-graph 内部 initSimulation 会重建
+  // link force 实例抹掉直接设置（ref 仅暴露方法子集，无 linkDistance/linkStrength accessor），
+  // onEngineTick 兜底保证任何重建后下一 tick 恢复
+  const linkParamsRef = useRef<() => void>(() => {})
+  linkParamsRef.current = () => {
+    const lf = fgRef.current?.d3Force('link') as
+      | { distance(fn: (link: unknown) => number): void; strength(v: number): void }
+      | undefined
+    if (!lf) return
+    lf.distance((link) => {
+      const l = link as { source: FgNode; target: FgNode }
+      // 期望间距 = 标签自适应（上限 130），但不低于碰撞最小间距（hw 和 + pad）——
+      // 保证链接力能真正拉近（目标 ≥ 碰撞需要时碰撞不顶开），吸附生效且冷却后标签不重叠
+      const need = boxGeom(l.source).hw + boxGeom(l.target).hw + COLLIDE_PAD
+      return Math.max(Math.min(boxGeom(l.source).hw + boxGeom(l.target).hw + 48, 130), need)
+    })
+    // 统一强度：默认按度倒数（单连叶节点满强度 1.0），0.5 均匀吸附（person 已钉中心，无拉偏风险）
+    lf.strength(0.5)
+    // 消除默认 charge 斥力（-30 会把团簇推开），布局完全由链接 + 碰撞决定
+    ;(fgRef.current?.d3Force('charge') as { strength(v: number): void } | undefined)?.strength(0)
+  }
+
+  // 布局平衡（整体居中 + 团簇间距 + 标签框防重叠）：
+  // - 标签框矩形碰撞力（见 labelRectCollide）；随 data 重注册以绑定新节点数组
+  // - zoomToFit 由 onEngineStop 触发（布局稳定后整体居中）
+  useEffect(() => {
+    const fg = fgRef.current
+    if (!fg) return
+    fg.d3Force('collide', labelRectCollide())
+    linkParamsRef.current()
+  }, [data])
+
+  /** 节点绘制：光晕圆点 + 标签（按 scale 分级显隐防重叠）；hover 时非邻居淡出（读 ref 最新值） */
+  const drawNode = useCallback(
+    (node: FgNode & { x: number; y: number }, ctx: CanvasRenderingContext2D, scale: number) => {
+      const color = TYPE_COLOR[node.type]
+      const r = node.type === 'person' ? 8 : 6
+      const hovered = hoveredRef.current
+      const dim = hovered !== null && hovered !== node.id && !neighborSets.get(hovered)?.nodes.has(node.id)
+      ctx.save()
+      ctx.globalAlpha = dim ? 0.12 : 1
+      // 光晕（hover 增强）
+      ctx.shadowColor = color
+      ctx.shadowBlur = hovered === node.id ? 26 : 14
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
+      ctx.fillStyle = color
+      ctx.fill()
+      // 孤立节点：虚线外环
+      if (node.isolated) {
+        ctx.setLineDash([2, 2])
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.2
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+      ctx.shadowBlur = 0
+      // 标签分级显隐（Obsidian 式）：核心节点（人/公司/方向）早显示，细节节点（决策/技能/岗位）放大才显示——
+      // 默认视图不糊在一起，缩放逐级展开；标签带半透明背景框（文字与线/节点清晰分离）
+      const labelThreshold = node.type === 'person' || node.type === 'company' || node.type === 'direction' ? 0.7 : 1.2
+      if (scale > labelThreshold) {
+        const dLabel = displayLabel(node.label, node.type)
+        ctx.font = `600 ${node.type === 'person' ? 13.5 : 13}px "Geist", system-ui, sans-serif`
+        ctx.textAlign = 'center'
+        const tw = ctx.measureText(dLabel).width
+        const boxW = tw + 16
+        const boxH = node.type === 'person' ? 24 : 22
+        const bx = node.x - boxW / 2
+        const by = node.y - r - 8 - boxH
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+        ctx.strokeStyle = alpha(COLORS.border, 0.7)
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.roundRect(bx, by, boxW, boxH, 6)
+        ctx.fill()
+        ctx.stroke()
+        ctx.fillStyle = 'rgba(26, 26, 30, 0.92)'
+        ctx.fillText(dLabel, node.x, by + boxH - 6.5)
+        if (node.matchScore != null && scale > 1.1) {
+          ctx.font = '11px ui-monospace, monospace'
+          const mw = ctx.measureText(String(node.matchScore)).width
+          const mbx = node.x - mw / 2 - 8
+          const mby = node.y + r + 6
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+          ctx.strokeStyle = alpha(COLORS.border, 0.6)
+          ctx.beginPath()
+          ctx.roundRect(mbx, mby, mw + 16, 16, 4)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = color
+          ctx.fillText(String(node.matchScore), node.x, mby + 11)
+        }
+      }
+      ctx.restore()
+    },
+    [neighborSets],
+  )
+
+  /** 边绘制：线性渐变（source 实 → target 虚）+ hover 非邻居淡出 */
+  const drawLink = useCallback(
+    (link: FgLink & { source: { x: number; y: number }; target: { x: number; y: number } }, ctx: CanvasRenderingContext2D) => {
+      const { source: s, target: t } = link
+      if (s.x == null || t.x == null) return
+      const hovered = hoveredRef.current
+      const dim = hovered !== null && !neighborSets.get(hovered)?.links.has(link.id)
+      ctx.save()
+      ctx.globalAlpha = dim ? 0.06 : 1
+      const grad = ctx.createLinearGradient(s.x, s.y, t.x, t.y)
+      grad.addColorStop(0, `${LINK_COLOR[link.strength]}cc`)
+      grad.addColorStop(1, `${LINK_COLOR[link.strength]}1f`)
+      ctx.strokeStyle = grad
+      ctx.lineWidth = link.strength === 'high' ? 1.6 : 1
+      if (link.strength === 'low') ctx.setLineDash([3, 3])
+      ctx.beginPath()
+      ctx.moveTo(s.x, s.y)
+      ctx.lineTo(t.x, t.y)
+      ctx.stroke()
+      ctx.restore()
+    },
+    [neighborSets],
   )
 
   return (
@@ -302,21 +404,52 @@ function GraphCanvas({
         border: `1px solid ${COLORS.border}`,
       }}
     >
-      <ReactFlow<PoolFlowNode>
-        nodes={flowNodes.map((n) => (hiddenIds.has(n.id) ? { ...n, hidden: true } : n))}
-        edges={flowEdges}
-        nodeTypes={NODE_TYPES}
-        nodeOrigin={[0.5, 0.5]}
-        onNodesChange={onFlowNodesChange}
-        onNodeContextMenu={(e, nd) => {
-          e.preventDefault()
-          onNodeContext(e as unknown as MouseEvent, nd.data.node)
+      <ForceGraph2D
+        ref={fgRef}
+        // force-graph 链接类型为解析后节点对象；字符串 id 是运行时合法输入（内部映射），cast 处理
+        graphData={data as any}
+        nodeCanvasObject={drawNode}
+        linkCanvasObject={drawLink}
+        // 长标签截断后完整名称走 hover 提示（默认 HTML tooltip）
+        nodeLabel={(node) => (node as FgNode).label}
+        // 指针命中区域与绘制一致（自定义 nodeCanvasObject 后默认命中半径仅 1px，hover/右键都点不中）
+        nodePointerAreaPaint={(node, color, ctx) => {
+          const n = node as FgNode
+          ctx.fillStyle = color
+          ctx.beginPath()
+          ctx.arc(n.x!, n.y!, n.type === 'person' ? 7 : 5, 0, 2 * Math.PI)
+          ctx.fill()
         }}
-        fitView
-        fitViewOptions={{ padding: 0.25 }}
-        proOptions={{ hideAttribution: true }}
+        onNodeHover={(node) => {
+          hoveredRef.current = node ? (node as FgNode).id : null
+        }}
+        onNodeRightClick={(node, e) => onNodeContext(e as unknown as MouseEvent, node as FgNode)}
+        // 拖拽后钉住节点（Obsidian 同款：拖到哪就留在哪）+ reheat 让碰撞力推开被压住的邻居
+        // （force-graph 默认松手后清除 fx/fy 弹回原簇，且不 reheat——钉住后模拟已停、重叠残留）
+        onNodeDragEnd={(node) => {
+          const n = node as FgNode & SimulationNodeDatum
+          n.fx = n.x
+          n.fy = n.y
+          fgRef.current?.d3ReheatSimulation()
+        }}
+        // 模拟冷却（布局稳定）后整体适配居中——初始 zoomToFit 太早（节点未散开，fit 范围错误）
+        onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
+        // 每 tick 幂等重设链接力参数（force-graph 重建 link force 时兜底恢复，见 linkParamsRef）
+        onEngineTick={() => linkParamsRef.current()}
+        // Obsidian 式行为：warmup 快速散开 → 冷却静止；拖拽自动 reheat（邻居让位）+ hover 联动
+        // autoPauseRedraw=false：渲染循环常驻（hover/点击检测依赖它；冷却后停渲染则 hover 永不触发）
+        autoPauseRedraw={false}
+        d3AlphaMin={0.001}
+        d3AlphaDecay={0.02}
+        // 模拟冷却阈值调大：默认 cooldownTicks 150 在种子重叠未收敛时就停（布局停在中间态），
+        // 600 tick（≈alpha 自然衰减到 0.001 的 340 tick 之上）保证链接力充分收敛
+        cooldownTicks={600}
+        d3VelocityDecay={0.35}
+        warmupTicks={140}
+        nodeRelSize={1}
+        backgroundColor="rgba(0, 0, 0, 0)"
         minZoom={0.3}
-        maxZoom={2}
+        maxZoom={4}
       />
 
       {/* Legend */}
@@ -333,6 +466,7 @@ function GraphCanvas({
           borderRadius: '8px',
           bgcolor: alpha(COLORS.canvas, 0.85),
           border: `1px solid ${COLORS.border}`,
+          pointerEvents: 'none',
         }}
       >
         {Object.entries(TYPE_COLOR).map(([type, color]) => (
@@ -451,7 +585,6 @@ export function InfoPoolPage() {
           edges={edges}
           typeFilter={infopoolFilter}
           search={search}
-          onNodeClick={setSelected}
           onNodeContext={(e, node) => {
             setMenu({ anchor: { top: e.clientY, left: e.clientX }, node })
           }}

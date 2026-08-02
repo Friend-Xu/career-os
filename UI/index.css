@@ -70,26 +70,3 @@ html.light {
     background-color 0.35s cubic-bezier(0.32, 0.72, 0, 1),
     border-color 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
-
-/* React Flow 浅色适配：自定义节点自带全部样式，覆盖默认包裹样式 */
-.react-flow {
-  background: transparent;
-}
-.react-flow__node {
-  border: none;
-  background: transparent;
-  padding: 0;
-  box-shadow: none;
-  border-radius: 0;
-  font-size: inherit;
-}
-.react-flow__node:focus-visible,
-.react-flow__node:focus {
-  outline: none;
-}
-.react-flow__edge-path {
-  cursor: pointer;
-}
-.react-flow__pane {
-  cursor: default;
-}
