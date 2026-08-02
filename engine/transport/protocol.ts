@@ -34,7 +34,9 @@ export const METHODS = {
   listDecisions: 'decisions/list',
   /** 触发一次全量重扫描（md → IR） */
   rescan: 'decisions/rescan',
-  /** 公司档案列表 */
+  /** 决策链投影（按人分组的 computeChain 派生视图，6 阶段状态机） */
+  chain: 'decisions/chain',
+  /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
   /** 人列表（投影） */
   listPersons: 'persons/list',

@@ -41,6 +41,22 @@ export interface Person {
   targetRoles?: string[] // 目标岗位列表（有名目；评估/投递另有挂载点）
 }
 
+/** 决策链状态机（V1）：6 阶段线性链投影视图（decision-runtime 派生，不落盘） */
+export type StageId = '方向探索' | '转行评估' | '城市评估' | '公司筛选' | 'JD分析' | '简历定制'
+export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped'
+export interface PersonStage {
+  stage: StageId
+  status: StageStatus
+  direction?: string
+  city?: string
+}
+export interface DecisionChain {
+  person: string // 决策记录归属人（profile）
+  stages: PersonStage[] // 6 阶段线性链
+  currentStage: StageId
+  progressedAt: string // 最近一次推进时间
+}
+
 /** 决策记录（14 字段摘要表；profile = 人名，v2.1） */
 export interface DecisionRecord {
   id: string

@@ -5,7 +5,15 @@
  * - 离线：连接失败/断开 → status 'offline' + 指数退避重连；UI 在 offline 时保持
  *   mock 数据行为（渐进替换，不假死）
  */
-import type { DecisionRecord, Person, PoolEdge, PoolNode, Validation } from '../../engine/ir/schema.ts'
+import type {
+  CompanyRecord,
+  DecisionChain,
+  DecisionRecord,
+  Person,
+  PoolEdge,
+  PoolNode,
+  Validation,
+} from '../../engine/ir/schema.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
@@ -190,8 +198,12 @@ export class EngineClient {
     return this.rpc<{ count: number }>(METHODS.rescan)
   }
 
-  listCompanies(): Promise<{ id: string; name: string; summary: string }[]> {
-    return this.rpc<{ id: string; name: string; summary: string }[]>(METHODS.listCompanies)
+  listChains(): Promise<DecisionChain[]> {
+    return this.rpc<DecisionChain[]>(METHODS.chain)
+  }
+
+  listCompanies(): Promise<(CompanyRecord & { validation?: Validation })[]> {
+    return this.rpc<(CompanyRecord & { validation?: Validation })[]>(METHODS.listCompanies)
   }
 
   listPersons(): Promise<Person[]> {
