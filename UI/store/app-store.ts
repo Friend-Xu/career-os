@@ -21,7 +21,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { DecisionChain, Validation } from '../../engine/ir/schema.ts'
+import type { DecisionAggregate, DecisionChain, Validation } from '../../engine/ir/schema.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -119,6 +119,8 @@ interface AppState {
   currentSessionId: string;
   applications: Application[];
   decisions: DecisionView[];
+  /** 决策聚合视图（V1.5）：引擎实时派生，不持久化——offline/未建 context 时为空数组 */
+  contexts: DecisionAggregate[];
   companies: CompanyView[];
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
@@ -189,6 +191,7 @@ export const useAppStore = create<AppState>()(
       currentSessionId: 's-current',
       applications: APPLICATIONS,
       decisions: DECISIONS,
+      contexts: [],
       companies: COMPANIES,
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
@@ -627,6 +630,17 @@ async function pullDecisions(): Promise<void> {
   }
 }
 
+/** 决策聚合视图（V1.5）：引擎实时派生（contexts/list），offline/未建 context 时保持空数组 */
+async function pullContexts(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listContexts()
+    useAppStore.setState({ contexts: list })
+  } catch {
+    // offline：保持空数组（聚合视图显示空态，不假死）
+  }
+}
+
 /** 引擎决策链 6 阶段中文名 → UI DecisionStage.id */
 const STAGE_ID_BY_NAME: Record<DecisionChain['stages'][number]['stage'], string> = {
   方向探索: 'direction',
@@ -695,6 +709,7 @@ export function connectEngine(): void {
       void pullChains()
       void pullCompanies()
       void pullGraph()
+      void pullContexts()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {
@@ -702,6 +717,7 @@ export function connectEngine(): void {
     void pullChains()
     void pullCompanies()
     void pullGraph()
+    void pullContexts()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())
   engine.connect()

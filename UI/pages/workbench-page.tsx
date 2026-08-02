@@ -14,8 +14,11 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import dayjs from 'dayjs'
+import { useState } from 'react'
 import { useAppStore } from '../store/app-store'
+import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
+import { DecisionAggregateDrawer } from '../components/decision-aggregate-drawer'
 import {
   APPLICATION_STATS,
   NEXT_ACTION,
@@ -23,6 +26,7 @@ import {
 } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, RiskLevel } from '../types'
+import type { DecisionAggregate } from '../../engine/ir/schema.ts'
 
 function ModeSwitcher() {
   const mode = useAppStore((s) => s.mainWidthMode)
@@ -171,9 +175,22 @@ function DecisionTimeline() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const decisions = useAppStore((s) => s.decisions)
+  const contexts = useAppStore((s) => s.contexts)
   const person = useAppStore((s) => s.currentPerson())
+  const push = useToastStore((s) => s.push)
+  const [selectedAggregate, setSelectedAggregate] = useState<DecisionAggregate | null>(null)
   const personDecisions = decisions.filter((d) => d.profile === person.name)
   const items = personDecisions.slice(0, 3)
+
+  /** 时间线条目 → 聚合视图：在 contexts 中找 records 包含该决策的 aggregate；无匹配诚实提示 */
+  const openAggregate = (decisionId: string) => {
+    const agg = contexts.find((a) => a.records.some((r) => r.id === decisionId))
+    if (agg) {
+      setSelectedAggregate(agg)
+    } else {
+      push('info', '该决策暂无问题绑定（decision-contexts 未建）')
+    }
+  }
 
   return (
     <Box
@@ -218,6 +235,10 @@ function DecisionTimeline() {
             sx={{
               position: 'relative',
               pb: idx < items.length - 1 ? 2 : 0,
+              px: 0.5,
+              mx: -0.5,
+              borderRadius: '8px',
+              '&:hover': { bgcolor: alpha(COLORS.bgHover, 0.6) },
               '&:hover .re-eval-btn': { opacity: 1 },
               '&:focus-within .re-eval-btn': { opacity: 1 },
             }}
@@ -229,7 +250,8 @@ function DecisionTimeline() {
                   left: 5,
                   top: 14,
                   bottom: 0,
-                  width: 1,
+                  // 注意：MUI 将 0-1 数字视为百分比（width: 1 = 100%），竖线必须显式 px 单位
+                  width: '1px',
                   bgcolor: COLORS.border,
                 }}
               />
@@ -245,7 +267,10 @@ function DecisionTimeline() {
                 zIndex: 1,
               }}
             />
-            <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Box
+              sx={{ minWidth: 0, flex: 1, cursor: 'pointer', borderRadius: '8px', px: 0.5, mx: -0.5 }}
+              onClick={() => openAggregate(d.id)}
+            >
               <Stack
                 direction="row"
                 sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}
@@ -274,11 +299,12 @@ function DecisionTimeline() {
                     <IconButton
                       size="small"
                       className="re-eval-btn"
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation()
                         startAnalysis(
                           `请重新评估「${d.title}」：结合最新画像与市场信息，更新匹配度与风险`,
                         )
-                      }
+                      }}
                       sx={{
                         opacity: 0,
                         transition: `opacity 0.15s ${EASE}`,
@@ -323,6 +349,11 @@ function DecisionTimeline() {
       )}
         </>
       )}
+      <DecisionAggregateDrawer
+        open={Boolean(selectedAggregate)}
+        aggregate={selectedAggregate}
+        onClose={() => setSelectedAggregate(null)}
+      />
     </Box>
   )
 }
