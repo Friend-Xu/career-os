@@ -143,4 +143,9 @@ export class AgentRuntime {
     task.pendingPermissions.delete(requestId)
     resolve(allow)
   }
+
+  /** 优雅关闭：中止所有活跃任务（abort → SDK close → CLI 子进程终止） */
+  shutdown(): void {
+    for (const taskId of [...this.tasks.keys()]) this.cancel(taskId)
+  }
 }

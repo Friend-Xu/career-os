@@ -45,6 +45,8 @@ export interface BridgeStore {
 export interface ServerHandle {
   port: number
   broadcast(event: ServerEvent): void
+  /** 优雅关闭：中止全部活跃 Agent 任务（SDK close → CLI 子进程终止） */
+  shutdown(): void
 }
 
 function isLoopback(addr: string | undefined): boolean {
@@ -273,5 +275,9 @@ export async function startServer(opts: {
 
   logger.info(`WebSocket 桥监听 ws://${config.server.host}:${port}`)
 
-  return { port, broadcast }
+  return {
+    port,
+    broadcast,
+    shutdown: () => agentRuntime.shutdown(),
+  }
 }

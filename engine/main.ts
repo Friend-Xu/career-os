@@ -55,13 +55,14 @@ async function main(args: string[]): Promise<void> {
 
     // ─── WebSocket 桥（RPC + 事件广播；决策链状态机 + Agent 运行时注入，derived 视图按需计算）──
     const runtime = new DecisionRuntime()
-    const { port, broadcast } = await startServer({
+    const handle = await startServer({
       config,
       workspace: ws,
       logger,
       store: projection,
       runtime,
     })
+    const { port, broadcast } = handle
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
@@ -84,6 +85,19 @@ async function main(args: string[]): Promise<void> {
     }
 
     logger.info(`桥接服务就绪 ws://${config.server.host}:${port}`)
+
+    // 优雅关闭：Ctrl+C / kill → 中止活跃 Agent 任务（SDK close 终止 CLI 子进程），
+    // 短暂等待清理后退出（强杀场景由一键启动 taskkill /T 树杀兜底）
+    let shuttingDown = false
+    const shutdown = (): void => {
+      if (shuttingDown) return
+      shuttingDown = true
+      logger.info('收到关闭信号，清理 Agent 任务…')
+      handle.shutdown()
+      setTimeout(() => process.exit(0), 800)
+    }
+    process.on('SIGINT', shutdown)
+    process.on('SIGTERM', shutdown)
   } catch (err) {
     if (err instanceof ConfigError || err instanceof WorkspaceError || err instanceof ServerError) {
       console.error(err.message)
