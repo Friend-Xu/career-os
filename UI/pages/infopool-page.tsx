@@ -17,7 +17,9 @@ import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import ListIcon from '@mui/icons-material/List'
-import { useMemo, useState, type MouseEvent } from 'react'
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
+import type { SimulationNodeDatum } from 'd3-force'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { INFO_EDGES, INFO_NODES, POOL_HEALTH } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
@@ -36,19 +38,83 @@ const TYPE_COLOR: Record<InfoNode['type'], string> = {
   company: '#E77FC3',
 }
 
+type ForceNode = InfoNode & SimulationNodeDatum
+type ForceLinkDatum = SimulationNodeDatum & { source: string; target: string }
+
 function GraphCanvas({
   nodes,
+  typeFilter,
+  search,
   onNodeContext,
   onNodeClick,
-  highlight,
 }: {
   nodes: InfoNode[];
+  typeFilter: string;
+  search: string;
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
   onNodeClick: (node: InfoNode) => void;
-  highlight: string;
 }) {
   const edges = INFO_EDGES
   const [scale, setScale] = useState(1)
+
+  /** 力导向位置缓存：全量节点布局，搜索/类型过滤只影响渲染、不重启模拟 */
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() =>
+    Object.fromEntries(nodes.map((n) => [n.id, { x: n.x ?? 400, y: n.y ?? 280 }])),
+  )
+
+  /** 搜索/类型过滤（渲染层） */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return nodes.filter((n) => {
+      const matchType = typeFilter === 'all' || n.type === typeFilter
+      const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
+      return matchType && matchSearch
+    })
+  }, [nodes, search, typeFilter])
+
+  /** 孤立节点：edges 中无任何连接的节点（健康检查，桥接真实数据后自动生效） */
+  const isolatedIds = useMemo(() => {
+    const linked = new Set<string>()
+    for (const e of edges) {
+      linked.add(e.source)
+      linked.add(e.target)
+    }
+    return new Set(nodes.filter((n) => !linked.has(n.id)).map((n) => n.id))
+  }, [nodes, edges])
+
+  // 力导向：静态坐标作种子（保留语义布局）+ 弱力微调防重叠；nodes 全量变化才重启
+  useEffect(() => {
+    const cx = 520
+    const cy = 300
+    const sim = forceSimulation<ForceNode>(
+      nodes.map((n) => ({
+        ...n,
+        x: n.x ?? cx + (Math.random() - 0.5) * 80,
+        y: n.y ?? cy + (Math.random() - 0.5) * 80,
+      })),
+    )
+      .force(
+        'link',
+        forceLink<ForceNode, ForceLinkDatum>(
+          edges.map((e) => ({ source: e.source, target: e.target })),
+        )
+          .id((d) => d.id)
+          .distance(88)
+          .strength(0.55),
+      )
+      .force('charge', forceManyBody<ForceNode>().strength(-85))
+      .force('collide', forceCollide(38))
+      .force('center', forceCenter(cx, cy))
+      .alphaDecay(0.06)
+    sim.on('tick', () => {
+      setPositions(
+        Object.fromEntries(sim.nodes().map((d) => [d.id, { x: d.x ?? 0, y: d.y ?? 0 }])),
+      )
+    })
+    return () => {
+      sim.stop()
+    }
+  }, [nodes, edges])
 
   return (
     <Box
@@ -82,9 +148,9 @@ function GraphCanvas({
           </marker>
         </defs>
         {edges.map((e) => {
-          const s = nodes.find((n) => n.id === e.source)
-          const t = nodes.find((n) => n.id === e.target)
-          if (!s?.x || !s.y || !t?.x || !t.y) return null
+          const s = positions[e.source]
+          const t = positions[e.target]
+          if (!s || !t) return null
           const stroke =
             e.strength === 'high'
               ? alpha('#7FD962', 0.45)
@@ -108,12 +174,10 @@ function GraphCanvas({
         })}
       </svg>
 
-      {nodes.map((n, i) => {
-        const hit =
-          !highlight ||
-          n.label.toLowerCase().includes(highlight.toLowerCase()) ||
-          n.type.includes(highlight.toLowerCase())
+      {filtered.map((n, i) => {
         const color = TYPE_COLOR[n.type]
+        const pos = positions[n.id] ?? { x: n.x ?? 0, y: n.y ?? 0 }
+        const isolated = isolatedIds.has(n.id)
         return (
           <Box
             key={n.id}
@@ -132,15 +196,14 @@ function GraphCanvas({
             }}
             sx={{
               position: 'absolute',
-              left: n.x ?? 0,
-              top: n.y ?? 0,
+              left: pos.x,
+              top: pos.y,
               transform: 'translate(-50%, -50%)',
               px: 1.25,
               py: 0.75,
               borderRadius: n.type === 'person' ? '20px' : '8px',
               bgcolor: alpha(color, 0.1),
-              border: `1.5px solid ${hit ? color : 'transparent'}`,
-              opacity: hit ? 1 : 0.25,
+              border: `1.5px ${isolated ? 'dashed' : 'solid'} ${color}`,
               cursor: 'pointer',
               transition: `opacity 0.2s ${EASE}, border-color 0.2s ${EASE}, transform 0.15s ${EASE}`,
               animation: `fade-in 0.4s ${EASE} ${i * 0.04}s both`,
@@ -214,6 +277,16 @@ export function InfoPoolPage() {
 
   const nodes = useMemo(() => INFO_NODES, [])
 
+  /** 孤立节点数（真实计算，健康检查） */
+  const isolatedCount = useMemo(() => {
+    const linked = new Set<string>()
+    for (const e of INFO_EDGES) {
+      linked.add(e.source)
+      linked.add(e.target)
+    }
+    return INFO_NODES.filter((n) => !linked.has(n.id)).length
+  }, [])
+
   /** 当前右键节点的公司档案（仅 company 节点可能命中）。 */
   const menuCompany = menu ? companies.find((c) => c.name === menu.node.label) : undefined
 
@@ -233,7 +306,7 @@ export function InfoPoolPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>信息池</Typography>
         <Chip
           size="small"
-          label={`健康 ${POOL_HEALTH.healthPercent}% · ${POOL_HEALTH.totalNodes} 节点`}
+          label={`健康 ${POOL_HEALTH.healthPercent}% · ${nodes.length} 节点 · 孤立 ${isolatedCount}`}
           sx={{ height: 22, fontSize: 12, bgcolor: alpha(COLORS.riskLow, 0.1), color: COLORS.riskLow }}
         />
         <Box sx={{ flex: 1 }} />
@@ -261,8 +334,9 @@ export function InfoPoolPage() {
 
       {tab === 0 ? (
         <GraphCanvas
-          nodes={filteredNodes}
-          highlight={search}
+          nodes={nodes}
+          typeFilter={infopoolFilter}
+          search={search}
           onNodeClick={setSelected}
           onNodeContext={(e, node) => {
             setMenu({ anchor: { top: e.clientY, left: e.clientX }, node })
