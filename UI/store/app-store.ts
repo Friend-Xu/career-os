@@ -21,7 +21,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { DecisionAggregate, DecisionChain, Validation } from '../../engine/ir/schema.ts'
+import type { DecisionAggregate, DecisionChain, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -121,6 +121,8 @@ interface AppState {
   decisions: DecisionView[];
   /** 决策聚合视图（V1.5）：引擎实时派生，不持久化——offline/未建 context 时为空数组 */
   contexts: DecisionAggregate[];
+  /** 知识层（V2）：技能词表 + 岗位清单（引擎实时派生，不持久化；status 标注 RPC 成败——视图按诚实空态消费） */
+  knowledge: { skills: Skill[]; roles: Role[]; status: 'idle' | 'ready' | 'error' };
   companies: CompanyView[];
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
@@ -192,6 +194,7 @@ export const useAppStore = create<AppState>()(
       applications: APPLICATIONS,
       decisions: DECISIONS,
       contexts: [],
+      knowledge: { skills: [], roles: [], status: 'idle' },
       companies: COMPANIES,
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
@@ -641,6 +644,18 @@ async function pullContexts(): Promise<void> {
   }
 }
 
+/** 知识层（V2）：skill 词表 + 岗位档案（knowledge/graph）；RPC 失败 → status error，视图显示"知识层未就绪"空态 */
+async function pullKnowledge(): Promise<void> {
+  if (!engine) return
+  try {
+    const graph = await engine.knowledgeGraph()
+    useAppStore.setState({ knowledge: { ...graph, status: 'ready' } })
+  } catch {
+    // 引擎旧代码无 knowledge/graph RPC：置 error，不拿空数据冒充"无档案"
+    useAppStore.setState((s) => ({ knowledge: { ...s.knowledge, status: 'error' } }))
+  }
+}
+
 /** 引擎决策链 6 阶段中文名 → UI DecisionStage.id */
 const STAGE_ID_BY_NAME: Record<DecisionChain['stages'][number]['stage'], string> = {
   方向探索: 'direction',
@@ -710,6 +725,7 @@ export function connectEngine(): void {
       void pullCompanies()
       void pullGraph()
       void pullContexts()
+      void pullKnowledge()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {

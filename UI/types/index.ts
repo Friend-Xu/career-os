@@ -17,6 +17,7 @@ import type {
   FollowupUrgency,
   ToolCallInfo,
   ToolCallStatus,
+  GapResult,
 } from '../../engine/ir/schema.ts';
 
 export type { Person };
@@ -25,6 +26,7 @@ export type { CompanyRecord as Company };
 export type { PoolNode as InfoNode };
 export type { PoolEdge as InfoEdge };
 export type { Application };
+export type { GapResult };
 export type { RiskLevel };
 export type { ApplicationStatus };
 export type { FollowupUrgency };

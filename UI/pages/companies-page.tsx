@@ -18,6 +18,7 @@ import MapIcon from '@mui/icons-material/Map'
 import ViewListIcon from '@mui/icons-material/ViewList'
 import { useEffect, useMemo, useState } from 'react'
 import { PARKS } from '../data/mock-data'
+import { GapAnalysisSection } from '../components/gap-analysis-section'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
@@ -361,7 +362,7 @@ export function CompaniesPage() {
         }}
       >
         {selected && (
-          <Box sx={{ p: 2.5 }}>
+          <Box sx={{ p: 2.5, height: '100%', overflowY: 'auto' }}>
             <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }}>
               <Typography sx={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
               <IconButton size="small" onClick={() => setSelected(null)}>
@@ -393,6 +394,8 @@ export function CompaniesPage() {
                 <Row label="来源" value={selected.source} />
               </Stack>
             </Box>
+
+            <GapAnalysisSection companyName={selected.name} />
 
             <Stack spacing={1}>
               <Button
