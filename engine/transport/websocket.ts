@@ -110,7 +110,7 @@ export async function startServer(opts: {
   store: BridgeStore
   runtime: DecisionRuntime
 }): Promise<ServerHandle> {
-  const { config, logger, store, runtime } = opts
+  const { config, workspace, logger, store, runtime } = opts
   const { wss, port } = await listenWithRetry({ host: config.server.host, port: config.server.port, logger })
 
   const handlers: Record<string, () => unknown> = {
