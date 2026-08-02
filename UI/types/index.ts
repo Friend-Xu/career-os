@@ -24,15 +24,16 @@ export type NavPageId =
   | 'resumes'
   | 'settings';
 
-export interface Role {
+export interface Person {
   id: number;
-  name: string;
+  name: string;          // 对应 profiles/{name}.md（人）
   color: string;
   emoji: string;
-  matchScore: number;
+  matchScore: number;    // 综合画像匹配度
   riskLevel: RiskLevel;
   archived: boolean;
   profilePath: string;
+  targetRoles?: string[]; // 目标岗位列表（创建人向导推荐确认）
 }
 
 export interface DecisionStage {
@@ -79,7 +80,7 @@ export interface Company {
 
 export interface Application {
   id: number;
-  roleId: number;
+  personId: number;
   company: string;
   position: string;
   sourceDecision?: string;
@@ -105,7 +106,7 @@ export interface Park {
 export interface Session {
   id: string;
   title: string;
-  roleId: number;
+  personId: number;
   createdAt: string;
   updatedAt: string;
   archived: boolean;
@@ -125,7 +126,7 @@ export interface ChatMessage {
 export interface InfoNode {
   id: string;
   label: string;
-  type: 'role' | 'decision' | 'direction' | 'city' | 'company';
+  type: 'person' | 'decision' | 'direction' | 'city' | 'company';
   riskLevel?: RiskLevel;
   matchScore?: number;
   x?: number;
@@ -143,6 +144,7 @@ export interface InfoEdge {
 export interface ResumeVersion {
   id: string;
   name: string;
+  personId: number;
   parentId?: string;
   updatedAt: string;
   targetCompany?: string;
@@ -183,6 +185,13 @@ export interface NextAction {
   priorities: string[];
   prompt: string;
   stageId: string;
+}
+
+export interface TargetRoleRec {
+  id: string;
+  name: string;
+  match: number;
+  reason: string;
 }
 
 export interface CommandItem {

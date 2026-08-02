@@ -20,14 +20,14 @@ import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import { ThemeToggle } from '../components/layout/theme-toggle'
 
 export function SettingsPage() {
-  const currentRoleId = useAppStore((s) => s.currentRoleId)
-  const setRole = useAppStore((s) => s.setRole)
-  const setRoleCreateDialogOpen = useAppStore((s) => s.setRoleCreateDialogOpen)
-  const archiveRole = useAppStore((s) => s.archiveRole)
+  const currentPersonId = useAppStore((s) => s.currentPersonId)
+  const setPerson = useAppStore((s) => s.setPerson)
+  const setPersonCreateDialogOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
+  const archivePerson = useAppStore((s) => s.archivePerson)
   const push = useToastStore((s) => s.push)
   const { mode, setMode } = useColorScheme()
   const themeMode = mode === 'light' || mode === 'dark' ? mode : 'dark'
-  const roles = useAppStore((s) => s.roles).filter((r) => !r.archived)
+  const persons = useAppStore((s) => s.persons).filter((p) => !p.archived)
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
@@ -45,23 +45,23 @@ export function SettingsPage() {
           </Button>
         </Stack>
         <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 3 }}>
-          角色管理 / 模型配置 / 数据 / 外观
+          人管理 / 模型配置 / 数据 / 外观
         </Typography>
 
-        {/* Roles */}
-        <Section title="角色管理">
+        {/* Persons */}
+        <Section title="人管理">
           <Stack spacing={1}>
-            {roles.map((role) => (
+            {persons.map((person) => (
               <Stack
-                key={role.id}
+                key={person.id}
                 direction="row"
                 spacing={1.5}
                 sx={{
                   alignItems: 'center',
                   p: 1.5,
                   borderRadius: '8px',
-                  border: `1px solid ${role.id === currentRoleId ? alpha(COLORS.accent, 0.35) : COLORS.border}`,
-                  bgcolor: role.id === currentRoleId ? COLORS.accentMuted : COLORS.bgElevated,
+                  border: `1px solid ${person.id === currentPersonId ? alpha(COLORS.accent, 0.35) : COLORS.border}`,
+                  bgcolor: person.id === currentPersonId ? COLORS.accentMuted : COLORS.bgElevated,
                 }}
               >
                 <Box
@@ -69,49 +69,49 @@ export function SettingsPage() {
                     width: 36,
                     height: 36,
                     borderRadius: '8px',
-                    bgcolor: alpha(role.color, 0.13),
+                    bgcolor: alpha(person.color, 0.13),
                     display: 'grid',
                     placeItems: 'center',
                     fontSize: 18,
                   }}
                 >
-                  {role.emoji}
+                  {person.emoji}
                 </Box>
                 <Box sx={{ flex: 1 }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{role.name}</Typography>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{person.name}</Typography>
                   <Typography sx={{ fontSize: 12, color: COLORS.textMuted, fontFamily: COLORS.mono }}>
-                    {role.profilePath}
+                    {person.profilePath}
                   </Typography>
                 </Box>
                 <Chip
                   size="small"
-                  label={`匹配 ${role.matchScore}%`}
+                  label={`匹配 ${person.matchScore}%`}
                   sx={{ height: 22, fontSize: 12 }}
                 />
                 <Chip
                   size="small"
-                  label={`风险${RISK_LABEL[role.riskLevel]}`}
+                  label={`风险${RISK_LABEL[person.riskLevel]}`}
                   sx={{
                     height: 22,
                     fontSize: 12,
-                    color: RISK_COLOR[role.riskLevel],
-                    bgcolor: alpha(RISK_COLOR[role.riskLevel], 0.12),
+                    color: RISK_COLOR[person.riskLevel],
+                    bgcolor: alpha(RISK_COLOR[person.riskLevel], 0.12),
                   }}
                 />
-                {role.id !== currentRoleId ? (
+                {person.id !== currentPersonId ? (
                   <Stack direction="row" spacing={0.5}>
                     <Button
                       size="small"
                       color="inherit"
                       onClick={() => {
-                        archiveRole(role.id)
-                        push('info', `已归档角色「${role.name}」`)
+                        archivePerson(person.id)
+                        push('info', `已归档人「${person.name}」`)
                       }}
                       sx={{ fontSize: 12, color: COLORS.textMuted }}
                     >
                       归档
                     </Button>
-                    <Button size="small" onClick={() => setRole(role.id)} sx={{ fontSize: 12 }}>
+                    <Button size="small" onClick={() => setPerson(person.id)} sx={{ fontSize: 12 }}>
                       切换
                     </Button>
                   </Stack>
@@ -125,9 +125,9 @@ export function SettingsPage() {
               size="small"
               startIcon={<AddIcon sx={{ fontSize: 14 }} />}
               sx={{ alignSelf: 'flex-start', mt: 0.5 }}
-              onClick={() => setRoleCreateDialogOpen(true)}
+              onClick={() => setPersonCreateDialogOpen(true)}
             >
-              创建角色
+              创建新人
             </Button>
           </Stack>
         </Section>

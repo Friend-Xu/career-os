@@ -8,7 +8,7 @@ import type {
   DecisionStage,
   MainWidthMode,
   NavPageId,
-  Role,
+  Person,
   Session,
   StageStatus,
 } from '../types'
@@ -16,13 +16,13 @@ import {
   APPLICATIONS,
   COMPANIES,
   DECISIONS,
-  ROLES,
+  PERSONS,
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
 
-/** 按角色构造决策链进度：角色 1 走完三步（演示主线），其余角色差异化。 */
-function makeRoleStages(statusMap: Record<string, StageStatus>): DecisionStage[] {
+/** 按人构造决策链进度：人 1 走完三步（演示主线），其余人差异化。 */
+function makePersonStages(statusMap: Record<string, StageStatus>): DecisionStage[] {
   return STAGES.map((s) => ({
     ...s,
     status: statusMap[s.id] ?? 'pending',
@@ -30,25 +30,24 @@ function makeRoleStages(statusMap: Record<string, StageStatus>): DecisionStage[]
   }))
 }
 
-function buildInitialRoleStages(): Record<number, DecisionStage[]> {
+function buildInitialPersonStages(): Record<number, DecisionStage[]> {
   return {
-    1: makeRoleStages({
+    1: makePersonStages({
       direction: 'completed',
       transfer: 'completed',
       city: 'completed',
       company: 'current',
     }),
-    2: makeRoleStages({ direction: 'completed', transfer: 'current' }),
-    3: makeRoleStages({ direction: 'current' }),
+    2: makePersonStages({ direction: 'completed', transfer: 'current' }),
   }
 }
 
-function freshRoleStages(): DecisionStage[] {
-  return makeRoleStages({ direction: 'current' })
+function freshPersonStages(): DecisionStage[] {
+  return makePersonStages({ direction: 'current' })
 }
 
 interface AppState {
-  currentRoleId: number;
+  currentPersonId: number;
   currentPage: NavPageId;
   agentPanelOpen: boolean;
   mainWidthMode: MainWidthMode;
@@ -58,29 +57,29 @@ interface AppState {
   applications: Application[];
   decisions: DecisionRecord[];
   companies: Company[];
-  roles: Role[];
-  roleStages: Record<number, DecisionStage[]>;
+  persons: Person[];
+  personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
   agentContextFiles: string[];
   pendingPrompt: string | null;
-  roleSwitchDialogOpen: boolean;
-  pendingRoleId: number | null;
-  roleCreateDialogOpen: boolean;
+  personSwitchDialogOpen: boolean;
+  pendingPersonId: number | null;
+  personCreateDialogOpen: boolean;
   activeResumeId: string;
   infopoolFilter: string;
   companiesFilter: string;
   applicationsFilter: string;
   locateTarget: string | null;
 
-  currentRole: () => Role;
+  currentPerson: () => Person;
   setPage: (page: NavPageId) => void;
-  setRole: (roleId: number) => void;
-  confirmRoleSwitch: (keepSession: boolean) => void;
-  cancelRoleSwitch: () => void;
-  setRoleCreateDialogOpen: (open: boolean) => void;
+  setPerson: (personId: number) => void;
+  confirmPersonSwitch: (keepSession: boolean) => void;
+  cancelPersonSwitch: () => void;
+  setPersonCreateDialogOpen: (open: boolean) => void;
   setActiveResumeId: (id: string) => void;
-  addRole: (role: Omit<Role, 'id'>) => number;
-  archiveRole: (roleId: number) => void;
+  addPerson: (person: Omit<Person, 'id'>) => number;
+  archivePerson: (personId: number) => void;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setMainWidthMode: (mode: MainWidthMode) => void;
@@ -104,7 +103,7 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      currentRoleId: 1,
+      currentPersonId: 1,
       currentPage: 'workbench',
       agentPanelOpen: true,
       mainWidthMode: 'narrow',
@@ -114,23 +113,23 @@ export const useAppStore = create<AppState>()(
       applications: APPLICATIONS,
       decisions: DECISIONS,
       companies: COMPANIES,
-      roles: ROLES,
-      roleStages: buildInitialRoleStages(),
+      persons: PERSONS,
+      personStages: buildInitialPersonStages(),
       agentDraft: '',
       agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
       pendingPrompt: null,
-      roleSwitchDialogOpen: false,
-      pendingRoleId: null,
-      roleCreateDialogOpen: false,
+      personSwitchDialogOpen: false,
+      pendingPersonId: null,
+      personCreateDialogOpen: false,
       activeResumeId: 'r-dji',
       infopoolFilter: 'all',
       companiesFilter: 'all',
       applicationsFilter: '全部',
       locateTarget: null,
 
-  currentRole: () => {
-    const { currentRoleId, roles } = get()
-    return roles.find((r) => r.id === currentRoleId) ?? roles[0]
+  currentPerson: () => {
+    const { currentPersonId, persons } = get()
+    return persons.find((p) => p.id === currentPersonId) ?? persons[0]
   },
 
   setPage: (page) => {
@@ -182,62 +181,62 @@ export const useAppStore = create<AppState>()(
     }
   },
 
-  setRole: (roleId) => {
-    const { currentRoleId, sessions, currentSessionId } = get()
-    if (roleId === currentRoleId) return
+  setPerson: (personId) => {
+    const { currentPersonId, sessions, currentSessionId } = get()
+    if (personId === currentPersonId) return
     const session = sessions.find((s) => s.id === currentSessionId)
     if (session && session.messages.length > 0) {
-      set({ roleSwitchDialogOpen: true, pendingRoleId: roleId })
+      set({ personSwitchDialogOpen: true, pendingPersonId: personId })
       return
     }
-    set({ currentRoleId: roleId })
+    set({ currentPersonId: personId })
   },
 
-  confirmRoleSwitch: (keepSession) => {
-    const { pendingRoleId, currentSessionId, sessions } = get()
-    if (pendingRoleId == null) return
+  confirmPersonSwitch: (keepSession) => {
+    const { pendingPersonId, currentSessionId, sessions } = get()
+    if (pendingPersonId == null) return
     if (!keepSession) {
       set({
-        currentRoleId: pendingRoleId,
-        pendingRoleId: null,
-        roleSwitchDialogOpen: false,
+        currentPersonId: pendingPersonId,
+        pendingPersonId: null,
+        personSwitchDialogOpen: false,
         sessions: sessions.map((s) =>
           s.id === currentSessionId ? { ...s, messages: [] } : s,
         ),
       })
     } else {
       set({
-        currentRoleId: pendingRoleId,
-        pendingRoleId: null,
-        roleSwitchDialogOpen: false,
+        currentPersonId: pendingPersonId,
+        pendingPersonId: null,
+        personSwitchDialogOpen: false,
       })
     }
   },
 
-  cancelRoleSwitch: () => {
-    set({ roleSwitchDialogOpen: false, pendingRoleId: null })
+  cancelPersonSwitch: () => {
+    set({ personSwitchDialogOpen: false, pendingPersonId: null })
   },
 
-  setRoleCreateDialogOpen: (open) => set({ roleCreateDialogOpen: open }),
+  setPersonCreateDialogOpen: (open) => set({ personCreateDialogOpen: open }),
 
   setActiveResumeId: (id) => set({ activeResumeId: id }),
 
-  addRole: (role) => {
-    const nextId = get().roles.reduce((m, r) => Math.max(m, r.id), 0) + 1
-    const full: Role = { ...role, id: nextId }
+  addPerson: (person) => {
+    const nextId = get().persons.reduce((m, p) => Math.max(m, p.id), 0) + 1
+    const full: Person = { ...person, id: nextId }
     set((state) => ({
-      roles: [...state.roles, full],
-      roleStages: { ...state.roleStages, [nextId]: freshRoleStages() },
-      currentRoleId: nextId,
+      persons: [...state.persons, full],
+      personStages: { ...state.personStages, [nextId]: freshPersonStages() },
+      currentPersonId: nextId,
     }))
     return nextId
   },
 
-  archiveRole: (roleId) => {
-    if (roleId === get().currentRoleId) return
+  archivePerson: (personId) => {
+    if (personId === get().currentPersonId) return
     set((state) => ({
-      roles: state.roles.map((r) =>
-        r.id === roleId ? { ...r, archived: true } : r,
+      persons: state.persons.map((p) =>
+        p.id === personId ? { ...p, archived: true } : p,
       ),
     }))
   },
@@ -330,7 +329,7 @@ export const useAppStore = create<AppState>()(
     const session: Session = {
       id,
       title,
-      roleId: get().currentRoleId,
+      personId: get().currentPersonId,
       createdAt: now,
       updatedAt: now,
       archived: false,
@@ -351,9 +350,9 @@ export const useAppStore = create<AppState>()(
   },
 
   addDecision: (record) => {
-    // 写入决策 → 推进当前角色的决策链阶段（完成 → 下一阶段 current）
-    const { currentRoleId, roleStages } = get()
-    const stages = roleStages[currentRoleId]
+    // 写入决策 → 推进当前人的决策链阶段（完成 → 下一阶段 current）
+    const { currentPersonId, personStages } = get()
+    const stages = personStages[currentPersonId]
     let nextStages = stages
     if (stages) {
       const idx = stages.findIndex((s) => s.status === 'current')
@@ -373,7 +372,7 @@ export const useAppStore = create<AppState>()(
     }
     set((state) => ({
       decisions: [record, ...state.decisions],
-      roleStages: { ...roleStages, [currentRoleId]: nextStages },
+      personStages: { ...personStages, [currentPersonId]: nextStages },
     }))
   },
 
@@ -395,16 +394,19 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'career-os',
+      version: 2,
+      // 模型 B（角色 = 人）：旧 schema 是岗位角色，不兼容，直接重置
+      migrate: () => undefined,
       partialize: (s) => ({
-        currentRoleId: s.currentRoleId,
+        currentPersonId: s.currentPersonId,
         currentPage: s.currentPage,
         agentPanelOpen: s.agentPanelOpen,
         mainWidthMode: s.mainWidthMode,
         applications: s.applications,
         decisions: s.decisions,
         companies: s.companies,
-        roles: s.roles,
-        roleStages: s.roleStages,
+        persons: s.persons,
+        personStages: s.personStages,
         activeResumeId: s.activeResumeId,
         infopoolFilter: s.infopoolFilter,
         companiesFilter: s.companiesFilter,

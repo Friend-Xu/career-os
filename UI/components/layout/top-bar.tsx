@@ -12,27 +12,35 @@ import SearchIcon from '@mui/icons-material/Search'
 import CircleIcon from '@mui/icons-material/Circle'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt'
-import { useState, type MouseEvent } from 'react'
+import { useMemo, useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, LAYOUT } from '../../data/constants'
 import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
-  const currentRole = useAppStore((s) => s.currentRole())
-  const roles = useAppStore((s) => s.roles).filter((r) => !r.archived)
-  const setRole = useAppStore((s) => s.setRole)
+  const currentPerson = useAppStore((s) => s.currentPerson())
+  const persons = useAppStore((s) => s.persons).filter((p) => !p.archived)
+  const setPerson = useAppStore((s) => s.setPerson)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const setRoleCreateDialogOpen = useAppStore((s) => s.setRoleCreateDialogOpen)
-  const roleStages = useAppStore((s) => s.roleStages[currentRole.id])
+  const setPersonCreateDialogOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
+  const personStages = useAppStore((s) => s.personStages[currentPerson.id])
+  const decisions = useAppStore((s) => s.decisions)
   const [anchor, setAnchor] = useState<null | HTMLElement>(null)
 
-  const stages = roleStages ?? []
+  const stages = personStages ?? []
   const completed = stages.filter((s) => s.status === 'completed').length
   const total = stages.length
   const currentStage = stages.find((s) => s.status === 'current')
 
-  const openRoleMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)
-  const closeRoleMenu = () => setAnchor(null)
+  // 当前方向 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）
+  const currentDirection = useMemo(() => {
+    const mine = decisions.filter((d) => d.profile === currentPerson.name)
+    if (mine.length === 0) return undefined
+    return [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
+  }, [decisions, currentPerson.name])
+
+  const openPersonMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)
+  const closePersonMenu = () => setAnchor(null)
 
   return (
     <Box
@@ -78,7 +86,7 @@ export function TopBar() {
       </Stack>
 
       <Button
-        onClick={openRoleMenu}
+        onClick={openPersonMenu}
         endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16 }} />}
         sx={{
           color: COLORS.text,
@@ -94,44 +102,44 @@ export function TopBar() {
             width: 8,
             height: 8,
             borderRadius: '50%',
-            bgcolor: currentRole.color,
+            bgcolor: currentPerson.color,
             mr: 0.5,
           }}
         />
         <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>
-          {currentRole.emoji} {currentRole.name}
+          {currentPerson.emoji} {currentPerson.name}
         </Typography>
       </Button>
-      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeRoleMenu}>
-        {roles.map((role) => (
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closePersonMenu}>
+        {persons.map((person) => (
           <MenuItem
-            key={role.id}
-            selected={role.id === currentRole.id}
+            key={person.id}
+            selected={person.id === currentPerson.id}
             onClick={() => {
-              setRole(role.id)
-              closeRoleMenu()
+              setPerson(person.id)
+              closePersonMenu()
             }}
           >
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: role.color }} />
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: person.color }} />
               <span>
-                {role.emoji} {role.name}
+                {person.emoji} {person.name}
               </span>
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted, ml: 1 }}>
-                匹配 {role.matchScore}%
+                匹配 {person.matchScore}%
               </Typography>
             </Stack>
           </MenuItem>
         ))}
         <MenuItem
           onClick={() => {
-            setRoleCreateDialogOpen(true)
-            closeRoleMenu()
+            setPersonCreateDialogOpen(true)
+            closePersonMenu()
           }}
         >
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
             <PersonAddAltIcon sx={{ fontSize: 16, color: COLORS.textMuted }} />
-            <Typography sx={{ fontSize: 13, color: COLORS.textSecondary }}>创建新角色…</Typography>
+            <Typography sx={{ fontSize: 13, color: COLORS.textSecondary }}>创建新人…</Typography>
           </Stack>
         </MenuItem>
       </Menu>
@@ -162,6 +170,16 @@ export function TopBar() {
           '& .MuiChip-label': { px: 1.5 },
         }}
       />
+
+      {/* 当前方向胶囊（6.7：状态层，无边框无底色，视觉让位于操作与进度） */}
+      {currentDirection && (
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: COLORS.textMuted }} />
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+            方向 · {currentDirection}
+          </Typography>
+        </Stack>
+      )}
 
       <Box sx={{ flex: 1 }} />
 

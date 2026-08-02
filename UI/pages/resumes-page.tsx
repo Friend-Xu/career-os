@@ -39,9 +39,12 @@ const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
 export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
+  const person = useAppStore((s) => s.currentPerson())
   const activeResumeId = useAppStore((s) => s.activeResumeId)
-  const resume = RESUMES.find((r) => r.id === activeResumeId) ?? RESUMES[0]
-  const [modules, setModules] = useState<ResumeModule[]>(resume.modules)
+  const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
+  const personResumes = useMemo(() => RESUMES.filter((r) => r.personId === person.id), [person.id])
+  const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
+  const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
   /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
   const [selButton, setSelButton] = useState<{
     top: number;
@@ -73,9 +76,16 @@ export function ResumesPage() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
+  // 切人时：activeResumeId 不在当前人名下 → 回退到当前人第一份
+  useEffect(() => {
+    if (personResumes.length > 0 && !personResumes.some((r) => r.id === activeResumeId)) {
+      setActiveResumeId(personResumes[0].id)
+    }
+  }, [person.id, personResumes, activeResumeId, setActiveResumeId])
+
   // 版本切换由二级栏「版本 / 血缘」驱动（store），此处同步模块内容
   useEffect(() => {
-    const r = RESUMES.find((x) => x.id === activeResumeId)
+    const r = personResumes.find((x) => x.id === activeResumeId)
     if (r) {
       setModules(r.modules.map((m) => ({ ...m })))
       setRevert(null)
@@ -193,11 +203,15 @@ export function ResumesPage() {
         sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
       >
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>简历中心</Typography>
-        <Chip size="small" label={resume.name} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
-        {resume.targetCompany && (
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-            → {resume.targetCompany} · {resume.targetPosition}
-          </Typography>
+        {resume && (
+          <>
+            <Chip size="small" label={resume.name} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
+            {resume.targetCompany && (
+              <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                → {resume.targetCompany} · {resume.targetPosition}
+              </Typography>
+            )}
+          </>
         )}
         <Box sx={{ flex: 1 }} />
         <Button
@@ -231,6 +245,28 @@ export function ResumesPage() {
 
       {/* 版本切换在二级栏「版本 / 血缘」——此处不重复提供入口 */}
 
+      {!resume ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+          <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>「{person.name}」暂无简历</Typography>
+            <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted }}>
+              从 AI 面板发起首个简历生成，或使用「基于 JD 派生」定制版本
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => {
+                startAnalysis(`请为「${person.name}」生成简历：基于画像模块化输出，含量化指标与方向关键词`)
+                push('info', '已预置「生成简历」上下文')
+              }}
+              sx={{ fontSize: 12.5 }}
+            >
+              生成简历
+            </Button>
+          </Stack>
+        </Box>
+      ) : (
+      <>
       {/* Split editor / preview */}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {/* Editor */}
@@ -433,6 +469,8 @@ export function ResumesPage() {
           含量化指标 · 模块完整 · 无明显空泛表述
         </Typography>
       </Stack>
+      </>
+      )}
 
       {/* AI 改写：选中 → ✨ 浮动按钮（不直接弹候选，避免干扰划词） */}
       {selButton && !cardOpen && (

@@ -61,3 +61,12 @@ html.light {
   --cos-on-accent: #ffffff;
   --cos-shadow: 0 8px 32px rgba(23, 19, 48, 0.18);
 }
+
+/* 切换人时短暂开启全站颜色过渡（app-shell 注入 class，400ms 后移除）——避免主题色瞬时跳变 */
+.cos-theme-transition,
+.cos-theme-transition * {
+  transition:
+    color 0.35s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.35s cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important;
+}

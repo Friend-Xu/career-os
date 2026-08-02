@@ -9,42 +9,43 @@ import type {
   InfoNode,
   NextAction,
   Park,
+  Person,
   PoolHealth,
   ResumeVersion,
-  Role,
   Session,
+  TargetRoleRec,
 } from '../types'
 
-export const ROLES: Role[] = [
+/** 创建人向导第 3 步：AI 推荐目标岗位（演示数据，诚实标注"演示推荐"）。 */
+export const TARGET_ROLE_RECS: TargetRoleRec[] = [
+  { id: 'tr-1', name: 'CAE 工程师', match: 82, reason: '机械结构 + 仿真背景契合，制造业需求稳定' },
+  { id: 'tr-2', name: '机械设计工程师', match: 78, reason: '专业对口，非标/自动化行业岗位多' },
+  { id: 'tr-3', name: '流体仿真工程师', match: 74, reason: '细分方向竞争小，风电/航空领域有缺口' },
+  { id: 'tr-4', name: '机器人结构工程师', match: 70, reason: '跨界机会，结合机器人行业增长' },
+]
+
+export const PERSONS: Person[] = [
   {
     id: 1,
-    name: '机器人研发',
+    name: '我',
     color: '#9081E4',
-    emoji: '🤖',
+    emoji: '⚙️',
     matchScore: 82,
     riskLevel: 'medium',
     archived: false,
-    profilePath: 'profiles/机器人研发.md',
+    profilePath: 'profiles/我.md',
+    targetRoles: ['CAE 工程师', '机械设计工程师', '流体仿真工程师', '机器人研发'],
   },
   {
     id: 2,
-    name: '算法工程',
+    name: '家人 A',
     color: '#59C2FF',
-    emoji: '📐',
+    emoji: '🎯',
     matchScore: 74,
     riskLevel: 'medium',
     archived: false,
-    profilePath: 'profiles/算法工程.md',
-  },
-  {
-    id: 3,
-    name: '产品经理',
-    color: '#7FD962',
-    emoji: '🎯',
-    matchScore: 61,
-    riskLevel: 'high',
-    archived: false,
-    profilePath: 'profiles/产品经理.md',
+    profilePath: 'profiles/家人A.md',
+    targetRoles: ['内容运营', '新媒体编辑'],
   },
 ]
 
@@ -104,7 +105,7 @@ export const DECISIONS: DecisionRecord[] = [
     riskLevel: 'high',
     keyRisk: '产业强·竞争激烈',
     status: 'completed',
-    profile: '机器人研发',
+    profile: '我',
     summary: '深圳机器人产业链完整，大疆/优必选等头部聚集，竞争激烈但机会密度高',
     createdAt: '2026-08-01T10:20:00',
     protocolVersion: '2.1',
@@ -122,7 +123,7 @@ export const DECISIONS: DecisionRecord[] = [
     riskLevel: 'medium',
     keyRisk: '路径需从算法工程师切入',
     status: 'completed',
-    profile: '机器人研发',
+    profile: '我',
     summary: '量化背景与机器人算法岗位匹配度较高，建议先从算法工程师切入',
     createdAt: '2026-07-28T09:15:00',
     protocolVersion: '2.1',
@@ -140,7 +141,7 @@ export const DECISIONS: DecisionRecord[] = [
     riskLevel: 'low',
     keyRisk: '方向广度仍可收敛',
     status: 'completed',
-    profile: '机器人研发',
+    profile: '我',
     summary: '结合兴趣、能力、市场，推荐机器人方向优先，自动驾驶作为备选',
     createdAt: '2026-07-20T11:20:00',
     protocolVersion: '2.1',
@@ -158,9 +159,45 @@ export const DECISIONS: DecisionRecord[] = [
     riskLevel: 'medium',
     keyRisk: '生活成本高',
     status: 'completed',
-    profile: '机器人研发',
+    profile: '我',
     summary: '综合薪资、机会、生活成本等维度，深圳略胜一筹',
     createdAt: '2026-07-25T14:32:00',
+    protocolVersion: '2.1',
+  },
+  {
+    id: 'd-005',
+    title: 'CAE 结构仿真方向评估',
+    skill: 'direction-explore',
+    direction: 'CAE 仿真',
+    directionMatch: 76,
+    directionConfidence: 'medium',
+    city: '',
+    cityScore: 0,
+    salaryFeasible: true,
+    riskLevel: 'medium',
+    keyRisk: '细分岗位数量有限',
+    status: 'completed',
+    profile: '我',
+    summary: '机械背景与 CAE 结构仿真契合度高，制造业需求稳定，作为并行方向持续观察',
+    createdAt: '2026-07-26T15:10:00',
+    protocolVersion: '2.1',
+  },
+  {
+    id: 'd-006',
+    title: '新媒体运营方向探索',
+    skill: 'direction-explore',
+    direction: '新媒体',
+    directionMatch: 68,
+    directionConfidence: 'medium',
+    city: '上海',
+    cityScore: 72,
+    salaryFeasible: true,
+    riskLevel: 'medium',
+    keyRisk: '平台内容竞争激烈',
+    status: 'completed',
+    profile: '家人 A',
+    summary: '内容运营经验可迁移至新媒体方向，上海内容产业密度高',
+    createdAt: '2026-07-29T10:00:00',
     protocolVersion: '2.1',
   },
 ]
@@ -197,7 +234,7 @@ export const APPLICATION_STATS: ApplicationStats = {
 export const APPLICATIONS: Application[] = [
   {
     id: 1,
-    roleId: 1,
+    personId: 1,
     company: '大疆创新',
     position: '机器人算法工程师',
     sourceDecision: 'd-002',
@@ -209,7 +246,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 2,
-    roleId: 1,
+    personId: 1,
     company: '优必选',
     position: '感知算法工程师',
     sourceDecision: 'd-002',
@@ -221,7 +258,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 3,
-    roleId: 1,
+    personId: 1,
     company: '腾讯机器人',
     position: '具身智能研究员',
     sourceDecision: 'd-001',
@@ -233,7 +270,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 4,
-    roleId: 1,
+    personId: 1,
     company: '云深处',
     position: '运动控制工程师',
     status: '已联系',
@@ -243,7 +280,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 5,
-    roleId: 1,
+    personId: 1,
     company: '宇树科技',
     position: 'SLAM 算法工程师',
     status: '已评估',
@@ -251,7 +288,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 6,
-    roleId: 1,
+    personId: 1,
     company: '追觅科技',
     position: '嵌入式软件工程师',
     status: '已投递',
@@ -261,7 +298,7 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 7,
-    roleId: 1,
+    personId: 1,
     company: '汇川技术',
     position: '运动控制算法',
     status: '已拒绝',
@@ -270,13 +307,24 @@ export const APPLICATIONS: Application[] = [
   },
   {
     id: 8,
-    roleId: 1,
+    personId: 1,
     company: '华为',
     position: '机器人软件开发',
     status: '面试中',
     appliedAt: '2026-07-15',
     followupDue: '2026-08-01',
     urgency: 'urgent',
+  },
+  {
+    id: 9,
+    personId: 2,
+    company: '小红书',
+    position: '内容运营',
+    sourceDecision: 'd-006',
+    status: '已投递',
+    appliedAt: '2026-07-28',
+    followupDue: '2026-08-04',
+    urgency: 'waiting',
   },
 ]
 
@@ -423,14 +471,16 @@ export const PARKS: Park[] = [
 ]
 
 export const INFO_NODES: InfoNode[] = [
-  { id: 'n-role', label: '机器人研发', type: 'role', x: 400, y: 280 },
+  { id: 'n-person', label: '我', type: 'person', matchScore: 82, x: 400, y: 280 },
   { id: 'n-dir', label: '机器人赛道', type: 'direction', matchScore: 82, x: 250, y: 180 },
+  { id: 'n-dir-cae', label: 'CAE 仿真', type: 'direction', matchScore: 76, x: 150, y: 90 },
   { id: 'n-city-sz', label: '深圳', type: 'city', matchScore: 86, x: 550, y: 180 },
   { id: 'n-city-sh', label: '上海', type: 'city', matchScore: 78, x: 650, y: 280 },
   { id: 'n-city-bj', label: '北京', type: 'city', matchScore: 72, x: 600, y: 380 },
   { id: 'n-d1', label: '方向探索', type: 'decision', riskLevel: 'low', x: 150, y: 280 },
   { id: 'n-d2', label: '转行评估', type: 'decision', riskLevel: 'medium', matchScore: 82, x: 250, y: 360 },
   { id: 'n-d3', label: '城市评估', type: 'decision', riskLevel: 'high', matchScore: 86, x: 400, y: 120 },
+  { id: 'n-d5', label: 'CAE 方向评估', type: 'decision', riskLevel: 'medium', matchScore: 76, x: 60, y: 170 },
   { id: 'n-c1', label: '大疆创新', type: 'company', matchScore: 91, riskLevel: 'medium', x: 700, y: 140 },
   { id: 'n-c2', label: '优必选', type: 'company', matchScore: 88, riskLevel: 'medium', x: 750, y: 220 },
   { id: 'n-c3', label: '腾讯机器人', type: 'company', matchScore: 85, riskLevel: 'low', x: 720, y: 320 },
@@ -438,28 +488,31 @@ export const INFO_NODES: InfoNode[] = [
 ]
 
 export const INFO_EDGES: InfoEdge[] = [
-  { id: 'e1', source: 'n-role', target: 'n-dir', relation: '方向', strength: 'high' },
-  { id: 'e2', source: 'n-role', target: 'n-city-sz', relation: '目标城市', strength: 'high' },
-  { id: 'e3', source: 'n-role', target: 'n-d1', relation: '决策', strength: 'medium' },
+  { id: 'e1', source: 'n-person', target: 'n-dir', relation: '方向', strength: 'high' },
+  { id: 'e2', source: 'n-person', target: 'n-city-sz', relation: '目标城市', strength: 'high' },
+  { id: 'e3', source: 'n-person', target: 'n-d1', relation: '决策', strength: 'medium' },
   { id: 'e4', source: 'n-dir', target: 'n-d2', relation: '评估', strength: 'high' },
   { id: 'e5', source: 'n-city-sz', target: 'n-d3', relation: '评估', strength: 'high' },
   { id: 'e6', source: 'n-city-sz', target: 'n-c1', relation: '入驻', strength: 'high' },
   { id: 'e7', source: 'n-city-sz', target: 'n-c2', relation: '入驻', strength: 'high' },
   { id: 'e8', source: 'n-city-sz', target: 'n-c3', relation: '关联', strength: 'medium' },
-  { id: 'e9', source: 'n-city-sh', target: 'n-role', relation: '备选', strength: 'low' },
+  { id: 'e9', source: 'n-city-sh', target: 'n-person', relation: '备选', strength: 'low' },
   { id: 'e10', source: 'n-d2', target: 'n-c4', relation: '推荐', strength: 'medium' },
+  { id: 'e11', source: 'n-person', target: 'n-dir-cae', relation: '方向', strength: 'medium' },
+  { id: 'e12', source: 'n-dir-cae', target: 'n-d5', relation: '评估', strength: 'medium' },
 ]
 
 export const RESUMES: ResumeVersion[] = [
   {
     id: 'r-root',
     name: '原始简历 v1',
+    personId: 1,
     updatedAt: '2026-07-10',
     modules: [
       {
         id: 'm1',
         title: '个人信息',
-        content: '张三 | 算法工程师 | 5年经验 | 深圳\n邮箱: zhangsan@email.com | 电话: 138****0000',
+        content: '我 | 算法工程师 | 5年经验 | 深圳\n邮箱: me@email.com | 电话: 138****0000',
         order: 0,
       },
       {
@@ -494,6 +547,7 @@ export const RESUMES: ResumeVersion[] = [
   {
     id: 'r-dji',
     name: '大疆-算法工程师',
+    personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-22',
     targetCompany: '大疆创新',
@@ -502,7 +556,7 @@ export const RESUMES: ResumeVersion[] = [
       {
         id: 'm1',
         title: '个人信息',
-        content: '张三 | 机器人算法工程师 | 5年算法经验 | 深圳',
+        content: '我 | 机器人算法工程师 | 5年算法经验 | 深圳',
         order: 0,
       },
       {
@@ -537,6 +591,7 @@ export const RESUMES: ResumeVersion[] = [
   {
     id: 'r-ubtech',
     name: '优必选-感知算法',
+    personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-25',
     targetCompany: '优必选',
@@ -545,7 +600,7 @@ export const RESUMES: ResumeVersion[] = [
       {
         id: 'm1',
         title: '个人信息',
-        content: '张三 | 感知算法工程师 | 深圳',
+        content: '我 | 感知算法工程师 | 深圳',
         order: 0,
       },
       {
@@ -571,6 +626,38 @@ export const RESUMES: ResumeVersion[] = [
         title: '技能',
         content: 'Python / PyTorch / OpenCV / ROS2 / C++',
         order: 4,
+      },
+    ],
+  },
+  {
+    id: 'r-fa-root',
+    name: '家人 A · 原始简历 v1',
+    personId: 2,
+    updatedAt: '2026-07-28',
+    modules: [
+      {
+        id: 'fa-m1',
+        title: '个人信息',
+        content: '家人 A | 内容运营 | 3年经验 | 上海\n邮箱: family@email.com | 电话: 139****0000',
+        order: 0,
+      },
+      {
+        id: 'fa-m2',
+        title: '专业摘要',
+        content: '3年新媒体内容运营经验，擅长公众号/小红书图文与活动策划，正在考虑更稳定的内容方向。',
+        order: 1,
+      },
+      {
+        id: 'fa-m3',
+        title: '工作经历',
+        content: '某文化传媒公司 | 内容运营 | 2023-2026\n- 负责公众号选题与排版，粉丝增长 40%\n- 策划 12 场线上活动，场均参与 5000+',
+        order: 2,
+      },
+      {
+        id: 'fa-m4',
+        title: '技能',
+        content: '公众号运营 / 小红书笔记 / 活动策划 / 剪映 / Canva',
+        order: 3,
       },
     ],
   },
@@ -604,7 +691,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-current',
     title: '公司筛选 · 目标企业列表',
-    roleId: 1,
+    personId: 1,
     createdAt: '2026-08-01T09:00:00',
     updatedAt: '2026-08-01T09:00:12',
     archived: false,
@@ -613,7 +700,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-2',
     title: '深圳 vs 上海城市对比',
-    roleId: 1,
+    personId: 1,
     createdAt: '2026-07-25T14:00:00',
     updatedAt: '2026-07-25T14:32:00',
     archived: false,
@@ -622,7 +709,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-3',
     title: '转机器人可行性评估',
-    roleId: 1,
+    personId: 1,
     createdAt: '2026-07-22T16:00:00',
     updatedAt: '2026-07-22T16:45:00',
     archived: false,
@@ -631,10 +718,19 @@ export const SESSIONS: Session[] = [
   {
     id: 's-4',
     title: '方向探索会话',
-    roleId: 1,
+    personId: 1,
     createdAt: '2026-07-20T11:00:00',
     updatedAt: '2026-07-20T11:20:00',
     archived: true,
+    messages: [],
+  },
+  {
+    id: 's-fa',
+    title: '家人 A · 简历优化',
+    personId: 2,
+    createdAt: '2026-07-30T10:00:00',
+    updatedAt: '2026-07-30T10:30:00',
+    archived: false,
     messages: [],
   },
 ]

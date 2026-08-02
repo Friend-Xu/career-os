@@ -26,10 +26,10 @@ import type { InfoNode } from '../types'
 
 /**
  * 类型色与风险色（绿/黄/红）完全错开，避免红色节点被误读为高风险。
- * role 紫 / decision 蓝 / direction 橙 / city 青 / company 粉
+ * person 紫 / decision 蓝 / direction 橙 / city 青 / company 粉
  */
 const TYPE_COLOR: Record<InfoNode['type'], string> = {
-  role: '#9081E4',
+  person: '#9081E4',
   decision: '#59C2FF',
   direction: '#F29A5E',
   city: '#5CE0B0',
@@ -137,7 +137,7 @@ function GraphCanvas({
               transform: 'translate(-50%, -50%)',
               px: 1.25,
               py: 0.75,
-              borderRadius: n.type === 'role' ? '20px' : '8px',
+              borderRadius: n.type === 'person' ? '20px' : '8px',
               bgcolor: alpha(color, 0.1),
               border: `1.5px solid ${hit ? color : 'transparent'}`,
               opacity: hit ? 1 : 0.25,
@@ -152,11 +152,11 @@ function GraphCanvas({
                 outline: `2px solid ${color}`,
                 outlineOffset: 2,
               },
-              zIndex: n.type === 'role' ? 5 : 2,
-              boxShadow: n.type === 'role' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
+              zIndex: n.type === 'person' ? 5 : 2,
+              boxShadow: n.type === 'person' ? `0 0 20px ${alpha(color, 0.2)}` : 'none',
             }}
           >
-            <Typography sx={{ fontSize: 12.5, fontWeight: n.type === 'role' ? 600 : 500, color: COLORS.text, whiteSpace: 'nowrap' }}>
+            <Typography sx={{ fontSize: 12.5, fontWeight: n.type === 'person' ? 600 : 500, color: COLORS.text, whiteSpace: 'nowrap' }}>
               {n.label}
             </Typography>
             {n.matchScore != null && (
@@ -187,7 +187,7 @@ function GraphCanvas({
           <Stack key={type} direction="row" sx={{ alignItems: 'center' }} spacing={0.5}>
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              {{ role: '角色', decision: '决策', direction: '方向', city: '城市', company: '公司' }[type]}
+              {{ person: '人', decision: '决策', direction: '方向', city: '城市', company: '公司' }[type]}
             </Typography>
           </Stack>
         ))}

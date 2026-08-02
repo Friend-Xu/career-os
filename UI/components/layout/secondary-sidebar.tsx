@@ -58,12 +58,12 @@ function StageDot({ status }: { status: string }) {
 }
 
 function WorkbenchSecondary() {
-  const role = useAppStore((s) => s.currentRole())
+  const person = useAppStore((s) => s.currentPerson())
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
-  const roleStages = useAppStore((s) => s.roleStages[role.id])
-  const stages = roleStages ?? []
+  const personStages = useAppStore((s) => s.personStages[person.id])
+  const stages = personStages ?? []
   const completed = stages.filter((s) => s.status === 'completed').length
   const progress = stages.length ? Math.round((completed / stages.length) * 100) : 0
 
@@ -76,20 +76,20 @@ function WorkbenchSecondary() {
               width: 40,
               height: 40,
               borderRadius: '10px',
-              bgcolor: alpha(role.color, 0.13),
-              border: `1px solid ${alpha(role.color, 0.27)}`,
+              bgcolor: alpha(person.color, 0.13),
+              border: `1px solid ${alpha(person.color, 0.27)}`,
               display: 'grid',
               placeItems: 'center',
               fontSize: 20,
             }}
           >
-            {role.emoji}
+            {person.emoji}
           </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>
-              {role.name}
+              {person.name}
             </Typography>
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>当前角色</Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>当前人</Typography>
           </Box>
         </Stack>
 
@@ -107,7 +107,7 @@ function WorkbenchSecondary() {
             <Typography
               sx={{ fontSize: 16, fontWeight: 600, fontFamily: COLORS.mono, color: COLORS.accent }}
             >
-              {role.matchScore}%
+              {person.matchScore}%
             </Typography>
           </Box>
           <Box
@@ -120,8 +120,8 @@ function WorkbenchSecondary() {
             }}
           >
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.25 }}>风险</Typography>
-            <Typography sx={{ fontSize: 16, fontWeight: 600, color: RISK_COLOR[role.riskLevel] }}>
-              {RISK_LABEL[role.riskLevel]}
+            <Typography sx={{ fontSize: 16, fontWeight: 600, color: RISK_COLOR[person.riskLevel] }}>
+              {RISK_LABEL[person.riskLevel]}
             </Typography>
           </Box>
         </Stack>
@@ -338,7 +338,7 @@ export function SecondarySidebar() {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const createSession = useAppStore((s) => s.createSession)
-  const role = useAppStore((s) => s.currentRole())
+  const person = useAppStore((s) => s.currentPerson())
   const applications = useAppStore((s) => s.applications)
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
   const companiesFilter = useAppStore((s) => s.companiesFilter)
@@ -374,7 +374,7 @@ export function SecondarySidebar() {
           <ListSecondary
             title="会话历史"
             items={sessions
-              .filter((s) => s.roleId === role.id && !s.archived)
+              .filter((s) => s.personId === person.id && !s.archived)
               .map((s) => ({
                 id: s.id,
                 label: s.title,
@@ -405,7 +405,7 @@ export function SecondarySidebar() {
           title="节点过滤"
           items={[
             { id: 'all', label: '全部节点', meta: '342', active: infopoolFilter === 'all' },
-            { id: 'role', label: '角色', meta: '3', active: infopoolFilter === 'role' },
+            { id: 'person', label: '人', meta: '2', active: infopoolFilter === 'person' },
             { id: 'decision', label: '决策记录', meta: '28', active: infopoolFilter === 'decision' },
             { id: 'direction', label: '方向', meta: '6', active: infopoolFilter === 'direction' },
             { id: 'city', label: '城市', meta: '12', active: infopoolFilter === 'city' },
@@ -434,9 +434,9 @@ export function SecondarySidebar() {
       )
     case 'applications': {
       const statuses = ['全部', '面试中', '已投递', '已联系', '已回复', '已评估', '已拒绝'] as const
-      const roleApps = applications.filter((a) => a.roleId === role.id)
-      const counts: Record<string, number> = { 全部: roleApps.length }
-      roleApps.forEach((a) => {
+      const personApps = applications.filter((a) => a.personId === person.id)
+      const counts: Record<string, number> = { 全部: personApps.length }
+      personApps.forEach((a) => {
         counts[a.status] = (counts[a.status] ?? 0) + 1
       })
       return (
@@ -456,7 +456,7 @@ export function SecondarySidebar() {
       return (
         <ListSecondary
           title="版本 / 血缘"
-          items={RESUMES.map((r) => ({
+          items={RESUMES.filter((r) => r.personId === person.id).map((r) => ({
             id: r.id,
             label: r.parentId ? `↳ ${r.name}` : r.name,
             meta: r.parentId ? '派生' : '根版本',
@@ -470,7 +470,7 @@ export function SecondarySidebar() {
         <ListSecondary
           title="设置分类"
           items={[
-            { id: 'roles', label: '角色管理', active: true },
+            { id: 'persons', label: '人管理', active: true },
             { id: 'model', label: '模型配置' },
             { id: 'data', label: '数据' },
             { id: 'appearance', label: '外观' },

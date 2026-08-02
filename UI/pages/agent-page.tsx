@@ -23,9 +23,9 @@ import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord } from '../types'
 
 function ContextCapsule() {
-  const role = useAppStore((s) => s.currentRole())
-  const roleStages = useAppStore((s) => s.roleStages[role.id])
-  const current = (roleStages ?? []).find((s) => s.status === 'current')
+  const person = useAppStore((s) => s.currentPerson())
+  const personStages = useAppStore((s) => s.personStages[person.id])
+  const current = (personStages ?? []).find((s) => s.status === 'current')
 
   return (
     <Stack
@@ -43,7 +43,7 @@ function ContextCapsule() {
       <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mr: 0.5 }}>上下文</Typography>
       <Chip
         size="small"
-        label={`${role.emoji} ${role.name} · 匹配 ${role.matchScore}%`}
+        label={`${person.emoji} ${person.name} · 匹配 ${person.matchScore}%`}
         sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover, border: `1px solid ${COLORS.border}` }}
       />
       <Chip

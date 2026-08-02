@@ -55,9 +55,9 @@ function ModeSwitcher() {
 }
 
 function StageBanner() {
-  const role = useAppStore((s) => s.currentRole())
-  const roleStages = useAppStore((s) => s.roleStages[role.id])
-  const current = (roleStages ?? []).find((s) => s.status === 'current')
+  const person = useAppStore((s) => s.currentPerson())
+  const personStages = useAppStore((s) => s.personStages[person.id])
+  const current = (personStages ?? []).find((s) => s.status === 'current')
   return (
     <Box sx={{ py: 1.5, px: 0.5 }}>
       <Typography
@@ -170,9 +170,9 @@ function DecisionTimeline() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const decisions = useAppStore((s) => s.decisions)
-  const role = useAppStore((s) => s.currentRole())
-  const roleDecisions = decisions.filter((d) => d.profile === role.name)
-  const items = roleDecisions.slice(0, 3)
+  const person = useAppStore((s) => s.currentPerson())
+  const personDecisions = decisions.filter((d) => d.profile === person.name)
+  const items = personDecisions.slice(0, 3)
 
   return (
     <Box
@@ -194,7 +194,7 @@ function DecisionTimeline() {
           <Typography
             sx={{ fontSize: 12.5, color: COLORS.textMuted, textAlign: 'center', lineHeight: 1.6 }}
           >
-            「{role.name}」尚无决策记录
+            「{person.name}」尚无决策记录
             <br />
             从 AI 面板发起首个分析
           </Typography>
@@ -287,7 +287,7 @@ function DecisionTimeline() {
           </Stack>
         ))}
       </Stack>
-      {roleDecisions.length > 3 && (
+      {personDecisions.length > 3 && (
         <Button
           size="small"
           onClick={() => setPage('agent')}

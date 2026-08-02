@@ -8,8 +8,8 @@ import { SecondarySidebar } from './secondary-sidebar'
 import { AgentPanel } from './agent-panel'
 import { StatusBar } from './status-bar'
 import { CommandPalette } from './command-palette'
-import { RoleSwitchDialog } from './role-switch-dialog'
-import { RoleCreateDialog } from './role-create-dialog'
+import { PersonSwitchDialog } from './person-switch-dialog'
+import { PersonCreateDialog } from './person-create-dialog'
 import { WorkbenchPage } from '../../pages/workbench-page'
 import { AgentPage } from '../../pages/agent-page'
 import { InfoPoolPage } from '../../pages/infopool-page'
@@ -54,18 +54,21 @@ export function AppShell() {
   const createSession = useAppStore((s) => s.createSession)
   const currentPage = useAppStore((s) => s.currentPage)
   const agentPanelOpen = useAppStore((s) => s.agentPanelOpen)
-  const role = useAppStore((s) => s.currentRole())
+  const person = useAppStore((s) => s.currentPerson())
 
-  // 角色主题色 = 全局强调色（方案书 3.2）：切角色即换界面强调色
+  // 人的主题色 = 全局强调色（方案书 3.2）：切人即换界面强调色；短暂开启全站过渡避免瞬时跳变（6.7）
   useEffect(() => {
     const root = document.documentElement
-    root.style.setProperty('--cos-accent', role.color)
-    root.style.setProperty('--cos-accent-muted', alpha(role.color, 0.14))
+    root.style.setProperty('--cos-accent', person.color)
+    root.style.setProperty('--cos-accent-muted', alpha(person.color, 0.14))
     root.style.setProperty(
       '--cos-on-accent',
-      luminance(role.color) > 0.6 ? '#1a1a1e' : '#ffffff',
+      luminance(person.color) > 0.6 ? '#1a1a1e' : '#ffffff',
     )
-  }, [role.color])
+    root.classList.add('cos-theme-transition')
+    const t = setTimeout(() => root.classList.remove('cos-theme-transition'), 400)
+    return () => clearTimeout(t)
+  }, [person.color])
 
   // Global shortcuts
   useEffect(() => {
@@ -137,8 +140,8 @@ export function AppShell() {
 
       <StatusBar />
       <CommandPalette />
-      <RoleSwitchDialog />
-      <RoleCreateDialog />
+      <PersonSwitchDialog />
+      <PersonCreateDialog />
     </Box>
   )
 }

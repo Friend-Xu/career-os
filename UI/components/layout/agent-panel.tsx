@@ -34,7 +34,8 @@ export function AgentPanel() {
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
-  const role = useAppStore((s) => s.currentRole())
+  const person = useAppStore((s) => s.currentPerson())
+  const decisions = useAppStore((s) => s.decisions)
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
@@ -240,27 +241,32 @@ export function AgentPanel() {
           sx={{ mt: 1, fontSize: 12.5, color: COLORS.textSecondary }}
           onClick={() => {
             const content = draft.trim() || '当前分析结果'
+            // direction/city 跟随当前人最新决策（与顶栏方向胶囊同源），演示写入不硬编码方向
+            const mine = decisions.filter((d) => d.profile === person.name)
+            const latest = mine.length
+              ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
+              : undefined
             const record: DecisionRecord = {
               id: `d-${Date.now()}`,
               title: content.slice(0, 24) || '未命名决策',
               skill: 'agent-write',
-              direction: '机器人',
-              directionMatch: 0,
+              direction: latest?.direction ?? '方向待定',
+              directionMatch: latest?.directionMatch ?? 0,
               directionConfidence: 'medium',
-              city: '深圳',
-              cityScore: 0,
+              city: latest?.city ?? '',
+              cityScore: latest?.cityScore ?? 0,
               salaryFeasible: true,
               riskLevel: 'medium',
               keyRisk: '待评估',
               status: 'completed',
-              profile: role.name,
+              profile: person.name,
               summary: content,
               createdAt: new Date().toISOString(),
               protocolVersion: '2.1',
             }
             addDecision(record)
             setDraft('')
-            const stages = useAppStore.getState().roleStages[role.id]
+            const stages = useAppStore.getState().personStages[person.id]
             const current = stages?.find((s) => s.status === 'current')
             push(
               'success',

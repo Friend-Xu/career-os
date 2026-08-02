@@ -127,15 +127,15 @@ export function ApplicationsPage() {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const applicationsFilter = useAppStore((s) => s.applicationsFilter)
-  const role = useAppStore((s) => s.currentRole())
+  const person = useAppStore((s) => s.currentPerson())
   const push = useToastStore((s) => s.push)
 
-  const roleApps = applications.filter((a) => a.roleId === role.id)
+  const personApps = applications.filter((a) => a.personId === person.id)
 
   const filtered =
     applicationsFilter === '全部'
-      ? roleApps
-      : roleApps.filter((a) => a.status === applicationsFilter)
+      ? personApps
+      : personApps.filter((a) => a.status === applicationsFilter)
 
   const byStatus = useMemo(() => {
     const map: Record<string, Application[]> = {}
@@ -148,13 +148,13 @@ export function ApplicationsPage() {
     return map
   }, [filtered])
 
-  const urgent = roleApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
+  const urgent = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>投递管理</Typography>
-        <Chip size="small" label={`${roleApps.length} 条`} sx={{ height: 22, fontSize: 12 }} />
+        <Chip size="small" label={`${personApps.length} 条`} sx={{ height: 22, fontSize: 12 }} />
         {urgent.length > 0 && (
           <Chip
             size="small"
