@@ -27,10 +27,15 @@ test('合法 DecisionRecord：不带 validation', () => {
   assert.equal(validation, undefined)
 })
 
-test('必填字段缺失：invalid + error', () => {
-  const { validation } = validateDecisionRecord({ ...validRecord, direction: undefined })
+test('协议必填字段缺失：invalid + error', () => {
+  const { validation } = validateDecisionRecord({ ...validRecord, skill: undefined })
   assert.equal(validation?.status, 'invalid')
-  assert.ok(validation?.issues.some((i) => i.path === 'direction' && i.severity === 'error'))
+  assert.ok(validation?.issues.some((i) => i.path === 'skill' && i.severity === 'error'))
+})
+
+test('语义字段缺失（direction）：协议可选 → 合法（无 validation）', () => {
+  const { validation } = validateDecisionRecord({ ...validRecord, direction: undefined })
+  assert.equal(validation, undefined)
 })
 
 test('枚举值非法：degraded + warn，值保留', () => {
@@ -63,6 +68,15 @@ test('validateByProtocol：按版本分派', () => {
   assert.equal(ok.validation, undefined)
   const bad = validateByProtocol({ ...validRecord, protocolVersion: '1.0' })
   assert.equal(bad.validation?.status, 'invalid')
+})
+
+test('版本分派：2.1 缺 profile → invalid；2.0 缺 profile → ok', () => {
+  const noProfile = { ...validRecord, profile: undefined }
+  const v21 = validateByProtocol({ ...noProfile, protocolVersion: '2.1' })
+  assert.equal(v21.validation?.status, 'invalid')
+  assert.ok(v21.validation?.issues.some((i) => i.path === 'profile'))
+  const v20 = validateByProtocol({ ...noProfile, protocolVersion: '2.0' })
+  assert.equal(v20.validation, undefined)
 })
 
 test('PoolNode type 非法：degraded', () => {

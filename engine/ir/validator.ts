@@ -6,6 +6,10 @@
  * - 字段存在但值域非法（枚举外/数值越界）→ degraded（warn）——保留原值展示，标记可疑
  * - 完全合法 → 不带 validation
  * - 不支持的协议版本 → invalid（error）
+ *
+ * 必填集合对齐 skill 协议（SKILL.md 摘要字段表）：skill/risk_level/key_risk/status/
+ * protocol_version 必填；direction/city/薪资/匹配度等语义字段可选（skill 按类型输出，
+ * 缺失填 `-`，属常态 → degraded）。v2.1 额外要求 profile（语义 = 人名）。
  */
 import type {
   Application,
@@ -63,11 +67,13 @@ function checkString(checks: FieldCheck[], field: string, v: unknown): void {
   if (!expectString(v)) checks.push(missing(field, v))
 }
 function checkEnum<T extends string>(checks: FieldCheck[], field: string, v: unknown, legal: readonly T[]): void {
+  if (v === undefined) return // 可选字段缺失合法（协议允许填 -）；必填字段由各实体 required 列表的 missing 检查覆盖
   if (typeof v !== 'string' || !(legal as readonly string[]).includes(v)) {
     checks.push(illegal(field, v, legal.join('/')))
   }
 }
 function checkPercent(checks: FieldCheck[], field: string, v: unknown): void {
+  if (v === undefined) return // 可选字段缺失合法（协议允许填 -）
   if (typeof v !== 'number' || Number.isNaN(v) || v < 0 || v > 100) {
     checks.push(illegal(field, v, '0-100'))
   }
@@ -75,16 +81,23 @@ function checkPercent(checks: FieldCheck[], field: string, v: unknown): void {
 
 // ─── 各实体 ──────────────────────────────────────────────────────────────
 
-export function validateDecisionRecord(input: unknown): Validated<DecisionRecord> {
+/** 协议必填字段（SKILL.md 摘要字段表）+ 解析器自产字段 */
+const DECISION_REQUIRED: Record<'v21' | 'v20', string[]> = {
+  v21: ['id', 'title', 'skill', 'riskLevel', 'keyRisk', 'status', 'protocolVersion', 'profile', 'summary'],
+  v20: ['id', 'title', 'skill', 'riskLevel', 'keyRisk', 'status', 'protocolVersion', 'summary'],
+}
+
+export function validateDecisionRecord(input: unknown, opts: { requireProfile?: boolean } = {}): Validated<DecisionRecord> {
   const value = isRecord(input) ? input : {}
   const checks: FieldCheck[] = []
 
   const version = protocolVersionOf(value)
   if (!isSupportedVersion(version)) {
-    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.1）`, severity: 'error' })
+    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1）`, severity: 'error' })
   }
-  for (const field of ['id', 'title', 'skill', 'direction', 'city', 'keyRisk', 'status', 'profile', 'summary', 'createdAt', 'protocolVersion']) {
-    checkString(checks, field, value[field])
+  const required = opts.requireProfile ? DECISION_REQUIRED.v21 : DECISION_REQUIRED.v20
+  for (const field of required) {
+    if (!expectString(value[field])) checks.push(missing(field, value[field]))
   }
   checkEnum(checks, 'directionConfidence', value.directionConfidence, CONFIDENCES)
   checkEnum(checks, 'riskLevel', value.riskLevel, RISK_LEVELS)
@@ -207,10 +220,12 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
   const version = protocolVersionOf(value)
   switch (version) {
     case '2.1':
+      return validateDecisionRecord(value, { requireProfile: true })
+    case '2.0':
       return validateDecisionRecord(value)
     default:
       return finalize(value as DecisionRecord, [
-        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.1）`, severity: 'error' },
+        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1）`, severity: 'error' },
       ])
   }
 }

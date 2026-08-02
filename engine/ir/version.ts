@@ -1,6 +1,7 @@
 import { ProtocolVersion } from './schema.ts'
 
-export const SUPPORTED_VERSIONS = [ProtocolVersion] as const
+/** 引擎支持的协议版本（2.0 = 旧记录无 profile；2.1 = 现行，profile 必填） */
+export const SUPPORTED_VERSIONS = ['2.0', ProtocolVersion] as const
 
 export function isSupportedVersion(version: string): boolean {
   return SUPPORTED_VERSIONS.includes(version as (typeof SUPPORTED_VERSIONS)[number])
