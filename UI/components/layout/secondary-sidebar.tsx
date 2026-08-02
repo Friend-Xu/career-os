@@ -349,6 +349,8 @@ export function SecondarySidebar() {
   const setApplicationsFilter = useAppStore((s) => s.setApplicationsFilter)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
+  const poolGraph = useAppStore((s) => s.poolGraph)
+  const engineStatus = useAppStore((s) => s.engineStatus)
   const push = useToastStore((s) => s.push)
 
   const content = (() => {
@@ -402,8 +404,6 @@ export function SecondarySidebar() {
       )
     case 'infopool': {
       // 引擎图谱真实计数（connected）；offline 用 mock 静态值
-      const poolGraph = useAppStore((s) => s.poolGraph)
-      const engineStatus = useAppStore((s) => s.engineStatus)
       const live = engineStatus === 'connected' && poolGraph ? computePoolStats(poolGraph) : null
       const meta = (key: string, mock: string): string =>
         live ? String(key === 'all' ? live.total : key === 'isolated' ? live.isolated : key === 'missing' ? live.missing : live.byType[key] ?? 0) : mock
