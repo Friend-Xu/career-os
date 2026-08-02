@@ -62,6 +62,24 @@ claude --plugin-dir .
 
 首次使用自动创建 `workspace/` 工作目录，无需配置。完整工作流见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## 本地工作台（引擎 + UI）
+
+除 CLI 技能外，项目含本地工作台：引擎（Node 24 原生 TS，`engine/`）解析 markdown 数据并提供 WebSocket 桥，UI（Vite，`UI/`）可视化决策链、信息池图谱与公司档案。
+
+**一键启动**：双击 `__启动服务.bat`，或 `node start-all.mjs`（并发拉起引擎 + Vite dev）。
+
+**端口与配置**：
+
+| 项 | 值 |
+|----|----|
+| UI | http://localhost:5288 |
+| 引擎 WS | ws://127.0.0.1:5289（占用时自动 +1 递增重试，最多 5 次；仅本机回环） |
+| 配置 | `career-os.config.json`（首次运行生成，来源优先级 CLI > env > 文件 > 默认） |
+| 日志 | `logs/engine.log`（10MB×3 轮转）+ `logs/traces/`（会话轨迹 jsonl） |
+| 数据 | `workspace/career-advisor/`（profiles/ decisions/ companies/，gitignored） |
+
+**数据协议**：决策/公司档案均为 markdown，摘要表（`## 分析摘要` 两列：字段 | 值）是解析源；缺必填字段或表格缺失 → 档案标 `invalid` 并出现在信息池「⚠ 待人工处理」列表（不崩、不进图谱），补全摘要表即恢复。
+
 ## 我们相信什么
 
 职业决策是低频、高影响的事——所以质量规则被写进每个模块：
