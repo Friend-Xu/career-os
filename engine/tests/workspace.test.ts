@@ -12,7 +12,7 @@ function tempWorkspace(): string {
 test('initWorkspace：创建目录树 + INDEX.md + protocol.json', () => {
   const root = tempWorkspace()
   const ws = initWorkspace(root)
-  for (const sub of ['profiles', 'decisions', 'companies', 'metadata']) {
+  for (const sub of ['profiles', 'decisions', 'decision-contexts', 'companies', 'metadata']) {
     assert.ok(existsSync(join(root, sub)), `${sub} 应存在`)
   }
   assert.ok(existsSync(ws.paths.indexFile))

@@ -11,8 +11,10 @@ import type { IncomingMessage } from 'node:http'
 import type { EngineConfig } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionChain, DecisionRecord } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionChain, DecisionRecord } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
+import { buildAggregates } from '../runtime/decision-aggregate.ts'
+import { scanContexts } from '../storage/context-watcher.ts'
 import { METHODS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -74,6 +76,11 @@ export function computeChains(decisions: DecisionRecord[], runtime: DecisionRunt
   return chains
 }
 
+/** contexts/list 处理器派生：context 目录扫描 + 决策投影 → 按 context 组装聚合（纯函数，不落盘） */
+export function listContexts(workspace: Workspace, store: BridgeStore): DecisionAggregate[] {
+  return buildAggregates(scanContexts(workspace), store.listDecisions() as DecisionRecord[])
+}
+
 /** 端口监听：EADDRINUSE → logger.warn + 端口 +1 重试，最多递增 MAX_PORT_RETRIES 次；其余错误立即抛 */
 async function listenWithRetry(opts: { host: string; port: number; logger: Logger }): Promise<{ wss: WebSocketServer; port: number }> {
   const { host, port, logger } = opts
@@ -114,6 +121,7 @@ export async function startServer(opts: {
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.chain]: () => computeChains(store.listDecisions() as DecisionRecord[], runtime),
+    [METHODS.contexts]: () => listContexts(workspace, store),
   }
 
   function respond(ws: WebSocket, resp: RpcResponse): void {

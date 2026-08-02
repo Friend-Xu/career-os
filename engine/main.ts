@@ -7,6 +7,7 @@ import { ConfigError, describeConfig, loadConfig } from './config.ts'
 import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
+import { watchContexts } from './storage/context-watcher.ts'
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { ServerError, startServer } from './transport/websocket.ts'
@@ -65,7 +66,13 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.poolChanged })
         logger.info(`decisions/ 变更：重扫 ${parsed.length} 条并广播`)
       })
+      // contexts/list 按需组装（context 文件 + 决策投影），变更只发信号；UI 收到 decisionsChanged 会重拉 contexts/list
+      watchContexts(ws, () => {
+        broadcast({ event: EVENTS.decisionsChanged })
+        logger.info('decision-contexts/ 变更：已广播（contexts/list 按需重扫组装）')
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
+      logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }
