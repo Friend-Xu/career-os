@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @../CLAUDE.md
 
-Career OS 本地工作台的前端原型（演示模式：纯 mock 数据、无后端、无真实 LLM 调用）。Vite + React 19 + MUI 9 + zustand 5 + TypeScript。方案书见 `../docs/CAREER-OS-开发方案-v1.md`。
+Career OS 本地工作台前端。Vite + React 19 + MUI 9 + zustand 5 + TypeScript。**Agent 对话已接真实 LLM**（引擎 agent 通道：Claude CLI 流式回复/提问卡片/权限弹窗，离线降级 mock）；数据视图（决策链/公司/图谱/聚合/知识层）接引擎真实数据，其余演示数据 mock。方案书见 `../docs/CAREER-OS-开发方案-v1.md`。
 
 ## 命令
 
@@ -36,6 +36,7 @@ AppShell 组装：top-bar（人选择/当前方向胶囊/决策链胶囊） · i
 ## 关键交互模式（跨文件才能理解）
 
 - **会话延续（轻→深）**：agent-panel 与 agent-page 共享 `currentSessionId`，是同一会话——面板发起的对话，切到 Agent 页可见完整历史；面板「展开到全屏」续同一会话。会话消息写入 `sessions[currentSessionId].messages`。
+- **真实 Agent 流**：`sendAgentMessage` 引擎在线 → `agent/start`（task = 用户消息，Agent 在 workspace 根自读信息池；带 `sdkSessionId` resume 续接会话）→ 占位消息 + 事件流（`agentTasks` Map 按 taskId 路由：text_delta 累积 / toolChips 流转 / question_request 提问卡片 / permission_request 复用 `requestPermission` 弹窗决策回传 / done / error 错误卡）；离线 → mock 回复降级。**AskUserQuestion 注意**：CLI 管道模式提问后立即跳过（tool_use_result 已含 "did not answer"），回答走下一轮文本送达——用户点击时任务通常已结束，`answerQuestion` 用 resume 续接原会话发送回答（engine-client 的 `agent.event` 帧 taskId 在顶层，已合并进 data 才能路由）。
 - **决策链推进**：`addDecision` 写入时自动把当前 stage 置 completed、下一 pending 置 current；写入后从 `personStages` 读 current 拼 toast（"决策链推进至 X"）。顶栏「当前方向」胶囊 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）。
 - **按人过滤（模型 B：角色 = 人）**：视图数据按 `currentPerson()` 过滤（decisions 按 `profile === person.name`、applications 按 `personId`、简历按 `personId`）；切换人 → 全部视图/主题色/决策链跟随。岗位无独立实体：画像 targetRoles（有名目）+ 决策 direction（有评估）+ 投递 position（有记录）。
 - **预置上下文**：`startAnalysis(prompt)` 设置 agentDraft + pendingPrompt → AI 面板聚焦 + 「已预置上下文」胶囊。所有"唤起 AI"的按钮都走这个入口（Next Action / 时间线重新评估 / 尽调 / JD 派生…）。
