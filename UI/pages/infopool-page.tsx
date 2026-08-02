@@ -273,6 +273,7 @@ export function InfoPoolPage() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
+  const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const engineStatus = useAppStore((s) => s.engineStatus)
@@ -302,6 +303,12 @@ export function InfoPoolPage() {
       return matchType && matchSearch
     })
   }, [nodes, search, infopoolFilter])
+
+  /** IR 降级：validation.invalid 的决策记录（引擎已把它们排除出图谱，列表视图单独呈现） */
+  const invalidDecisions = useMemo(
+    () => decisions.filter((d) => d.validation?.status === 'invalid'),
+    [decisions],
+  )
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
@@ -356,7 +363,49 @@ export function InfoPoolPage() {
             bgcolor: COLORS.bgElevated,
           }}
         >
-          {filteredNodes.length === 0 ? (
+          {infopoolFilter === 'invalid' ? (
+            invalidDecisions.length === 0 ? (
+              <Typography sx={{ p: 4, textAlign: 'center', color: COLORS.textMuted, fontSize: 13 }}>
+                无待人工处理的决策记录
+              </Typography>
+            ) : (
+              invalidDecisions.map((d) => (
+                <Stack
+                  key={d.id}
+                  direction="row"
+                  spacing={1.5}
+                  sx={{
+                    alignItems: 'center',
+                    px: 2,
+                    py: 1.25,
+                    borderBottom: `1px solid ${COLORS.border}`,
+                    borderLeft: `3px solid ${RISK_COLOR.high}`,
+                  }}
+                >
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: RISK_COLOR.high, flexShrink: 0 }} />
+                  <Stack sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500 }} noWrap>
+                      {d.title}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }} noWrap>
+                      {(d.validation?.issues ?? []).map((i) => i.reason).join('；')}
+                    </Typography>
+                  </Stack>
+                  <Chip
+                    size="small"
+                    label="待人工处理"
+                    sx={{
+                      height: 20,
+                      fontSize: 11.5,
+                      bgcolor: alpha(RISK_COLOR.high, 0.1),
+                      color: RISK_COLOR.high,
+                      flexShrink: 0,
+                    }}
+                  />
+                </Stack>
+              ))
+            )
+          ) : filteredNodes.length === 0 ? (
             <Typography sx={{ p: 4, textAlign: 'center', color: COLORS.textMuted, fontSize: 13 }}>
               无此类节点（演示数据未包含）
             </Typography>

@@ -203,7 +203,14 @@ function DecisionTimeline() {
       ) : (
         <>
           <Stack spacing={0} sx={{ flex: 1 }}>
-        {items.map((d, idx) => (
+        {items.map((d, idx) => {
+          // IR 降级消费：degraded → 标题旁黄点（Tooltip 显示 reason）；invalid → 红点 + 待人工处理标注
+          const v = d.validation
+          const vStatus = v?.status
+          const vColor =
+            vStatus === 'invalid' ? RISK_COLOR.high : vStatus === 'degraded' ? RISK_COLOR.medium : null
+          const vReasons = v?.issues.map((i) => i.reason).join('；') ?? ''
+          return (
           <Stack
             key={d.id}
             direction="row"
@@ -232,7 +239,7 @@ function DecisionTimeline() {
                 width: 11,
                 height: 11,
                 borderRadius: '50%',
-                bgcolor: RISK_COLOR[d.riskLevel as RiskLevel],
+                bgcolor: vColor ?? RISK_COLOR[d.riskLevel as RiskLevel],
                 mt: 0.4,
                 flexShrink: 0,
                 zIndex: 1,
@@ -247,6 +254,22 @@ function DecisionTimeline() {
                   {d.title}
                 </Typography>
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0, ml: 1 }}>
+                  {vStatus === 'invalid' && (
+                    <Typography sx={{ fontSize: 11, color: RISK_COLOR.high, flexShrink: 0 }}>
+                      待人工处理
+                    </Typography>
+                  )}
+                  {vColor && (
+                    <Tooltip
+                      title={
+                        vStatus === 'invalid'
+                          ? `待人工处理：${vReasons}`
+                          : vReasons || '数据降级（值域修正后保留）'
+                      }
+                    >
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: vColor }} />
+                    </Tooltip>
+                  )}
                   <Tooltip title="重新评估（唤起 AI 面板）">
                     <IconButton
                       size="small"
@@ -286,7 +309,8 @@ function DecisionTimeline() {
               </Typography>
             </Box>
           </Stack>
-        ))}
+          )
+        })}
       </Stack>
       {personDecisions.length > 3 && (
         <Button

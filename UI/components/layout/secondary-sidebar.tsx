@@ -6,6 +6,7 @@ import { useToastStore } from '../../store/toast-store'
 import { computePoolStats } from '../../store/engine-client'
 import { APPLICATION_STATS, RESUMES } from '../../data/mock-data'
 import { alpha, COLORS, LAYOUT, RISK_COLOR, RISK_LABEL } from '../../data/constants'
+import type { Company } from '../../types'
 
 const STAGE_PROMPTS: Record<string, string> = {
   direction: '请帮我进行职业方向探索：基于当前画像与市场机会，输出方向排序建议',
@@ -351,6 +352,8 @@ export function SecondarySidebar() {
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const poolGraph = useAppStore((s) => s.poolGraph)
   const engineStatus = useAppStore((s) => s.engineStatus)
+  const decisions = useAppStore((s) => s.decisions)
+  const companies = useAppStore((s) => s.companies)
   const push = useToastStore((s) => s.push)
 
   const content = (() => {
@@ -407,6 +410,11 @@ export function SecondarySidebar() {
       const live = engineStatus === 'connected' && poolGraph ? computePoolStats(poolGraph) : null
       const meta = (key: string, mock: string): string =>
         live ? String(key === 'all' ? live.total : key === 'isolated' ? live.isolated : key === 'missing' ? live.missing : live.byType[key] ?? 0) : mock
+      // 待人工处理 = 引擎数据中 validation.invalid 的决策 + 公司（offline 无 validation 标记，恒 0）
+      const invalidCount = live
+        ? decisions.filter((d) => d.validation?.status === 'invalid').length +
+          companies.filter((c) => c.validation?.status === 'invalid').length
+        : 0
       return (
         <ListSecondary
           title="节点过滤"
@@ -419,27 +427,32 @@ export function SecondarySidebar() {
             { id: 'company', label: '公司', meta: meta('company', '156'), active: infopoolFilter === 'company' },
             { id: 'isolated', label: '⚠ 孤立节点', meta: meta('isolated', '8'), active: infopoolFilter === 'isolated' },
             { id: 'missing', label: '⚠ 字段缺失', meta: meta('missing', '3'), active: infopoolFilter === 'missing' },
+            { id: 'invalid', label: '⚠ 待人工处理', meta: String(invalidCount), active: infopoolFilter === 'invalid' },
           ]}
           onItemClick={setInfopoolFilter}
         />
       )
     }
-    case 'companies':
+    case 'companies': {
+      // 计数按 store 的 companies 实时计算（connected = 引擎档案；offline = mock 档案）
+      const countBy = (pred: (c: Company) => boolean): string =>
+        String(companies.filter(pred).length)
       return (
         <ListSecondary
           title="公司列表"
           items={[
-            { id: 'all', label: '全部', meta: '36', active: companiesFilter === 'all' },
-            { id: 'sz', label: '深圳', meta: '14', active: companiesFilter === 'sz' },
-            { id: 'sh', label: '上海', meta: '9', active: companiesFilter === 'sh' },
-            { id: 'hz', label: '杭州', meta: '6', active: companiesFilter === 'hz' },
-            { id: 'bj', label: '北京', meta: '5', active: companiesFilter === 'bj' },
-            { id: 'robot', label: '产业: 机器人', meta: '22', active: companiesFilter === 'robot' },
-            { id: 'contacted', label: '已联系', meta: '8', active: companiesFilter === 'contacted' },
+            { id: 'all', label: '全部', meta: countBy(() => true), active: companiesFilter === 'all' },
+            { id: 'sz', label: '深圳', meta: countBy((c) => c.city === '深圳'), active: companiesFilter === 'sz' },
+            { id: 'sh', label: '上海', meta: countBy((c) => c.city === '上海'), active: companiesFilter === 'sh' },
+            { id: 'hz', label: '杭州', meta: countBy((c) => c.city === '杭州'), active: companiesFilter === 'hz' },
+            { id: 'bj', label: '北京', meta: countBy((c) => c.city === '北京'), active: companiesFilter === 'bj' },
+            { id: 'robot', label: '产业: 机器人', meta: countBy((c) => c.industry.includes('机器人')), active: companiesFilter === 'robot' },
+            { id: 'contacted', label: '已联系', meta: countBy((c) => c.contacted), active: companiesFilter === 'contacted' },
           ]}
           onItemClick={setCompaniesFilter}
         />
       )
+    }
     case 'applications': {
       const statuses = ['全部', '面试中', '已投递', '已联系', '已回复', '已评估', '已拒绝'] as const
       const personApps = applications.filter((a) => a.personId === person.id)

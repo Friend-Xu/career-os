@@ -8,6 +8,7 @@ import {
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
   InputAdornment,
 } from '@mui/material'
@@ -271,7 +272,14 @@ export function CompaniesPage() {
               </Typography>
             ))}
           </Box>
-          {filtered.map((c) => (
+          {filtered.map((c) => {
+            // IR 降级消费：degraded → 黄角标（riskMedium 语义）；invalid → 红角标 + 左边框；Tooltip 显示 issue.reason
+            const v = c.validation
+            const vStatus = v?.status
+            const vColor =
+              vStatus === 'invalid' ? RISK_COLOR.high : vStatus === 'degraded' ? RISK_COLOR.medium : undefined
+            const vReasons = v?.issues.map((i) => i.reason).join('；') ?? ''
+            return (
             <Box
               key={c.id}
               id={`company-${c.id}`}
@@ -290,6 +298,7 @@ export function CompaniesPage() {
                 px: 2,
                 py: 1.25,
                 borderBottom: `1px solid ${COLORS.border}`,
+                borderLeft: vColor ? `3px solid ${vColor}` : undefined,
                 cursor: 'pointer',
                 alignItems: 'center',
                 '&:hover': { bgcolor: COLORS.bgHover },
@@ -299,7 +308,24 @@ export function CompaniesPage() {
                 },
               }}
             >
-              <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{c.name}</Typography>
+              <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }} spacing={0.75}>
+                <Typography sx={{ fontSize: 13, fontWeight: 500 }} noWrap>
+                  {c.name}
+                </Typography>
+                {vStatus && (
+                  <Tooltip
+                    title={
+                      vStatus === 'invalid'
+                        ? `待人工处理：${vReasons}`
+                        : vReasons || '数据降级（值域修正后保留）'
+                    }
+                  >
+                    <Box
+                      sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: vColor, flexShrink: 0 }}
+                    />
+                  </Tooltip>
+                )}
+              </Stack>
               <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>{c.city}</Typography>
               <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }} noWrap>
                 {c.industry}
@@ -314,7 +340,8 @@ export function CompaniesPage() {
                 {c.contacted ? '已联系' : '未联系'}
               </Typography>
             </Box>
-          ))}
+            )
+          })}
         </Box>
       )}
 
