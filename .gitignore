@@ -3,6 +3,10 @@ node_modules/
 
 # Runtime data
 workspace/
+logs/
+
+# Engine config（本地运行配置，不入库）
+career-os.config.json
 
 # Archives
 *.zip
@@ -17,6 +21,10 @@ docs/*
 .playwright-mcp/
 tests/e2e-test-*.md
 tests/SKILL-company-research-design.md
+graph-force-1.png
+
+# Local plans（过程文档不入库）
+.claude/plan/
 
 # Local scripts
 __启动脚本.bat
