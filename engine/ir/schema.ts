@@ -250,3 +250,25 @@ export interface AgentError {
   message: string
   retryable: boolean
 }
+
+/** AskUserQuestion 提问卡片（实测 SDK 0.3.220：user 消息的 tool_use_result.questions[] 形状） */
+export interface AgentQuestion {
+  question: string
+  header?: string
+  options: { label: string; description?: string }[]
+  multiSelect: boolean
+}
+
+/**
+ * 引擎 → 前端 Agent 事件（WS agent.event 帧 data；权限事件已换为 requestId——canUseTool
+ * promise 留在引擎挂起表；session_id 供前端会话存 resume 凭据）
+ */
+export type AgentRuntimeEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_start'; name: string }
+  | { type: 'tool_done'; name: string }
+  | { type: 'permission_request'; tool: string; requestId: string }
+  | { type: 'question_request'; question: AgentQuestion }
+  | { type: 'session_id'; sessionId: string }
+  | { type: 'done'; result: string }
+  | { type: 'error'; error: AgentError }

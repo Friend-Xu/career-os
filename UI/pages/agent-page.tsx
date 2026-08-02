@@ -311,7 +311,27 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </Stack>
         )}
 
-        {msg.question ? (
+        {msg.error ? (
+          <Box
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderRadius: '12px 12px 12px 4px',
+              bgcolor: alpha(RISK_COLOR.high, 0.08),
+              border: `1px solid ${alpha(RISK_COLOR.high, 0.3)}`,
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: RISK_COLOR.high, mb: 0.5 }}>
+              Agent 运行错误 · {msg.error.code}
+            </Typography>
+            <Typography sx={{ fontSize: 13, lineHeight: 1.6, color: COLORS.text, whiteSpace: 'pre-wrap' }}>
+              {msg.error.message}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 1 }}>
+              {msg.error.retryable ? '可重新发送消息重试。' : '请调整后重新发送消息。'}
+            </Typography>
+          </Box>
+        ) : msg.question ? (
           <QuestionCardView card={msg.question} messageId={msg.id} />
         ) : (
           <Box

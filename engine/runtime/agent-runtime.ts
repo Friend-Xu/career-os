@@ -8,20 +8,11 @@
  * - AskUserQuestion：adapter 侧直接 allow（卡片不是危险操作），question_request 事件带结构化问题。
  * - 事件推送：构造时注入 emit(taskId, ev) 回调（websocket 广播 agent.event）。
  */
-import { createAgent, type AgentHandle, type AgentEvent, type AgentQuestion } from '../agent/adapter/claude.ts'
-import type { AgentError } from '../ir/schema.ts'
+import { createAgent, type AgentHandle, type AgentEvent } from '../agent/adapter/claude.ts'
+import type { AgentError, AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
 
-/** 引擎 → 前端的事件（过 WS：canUseTool 已替换为 requestId；session_id 供 resume 存前端会话） */
-export type AgentRuntimeEvent =
-  | { type: 'text_delta'; text: string }
-  | { type: 'tool_start'; name: string }
-  | { type: 'tool_done'; name: string }
-  | { type: 'permission_request'; tool: string; requestId: string }
-  | { type: 'question_request'; question: AgentQuestion }
-  | { type: 'session_id'; sessionId: string }
-  | { type: 'done'; result: string }
-  | { type: 'error'; error: AgentError }
+export type { AgentRuntimeEvent }
 
 export interface AgentStartParams {
   task: string

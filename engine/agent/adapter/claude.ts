@@ -21,18 +21,12 @@ import type {
   SDKMessage,
   SDKResultError,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentError } from '../../ir/schema.ts'
+import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
 
 // ─── 归一化事件（编排层/前端只消费这些）──────────────────────────────────────
 
-/** AskUserQuestion 提问卡片（实测 2026-08-03：SDK 0.3.220 形状 = user 消息的 tool_use_result.questions[]） */
-export interface AgentQuestion {
-  question: string
-  header?: string
-  options: { label: string; description?: string }[]
-  multiSelect: boolean
-}
+export type { AgentQuestion }
 
 export type AgentEvent =
   | { type: 'text_delta'; text: string }
@@ -188,6 +182,9 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     maxTurns: opts.maxTurns,
     resume: opts.resumeSessionId,
     model: opts.model,
+    // 管道模式实测 AskUserQuestion 会立即跳过（tool_use_result 已含 "did not answer"）：
+    // 显式给 10 分钟等待窗口，回答（前端点击）才来得及送达
+    askUserQuestionTimeout: '10m',
     permissionMode: opts.permissionMode === undefined ? undefined : SDK_PERMISSION_MODE[opts.permissionMode],
     allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
     abortController: opts.abortController,

@@ -6,6 +6,7 @@
  *   mock 数据行为（渐进替换，不假死）
  */
 import type {
+  AgentRuntimeEvent,
   CompanyRecord,
   DecisionAggregate,
   DecisionChain,
@@ -67,6 +68,7 @@ interface RpcResponse {
 
 interface ServerEvent {
   event: string
+  taskId?: string
   data?: unknown
 }
 
@@ -109,7 +111,12 @@ export class EngineClient {
         return
       }
       if ('event' in msg) {
-        this.emit(msg.event, msg.data)
+        // agent.event 帧的 taskId 在帧顶层：合并进 data（事件路由按 taskId 归属任务）
+        if (msg.event === EVENTS.agentEvent && typeof msg.taskId === 'string' && msg.data !== undefined) {
+          this.emit(msg.event, { taskId: msg.taskId, ...(msg.data as object) })
+        } else {
+          this.emit(msg.event, msg.data)
+        }
       } else if (msg.id && this.pending.has(msg.id)) {
         const resolve = this.pending.get(msg.id)
         this.pending.delete(msg.id)
@@ -228,6 +235,40 @@ export class EngineClient {
 
   poolGraph(): Promise<GraphResult> {
     return this.rpc<GraphResult>(METHODS.poolGraph)
+  }
+
+  // ─── Agent 通道（真实 LLM 流；事件经 agent.event 订阅）───────────────────
+
+  startAgent(params: {
+    task: string
+    context?: string
+    resumeSessionId?: string
+    permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
+    allowedTools?: string[]
+    maxTurns?: number
+  }): Promise<{ taskId: string }> {
+    return this.rpc<{ taskId: string }>(METHODS.agentStart, params)
+  }
+
+  answerAgent(taskId: string, text: string): Promise<unknown> {
+    return this.rpc(METHODS.agentAnswer, { taskId, text })
+  }
+
+  cancelAgent(taskId: string): Promise<unknown> {
+    return this.rpc(METHODS.agentCancel, { taskId })
+  }
+
+  permissionAgent(taskId: string, requestId: string, allow: boolean): Promise<unknown> {
+    return this.rpc(METHODS.agentPermission, { taskId, requestId, allow })
+  }
+
+  /** 订阅 Agent 流式事件（帧 = { taskId, ...AgentRuntimeEvent }） */
+  onAgentEvent(cb: (taskId: string, ev: AgentRuntimeEvent) => void): () => void {
+    return this.on(EVENTS.agentEvent, (data) => {
+      const frame = data as { taskId?: string } & Record<string, unknown>
+      if (typeof frame.taskId !== 'string') return
+      cb(frame.taskId, frame as unknown as AgentRuntimeEvent)
+    })
   }
 }
 

@@ -4,6 +4,8 @@
  * 异名实体用别名 re-export，UI 其余代码从本文件取类型，零改动。
  */
 import type {
+  AgentError,
+  AgentRuntimeEvent,
   Person,
   DecisionRecord,
   CompanyRecord,
@@ -30,6 +32,8 @@ export type { GapResult };
 export type { RiskLevel };
 export type { ApplicationStatus };
 export type { FollowupUrgency };
+export type { AgentError };
+export type { AgentRuntimeEvent };
 
 /**
  * UI 会话扩展（引擎契约字段之外，仅 UI 会话渲染用）：
@@ -59,10 +63,12 @@ export interface PendingPermission {
 export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   toolCalls?: ToolCallInfoUi[]
   question?: QuestionCard
+  /** Agent 运行错误（引擎 agent.event error；页面渲染错误卡） */
+  error?: AgentError
 }
 
-/** UI 扩展 Session：messages 使用 UI ChatMessage（会话仅 UI 运行时，不落盘） */
-export type Session = Omit<EngineSession, 'messages'> & { messages: ChatMessage[] }
+/** UI 扩展 Session：messages 使用 UI ChatMessage（会话仅 UI 运行时，不落盘）；sdkSessionId = SDK 会话凭据（resume 用） */
+export type Session = Omit<EngineSession, 'messages'> & { messages: ChatMessage[]; sdkSessionId?: string }
 
 export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped';
 

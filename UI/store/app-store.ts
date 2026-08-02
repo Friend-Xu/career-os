@@ -21,7 +21,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { DecisionAggregate, DecisionChain, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -372,7 +372,7 @@ export const useAppStore = create<AppState>()(
   },
 
   sendAgentMessage: (content) => {
-    const { sessions, currentSessionId } = get()
+    const { sessions, currentSessionId, engineStatus } = get()
     const now = new Date().toISOString()
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -380,30 +380,43 @@ export const useAppStore = create<AppState>()(
       content,
       timestamp: now,
     }
+    set({
+      agentDraft: '',
+      pendingPrompt: null,
+      sessions: sessions.map((s) =>
+        s.id === currentSessionId
+          ? { ...s, updatedAt: now, messages: [...s.messages, userMsg] }
+          : s,
+      ),
+    })
+
+    // 真实 Agent 流（引擎在线）：task 直接发 prompt，Agent 在 workspace 根自读信息池；
+    // 有 SDK 会话凭据则 resume 续接（会话连续性）
+    if (engineStatus === 'connected') {
+      const session = sessions.find((s) => s.id === currentSessionId)
+      void runAgentTask(currentSessionId, content, session?.sdkSessionId)
+      return
+    }
+
+    // 离线降级：保留演示 mock 回复（不假死）
     const assistantMsg: ChatMessage = {
       id: `msg-${Date.now() + 1}`,
       role: 'assistant',
       content:
-        '已接收你的请求。正在结合 profile、决策链与公司库进行分析…\n\n（演示模式：此处为模拟回复。确认后可写入决策记录。）',
+        '已接收你的请求。正在结合 profile、决策链与公司库进行分析…\n\n（引擎离线，演示模式：此处为模拟回复。确认后可写入决策记录。）',
       timestamp: now,
       toolCalls: [
         { name: 'read_profile', status: 'done' },
         { name: 'read_decisions', status: 'done' },
       ],
     }
-    set({
-      agentDraft: '',
-      pendingPrompt: null,
-      sessions: sessions.map((s) =>
-        s.id === currentSessionId
-          ? {
-            ...s,
-            updatedAt: now,
-            messages: [...s.messages, userMsg, assistantMsg],
-          }
-          : s,
+    useAppStore.setState((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.id === currentSessionId
+          ? { ...sess, updatedAt: now, messages: [...sess.messages, assistantMsg] }
+          : sess,
       ),
-    })
+    }))
   },
 
   setCurrentSession: (id) => set({ currentSessionId: id }),
@@ -587,6 +600,21 @@ export const useAppStore = create<AppState>()(
           : s,
       ),
     })
+    // 真实 Agent 流：回答送达 Agent。
+    // 任务还活着 → answerAgent 即时通道；任务已结束（CLI 提问后立即放弃，实测常态）
+    // → resume 原会话续接发送回答（模型在恢复的上下文中看到回答）。
+    const active = [...agentTasks.entries()].find(([, t]) => t.sessionId === currentSessionId)
+    if (active) {
+      void engine?.answerAgent(active[0], answer)
+      return
+    }
+    const session = useAppStore.getState().sessions.find((s) => s.id === currentSessionId)
+    const question = sessions
+      .find((s) => s.id === currentSessionId)
+      ?.messages.find((m) => m.id === messageId)?.question?.question
+    if (session?.sdkSessionId !== undefined && question !== undefined) {
+      void runAgentTask(currentSessionId, `用户回答了你的问题「${question}」：${answer}。请确认收到并继续。`, session.sdkSessionId)
+    }
   },
     }),
     {
@@ -621,6 +649,129 @@ let engine: EngineClient | null = null
 
 export function getEngine(): EngineClient | null {
   return engine
+}
+
+// ─── 真实 Agent 流（engine agent.event 消费；sessions 不持久化，任务映射随会话消亡）──
+
+/** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
+const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
+
+/** 流式消息 patch（text_delta 累积 / toolChips 流转，基于现值回调） */
+function patchStreamingMessage(
+  sessionId: string,
+  messageId: string,
+  fn: (m: ChatMessage) => ChatMessage,
+): void {
+  useAppStore.setState((s) => ({
+    sessions: s.sessions.map((sess) =>
+      sess.id === sessionId
+        ? { ...sess, messages: sess.messages.map((m) => (m.id === messageId ? fn(m) : m)) }
+        : sess,
+    ),
+  }))
+}
+
+/** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
+async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string): Promise<void> {
+  if (!engine) return
+  try {
+    const { taskId } = await engine.startAgent({
+      task: content,
+      ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
+    })
+    const messageId = `msg-${Date.now()}`
+    appendToSession(sessionId, {
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+    })
+    agentTasks.set(taskId, { sessionId, messageId })
+  } catch (err) {
+    appendToSession(sessionId, {
+      id: `msg-${Date.now()}`,
+      role: 'assistant',
+      content: err instanceof Error ? err.message : String(err),
+      timestamp: new Date().toISOString(),
+      error: { code: 'unknown', message: err instanceof Error ? err.message : String(err), retryable: true },
+    })
+  }
+}
+
+/** 事件处理器（connectEngine 注册一次）：引擎 Agent 事件 → 会话消息流 */
+function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
+  const task = agentTasks.get(taskId)
+  if (!task) return
+  const { sessionId, messageId } = task
+  switch (ev.type) {
+    case 'text_delta':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, content: m.content + ev.text }))
+      break
+    case 'tool_start':
+      patchStreamingMessage(sessionId, messageId, (m) => ({
+        ...m,
+        toolCalls: m.toolCalls?.some((t) => t.name === ev.name)
+          ? m.toolCalls
+          : [...(m.toolCalls ?? []), { name: ev.name, status: 'running' as const }],
+      }))
+      break
+    case 'tool_done':
+      patchStreamingMessage(sessionId, messageId, (m) => ({
+        ...m,
+        toolCalls: m.toolCalls?.map((t) => (t.name === ev.name ? { ...t, status: 'done' as const } : t)),
+      }))
+      break
+    case 'permission_request': {
+      // chip 置等待授权 + 弹窗决策（requestPermission 复用批量放行）→ 决策回传引擎
+      patchStreamingMessage(sessionId, messageId, (m) => ({
+        ...m,
+        toolCalls: m.toolCalls?.map((t) =>
+          t.name === ev.tool && t.status === 'running'
+            ? { ...t, status: 'waiting_approval' as const }
+            : t,
+        ),
+      }))
+      void (async () => {
+        const allow = await useAppStore.getState().requestPermission(ev.tool, `工具「${ev.tool}」请求执行`)
+        void engine?.permissionAgent(taskId, ev.requestId, allow)
+      })()
+      break
+    }
+    case 'question_request':
+      appendToSession(sessionId, {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: ev.question.question,
+        timestamp: new Date().toISOString(),
+        question: {
+          id: `q-${Date.now()}`,
+          question: ev.question.question,
+          options: ev.question.options.map((o) => o.label),
+          answered: false,
+        },
+      })
+      break
+    case 'session_id':
+      useAppStore.setState((s) => ({
+        sessions: s.sessions.map((sess) =>
+          sess.id === sessionId ? { ...sess, sdkSessionId: ev.sessionId } : sess,
+        ),
+      }))
+      break
+    case 'done':
+      agentTasks.delete(taskId)
+      break
+    case 'error':
+      appendToSession(sessionId, {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: ev.error.message,
+        timestamp: new Date().toISOString(),
+        error: ev.error,
+      })
+      agentTasks.delete(taskId)
+      break
+  }
 }
 
 async function pullDecisions(): Promise<void> {
@@ -736,5 +887,6 @@ export function connectEngine(): void {
     void pullContexts()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())
+  engine.onAgentEvent(handleAgentEvent)
   engine.connect()
 }
