@@ -25,6 +25,7 @@ import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -149,6 +150,16 @@ function jobIdParams(v: unknown): string {
     throw new Error('params.id 缺失（岗位 id）')
   }
   return (v as Record<string, unknown>).id as string
+}
+
+/** jobs/extract 入参校验（RPC 边界：用户输入校验，fail fast） */
+function extractJdParams(v: unknown): { jdText: string } {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).jdText !== 'string') {
+    throw new Error('jobs/extract 需要 params { jdText }')
+  }
+  const text = (v as Record<string, unknown>).jdText as string
+  if (text.trim().length === 0) throw new Error('params.jdText 缺失（JD 原文）')
+  return { jdText: text }
 }
 
 /** jobs/match：Job.requirements（Role.skills 结构）→ computeGap → GapResult（可解释匹配，不做百分比） */
@@ -334,6 +345,13 @@ export async function startServer(opts: {
       if (typeof p?.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
       return computeJobMatch(workspace, jobIdParams(params), p.person)
     },
+    [METHODS.extractJd]: async (params) => ({
+      result: await extractJdFields(extractJdParams(params).jdText, {
+        cwd: workspace.paths.root,
+        model: config.agent.model,
+        logger,
+      }),
+    }),
   }
 
   function respond(ws: WebSocket, resp: RpcResponse): void {

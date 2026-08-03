@@ -73,6 +73,8 @@ export const METHODS = {
   getJob: 'jobs/get',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
+  /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
+  extractJd: 'jobs/extract',
 } as const
 
 export const EVENTS = {

@@ -35,6 +35,15 @@ export interface InitResult {
 export type DecisionView = DecisionRecord & { validation?: Validation }
 export type JobView = JobRecord & { validation?: Validation }
 
+/** JD 信息提取结果（jobs/extract 返回：粘贴 JD 自动回填建档表单） */
+export interface JdExtractResult {
+  company: string
+  title: string
+  location?: string
+  salary?: string
+  requirements: string[]
+}
+
 export interface GraphResult {
   nodes: PoolNode[]
   edges: PoolEdge[]
@@ -247,6 +256,11 @@ export class EngineClient {
   /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
   matchJob(jobId: string, person: string): Promise<GapResult> {
     return this.rpc<GapResult>(METHODS.matchJob, { id: jobId, person })
+  }
+
+  /** JD 信息 AI 提取（粘贴 JD 自动回填建档表单；LLM 慢操作，超时放宽到 90s） */
+  extractJd(jdText: string): Promise<JdExtractResult> {
+    return this.rpc<{ result: JdExtractResult }>(METHODS.extractJd, { jdText }, 90_000).then((r) => r.result)
   }
 
   listContexts(): Promise<DecisionAggregate[]> {
