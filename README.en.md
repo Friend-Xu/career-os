@@ -96,6 +96,15 @@ bash scripts/install-to-cli.sh --codex   # copy to Codex skills directory
 
 Search-tool support varies by CLI — see the [CLI compatibility matrix](docs/CLI-COMPATIBILITY.md).
 
+## Privacy Notice
+
+Career OS strictly separates **system assets** from **personal career data**:
+
+- **The repository contains**: schemas, templates, workflows, agent definitions, engine and workbench code
+- **Your workspace contains** (`workspace/`, gitignored): career history, achievements, evidence, personal decisions, salary goals, interview records
+
+**Never commit your `workspace/` to public repositories.** Your career records are private digital assets that belong only to you, locally. Full data-boundary definition: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## License
 
 [GNU GPL v3](LICENSE)

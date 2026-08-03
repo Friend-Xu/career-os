@@ -145,6 +145,17 @@ markdown 真相源（workspace/career-advisor/）
 - 契约改动走版本演进（validator 按 version 分派），UI 无感知
 - UI 离线（引擎未启动）→ 降级 mock 数据 + 状态栏"引擎离线"
 
+## 5.5 数据边界：System Domain vs Workspace Domain
+
+Career OS 分两个域，**系统可升级，个人资产永远独立**：
+
+| 域 | 内容 | 位置 | git |
+|----|------|------|-----|
+| **System Domain**（系统域） | 可执行逻辑、schema、工作流、prompt、模板 | `engine/` `skills/` `UI/`（代码） | 入库 |
+| **Workspace Domain**（工作区域） | 用户职业数据：profiles/ decisions/ companies/ decision-contexts/ knowledge/ cities/ | `workspace/` | **永不提交**（gitignored） |
+
+隐私红线：职业经历、成果证据、个人决策、薪资目标、面试记录是私人数字资产，**绝不进公开仓库**。Agent 行为约束见 AGENTS.md「数据边界」。
+
 ## 6. 部署与进程生命周期
 
 ```

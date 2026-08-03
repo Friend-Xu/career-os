@@ -113,6 +113,15 @@ bash scripts/install-to-cli.sh --codex   # 复制到 Codex skills 目录
 
 各 CLI 的搜索工具支持不同，见 [CLI 兼容性矩阵](docs/CLI-COMPATIBILITY.md)。
 
+## 隐私边界（Privacy Notice）
+
+Career OS 将**系统资产**与**个人职业数据**严格分离：
+
+- **仓库包含**：schema、模板、工作流、Agent 定义、引擎与工作台代码
+- **工作区包含**（`workspace/`，gitignored）：职业经历、成果证据、个人决策、薪资目标、面试记录
+
+**绝不把 `workspace/` 提交到公开仓库。** 你的职业记录是私人数字资产，永远只属于你本地。完整数据边界定义见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 ## License
 
 [GNU GPL v3](LICENSE)
