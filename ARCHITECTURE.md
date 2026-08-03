@@ -156,6 +156,23 @@ Career OS 分两个域，**系统可升级，个人资产永远独立**：
 
 隐私红线：职业经历、成果证据、个人决策、薪资目标、面试记录是私人数字资产，**绝不进公开仓库**。Agent 行为约束见 AGENTS.md「数据边界」。
 
+## 5.6 Runtime Health（健康投影）
+
+统一健康报告层，**Health Engine（`engine/health/checker.ts`）是唯一计算源**——CLI 与 UI 禁止各自实现健康计算。
+
+- 四维度投影：workspace / decisions / graph / knowledge（`HealthReport` 契约 v1，`ir/schema.ts`）
+- Consumers：`--doctor` CLI（启动参数一次性输出）、`system/health` RPC、WebUI 角标（工作台卡片 / 信息池 / status-bar）
+- 报告**一致性/完整性问题**（invalid、孤立节点、缺失文件），**不执行自动修复或数据迁移**（Detection ≠ Remediation）
+- 空数据源按空维度 score=100 诚实处理（缺数据 ≠ 脏数据）
+
+## 5.7 Resume Export（简历产物出口）
+
+简历编辑工作流 → 可拿走的人工产物（PDF）：
+
+- 前端组装打印 HTML（HTML 转义防注入）→ `resume/export` RPC → 引擎 spawn Windows 自带 Edge `--headless --print-to-pdf`（零依赖，借鉴 md-to-pdf 工具链）→ base64 返回 → 前端 Blob 下载
+- 离线/Edge 缺失 → 降级 `window.print()`（Print CSS 隐藏应用壳）
+- **不包含**：evidence-driven 简历组合、career graph 推理、版本化简历产物（V3，ADR-003/005 defer）
+
 ## 6. 部署与进程生命周期
 
 ```
@@ -180,11 +197,11 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 ## 8. 落地状态与路线
 
-**已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动。
+**已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动 → 健康投影（契约 v1 + --doctor + RPC）→ 简历改写（指令式 Revision Request，审计闭环）→ 简历 PDF 导出（Edge headless，零依赖）→ 文档权威链 + ADR 登记。
 
-**未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map（计划见 `docs/CAREER-OS-V2V3路线计划-v1.md`）。
+**未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map、Evidence 原子模型 / Workflow Contract / Career Graph 推理层（后三者 ADR-003/004/005 登记 defer，触发条件未到）。
 
-**近期讨论中**：简历 AI 改写升级（方向/JD 感知规则 + 指令式可控改写 + 审核对比，候选卡形态将退位）。
+**进行中**：简历内容标准方向卡（8 方向 × 5 子方向调研：HR 高频词/量化锚点/强力动词/项目分组/ATS 清单——计划见 plan 文件 `pure-finding-comet.md`，Phase 1 机械工程试点）。
 
 ## 9. 开发原则（CLAUDE.md 摘要）
 
@@ -208,3 +225,5 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 **冲突解决**：Contract > 模块约定 > Architecture > 产品意图；历史文档仅作参考。
 **边界**：`docs/` 为内部工程资产（gitignored，不入公开仓库）；公开仓库 = 产品面（README + 本文档 + 代码）。完整规则见 `docs/README.md`。
+
+**本文档描述当前已实现的系统边界；未来方向由 ADR 单独登记**——不是 roadmap，不被当作愿景讨论区。
