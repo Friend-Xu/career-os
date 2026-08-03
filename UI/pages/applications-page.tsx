@@ -356,7 +356,6 @@ export function ApplicationsPage() {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const applicationsFilter = useAppStore((s) => s.applicationsFilter)
-  const setApplicationsFilter = useAppStore((s) => s.setApplicationsFilter)
   const person = useAppStore((s) => s.currentPerson())
   const push = useToastStore((s) => s.push)
 
@@ -420,28 +419,7 @@ export function ApplicationsPage() {
         </Tabs>
       </Stack>
 
-      {/* 状态过滤（侧栏过滤移入页面内） */}
-      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-        {['全部', ...COLUMNS].map((s) => {
-          const active = applicationsFilter === s
-          return (
-            <Chip
-              key={s}
-              size="small"
-              label={s}
-              onClick={() => setApplicationsFilter(s)}
-              sx={{
-                height: 22,
-                fontSize: 11.5,
-                bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,
-                color: active ? COLORS.accent : COLORS.textSecondary,
-                border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
-                cursor: 'pointer',
-              }}
-            />
-          )
-        })}
-      </Stack>
+      {/* 状态过滤在侧栏（ApplicationsSidebar）——此处只消费过滤结果 */}
 
       {/* AI follow-up suggestion strip */}
       {urgent[0] && (

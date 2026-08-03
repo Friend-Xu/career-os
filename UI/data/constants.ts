@@ -5,8 +5,9 @@ export const LAYOUT = {
   statusBar: 32,
   iconNav: 80,
   secondaryMin: 160,
-  secondaryDefault: 200,
-  secondaryMax: 240,
+  /** 侧栏统一宽度（Finder 式：所有空间同一列宽，承载列表/过滤/记录库入口） */
+  secondaryDefault: 268,
+  secondaryMax: 268,
   agentPanel: 350,
   mainNarrow: 810,
   mainWide: 1160,

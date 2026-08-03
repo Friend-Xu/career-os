@@ -493,7 +493,6 @@ export function InfoPoolPage() {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
-  const setInfopoolFilter = useAppStore((s) => s.setInfopoolFilter)
   const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
@@ -584,39 +583,7 @@ export function InfoPoolPage() {
         </Tabs>
       </Stack>
 
-      {/* 节点类型过滤（侧栏过滤移入页面内） */}
-      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-        {[
-          { id: 'all', label: '全部' },
-          { id: 'person', label: '人' },
-          { id: 'decision', label: '决策' },
-          { id: 'direction', label: '方向' },
-          { id: 'city', label: '城市' },
-          { id: 'company', label: '公司' },
-          { id: 'role', label: '岗位' },
-          { id: 'skill', label: '技能' },
-          { id: 'isolated', label: '⚠ 孤立' },
-          { id: 'invalid', label: '⚠ 待人工' },
-        ].map((f) => {
-          const active = infopoolFilter === f.id
-          return (
-            <Chip
-              key={f.id}
-              size="small"
-              label={f.label}
-              onClick={() => setInfopoolFilter(f.id)}
-              sx={{
-                height: 22,
-                fontSize: 11.5,
-                bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,
-                color: active ? COLORS.accent : COLORS.textSecondary,
-                border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
-                cursor: 'pointer',
-              }}
-            />
-          )
-        })}
-      </Stack>
+      {/* 节点类型过滤在侧栏（InfoPoolSidebar）——此处只消费过滤结果 */}
 
       {tab === 0 ? (
         <GraphCanvas

@@ -3,8 +3,6 @@ import {
   Button,
   Chip,
   IconButton,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography,
@@ -297,25 +295,7 @@ export function ResumesPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>简历中心</Typography>
         {resume && (
           <>
-            {/* 版本切换（侧栏版本血缘移入页面内） */}
-            <Select
-              size="small"
-              value={resume.id}
-              onChange={(e) => setActiveResumeId(e.target.value as string)}
-              sx={{
-                minWidth: 140,
-                maxWidth: 220,
-                fontSize: 12,
-                height: 26,
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: COLORS.border },
-              }}
-            >
-              {personResumes.map((r) => (
-                <MenuItem key={r.id} value={r.id} sx={{ fontSize: 12.5 }}>
-                  {r.name}
-                </MenuItem>
-              ))}
-            </Select>
+            {/* 版本切换在侧栏（ResumesSidebar）——此处只显示当前版本目标 */}
             {resume.targetCompany && (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
                 → {resume.targetCompany} · {resume.targetPosition}
@@ -366,7 +346,7 @@ export function ResumesPage() {
         </Button>
       </Stack>
 
-      {/* 版本切换在二级栏「版本 / 血缘」——此处不重复提供入口 */}
+      {/* 版本切换在侧栏「版本」——此处不重复提供入口 */}
 
       {!resume ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>

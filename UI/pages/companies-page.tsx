@@ -1,89 +1,29 @@
-import {
-  Box,
-  Button,
-  Chip,
-  Dialog,
-  IconButton,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
-  Tooltip,
-  Typography,
-  InputAdornment,
-} from '@mui/material'
-import SearchIcon from '@mui/icons-material/Search'
+/**
+ * 公司空间主区：园区地图（浏览态）+ 档案 Dialog（理解/操作）。
+ * 公司列表在侧栏（CompaniesSidebar）——浏览 → 列表 → 档案三层分工。
+ */
+import { Box, Button, Chip, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
-import MapIcon from '@mui/icons-material/Map'
-import ViewListIcon from '@mui/icons-material/ViewList'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { PARKS } from '../data/mock-data'
 import { GapAnalysisSection } from '../components/gap-analysis-section'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import type { Company } from '../types'
 
 export function CompaniesPage() {
-  const [tab, setTab] = useState(0)
-  const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<Company | null>(null)
   const [parkId, setParkId] = useState<number | null>(null)
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const companies = useAppStore((s) => s.companies)
   const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
-  const companiesFilter = useAppStore((s) => s.companiesFilter)
-  const setCompaniesFilter = useAppStore((s) => s.setCompaniesFilter)
   const jobs = useAppStore((s) => s.jobs)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
-  const locateTarget = useAppStore((s) => s.locateTarget)
-  const setLocateTarget = useAppStore((s) => s.setLocateTarget)
+  const selectedCompanyId = useAppStore((s) => s.selectedCompanyId)
+  const setSelectedCompanyId = useAppStore((s) => s.setSelectedCompanyId)
   const push = useToastStore((s) => s.push)
 
-  useEffect(() => {
-    if (!locateTarget) return
-    const target = companies.find((c) => c.id === locateTarget)
-    // 切到公司清单 tab（定位行仅存在于该视图）+ 直接打开档案抽屉
-    setTab(1)
-    if (target) setSelected(target)
-    setTimeout(() => {
-      document
-        .getElementById(`company-${locateTarget}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 0)
-    setLocateTarget(null)
-  }, [locateTarget, companies, setLocateTarget])
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const base = q
-      ? companies.filter(
-          (c) =>
-            c.name.toLowerCase().includes(q) ||
-            (c.city ?? '').includes(q) ||
-            (c.industry ?? '').includes(q) ||
-            (c.tags ?? []).some((t) => t.includes(q)),
-        )
-      : companies
-    switch (companiesFilter) {
-    case 'sz':
-      return base.filter((c) => c.city === '深圳')
-    case 'sh':
-      return base.filter((c) => c.city === '上海')
-    case 'hz':
-      return base.filter((c) => c.city === '杭州')
-    case 'bj':
-      return base.filter((c) => c.city === '北京')
-    case 'robot':
-      return base.filter((c) => c.industry?.includes('机器人'))
-    case 'contacted':
-      return base.filter((c) => c.contacted)
-    default:
-      return base
-    }
-  }, [search, companiesFilter, companies])
-
+  const selected = companies.find((c) => c.id === selectedCompanyId) ?? null
   const activePark = PARKS.find((p) => p.id === parkId)
   const companyJobs = jobs.filter((j) => j.company === selected?.name)
 
@@ -93,297 +33,128 @@ export function CompaniesPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>公司探索</Typography>
         <Chip size="small" label={`${companies.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
         <Box sx={{ flex: 1 }} />
-        <TextField
-          size="small"
-          placeholder="搜索公司 / 城市 / 产业…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ fontSize: 16, color: COLORS.textMuted }} />
-                </InputAdornment>
-              ),
-            },
-          }}
-          sx={{ width: 220, '& .MuiOutlinedInput-root': { height: 30, fontSize: 12 } }}
-        />
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 30 }}>
-          <Tab icon={<MapIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="园区地图" sx={{ minHeight: 30 }} />
-          <Tab icon={<ViewListIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="公司清单" sx={{ minHeight: 30 }} />
-        </Tabs>
+        <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>左侧列表选择公司查看档案</Typography>
       </Stack>
 
-      {/* 过滤（侧栏过滤移入页面内） */}
-      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-        {[
-          { id: 'all', label: '全部' },
-          { id: 'sz', label: '深圳' },
-          { id: 'sh', label: '上海' },
-          { id: 'hz', label: '杭州' },
-          { id: 'bj', label: '北京' },
-          { id: 'robot', label: '机器人产业' },
-          { id: 'contacted', label: '已联系' },
-        ].map((f) => {
-          const active = companiesFilter === f.id
+      {/* 园区地图（浏览态） */}
+      <Box
+        sx={{
+          flex: 1,
+          position: 'relative',
+          borderRadius: '10px',
+          border: `1px solid ${COLORS.border}`,
+          bgcolor: COLORS.canvas,
+          overflow: 'hidden',
+        }}
+      >
+        <svg width="100%" height="100%" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <line key={`h${i}`} x1={0} y1={i * 52} x2={900} y2={i * 52} stroke={alpha(COLORS.text, 0.06)} />
+          ))}
+          {Array.from({ length: 12 }).map((_, i) => (
+            <line key={`v${i}`} x1={i * 75} y1={0} x2={i * 75} y2={520} stroke={alpha(COLORS.text, 0.06)} />
+          ))}
+          {[
+            { name: '北京', x: 520, y: 80 },
+            { name: '上海', x: 700, y: 260 },
+            { name: '杭州', x: 640, y: 340 },
+            { name: '深圳', x: 620, y: 440 },
+          ].map((c) => (
+            <text key={c.name} x={c.x} y={c.y} fill={COLORS.textMuted} fontSize={11} textAnchor="middle">
+              {c.name}
+            </text>
+          ))}
+        </svg>
+
+        {PARKS.map((park, i) => {
+          const x = ((park.lon - 113) / 5) * 700 + 80
+          const y = ((41 - park.lat) / 12) * 420 + 40
+          const active = parkId === park.id
           return (
-            <Chip
-              key={f.id}
-              size="small"
-              label={f.label}
-              onClick={() => setCompaniesFilter(f.id)}
-              sx={{
-                height: 22,
-                fontSize: 11.5,
-                bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,
-                color: active ? COLORS.accent : COLORS.textSecondary,
-                border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
-                cursor: 'pointer',
-              }}
-            />
-          )
-        })}
-      </Stack>
-
-      {tab === 0 ? (
-        <Box
-          sx={{
-            flex: 1,
-            position: 'relative',
-            borderRadius: '10px',
-            border: `1px solid ${COLORS.border}`,
-            bgcolor: COLORS.canvas,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Simplified park map */}
-          <svg width="100%" height="100%" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet">
-            {/* grid */}
-            {Array.from({ length: 10 }).map((_, i) => (
-              <line
-                key={`h${i}`}
-                x1={0}
-                y1={i * 52}
-                x2={900}
-                y2={i * 52}
-                stroke={alpha(COLORS.text, 0.06)}
-              />
-            ))}
-            {Array.from({ length: 12 }).map((_, i) => (
-              <line
-                key={`v${i}`}
-                x1={i * 75}
-                y1={0}
-                x2={i * 75}
-                y2={520}
-                stroke={alpha(COLORS.text, 0.06)}
-              />
-            ))}
-            {/* city labels approx */}
-            {[
-              { name: '北京', x: 520, y: 80 },
-              { name: '上海', x: 700, y: 260 },
-              { name: '杭州', x: 640, y: 340 },
-              { name: '深圳', x: 620, y: 440 },
-            ].map((c) => (
-              <text key={c.name} x={c.x} y={c.y} fill={COLORS.textMuted} fontSize={11} textAnchor="middle">
-                {c.name}
-              </text>
-            ))}
-          </svg>
-
-          {PARKS.map((park, i) => {
-            // Map lat/lon roughly into viewBox
-            const x = ((park.lon - 113) / 5) * 700 + 80
-            const y = ((41 - park.lat) / 12) * 420 + 40
-            const active = parkId === park.id
-            return (
-              <Box
-                key={park.id}
-                onClick={() => setParkId(active ? null : park.id)}
-                sx={{
-                  position: 'absolute',
-                  left: x,
-                  top: y,
-                  transform: 'translate(-50%, -50%)',
-                  px: 1.5,
-                  py: 1,
-                  borderRadius: '10px',
-                  bgcolor: active ? COLORS.accentMuted : COLORS.bgElevated,
-                  border: `1.5px solid ${active ? COLORS.accent : COLORS.border}`,
-                  cursor: 'pointer',
-                  animation: `fade-in 0.35s ${EASE} ${i * 0.08}s both`,
-                  '&:hover': { borderColor: COLORS.accent },
-                  minWidth: 120,
-                  textAlign: 'center',
-                }}
-              >
-                <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{park.name}</Typography>
-                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
-                  {park.city} · {park.companies.length} 家 · {park.year}
-                </Typography>
-              </Box>
-            )
-          })}
-
-          {activePark && (
             <Box
+              key={park.id}
+              onClick={() => setParkId(active ? null : park.id)}
               sx={{
                 position: 'absolute',
-                right: 16,
-                top: 16,
-                width: 260,
-                p: 2,
+                left: x,
+                top: y,
+                transform: 'translate(-50%, -50%)',
+                px: 1.5,
+                py: 1,
                 borderRadius: '10px',
-                bgcolor: alpha(COLORS.bgElevated, 0.95),
-                border: `1px solid ${COLORS.borderStrong}`,
+                bgcolor: active ? COLORS.accentMuted : COLORS.bgElevated,
+                border: `1.5px solid ${active ? COLORS.accent : COLORS.border}`,
+                cursor: 'pointer',
+                animation: `fade-in 0.35s ${EASE} ${i * 0.08}s both`,
+                '&:hover': { borderColor: COLORS.accent },
+                minWidth: 120,
+                textAlign: 'center',
               }}
             >
-              <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{activePark.name}</Typography>
-                <IconButton size="small" onClick={() => setParkId(null)}>
-                  <CloseIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
-                {activePark.industry} · 来源 {activePark.source} ({activePark.year})
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{park.name}</Typography>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
+                {park.city} · {park.companies.length} 家 · {park.year}
               </Typography>
-              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.75 }}>入驻企业</Typography>
-              <Stack spacing={0.5}>
-                {activePark.companies.map((name) => {
-                  const co = companies.find((c) => c.name === name)
-                  return (
-                    <Box
-                      key={name}
-                      onClick={() => co && setSelected(co)}
-                      sx={{
-                        px: 1,
-                        py: 0.75,
-                        borderRadius: '6px',
-                        bgcolor: COLORS.bgHover,
-                        cursor: co ? 'pointer' : 'default',
-                        '&:hover': co ? { bgcolor: COLORS.bgActive } : {},
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12 }}>{name}</Typography>
-                      {co && (
-                        <Typography sx={{ fontSize: 11.5, color: COLORS.accent }}>
-                          匹配 {co.matchScore}
-                        </Typography>
-                      )}
-                    </Box>
-                  )
-                })}
-              </Stack>
             </Box>
-          )}
-        </Box>
-      ) : (
-        <Box
-          sx={{
-            flex: 1,
-            overflow: 'auto',
-            borderRadius: '10px',
-            border: `1px solid ${COLORS.border}`,
-            bgcolor: COLORS.bgElevated,
-          }}
-        >
+          )
+        })}
+
+        {activePark && (
           <Box
             sx={{
-              display: 'grid',
-              gridTemplateColumns: '1.4fr 0.7fr 1fr 0.6fr 0.5fr 0.5fr',
-              px: 2,
-              py: 1,
-              borderBottom: `1px solid ${COLORS.border}`,
-              position: 'sticky',
-              top: 0,
-              bgcolor: COLORS.bgElevated,
-              zIndex: 1,
+              position: 'absolute',
+              right: 16,
+              top: 16,
+              width: 260,
+              p: 2,
+              borderRadius: '10px',
+              bgcolor: alpha(COLORS.bgElevated, 0.95),
+              border: `1px solid ${COLORS.borderStrong}`,
             }}
           >
-            {['公司', '城市', '产业', '匹配', '风险', '状态'].map((h) => (
-              <Typography key={h} sx={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 600 }}>
-                {h}
-              </Typography>
-            ))}
-          </Box>
-          {filtered.map((c) => {
-            // IR 降级消费：degraded → 黄角标（riskMedium 语义）；invalid → 红角标 + 左边框；Tooltip 显示 issue.reason
-            const v = c.validation
-            const vStatus = v?.status
-            const vColor =
-              vStatus === 'invalid' ? RISK_COLOR.high : vStatus === 'degraded' ? RISK_COLOR.medium : undefined
-            const vReasons = v?.issues.map((i) => i.reason).join('；') ?? ''
-            return (
-            <Box
-              key={c.id}
-              id={`company-${c.id}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelected(c)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setSelected(c)
-                }
-              }}
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: '1.4fr 0.7fr 1fr 0.6fr 0.5fr 0.5fr',
-                px: 2,
-                py: 1.25,
-                borderBottom: `1px solid ${COLORS.border}`,
-                borderLeft: vColor ? `3px solid ${vColor}` : undefined,
-                cursor: 'pointer',
-                alignItems: 'center',
-                '&:hover': { bgcolor: COLORS.bgHover },
-                '&:focus-visible': {
-                  outline: `2px solid ${COLORS.accent}`,
-                  outlineOffset: -2,
-                },
-              }}
-            >
-              <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }} spacing={0.75}>
-                <Typography sx={{ fontSize: 13, fontWeight: 500 }} noWrap>
-                  {c.name}
-                </Typography>
-                {vStatus && (
-                  <Tooltip
-                    title={
-                      vStatus === 'invalid'
-                        ? `待人工处理：${vReasons}`
-                        : vReasons || '数据降级（值域修正后保留）'
-                    }
+            <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{activePark.name}</Typography>
+              <IconButton size="small" onClick={() => setParkId(null)}>
+                <CloseIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Stack>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
+              {activePark.industry} · 来源 {activePark.source} ({activePark.year})
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.75 }}>入驻企业</Typography>
+            <Stack spacing={0.5}>
+              {activePark.companies.map((name) => {
+                const co = companies.find((c) => c.name === name)
+                return (
+                  <Box
+                    key={name}
+                    onClick={() => co && setSelectedCompanyId(co.id)}
+                    sx={{
+                      px: 1,
+                      py: 0.75,
+                      borderRadius: '6px',
+                      bgcolor: COLORS.bgHover,
+                      cursor: co ? 'pointer' : 'default',
+                      '&:hover': co ? { bgcolor: COLORS.bgActive } : {},
+                    }}
                   >
-                    <Box
-                      sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: vColor, flexShrink: 0 }}
-                    />
-                  </Tooltip>
-                )}
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>{c.city}</Typography>
-              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }} noWrap>
-                {c.industry}
-              </Typography>
-              <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.accent }}>
-                {c.matchScore}
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: RISK_COLOR[c.riskLevel] }}>
-                {RISK_LABEL[c.riskLevel]}
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: c.contacted ? COLORS.riskLow : COLORS.textMuted }}>
-                {c.contacted ? '已联系' : '未联系'}
-              </Typography>
-            </Box>
-            )
-          })}
-        </Box>
-      )}
+                    <Typography sx={{ fontSize: 12 }}>{name}</Typography>
+                    {co && (
+                      <Typography sx={{ fontSize: 11.5, color: COLORS.accent }}>
+                        匹配 {co.matchScore}
+                      </Typography>
+                    )}
+                  </Box>
+                )
+              })}
+            </Stack>
+          </Box>
+        )}
+      </Box>
 
       <Dialog
         open={Boolean(selected)}
-        onClose={() => setSelected(null)}
+        onClose={() => setSelectedCompanyId(null)}
         slotProps={{
           paper: {
             sx: {
@@ -400,7 +171,7 @@ export function CompaniesPage() {
           <Box sx={{ p: 2.5, maxHeight: '80vh', overflowY: 'auto' }}>
             <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }}>
               <Typography sx={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
-              <IconButton size="small" onClick={() => setSelected(null)}>
+              <IconButton size="small" onClick={() => setSelectedCompanyId(null)}>
                 <CloseIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Stack>
@@ -451,7 +222,7 @@ export function CompaniesPage() {
                 onClick={() => {
                   markCompanyContacted(selected.id)
                   push('success', `已标记「${selected.name}」为已联系 · 投递管理已同步`)
-                  setSelected(null)
+                  setSelectedCompanyId(null)
                   setPage('applications')
                 }}
               >
@@ -459,7 +230,7 @@ export function CompaniesPage() {
               </Button>
             </Stack>
 
-            {/* 该公司岗位（J3.3：尽调完看岗位 → 岗位工作区） */}
+            {/* 该公司岗位（尽调完看岗位 → 岗位工作区） */}
             {companyJobs.length > 0 && (
               <Box sx={{ mt: 2.5 }}>
                 <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 1 }}>
@@ -471,7 +242,7 @@ export function CompaniesPage() {
                       key={j.id}
                       onClick={() => {
                         setSelectedJobId(j.id)
-                        setSelected(null)
+                        setSelectedCompanyId(null)
                         setPage('jobs')
                       }}
                       sx={{

@@ -147,6 +147,10 @@ interface AppState {
   locateTarget: string | null;
   /** 岗位页选中的岗位（跳转定位：新增投递保存后 → 岗位页选中） */
   selectedJobId: string | null;
+  /** 公司页选中的公司（侧栏列表选中 → 档案 Dialog；locateTarget 定位共用） */
+  selectedCompanyId: string | null;
+  /** 工作台子视图（驾驶舱内部导航：Dashboard/方向/城市/决策记录） */
+  workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
   pendingPermission: PendingPermission | null;
   /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
@@ -173,6 +177,8 @@ interface AppState {
   expandToFullAgent: () => void;
   sendAgentMessage: (content: string) => void;
   setCurrentSession: (id: string) => void;
+  setSelectedCompanyId: (id: string | null) => void;
+  setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
   createSession: (title?: string) => void;
   /** 权限消费入口（真实 Agent 流 + 演示共用）：会话内已批量放行 → 立即放行；否则挂起弹窗等待决策 */
   requestPermission: (toolName: string, description: string) => Promise<boolean>;
@@ -249,6 +255,8 @@ export const useAppStore = create<AppState>()(
       applicationsFilter: '全部',
       locateTarget: null,
       selectedJobId: null,
+      selectedCompanyId: null,
+      workbenchView: 'dashboard',
       pendingPermission: null,
       approvedTools: {},
       rewrite: { status: 'idle', text: '' },
@@ -557,6 +565,8 @@ export const useAppStore = create<AppState>()(
 
   setLocateTarget: (target) => set({ locateTarget: target }),
   setSelectedJobId: (id) => set({ selectedJobId: id }),
+  setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
+  setWorkbenchView: (view) => set({ workbenchView: view }),
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId
