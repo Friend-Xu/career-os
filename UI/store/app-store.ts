@@ -180,6 +180,8 @@ interface AppState {
   startRewrite: (text: string, instruction: string, jdContext: string) => Promise<void>;
   cancelRewrite: () => void;
   resetRewrite: () => void;
+  /** 简历导出 PDF：引擎 Edge headless 渲染；未连接 → 抛错（页面降级 window.print） */
+  exportResume: (html: string) => Promise<{ pdf: string; fileName: string }>;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
@@ -655,6 +657,11 @@ export const useAppStore = create<AppState>()(
   resetRewrite: () => {
     rewriteTaskId = null
     set({ rewrite: { status: 'idle', text: '' } })
+  },
+
+  exportResume: async (html) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.exportResume(html)
   },
     }),
     {

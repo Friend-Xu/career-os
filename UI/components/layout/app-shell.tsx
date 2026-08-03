@@ -119,7 +119,9 @@ export function AppShell() {
 
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <IconNav />
-        <SecondarySidebar />
+        <div className="cos-print-hidden" style={{ display: 'contents' }}>
+          <SecondarySidebar />
+        </div>
 
         <Box
           component="main"
@@ -135,7 +137,11 @@ export function AppShell() {
           <MainContent />
         </Box>
 
-        {showAgent && <AgentPanel />}
+        {showAgent && (
+          <div className="cos-print-hidden" style={{ display: 'contents' }}>
+            <AgentPanel />
+          </div>
+        )}
       </Box>
 
       <StatusBar />

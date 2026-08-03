@@ -82,3 +82,33 @@ html.light {
     opacity: 1;
   }
 }
+
+/* Export MVP（window.print）：只打印主区简历内容，隐藏应用壳与编辑控件 */
+@media print {
+  body {
+    background: #fff !important;
+  }
+  header,
+  nav,
+  footer,
+  .cos-print-hidden {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+  }
+  textarea {
+    border: none !important;
+    box-shadow: none !important;
+    resize: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    outline: none !important;
+  }
+  .MuiLinearProgress-root,
+  .MuiButton-root,
+  .MuiChip-root,
+  .MuiIconButton-root {
+    display: none !important;
+  }
+}

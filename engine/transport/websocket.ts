@@ -17,6 +17,7 @@ import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { generateHealthReport } from '../health/checker.ts'
+import { exportPdf } from '../export/pdf.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
@@ -104,6 +105,15 @@ function gapParams(v: unknown): { person: string; roleId: string } {
   if (typeof p.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
   if (typeof p.roleId !== 'string' || p.roleId.length === 0) throw new Error('params.roleId 缺失（岗位 id）')
   return { person: p.person, roleId: p.roleId }
+}
+
+/** resume/export 入参校验（RPC 边界） */
+function resumeHtmlParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null) throw new Error('resume/export 需要 params { html }')
+  const p = v as Record<string, unknown>
+  if (typeof p.html !== 'string' || p.html.length === 0) throw new Error('params.html 缺失（打印 HTML）')
+  if (p.html.length > 500_000) throw new Error('params.html 过大（>500KB）')
+  return p.html
 }
 
 /** 端口监听：EADDRINUSE → logger.warn + 端口 +1 重试，最多递增 MAX_PORT_RETRIES 次；其余错误立即抛 */
@@ -212,6 +222,7 @@ export async function startServer(opts: {
     [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
     [METHODS.health]: () => generateHealthReport(workspace, store),
+    [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => ({
       taskId: agentRuntime.start(agentStartParams(params), {
         permissionMode: config.agent.permissionMode,
@@ -266,12 +277,14 @@ export async function startServer(opts: {
         respond(ws, { id: msg.id, error: { code: 'method_not_found', message: `未知方法 ${msg.method}` } })
         return
       }
-      try {
-        respond(ws, { id: msg.id, result: handler(msg.params) })
-      } catch (err) {
-        logger.error(`RPC ${msg.method} 失败：${err instanceof Error ? err.message : String(err)}`)
-        respond(ws, { id: msg.id, error: { code: 'internal_error', message: err instanceof Error ? err.message : String(err) } })
-      }
+      void (async () => {
+        try {
+          respond(ws, { id: msg.id, result: await handler(msg.params) })
+        } catch (err) {
+          logger.error(`RPC ${msg.method} 失败：${err instanceof Error ? err.message : String(err)}`)
+          respond(ws, { id: msg.id, error: { code: 'internal_error', message: err instanceof Error ? err.message : String(err) } })
+        }
+      })()
     })
   })
 

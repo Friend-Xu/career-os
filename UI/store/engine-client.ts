@@ -243,6 +243,11 @@ export class EngineClient {
     return this.rpc<HealthReport>(METHODS.health)
   }
 
+  /** 简历导出 PDF（引擎 spawn Edge headless --print-to-pdf） */
+  exportResume(html: string): Promise<{ pdf: string; fileName: string }> {
+    return this.rpc<{ pdf: string; fileName: string }>(METHODS.resumeExport, { html })
+  }
+
   // ─── Agent 通道（真实 LLM 流；事件经 agent.event 订阅）───────────────────
 
   startAgent(params: {

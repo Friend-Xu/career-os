@@ -7,7 +7,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import PrintIcon from '@mui/icons-material/Print'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CloseIcon from '@mui/icons-material/Close'
@@ -38,6 +37,37 @@ const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
 
 /** 常用改写意图（Revision Request 快捷入口，对应契约 intent chips） */
 const INTENT_CHIPS = ['对齐 JD', '更精简', '量化增强', '更专业'] as const
+
+/** HTML 转义（打印 HTML 内含用户文本——防注入） */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** 组装简历打印 HTML（引擎侧 Edge headless 渲染为 PDF） */
+function buildResumeHtml(personName: string, resumeName: string, modules: { title: string; content: string }[]): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; color: #1a1a1e; margin: 40px 48px; font-size: 14px; line-height: 1.6; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #6e6e78; font-size: 12px; margin-bottom: 24px; }
+  h2 { font-size: 15px; border-bottom: 1px solid #d8d8dd; padding-bottom: 4px; margin: 20px 0 8px; }
+  p { margin: 0 0 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>${escapeHtml(personName)}</h1>
+  <div class="sub">${escapeHtml(resumeName)}</div>
+  ${modules.map((m) => `<h2>${escapeHtml(m.title)}</h2><p>${escapeHtml(m.content)}</p>`).join('\n  ')}
+</body>
+</html>`
+}
 
 export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
@@ -265,18 +295,31 @@ export function ResumesPage() {
         <Button
           size="small"
           startIcon={<FileDownloadIcon sx={{ fontSize: 14 }} />}
-          onClick={() => push('info', '演示模式：导出将在阶段 3 接入')}
+          onClick={() => {
+            // 在线：引擎 spawn Edge headless 渲染 PDF 直接下载；离线/失败 → window.print 降级
+            const html = buildResumeHtml(person.name, resume?.name ?? '', modules)
+            void (async () => {
+              try {
+                const { pdf, fileName } = await useAppStore.getState().exportResume(html)
+                const blob = new Blob([Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0))], {
+                  type: 'application/pdf',
+                })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = fileName
+                a.click()
+                URL.revokeObjectURL(url)
+                push('success', '已导出 PDF')
+              } catch {
+                push('info', '导出服务不可用，已打开打印（另存为 PDF）')
+                window.print()
+              }
+            })()
+          }}
           sx={{ fontSize: 12 }}
         >
-          导出
-        </Button>
-        <Button
-          size="small"
-          startIcon={<PrintIcon sx={{ fontSize: 14 }} />}
-          onClick={() => push('info', '演示模式：打印将在阶段 3 接入')}
-          sx={{ fontSize: 12 }}
-        >
-          打印
+          导出 PDF
         </Button>
       </Stack>
 
