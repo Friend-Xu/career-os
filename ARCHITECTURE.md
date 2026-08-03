@@ -203,7 +203,7 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 **已完成（2026-08-03）**：Career Expression Standard Phase 1（机械工程）——12 岗位 JD 调研 → Signal Taxonomy → CareerContentStandard 契约 v1.1 → `standards/mechanical/` 4 语言族 → Benchmark v0.1 验证（TP/DF 20/20，防虚高红线全量生效）→ 失败归因链 A/B/C/D（ADR-006）。其余 7 方向为 Data Layer 待迁移。
 
-**进行中（下一阶段）**：Resume Intelligence 接入——Standard Runtime（UI → Agent 方向/语言族传递）→ 用户反馈闭环（Apply/Reject 回流标准）→ 真实数据 Benchmark v0.2。
+**进行中（Phase 2 Resume Intelligence Runtime）**：2A 标准路由（`Resume-Standard-Routing-v1` 契约 + 13 条 JD 路由验证 13/13 PASS）与 2B 反馈事件链路（`rewrite/feedback` RPC → `logs/feedback/`，只记录不学习）已完成；2C 真实案例收集（10-20 次 rewrite session → Benchmark Expansion v0.2）待用户使用反馈。
 
 ## 9. 开发原则（CLAUDE.md 摘要）
 
