@@ -141,6 +141,8 @@ interface AppState {
   pendingPermission: PendingPermission | null;
   /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
   approvedTools: Record<string, string[]>;
+  /** 简历 AI 改写任务（浮层状态机，不持久化；在线走真实 agent，离线由页面降级规则候选） */
+  rewrite: RewriteState;
 
   currentPerson: () => Person;
   setPage: (page: NavPageId) => void;
@@ -170,6 +172,10 @@ interface AppState {
   simulatePermissionRequest: (toolName: string, description: string) => void;
   simulateQuestionRequest: (question: string, options: string[]) => void;
   answerQuestion: (messageId: string, answer: string) => void;
+  /** 简历 AI 改写：指令 + 目标岗位上下文 → 真实 agent 任务（事件经 rewriteTaskId 路由到 rewrite 状态） */
+  startRewrite: (text: string, instruction: string, jdContext: string) => Promise<void>;
+  cancelRewrite: () => void;
+  resetRewrite: () => void;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
@@ -211,6 +217,7 @@ export const useAppStore = create<AppState>()(
       locateTarget: null,
       pendingPermission: null,
       approvedTools: {},
+      rewrite: { status: 'idle', text: '' },
 
   currentPerson: () => {
     const { currentPersonId, persons } = get()
@@ -616,6 +623,34 @@ export const useAppStore = create<AppState>()(
       void runAgentTask(currentSessionId, `用户回答了你的问题「${question}」：${answer}。请确认收到并继续。`, session.sdkSessionId)
     }
   },
+
+  startRewrite: async (text, instruction, jdContext) => {
+    if (!engine || get().engineStatus !== 'connected') return
+    try {
+      const { taskId } = await engine.startAgent({ task: buildRewritePrompt(text, instruction, jdContext) })
+      rewriteTaskId = taskId
+      set({ rewrite: { status: 'thinking', text: '' } })
+    } catch (err) {
+      set({
+        rewrite: {
+          status: 'error',
+          text: '',
+          error: { code: 'unknown', message: err instanceof Error ? err.message : String(err), retryable: true },
+        },
+      })
+    }
+  },
+
+  cancelRewrite: () => {
+    if (rewriteTaskId !== null) void engine?.cancelAgent(rewriteTaskId)
+    rewriteTaskId = null
+    set({ rewrite: { status: 'idle', text: '' } })
+  },
+
+  resetRewrite: () => {
+    rewriteTaskId = null
+    set({ rewrite: { status: 'idle', text: '' } })
+  },
     }),
     {
       name: 'career-os',
@@ -655,6 +690,23 @@ export function getEngine(): EngineClient | null {
 
 /** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
 const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
+
+/** 简历 AI 改写任务 id（非会话任务：事件路由到 rewrite 状态而非会话消息） */
+let rewriteTaskId: string | null = null
+
+/** 改写 prompt：只输出改写文本，避免污染浮层结果 */
+function buildRewritePrompt(text: string, instruction: string, jdContext: string): string {
+  return [
+    '改写下面的简历文本片段，使其更符合目标岗位的招聘标准。',
+    jdContext.length > 0 ? `目标岗位上下文：${jdContext}` : '',
+    `要求：${instruction}`,
+    '只输出改写后的文本本身，不要任何解释、前缀或引用标记。',
+    '原文：',
+    text,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 
 /** 流式消息 patch（text_delta 累积 / toolChips 流转，基于现值回调） */
 function patchStreamingMessage(
@@ -699,8 +751,28 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
   }
 }
 
-/** 事件处理器（connectEngine 注册一次）：引擎 Agent 事件 → 会话消息流 */
+/** 事件处理器（connectEngine 注册一次）：引擎 Agent 事件 → 会话消息流 / 改写浮层 */
 function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
+  // 改写任务分叉：事件路由到浮层状态（text_delta 累积改写结果；thinking 仅作状态提示不显示内容）
+  if (rewriteTaskId === taskId) {
+    switch (ev.type) {
+      case 'text_delta':
+        useAppStore.setState((s) => ({
+          rewrite: { ...s.rewrite, status: 'streaming', text: s.rewrite.text + ev.text },
+        }))
+        break
+      case 'done':
+        rewriteTaskId = null
+        useAppStore.setState((s) => ({ rewrite: { ...s.rewrite, status: 'done' } }))
+        break
+      case 'error':
+        rewriteTaskId = null
+        useAppStore.setState((s) => ({ rewrite: { ...s.rewrite, status: 'error', error: ev.error } }))
+        break
+    }
+    return
+  }
+
   const task = agentTasks.get(taskId)
   if (!task) return
   const { sessionId, messageId } = task

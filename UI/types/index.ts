@@ -60,6 +60,14 @@ export interface PendingPermission {
   sessionId: string
 }
 
+/** 简历 AI 改写任务状态（浮层状态机；running 事件流由 handleAgentEvent 分叉路由） */
+export type RewriteStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'error'
+export interface RewriteState {
+  status: RewriteStatus
+  text: string
+  error?: AgentError
+}
+
 export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   toolCalls?: ToolCallInfoUi[]
   question?: QuestionCard
