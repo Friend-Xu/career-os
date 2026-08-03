@@ -55,28 +55,25 @@ Walked the full chain with career-advisor: transition feasibility (75% match, so
 
 ## Quick Start
 
+**Option 1: Local workbench (recommended)**
+
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
+node start-all.mjs     # Windows: double-click StarWebtUI.bat (bundled portable node, no system Node needed)
+```
+
+Open **http://localhost:5288**: decision chains, info-pool graph, company due diligence and application boards, all visualized. The "Decision Agent" panel chats with a real LLM (reuses your local Claude CLI login — streaming replies, question cards, permission dialogs, thinking process).
+
+The `workspace/` directory is created automatically on first run. No setup required. Full workflow: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Option 2: Claude Code plugin (optional)**
+
+```bash
 claude --plugin-dir .
 ```
 
-Or run `/plugin install` inside Claude Code and then type `/career-advisor`.
-
-Then just say what you need:
-
-```
-"帮我写简历"
-"分析一下这个 JD"
-"我该做什么方向"
-"机械设计转机器人可行吗"
-"去哪个城市发展比较好"
-"苏州有什么好公司"
-"帮我查一下 XX 公司"
-"出个结论"
-```
-
-The `workspace/` directory is created automatically on first run. No setup required. Full workflow: [ARCHITECTURE.md](ARCHITECTURE.md).
+Then just say what you need in Claude Code: `"help me write a resume"` / `"is this JD legit?"` / `"what direction should I go?"` / `"which city should I choose?"` / `"give me a conclusion"`.
 
 ## What We Believe
 

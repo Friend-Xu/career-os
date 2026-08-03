@@ -56,34 +56,29 @@
 
 ## 快速开始
 
+**方式一：本地工作台（推荐）**
+
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-claude --plugin-dir .
+node start-all.mjs     # Windows 也可双击 StarWebtUI.bat（内置便携 node，无需系统 Node）
 ```
 
-或在 Claude Code 中 `/plugin install` 后直接输入 `/career-advisor`。
-
-然后直接说需求：
-
-```
-"帮我写简历"
-"分析一下这个 JD"
-"我该做什么方向"
-"机械设计转机器人可行吗"
-"去哪个城市发展比较好"
-"苏州有什么好公司"
-"帮我查一下 XX 公司"
-"出个结论"
-```
+打开 **http://localhost:5288**：决策链、信息池图谱、公司尽调、投递看板全部可视化；右上角「决策 Agent」直接与真实 LLM 对话（复用本机 Claude CLI 登录态，支持流式回复 / 提问卡片 / 权限弹窗 / 思考过程）。
 
 首次使用自动创建 `workspace/` 工作目录，无需配置。完整工作流见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 本地工作台（引擎 + UI）
+**方式二：Claude Code 插件（可选）**
 
-除 CLI 技能外，项目含本地工作台：引擎（Node 24 原生 TS，`engine/`）解析 markdown 数据并提供 WebSocket 桥，UI（Vite，`UI/`）可视化决策链、信息池图谱与公司档案。
+```bash
+claude --plugin-dir .
+```
 
-**一键启动**：双击 `StarWebtUI.bat`（或 `node start-all.mjs`），并发拉起引擎 + Vite dev。项目内置便携 node（`.local/node/`），不依赖系统 Node/PATH。
+在 Claude Code 中直接说需求：`"帮我写简历"` / `"分析一下这个 JD"` / `"我该做什么方向"` / `"去哪个城市发展比较好"` / `"出个结论"`。
+
+## 引擎与数据
+
+引擎（Node 24 原生 TS，`engine/`）解析 markdown 真相源并提供 WebSocket 桥（:5289）；UI（Vite，`UI/`）为可视化工作台（:5288）。项目内置便携 node（`.local/node/`），不依赖系统 Node/PATH。
 
 **端口与配置**：
 
