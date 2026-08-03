@@ -684,6 +684,7 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
       id: messageId,
       role: 'assistant',
       content: '',
+      isThinking: true, // 占位即亮指示器；thinking_stop / 首个 text_delta / tool_start 熄灭
       timestamp: new Date().toISOString(),
     })
     agentTasks.set(taskId, { sessionId, messageId })
@@ -705,11 +706,26 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
   const { sessionId, messageId } = task
   switch (ev.type) {
     case 'text_delta':
-      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, content: m.content + ev.text }))
+      // 无思考直达的轮次：首个文本即熄灭指示器
+      patchStreamingMessage(sessionId, messageId, (m) => ({
+        ...m,
+        isThinking: false,
+        content: m.content + ev.text,
+      }))
+      break
+    case 'thinking_start':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: true }))
+      break
+    case 'thinking_delta':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, thinking: (m.thinking ?? '') + ev.text }))
+      break
+    case 'thinking_stop':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       break
     case 'tool_start':
       patchStreamingMessage(sessionId, messageId, (m) => ({
         ...m,
+        isThinking: false,
         toolCalls: m.toolCalls?.some((t) => t.name === ev.name)
           ? m.toolCalls
           : [...(m.toolCalls ?? []), { name: ev.name, status: 'running' as const }],
@@ -759,9 +775,11 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       }))
       break
     case 'done':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       agentTasks.delete(taskId)
       break
     case 'error':
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       appendToSession(sessionId, {
         id: `msg-${Date.now()}`,
         role: 'assistant',

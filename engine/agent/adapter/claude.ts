@@ -32,6 +32,9 @@ export type AgentEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string }
   | { type: 'tool_done'; name: string }
+  | { type: 'thinking_start' }
+  | { type: 'thinking_delta'; text: string }
+  | { type: 'thinking_stop' }
   | { type: 'permission_request'; tool: string; canUseTool: () => Promise<boolean> }
   | { type: 'question_request'; question: AgentQuestion }
   | { type: 'done'; result: string }
@@ -206,6 +209,21 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     let pull: Promise<IteratorResult<SDKMessage, void>> | null = null
     let finalResult: string | undefined
     let finalError: AgentError | undefined
+    // 思考阶段（thinking_* 事件）：信号源双路径——system thinking_tokens（思考期间
+    // 实时到达，最先触发）与 thinking 内容块（本机 CLI 在完整 assistant 消息里带全文）
+    let thinkingActive = false
+    function* endThinking(): Generator<AgentEvent, void, unknown> {
+      if (thinkingActive) {
+        thinkingActive = false
+        yield { type: 'thinking_stop' }
+      }
+    }
+    function* beginThinking(): Generator<AgentEvent, void, unknown> {
+      if (!thinkingActive) {
+        thinkingActive = true
+        yield { type: 'thinking_start' }
+      }
+    }
 
     try {
       for (;;) {
@@ -235,28 +253,51 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
           onSessionId?.(sessionId)
         }
         switch (msg.type) {
+          case 'system': {
+            // thinking_tokens：思考阶段的实时进度信号（token 估算），最先到达 → 思考提示
+            if (msg.subtype === 'thinking_tokens') yield* beginThinking()
+            break
+          }
           case 'stream_event': {
             const ev = msg.event
             if (ev.type === 'content_block_start' && ev.content_block.type === 'tool_use') {
               if (!toolNames.has(ev.content_block.id)) {
                 toolNames.set(ev.content_block.id, ev.content_block.name)
+                yield* endThinking()
                 yield { type: 'tool_start', name: ev.content_block.name }
               }
+            } else if (ev.type === 'content_block_start' && ev.content_block.type === 'thinking') {
+              yield* beginThinking()
             } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
               sawTextDeltas = true
+              yield* endThinking()
               yield { type: 'text_delta', text: ev.delta.text }
+            } else if (ev.type === 'content_block_delta' && ev.delta.type === 'thinking_delta') {
+              yield* beginThinking()
+              if (typeof ev.delta.thinking === 'string' && ev.delta.thinking.length > 0) {
+                yield { type: 'thinking_delta', text: ev.delta.thinking }
+              }
             }
             break
           }
           case 'assistant': {
             if (msg.error !== undefined) assistantError = msg.error
             for (const block of msg.message.content) {
-              if (block.type === 'tool_use') {
+              if (block.type === 'thinking') {
+                // 本机 CLI：thinking 块带全文，整段到达（stream 路径由 thinking_delta 增量承接）
+                yield* beginThinking()
+                if (typeof block.thinking === 'string' && block.thinking.length > 0) {
+                  yield { type: 'thinking_delta', text: block.thinking }
+                }
+                yield* endThinking()
+              } else if (block.type === 'tool_use') {
                 if (!toolNames.has(block.id)) {
                   toolNames.set(block.id, block.name)
+                  yield* endThinking()
                   yield { type: 'tool_start', name: block.name }
                 }
               } else if (block.type === 'text' && !sawTextDeltas) {
+                yield* endThinking()
                 yield { type: 'text_delta', text: block.text }
               }
             }
@@ -264,6 +305,7 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
             break
           }
           case 'user': {
+            yield* endThinking()
             const content = msg.message.content
             if (Array.isArray(content)) {
               for (const block of content) {
@@ -278,6 +320,7 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
             break
           }
           case 'result': {
+            yield* endThinking()
             // result 是中间态：AskUserQuestion 空闲跳过也会产 result，CLI 继续运行
             //（实测 2026-08-03：回答后还有新一轮 assistant → result）。success 更新 finalResult 继续迭代；
             // 失败才终止。
@@ -295,6 +338,7 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
         }
       }
       // 4. 流自然结束（CLI 会话关闭）：以最后状态收尾
+      yield* endThinking()
       if (finalError !== undefined) yield { type: 'error', error: finalError }
       else yield { type: 'done', result: finalResult ?? '' }
     } catch (err) {

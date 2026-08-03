@@ -117,6 +117,9 @@ export class AgentRuntime {
       case 'text_delta':
       case 'tool_start':
       case 'tool_done':
+      case 'thinking_start':
+      case 'thinking_delta':
+      case 'thinking_stop':
         this.emit(taskId, ev)
         break
     }

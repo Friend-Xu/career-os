@@ -65,6 +65,8 @@ export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   question?: QuestionCard
   /** Agent 运行错误（引擎 agent.event error；页面渲染错误卡） */
   error?: AgentError
+  /** 思考中指示（引擎 thinking_start 后、thinking 文本或回复未达前；首条 text_delta/tool_start 熄灭） */
+  isThinking?: boolean
 }
 
 /** UI 扩展 Session：messages 使用 UI ChatMessage（会话仅 UI 运行时，不落盘）；sdkSessionId = SDK 会话凭据（resume 用） */

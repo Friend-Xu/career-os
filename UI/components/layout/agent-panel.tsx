@@ -166,7 +166,11 @@ export function AgentPanel() {
                     color: COLORS.text,
                   }}
                 >
-                  {msg.content.length > 180 ? `${msg.content.slice(0, 180)}…` : msg.content}
+                  {msg.isThinking && msg.content === ''
+                    ? '思考中…'
+                    : msg.content.length > 180
+                      ? `${msg.content.slice(0, 180)}…`
+                      : msg.content}
                 </Typography>
               </Box>
             ))}

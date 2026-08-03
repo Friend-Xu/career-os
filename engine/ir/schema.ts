@@ -261,12 +261,16 @@ export interface AgentQuestion {
 
 /**
  * 引擎 → 前端 Agent 事件（WS agent.event 帧 data；权限事件已换为 requestId——canUseTool
- * promise 留在引擎挂起表；session_id 供前端会话存 resume 凭据）
+ * promise 留在引擎挂起表；session_id 供前端会话存 resume 凭据；thinking_* 归一化自
+ * SDK thinking_tokens 系统消息与 thinking 内容块——思考提示 + 折叠思考块展示）
  */
 export type AgentRuntimeEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string }
   | { type: 'tool_done'; name: string }
+  | { type: 'thinking_start' }
+  | { type: 'thinking_delta'; text: string }
+  | { type: 'thinking_stop' }
   | { type: 'permission_request'; tool: string; requestId: string }
   | { type: 'question_request'; question: AgentQuestion }
   | { type: 'session_id'; sessionId: string }

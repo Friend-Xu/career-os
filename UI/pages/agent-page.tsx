@@ -227,6 +227,40 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       }}
     >
       <Box sx={{ maxWidth: msg.role === 'user' ? '70%' : '85%' }}>
+        {msg.role === 'assistant' && msg.isThinking && (
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.75,
+              px: 1.5,
+              py: 0.5,
+              mb: 0.75,
+              borderRadius: '999px',
+              bgcolor: COLORS.bgHover,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
+              思考中
+            </Typography>
+            <Box sx={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              {[0, 1, 2].map((i) => (
+                <Box
+                  key={i}
+                  sx={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: '50%',
+                    bgcolor: COLORS.textMuted,
+                    animation: `cos-thinking-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                  }}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
         {msg.role === 'assistant' && msg.thinking && (
           <Box sx={{ mb: 0.75 }}>
             <Button

@@ -70,3 +70,15 @@ html.light {
     background-color 0.35s cubic-bezier(0.32, 0.72, 0, 1),
     border-color 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
+
+/* Agent 思考指示器：三点呼吸（只动 opacity，不触发重排） */
+@keyframes cos-thinking-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
