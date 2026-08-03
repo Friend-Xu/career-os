@@ -182,3 +182,18 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 3. 单向依赖：页面 → store → 数据层 → 常量，禁反向/循环
 4. 禁止兜底：只在系统边界（用户输入、外部 API）校验，信任内部契约
 5. 环境隔离：运行时与依赖必须在项目根内（`.local/`、`node_modules/`）；禁全局安装、禁改系统 PATH
+
+## 10. 文档权威链（Documentation Authority）
+
+文档分层治理，防止多份文档各自演化：**方案描述方向，契约约束实现。**
+
+| 层 | 来源 | 回答 |
+|----|------|------|
+| L0 Product Intent | `docs/CAREER-OS-开发方案-v1.md` | 为什么存在 |
+| L1 Architecture | 本文档（根目录 ARCHITECTURE.md） | 系统如何组织 |
+| L1.5 Module Conventions | `engine/CLAUDE.md` `UI/CLAUDE.md` | 模块级实现约定 |
+| L2 Implementation Contracts | `docs/contracts/*-contract-vN.md` | 当前这块怎么实现 |
+| Decision Records | `docs/ADR/` | 为什么选/为什么延期/何时 revisit |
+
+**冲突解决**：Contract > 模块约定 > Architecture > 产品意图；历史文档仅作参考。
+**边界**：`docs/` 为内部工程资产（gitignored，不入公开仓库）；公开仓库 = 产品面（README + 本文档 + 代码）。完整规则见 `docs/README.md`。
