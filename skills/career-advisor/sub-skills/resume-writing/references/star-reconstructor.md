@@ -2,11 +2,19 @@
 
 将 frontier 追问收集的碎片素材拼接为标准简历子弹句。引用 `verb-dictionary.md` 做动词升级，引用 `resume-output-template.md` 做证据标注。
 
-**方向内容标准**：如果可识别用户的目标方向（通过 profile.md 的目标方向字段或用户口述），在 Step 3 开始前加载对应方向的简历内容标准文件：
+**方向内容标准加载链路（v2，2026-08-03）**：如果可识别用户的目标方向（通过 profile.md 的目标方向字段或用户口述），在 Step 3 开始前按以下链路加载标准：
+
 ```
-references/direction-standards/{方向名}.md
+if 方向 == 机械工程（已迁移至 Expression Family 结构）:
+  1. 读 references/direction-standards/机械工程.md（路由索引）
+  2. 按岗位/子方向定位语言族 → 读 standards/mechanical/{design|automation|simulation|manufacturing}.md
+  3. 输出时标注来源：Resume Standard Source: Career Expression Standard v1（standards/mechanical/xxx.md）
+else:
+  读 references/direction-standards/{方向名}.md（旧链路，Data Layer，待 Phase 2 迁移）
+  输出时标注来源：Resume Standard Source: Legacy Direction Standard（direction-standards/{方向名}.md）
 ```
-该文件提供 HR 高频关键词、量化指标锚点、行内强力动词、项目分组惯例和 ATS 关键词清单。拼接子弹句时优先对齐这些标准。
+
+标准文件提供 HR 高频关键词、量化指标锚点、行内强力动词、项目分组惯例和 ATS 关键词清单。拼接子弹句时优先对齐这些标准。
 
 ---
 
