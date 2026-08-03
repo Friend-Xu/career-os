@@ -6,6 +6,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
@@ -396,6 +397,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 export function AgentPage() {
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
+  const person = useAppStore((s) => s.currentPerson())
   const draft = useAppStore((s) => s.agentDraft)
   const setDraft = useAppStore((s) => s.setAgentDraft)
   const send = useAppStore((s) => s.sendAgentMessage)
@@ -427,6 +430,27 @@ export function AgentPage() {
           {session?.title ?? '决策 Agent'}
         </Typography>
         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          {/* 会话切换（侧栏会话历史移入页面内） */}
+          <Select
+            size="small"
+            value={currentSessionId}
+            onChange={(e) => setCurrentSession(e.target.value as string)}
+            sx={{
+              minWidth: 160,
+              maxWidth: 260,
+              fontSize: 12,
+              height: 30,
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: COLORS.border },
+            }}
+          >
+            {sessions
+              .filter((s) => s.personId === person.id && !s.archived)
+              .map((s) => (
+                <MenuItem key={s.id} value={s.id} sx={{ fontSize: 12.5 }}>
+                  {s.title}
+                </MenuItem>
+              ))}
+          </Select>
           <Button
             size="small"
             onClick={(e) => setDemoAnchor(e.currentTarget)}

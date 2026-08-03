@@ -3,6 +3,7 @@ import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined'
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined'
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined'
 import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined'
+import WorkIcon from '@mui/icons-material/Work'
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
@@ -24,8 +25,9 @@ const MAIN_NAV: NavItem[] = [
   { id: 'agent', label: '决策 Agent', icon: AutoAwesomeOutlinedIcon, shortcut: '⌘2' },
   { id: 'infopool', label: '信息池', icon: HubOutlinedIcon, shortcut: '⌘3' },
   { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘4' },
-  { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘5' },
-  { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘6' },
+  { id: 'jobs', label: '岗位', icon: WorkIcon, shortcut: '⌘5' },
+  { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘6' },
+  { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘7' },
 ]
 
 const SHORT_LABEL: Record<NavPageId, string> = {
@@ -33,6 +35,7 @@ const SHORT_LABEL: Record<NavPageId, string> = {
   agent: 'Agent',
   infopool: '信息池',
   companies: '公司',
+  jobs: '岗位',
   applications: '投递',
   resumes: '简历',
   settings: '设置',

@@ -2,7 +2,7 @@ import {
   Box,
   Button,
   Chip,
-  Drawer,
+  Dialog,
   IconButton,
   Stack,
   Tab,
@@ -34,6 +34,9 @@ export function CompaniesPage() {
   const companies = useAppStore((s) => s.companies)
   const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
   const companiesFilter = useAppStore((s) => s.companiesFilter)
+  const setCompaniesFilter = useAppStore((s) => s.setCompaniesFilter)
+  const jobs = useAppStore((s) => s.jobs)
+  const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const push = useToastStore((s) => s.push)
@@ -82,6 +85,7 @@ export function CompaniesPage() {
   }, [search, companiesFilter, companies])
 
   const activePark = PARKS.find((p) => p.id === parkId)
+  const companyJobs = jobs.filter((j) => j.company === selected?.name)
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
@@ -109,6 +113,37 @@ export function CompaniesPage() {
           <Tab icon={<MapIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="园区地图" sx={{ minHeight: 30 }} />
           <Tab icon={<ViewListIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="公司清单" sx={{ minHeight: 30 }} />
         </Tabs>
+      </Stack>
+
+      {/* 过滤（侧栏过滤移入页面内） */}
+      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+        {[
+          { id: 'all', label: '全部' },
+          { id: 'sz', label: '深圳' },
+          { id: 'sh', label: '上海' },
+          { id: 'hz', label: '杭州' },
+          { id: 'bj', label: '北京' },
+          { id: 'robot', label: '机器人产业' },
+          { id: 'contacted', label: '已联系' },
+        ].map((f) => {
+          const active = companiesFilter === f.id
+          return (
+            <Chip
+              key={f.id}
+              size="small"
+              label={f.label}
+              onClick={() => setCompaniesFilter(f.id)}
+              sx={{
+                height: 22,
+                fontSize: 11.5,
+                bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,
+                color: active ? COLORS.accent : COLORS.textSecondary,
+                border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+                cursor: 'pointer',
+              }}
+            />
+          )
+        })}
       </Stack>
 
       {tab === 0 ? (
@@ -346,23 +381,23 @@ export function CompaniesPage() {
         </Box>
       )}
 
-      <Drawer
-        anchor="right"
+      <Dialog
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         slotProps={{
           paper: {
             sx: {
-              width: 380,
+              width: 460,
+              maxWidth: '92vw',
+              borderRadius: '12px',
               bgcolor: COLORS.bgElevated,
-              borderLeft: `1px solid ${COLORS.border}`,
               backgroundImage: 'none',
             },
           },
         }}
       >
         {selected && (
-          <Box sx={{ p: 2.5, height: '100%', overflowY: 'auto' }}>
+          <Box sx={{ p: 2.5, maxHeight: '80vh', overflowY: 'auto' }}>
             <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }}>
               <Typography sx={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
               <IconButton size="small" onClick={() => setSelected(null)}>
@@ -423,9 +458,44 @@ export function CompaniesPage() {
                 标记已联系 → 投递管理
               </Button>
             </Stack>
+
+            {/* 该公司岗位（J3.3：尽调完看岗位 → 岗位工作区） */}
+            {companyJobs.length > 0 && (
+              <Box sx={{ mt: 2.5 }}>
+                <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 1 }}>
+                  该公司岗位 · {companyJobs.length}
+                </Typography>
+                <Stack spacing={0.5}>
+                  {companyJobs.map((j) => (
+                    <Box
+                      key={j.id}
+                      onClick={() => {
+                        setSelectedJobId(j.id)
+                        setSelected(null)
+                        setPage('jobs')
+                      }}
+                      sx={{
+                        p: 1,
+                        borderRadius: '8px',
+                        border: `1px solid ${COLORS.border}`,
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: COLORS.bgHover, borderColor: COLORS.borderStrong },
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>{j.title}</Typography>
+                      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
+                        {j.location && `${j.location} · `}
+                        {j.salary ?? ''}
+                        {j.requirements.length > 0 && ` · ${j.requirements.map((r) => r.name).join('/')}`}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            )}
           </Box>
         )}
-      </Drawer>
+      </Dialog>
     </Box>
   )
 }

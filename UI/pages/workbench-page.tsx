@@ -9,24 +9,18 @@ import {
   ToggleButton,
   ToggleButtonGroup,
 } from '@mui/material'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
-import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import { useAppStore } from '../store/app-store'
-import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
-import { DecisionAggregateDrawer } from '../components/decision-aggregate-drawer'
-import {
-  APPLICATION_STATS,
-  NEXT_ACTION,
-  POOL_HEALTH,
-} from '../data/mock-data'
+import { DecisionAggregateDialog } from '../components/decision-aggregate-dialog'
+import { DecisionEditDialog } from '../components/decision-edit-dialog'
+import { POOL_HEALTH } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import type { MainWidthMode, RiskLevel } from '../types'
+import type { MainWidthMode, NavPageId, RiskLevel } from '../types'
 import type { DecisionAggregate } from '../../engine/ir/schema.ts'
+import type { DecisionView } from '../store/engine-client'
 
 function ModeSwitcher() {
   const mode = useAppStore((s) => s.mainWidthMode)
@@ -59,138 +53,131 @@ function ModeSwitcher() {
   )
 }
 
-function StageBanner() {
+/** Today 视图：你现在需要关注什么——待处理（Next Action Resolver 规则派生）+ KPI 概览 */
+function TodaySection() {
+  const setPage = useAppStore((s) => s.setPage)
+  const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
+  const decisions = useAppStore((s) => s.decisions)
+  const jobs = useAppStore((s) => s.jobs)
+  const applications = useAppStore((s) => s.applications)
+  const companies = useAppStore((s) => s.companies)
   const person = useAppStore((s) => s.currentPerson())
-  const personStages = useAppStore((s) => s.personStages[person.id])
-  const current = (personStages ?? []).find((s) => s.status === 'current')
-  return (
-    <Box sx={{ py: 1.5, px: 0.5 }}>
-      <Typography
-        sx={{
-          fontSize: 13,
-          color: COLORS.textMuted,
-          fontWeight: 400,
-          letterSpacing: '0.01em',
-        }}
-      >
-        当前阶段 · {current?.label ?? '未开始'}
-        {current?.city && (
-          <Typography component="span" sx={{ fontSize: 13, color: COLORS.textSecondary }}>
-            {' '}
-            · 基于 深圳 86 分 / 技能画像 / 薪资约束
-          </Typography>
-        )}
-      </Typography>
-    </Box>
+
+  const personApps = applications.filter((a) => a.personId === person.id)
+  const personDecisions = decisions.filter((d) => d.profile === person.name)
+
+  // Next Action Resolver（规则派生：系统告诉用户什么重要，Agent 帮助深入）
+  const actions: { label: string; page: NavPageId; jobId?: string }[] = []
+  // 已分析判定：该公司的 jd-analysis 决策（公司名匹配，title 匹配过宽会误判）
+  const toAnalyze = jobs.filter(
+    (j) => !personDecisions.some((d) => d.skill === 'jd-analysis' && d.title.includes(j.company)),
   )
-}
+  if (toAnalyze.length > 0) actions.push({ label: `${toAnalyze.length} 个岗位等待分析`, page: 'jobs', jobId: toAnalyze[0].id })
+  const toFollow = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
+  if (toFollow.length > 0) actions.push({ label: `${toFollow.length} 个投递待跟进`, page: 'applications' })
+  const toApply = personApps.filter((a) => a.status === '已评估')
+  if (toApply.length > 0) actions.push({ label: `${toApply.length} 个岗位待投递`, page: 'applications' })
 
-function NextActionCard() {
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const latestDirection =
+    personDecisions.length > 0
+      ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
+      : undefined
+
+  const kpis = [
+    { label: '方向', value: latestDirection ?? '未建立' },
+    { label: '公司', value: `${companies.length} 家` },
+    { label: '岗位', value: `${jobs.length} 个` },
+    { label: '投递', value: `${personApps.length} 条` },
+    { label: '决策', value: `${personDecisions.length} 条` },
+  ]
 
   return (
-    <Box
-      sx={{
-        p: 2.5,
-        borderRadius: '10px',
-        border: `1.5px solid ${COLORS.accent}`,
-        bgcolor: alpha(COLORS.accent, 0.06),
-        animation: `fade-in 0.3s ${EASE}`,
-      }}
-    >
-      <Typography
+    <Box sx={{ mb: 3 }}>
+      {/* 待处理 */}
+      {actions.length > 0 && (
+        <Box
+          sx={{
+            px: 2,
+            py: 1.5,
+            mb: 2,
+            borderRadius: '10px',
+            border: `1.5px solid ${COLORS.accent}`,
+            bgcolor: alpha(COLORS.accent, 0.06),
+          }}
+        >
+          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent, letterSpacing: '0.06em', mb: 1 }}>
+            TODAY · 需要处理
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+            {actions.map((a) => (
+              <Button
+                key={a.label}
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  if (a.jobId) setSelectedJobId(a.jobId)
+                  setPage(a.page)
+                }}
+                sx={{ fontSize: 12.5, color: COLORS.accent, borderColor: alpha(COLORS.accent, 0.4) }}
+              >
+                {a.label} →
+              </Button>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      {/* KPI 概览（3 秒规则：最重要的状态一眼可见） */}
+      <Box
         sx={{
-          fontSize: 11.5,
-          fontWeight: 600,
-          color: COLORS.accent,
-          letterSpacing: '0.06em',
-          mb: 1,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, 1fr)',
+          gap: 1.25,
         }}
       >
-        NEXT ACTION
-      </Typography>
-      <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1, letterSpacing: '-0.01em' }}>
-        AI 推荐下一步：{NEXT_ACTION.title}
-      </Typography>
-
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{ alignItems: 'center', mb: 1.5, flexWrap: 'wrap', gap: 0.5 }}
-      >
-        <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>已完成:</Typography>
-        {NEXT_ACTION.completedStages.map((s) => (
-          <Stack key={s} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <CheckCircleIcon sx={{ fontSize: 13, color: COLORS.riskLow }} />
-            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>{s}</Typography>
-          </Stack>
-        ))}
-      </Stack>
-
-      <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 0.75 }}>
-        AI 建议优先:
-      </Typography>
-      <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 0.75 }}>
-        {NEXT_ACTION.priorities.map((p, i) => (
+        {kpis.map((k) => (
           <Box
-            key={p}
+            key={k.label}
             sx={{
-              px: 1.25,
-              py: 0.5,
-              borderRadius: '6px',
-              bgcolor: COLORS.bgHover,
+              p: 1.5,
+              borderRadius: '10px',
               border: `1px solid ${COLORS.border}`,
-              fontSize: 13,
+              bgcolor: COLORS.bgElevated,
             }}
           >
-            <Typography component="span" sx={{ color: COLORS.accent, fontWeight: 600, mr: 0.5 }}>
-              {i + 1}
+            <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mb: 0.5 }}>{k.label}</Typography>
+            <Typography
+              sx={{
+                fontSize: 15,
+                fontWeight: 600,
+                color: COLORS.text,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {k.value}
             </Typography>
-            {p}
           </Box>
         ))}
-      </Stack>
-
-      <Button
-        variant="contained"
-        endIcon={<ArrowForwardIcon />}
-        onClick={() => startAnalysis(NEXT_ACTION.prompt)}
-        sx={{
-          bgcolor: COLORS.accent,
-          color: COLORS.onAccent,
-          fontWeight: 600,
-          fontSize: 13,
-          px: 2.5,
-          py: 1,
-          '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 },
-        }}
-      >
-        开始分析
-      </Button>
+      </Box>
     </Box>
   )
 }
 
 function DecisionTimeline() {
-  const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const decisions = useAppStore((s) => s.decisions)
   const contexts = useAppStore((s) => s.contexts)
   const person = useAppStore((s) => s.currentPerson())
-  const push = useToastStore((s) => s.push)
   const [selectedAggregate, setSelectedAggregate] = useState<DecisionAggregate | null>(null)
+  const [editing, setEditing] = useState<DecisionView | null>(null)
   const personDecisions = decisions.filter((d) => d.profile === person.name)
-  const items = personDecisions.slice(0, 3)
+  const items = personDecisions
 
-  /** 时间线条目 → 聚合视图：在 contexts 中找 records 包含该决策的 aggregate；无匹配诚实提示 */
-  const openAggregate = (decisionId: string) => {
-    const agg = contexts.find((a) => a.records.some((r) => r.id === decisionId))
-    if (agg) {
-      setSelectedAggregate(agg)
-    } else {
-      push('info', '该决策暂无问题绑定（decision-contexts 未建）')
-    }
-  }
+  /** 时间线条目 → 编辑抽屉：在 contexts 中找该决策的问题绑定（有则展示聚合摘要 + 完整聚合入口） */
+  const findAggregate = (decisionId: string): DecisionAggregate | undefined =>
+    contexts.find((a) => a.records.some((r) => r.id === decisionId))
 
   return (
     <Box
@@ -219,7 +206,7 @@ function DecisionTimeline() {
         </Box>
       ) : (
         <>
-          <Stack spacing={0} sx={{ flex: 1 }}>
+          <Stack spacing={0} sx={{ flex: 1, overflow: 'auto', pr: 0.5, mr: -0.5 }}>
         {items.map((d, idx) => {
           // IR 降级消费：degraded → 标题旁黄点（Tooltip 显示 reason）；invalid → 红点 + 待人工处理标注
           const v = d.validation
@@ -269,7 +256,7 @@ function DecisionTimeline() {
             />
             <Box
               sx={{ minWidth: 0, flex: 1, cursor: 'pointer', borderRadius: '8px', px: 0.5, mx: -0.5 }}
-              onClick={() => openAggregate(d.id)}
+              onClick={() => setEditing(d)}
             >
               <Stack
                 direction="row"
@@ -338,21 +325,24 @@ function DecisionTimeline() {
           )
         })}
       </Stack>
-      {personDecisions.length > 3 && (
-        <Button
-          size="small"
-          onClick={() => setPage('agent')}
-          sx={{ mt: 1, alignSelf: 'flex-start', fontSize: 12, color: COLORS.accent }}
-        >
-          + 查看全部 →
-        </Button>
-      )}
         </>
       )}
-      <DecisionAggregateDrawer
+      <DecisionAggregateDialog
         open={Boolean(selectedAggregate)}
         aggregate={selectedAggregate}
         onClose={() => setSelectedAggregate(null)}
+      />
+      <DecisionEditDialog
+        decision={editing}
+        aggregate={editing ? (findAggregate(editing.id) ?? null) : null}
+        onClose={() => setEditing(null)}
+        onOpenAggregate={() => {
+          const agg = editing ? findAggregate(editing.id) : undefined
+          if (agg) {
+            setSelectedAggregate(agg)
+            setEditing(null)
+          }
+        }}
       />
     </Box>
   )
@@ -457,48 +447,6 @@ function PoolHealthCard() {
   )
 }
 
-function ApplicationStatusRow() {
-  const setPage = useAppStore((s) => s.setPage)
-  const s = APPLICATION_STATS
-
-  return (
-    <Box
-      sx={{
-        p: 2,
-        borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
-        bgcolor: COLORS.bgElevated,
-      }}
-    >
-      <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 1, color: COLORS.textSecondary }}>
-        投递执行状态
-      </Typography>
-      <Typography sx={{ fontSize: 13, mb: 0.75 }}>
-        状态:{' '}
-        <Box component="span" sx={{ color: COLORS.accent }}>
-          面试中 {s.interviewing}
-        </Box>
-        {' · '}已投递 {s.applied}
-        {' · '}已联系 {s.contacted}
-        {' · '}目标公司 {s.totalTargetCompanies}
-      </Typography>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <WarningAmberIcon sx={{ fontSize: 14, color: COLORS.riskMedium }} />
-        <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, flex: 1 }}>
-          节奏: 待跟进 {s.pendingFollowups} · 腾讯机器人岗位 3 天未跟进
-        </Typography>
-        <Button
-          size="small"
-          onClick={() => setPage('applications')}
-          sx={{ fontSize: 12, color: COLORS.accent, minWidth: 0 }}
-        >
-          跟进 →
-        </Button>
-      </Stack>
-    </Box>
-  )
-}
-
 export function WorkbenchPage() {
   const mode = useAppStore((s) => s.mainWidthMode)
 
@@ -526,10 +474,8 @@ export function WorkbenchPage() {
           <ModeSwitcher />
         </Stack>
 
-        <StageBanner />
-
         <Box sx={{ mb: 3 }}>
-          <NextActionCard />
+          <TodaySection />
         </Box>
 
         <Box
@@ -537,15 +483,12 @@ export function WorkbenchPage() {
             display: 'grid',
             gridTemplateColumns: '1fr 280px',
             gap: 2,
-            mb: 3,
             minHeight: 200,
           }}
         >
           <DecisionTimeline />
           <PoolHealthCard />
         </Box>
-
-        <ApplicationStatusRow />
       </Box>
     </Box>
   )

@@ -1,523 +1,138 @@
-import { Box, Typography, Stack, LinearProgress, Button, Divider } from '@mui/material'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
-import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+/**
+ * 侧栏（Finder 式固定导航）：领域导航 + 决策记录库入口——所有页面统一，不随当前页变化。
+ * - 领域：Dashboard / 方向 / 城市 / 公司 / 岗位 / 投递 / 面试 / 决策记录
+ * - 点击领域 → 对应空间页；方向/城市/决策记录 → 方向视图（决策记录库）
+ * - 各页过滤（公司城市/投递状态/图谱节点）已移入页面内；会话历史在 Agent 页内
+ */
+import { Box, Stack, Typography } from '@mui/material'
+import DashboardIcon from '@mui/icons-material/Dashboard'
+import ExploreIcon from '@mui/icons-material/Explore'
+import LocationCityIcon from '@mui/icons-material/LocationCity'
+import BusinessIcon from '@mui/icons-material/Business'
+import WorkIcon from '@mui/icons-material/Work'
+import OutboxIcon from '@mui/icons-material/Outbox'
+import MicIcon from '@mui/icons-material/Mic'
+import HistoryIcon from '@mui/icons-material/History'
+import { useState, type ReactNode } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { useToastStore } from '../../store/toast-store'
-import { computePoolStats } from '../../store/engine-client'
-import { APPLICATION_STATS, RESUMES } from '../../data/mock-data'
-import { alpha, COLORS, LAYOUT, RISK_COLOR, RISK_LABEL } from '../../data/constants'
-import type { Company } from '../../types'
+import { COLORS, LAYOUT } from '../../data/constants'
+import { DirectionViewDialog } from '../direction-view-dialog'
 
-const STAGE_PROMPTS: Record<string, string> = {
-  direction: '请帮我进行职业方向探索：基于当前画像与市场机会，输出方向排序建议',
-  transfer: '请帮我进行转行分析：基于当前技能画像与目标方向，输出差距分析与行动计划',
-  city: '请帮我进行城市评估：结合当前画像对比候选城市，输出评分与建议',
-  company: '请帮我进行公司筛选：基于当前城市与方向，输出目标公司清单',
-  research: '请帮我进行公司尽调：对目标公司做背调与风险分析',
-  jd: '请帮我分析这份 JD：拆解需求、匹配度与面试准备',
-  resume: '请帮我撰写/优化简历：基于当前画像与目标方向',
+interface NavItem {
+  id: string
+  label: string
+  icon: ReactNode
+  page?: string
+  /** 非页面导航（打开视图） */
+  view?: 'directions'
 }
 
-function StageDot({ status }: { status: string }) {
-  if (status === 'completed') {
-    return (
-      <Box
-        sx={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          bgcolor: COLORS.riskLow,
-          flexShrink: 0,
-        }}
-      />
-    )
-  }
-  if (status === 'current') {
-    return (
-      <Box
-        sx={{
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          bgcolor: COLORS.accent,
-          flexShrink: 0,
-          animation: 'pulse-ring 1.8s ease-out infinite',
-        }}
-      />
-    )
-  }
-  return (
-    <Box
-      sx={{
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        border: `1.5px solid ${COLORS.textMuted}`,
-        flexShrink: 0,
-      }}
-    />
-  )
-}
-
-function WorkbenchSecondary() {
-  const person = useAppStore((s) => s.currentPerson())
-  const setPage = useAppStore((s) => s.setPage)
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
-  const push = useToastStore((s) => s.push)
-  const personStages = useAppStore((s) => s.personStages[person.id])
-  const stages = personStages ?? []
-  const completed = stages.filter((s) => s.status === 'completed').length
-  const progress = stages.length ? Math.round((completed / stages.length) * 100) : 0
-
-  return (
-    <Stack sx={{ height: '100%', overflow: 'hidden' }}>
-      <Box sx={{ p: 2, pb: 1.5 }}>
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1.5 }}>
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: '10px',
-              bgcolor: alpha(person.color, 0.13),
-              border: `1px solid ${alpha(person.color, 0.27)}`,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 20,
-            }}
-          >
-            {person.emoji}
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>
-              {person.name}
-            </Typography>
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>当前人</Typography>
-          </Box>
-        </Stack>
-
-        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
-          <Box
-            sx={{
-              flex: 1,
-              p: 1,
-              borderRadius: '6px',
-              bgcolor: COLORS.bgHover,
-              border: `1px solid ${COLORS.border}`,
-            }}
-          >
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.25 }}>匹配度</Typography>
-            <Typography
-              sx={{ fontSize: 16, fontWeight: 600, fontFamily: COLORS.mono, color: COLORS.accent }}
-            >
-              {person.matchScore}%
-            </Typography>
-          </Box>
-          <Box
-            sx={{
-              flex: 1,
-              p: 1,
-              borderRadius: '6px',
-              bgcolor: COLORS.bgHover,
-              border: `1px solid ${COLORS.border}`,
-            }}
-          >
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.25 }}>风险</Typography>
-            <Typography sx={{ fontSize: 16, fontWeight: 600, color: RISK_COLOR[person.riskLevel] }}>
-              {RISK_LABEL[person.riskLevel]}
-            </Typography>
-          </Box>
-        </Stack>
-
-        <Button
-          fullWidth
-          size="small"
-          endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
-          onClick={() => {
-            startAnalysis('请根据当前信息更新我的技能画像与决策背景')
-            push('info', '已预置「更新画像」上下文')
-          }}
-          sx={{
-            justifyContent: 'space-between',
-            color: COLORS.textSecondary,
-            border: `1px solid ${COLORS.border}`,
-            fontSize: 12.5,
-          }}
-        >
-          更新画像
-        </Button>
-      </Box>
-
-      <Divider />
-
-      <Box sx={{ px: 2, py: 1.5, flex: 1, overflow: 'auto' }}>
-        <Typography
-          sx={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: COLORS.textMuted,
-            mb: 1.5,
-            letterSpacing: '0.04em',
-          }}
-        >
-          决策链
-        </Typography>
-        <Stack spacing={0.5}>
-          {stages.map((stage) => (
-            <Stack
-              key={stage.id}
-              direction="row"
-              spacing={1}
-              onClick={() => {
-                if (stage.status !== 'completed') {
-                  startAnalysis(STAGE_PROMPTS[stage.id] ?? '请帮我继续推进当前决策阶段')
-                }
-              }}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && stage.status !== 'completed') {
-                  startAnalysis(STAGE_PROMPTS[stage.id] ?? '请帮我继续推进当前决策阶段')
-                }
-              }}
-              sx={{
-                alignItems: 'center',
-                py: 0.75,
-                px: 1,
-                borderRadius: '6px',
-                bgcolor: stage.status === 'current' ? COLORS.accentMuted : 'transparent',
-                cursor: 'pointer',
-                '&:hover': {
-                  bgcolor: stage.status === 'current' ? COLORS.accentMuted : COLORS.bgHover,
-                },
-                '&:focus-visible': {
-                  outline: `2px solid ${COLORS.accent}`,
-                  outlineOffset: -1,
-                },
-              }}
-            >
-              <StageDot status={stage.status} />
-              <Typography
-                sx={{
-                  fontSize: 13,
-                  fontWeight: stage.status === 'current' ? 600 : 400,
-                  color:
-                    stage.status === 'pending'
-                      ? COLORS.textMuted
-                      : stage.status === 'current'
-                        ? COLORS.accent
-                        : COLORS.text,
-                  flex: 1,
-                }}
-              >
-                {stage.label}
-              </Typography>
-              {stage.status === 'pending' && (
-                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>未开始</Typography>
-              )}
-            </Stack>
-          ))}
-        </Stack>
-
-        <Box sx={{ mt: 2 }}>
-          <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.75 }}>
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>完成度</Typography>
-            <Typography
-              sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
-            >
-              {completed}/{stages.length} · {progress}%
-            </Typography>
-          </Stack>
-          <LinearProgress
-            variant="determinate"
-            value={progress}
-            sx={{
-              height: 4,
-              borderRadius: 2,
-              bgcolor: COLORS.bgHover,
-              '& .MuiLinearProgress-bar': { bgcolor: COLORS.accent, borderRadius: 2 },
-            }}
-          />
-        </Box>
-      </Box>
-
-      <Divider />
-
-      <Box sx={{ p: 2 }}>
-        <Stack
-          direction="row"
-          spacing={0.75}
-          onClick={() => setPage('applications')}
-          sx={{
-            alignItems: 'center',
-            p: 1.25,
-            borderRadius: '8px',
-            bgcolor: alpha(COLORS.riskMedium, 0.08),
-            border: `1px solid ${alpha(COLORS.riskMedium, 0.2)}`,
-            cursor: 'pointer',
-          }}
-        >
-          <WarningAmberIcon sx={{ fontSize: 16, color: COLORS.riskMedium }} />
-          <Typography sx={{ fontSize: 12, fontWeight: 500, flex: 1 }}>
-            待跟进 ({APPLICATION_STATS.pendingFollowups})
-          </Typography>
-          <Typography sx={{ fontSize: 12, color: COLORS.accent }}>全部 →</Typography>
-        </Stack>
-      </Box>
-    </Stack>
-  )
-}
-
-function ListSecondary({
-  title,
-  items,
-  onItemClick,
-}: {
-  title: string;
-  items: { id: string; label: string; meta?: string; active?: boolean }[];
-  onItemClick?: (id: string) => void;
-}) {
-  return (
-    <Stack sx={{ height: '100%', overflow: 'hidden' }}>
-      <Box sx={{ px: 2, py: 1.5, borderBottom: `1px solid ${COLORS.border}` }}>
-        <Typography
-          sx={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: COLORS.textMuted,
-            letterSpacing: '0.04em',
-          }}
-        >
-          {title}
-        </Typography>
-      </Box>
-      <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-        {items.map((item) => (
-          <Box
-            key={item.id}
-            onClick={() => onItemClick?.(item.id)}
-            tabIndex={onItemClick ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && onItemClick) onItemClick(item.id)
-            }}
-            sx={{
-              px: 1.25,
-              py: 1,
-              borderRadius: '6px',
-              cursor: 'pointer',
-              bgcolor: item.active ? COLORS.accentMuted : 'transparent',
-              '&:hover': { bgcolor: item.active ? COLORS.accentMuted : COLORS.bgHover },
-              '&:focus-visible': {
-                outline: `2px solid ${COLORS.accent}`,
-                outlineOffset: -1,
-              },
-              mb: 0.25,
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: 13,
-                fontWeight: item.active ? 600 : 400,
-                color: item.active ? COLORS.accent : COLORS.text,
-              }}
-              noWrap
-            >
-              {item.label}
-            </Typography>
-            {item.meta && (
-              <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 0.25 }} noWrap>
-                {item.meta}
-              </Typography>
-            )}
-          </Box>
-        ))}
-      </Box>
-    </Stack>
-  )
-}
+const NAV_ITEMS: NavItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon sx={{ fontSize: 16 }} />, page: 'workbench' },
+  { id: 'directions', label: '方向', icon: <ExploreIcon sx={{ fontSize: 16 }} />, view: 'directions' },
+  { id: 'cities', label: '城市', icon: <LocationCityIcon sx={{ fontSize: 16 }} />, view: 'directions' },
+  { id: 'companies', label: '公司', icon: <BusinessIcon sx={{ fontSize: 16 }} />, page: 'companies' },
+  { id: 'jobs', label: '岗位', icon: <WorkIcon sx={{ fontSize: 16 }} />, page: 'jobs' },
+  { id: 'applications', label: '投递', icon: <OutboxIcon sx={{ fontSize: 16 }} />, page: 'applications' },
+  { id: 'interviews', label: '面试', icon: <MicIcon sx={{ fontSize: 16 }} />, page: 'applications' },
+  { id: 'decisions', label: '决策记录', icon: <HistoryIcon sx={{ fontSize: 16 }} />, view: 'directions' },
+]
 
 export function SecondarySidebar() {
-  const page = useAppStore((s) => s.currentPage)
-  const sessions = useAppStore((s) => s.sessions)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const createSession = useAppStore((s) => s.createSession)
-  const person = useAppStore((s) => s.currentPerson())
-  const applications = useAppStore((s) => s.applications)
-  const infopoolFilter = useAppStore((s) => s.infopoolFilter)
-  const companiesFilter = useAppStore((s) => s.companiesFilter)
-  const applicationsFilter = useAppStore((s) => s.applicationsFilter)
-  const setInfopoolFilter = useAppStore((s) => s.setInfopoolFilter)
-  const setCompaniesFilter = useAppStore((s) => s.setCompaniesFilter)
-  const setApplicationsFilter = useAppStore((s) => s.setApplicationsFilter)
-  const activeResumeId = useAppStore((s) => s.activeResumeId)
-  const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
-  const poolGraph = useAppStore((s) => s.poolGraph)
-  const engineStatus = useAppStore((s) => s.engineStatus)
-  const decisions = useAppStore((s) => s.decisions)
-  const companies = useAppStore((s) => s.companies)
-  const push = useToastStore((s) => s.push)
+  const setPage = useAppStore((s) => s.setPage)
+  const currentPage = useAppStore((s) => s.currentPage)
+  const [dirViewOpen, setDirViewOpen] = useState(false)
 
-  const content = (() => {
-    switch (page) {
-    case 'workbench':
-      return <WorkbenchSecondary />
-    case 'agent':
-      return (
-        <Stack sx={{ height: '100%' }}>
-          <Box sx={{ p: 1.5, borderBottom: `1px solid ${COLORS.border}` }}>
-            <Button
-              fullWidth
-              variant="outlined"
-              size="small"
-              onClick={() => {
-                createSession()
-                push('info', '已创建新会话')
-              }}
-              sx={{ fontSize: 12 }}
-            >
-                + 新会话 ⌘N
-            </Button>
-          </Box>
-          <ListSecondary
-            title="会话历史"
-            items={sessions
-              .filter((s) => s.personId === person.id && !s.archived)
-              .map((s) => ({
-                id: s.id,
-                label: s.title,
-                meta: new Date(s.updatedAt).toLocaleDateString('zh-CN'),
-                active: s.id === currentSessionId,
-              }))}
-            onItemClick={setCurrentSession}
-          />
-          {sessions.some((s) => s.archived) && (
-            <Box sx={{ maxHeight: 160, overflow: 'auto' }}>
-              <ListSecondary
-                title="已归档"
-                items={sessions
-                  .filter((s) => s.archived)
-                  .map((s) => ({
-                    id: s.id,
-                    label: s.title,
-                    meta: '归档',
-                  }))}
-              />
-            </Box>
-          )}
-        </Stack>
-      )
-    case 'infopool': {
-      // 引擎图谱真实计数（connected）；offline 用 mock 静态值
-      const live = engineStatus === 'connected' && poolGraph ? computePoolStats(poolGraph) : null
-      const meta = (key: string, mock: string): string =>
-        live ? String(key === 'all' ? live.total : key === 'isolated' ? live.isolated : key === 'missing' ? live.missing : live.byType[key] ?? 0) : mock
-      // 待人工处理 = 引擎数据中 validation.invalid 的决策 + 公司（offline 无 validation 标记，恒 0）
-      const invalidCount = live
-        ? decisions.filter((d) => d.validation?.status === 'invalid').length +
-          companies.filter((c) => c.validation?.status === 'invalid').length
-        : 0
-      return (
-        <ListSecondary
-          title="节点过滤"
-          items={[
-            { id: 'all', label: '全部节点', meta: meta('all', '342'), active: infopoolFilter === 'all' },
-            { id: 'person', label: '人', meta: meta('person', '2'), active: infopoolFilter === 'person' },
-            { id: 'decision', label: '决策记录', meta: meta('decision', '28'), active: infopoolFilter === 'decision' },
-            { id: 'direction', label: '方向', meta: meta('direction', '6'), active: infopoolFilter === 'direction' },
-            { id: 'city', label: '城市', meta: meta('city', '12'), active: infopoolFilter === 'city' },
-            { id: 'company', label: '公司', meta: meta('company', '156'), active: infopoolFilter === 'company' },
-            { id: 'isolated', label: '⚠ 孤立节点', meta: meta('isolated', '8'), active: infopoolFilter === 'isolated' },
-            { id: 'missing', label: '⚠ 字段缺失', meta: meta('missing', '3'), active: infopoolFilter === 'missing' },
-            { id: 'invalid', label: '⚠ 待人工处理', meta: String(invalidCount), active: infopoolFilter === 'invalid' },
-          ]}
-          onItemClick={setInfopoolFilter}
-        />
-      )
-    }
-    case 'companies': {
-      // 计数按 store 的 companies 实时计算（connected = 引擎档案；offline = mock 档案）
-      const countBy = (pred: (c: Company) => boolean): string =>
-        String(companies.filter(pred).length)
-      return (
-        <ListSecondary
-          title="公司列表"
-          items={[
-            { id: 'all', label: '全部', meta: countBy(() => true), active: companiesFilter === 'all' },
-            { id: 'sz', label: '深圳', meta: countBy((c) => c.city === '深圳'), active: companiesFilter === 'sz' },
-            { id: 'sh', label: '上海', meta: countBy((c) => c.city === '上海'), active: companiesFilter === 'sh' },
-            { id: 'hz', label: '杭州', meta: countBy((c) => c.city === '杭州'), active: companiesFilter === 'hz' },
-            { id: 'bj', label: '北京', meta: countBy((c) => c.city === '北京'), active: companiesFilter === 'bj' },
-            { id: 'robot', label: '产业: 机器人', meta: countBy((c) => c.industry?.includes('机器人')), active: companiesFilter === 'robot' },
-            { id: 'contacted', label: '已联系', meta: countBy((c) => c.contacted), active: companiesFilter === 'contacted' },
-          ]}
-          onItemClick={setCompaniesFilter}
-        />
-      )
-    }
-    case 'applications': {
-      const statuses = ['全部', '面试中', '已投递', '已联系', '已回复', '已评估', '已拒绝'] as const
-      const personApps = applications.filter((a) => a.personId === person.id)
-      const counts: Record<string, number> = { 全部: personApps.length }
-      personApps.forEach((a) => {
-        counts[a.status] = (counts[a.status] ?? 0) + 1
-      })
-      return (
-        <ListSecondary
-          title="状态过滤"
-          items={statuses.map((s) => ({
-            id: s,
-            label: s,
-            meta: String(counts[s] ?? 0),
-            active: applicationsFilter === s,
-          }))}
-          onItemClick={setApplicationsFilter}
-        />
-      )
-    }
-    case 'resumes':
-      return (
-        <ListSecondary
-          title="版本 / 血缘"
-          items={RESUMES.filter((r) => r.personId === person.id).map((r) => ({
-            id: r.id,
-            label: r.parentId ? `↳ ${r.name}` : r.name,
-            meta: r.parentId ? '派生' : '根版本',
-            active: r.id === activeResumeId,
-          }))}
-          onItemClick={setActiveResumeId}
-        />
-      )
-    case 'settings':
-      return (
-        <ListSecondary
-          title="设置分类"
-          items={[
-            { id: 'persons', label: '人管理', active: true },
-            { id: 'model', label: '模型配置' },
-            { id: 'data', label: '数据' },
-            { id: 'appearance', label: '外观' },
-          ]}
-        />
-      )
-    default:
-      return null
-    }
-  })()
+  const activate = (item: NavItem): void => {
+    if (item.view === 'directions') setDirViewOpen(true)
+    else if (item.page) setPage(item.page as never)
+  }
+
+  const isActive = (item: NavItem): boolean => {
+    if (item.view) return false
+    return currentPage === item.page
+  }
 
   return (
     <Box
       sx={{
         width: LAYOUT.secondaryDefault,
-        minWidth: LAYOUT.secondaryMin,
-        maxWidth: LAYOUT.secondaryMax,
+        minWidth: LAYOUT.secondaryDefault,
         borderRight: `1px solid ${COLORS.border}`,
         bgcolor: COLORS.bgElevated,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        zIndex: 10,
       }}
     >
-      {content}
+      <Stack spacing={0.25} sx={{ p: 1.25 }}>
+        <Typography
+          sx={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: COLORS.textMuted,
+            letterSpacing: '0.05em',
+            px: 1,
+            mb: 0.5,
+          }}
+        >
+          空间
+        </Typography>
+        {NAV_ITEMS.slice(0, 7).map((item) => (
+          <Stack
+            key={item.id}
+            direction="row"
+            spacing={1}
+            onClick={() => activate(item)}
+            sx={{
+              alignItems: 'center',
+              px: 1,
+              py: 0.75,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              bgcolor: isActive(item) ? COLORS.accentMuted : 'transparent',
+              color: isActive(item) ? COLORS.accent : COLORS.text,
+              '&:hover': { bgcolor: isActive(item) ? COLORS.accentMuted : COLORS.bgHover },
+            }}
+          >
+            {item.icon}
+            <Typography sx={{ fontSize: 13, fontWeight: isActive(item) ? 600 : 400 }}>
+              {item.label}
+            </Typography>
+          </Stack>
+        ))}
+        <Typography
+          sx={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: COLORS.textMuted,
+            letterSpacing: '0.05em',
+            px: 1,
+            mb: 0.5,
+            mt: 1.5,
+          }}
+        >
+          记录
+        </Typography>
+        <Stack
+          direction="row"
+          spacing={1}
+          onClick={() => activate(NAV_ITEMS[7])}
+          sx={{
+            alignItems: 'center',
+            px: 1,
+            py: 0.75,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            '&:hover': { bgcolor: COLORS.bgHover },
+          }}
+        >
+          {NAV_ITEMS[7].icon}
+          <Typography sx={{ fontSize: 13 }}>{NAV_ITEMS[7].label}</Typography>
+        </Stack>
+      </Stack>
+
+      <DirectionViewDialog open={dirViewOpen} onClose={() => setDirViewOpen(false)} />
     </Box>
   )
 }

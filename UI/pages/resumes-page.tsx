@@ -3,6 +3,8 @@ import {
   Button,
   Chip,
   IconButton,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
@@ -175,6 +177,9 @@ export function ResumesPage() {
 
   /** 划词/键盘选中 → 显示「✨ 改写」按钮（选区右下，不直接弹候选）。 */
   const onSelect = (el: HTMLTextAreaElement, moduleId: string) => {
+    // textarea 失焦时浏览器会派发 select 事件（Blink blur 行为），并非用户划词——
+    // 忽略，避免误清空改写指令、误取消进行中的改写
+    if (document.activeElement !== el) return
     const sel = window.getSelection()
     const text = sel ? sel.toString().trim() : ''
     if (text.length < 6) {
@@ -200,19 +205,21 @@ export function ResumesPage() {
 
   const openCard = () => {
     if (!selButton) return
-    // 初值防溢出：底部选区时浮层上移（浮层高度未知，先用估计值，渲染后实测修正）
+    // 初值防溢出：底部选区时浮层上移、右缘选区时浮层左移（浮层 440 宽，渲染后实测修正）
     const top = Math.min(selButton.top + 30, window.innerHeight - 260)
-    setCardPos({ top: Math.max(8, top), left: selButton.left })
+    const left = Math.min(selButton.left, window.innerWidth - 440 - 8)
+    setCardPos({ top: Math.max(8, top), left: Math.max(8, left) })
     setCardOpen(true)
   }
 
-  // 浮层渲染前按实际高度修正位置（useLayoutEffect：绘制前完成，浮层首次渲染即正确位置，
+  // 浮层渲染前按实际尺寸修正位置（useLayoutEffect：绘制前完成，浮层首次渲染即正确位置，
   // 避免打开后 DOM 移动导致 mousedown/mouseup 坐标不一致而吞掉首次点击）
   useLayoutEffect(() => {
     if (!cardOpen || !cardRef.current || !cardPos) return
-    const h = cardRef.current.offsetHeight
-    const maxTop = window.innerHeight - h - 8
-    if (cardPos.top > maxTop) setCardPos({ ...cardPos, top: Math.max(8, maxTop) })
+    const { offsetHeight: h, offsetWidth: w } = cardRef.current
+    const top = Math.max(8, Math.min(cardPos.top, window.innerHeight - h - 8))
+    const left = Math.max(8, Math.min(cardPos.left, window.innerWidth - w - 8))
+    if (top !== cardPos.top || left !== cardPos.left) setCardPos({ top, left })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardOpen])
 
@@ -290,7 +297,25 @@ export function ResumesPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>简历中心</Typography>
         {resume && (
           <>
-            <Chip size="small" label={resume.name} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
+            {/* 版本切换（侧栏版本血缘移入页面内） */}
+            <Select
+              size="small"
+              value={resume.id}
+              onChange={(e) => setActiveResumeId(e.target.value as string)}
+              sx={{
+                minWidth: 140,
+                maxWidth: 220,
+                fontSize: 12,
+                height: 26,
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: COLORS.border },
+              }}
+            >
+              {personResumes.map((r) => (
+                <MenuItem key={r.id} value={r.id} sx={{ fontSize: 12.5 }}>
+                  {r.name}
+                </MenuItem>
+              ))}
+            </Select>
             {resume.targetCompany && (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
                 → {resume.targetCompany} · {resume.targetPosition}

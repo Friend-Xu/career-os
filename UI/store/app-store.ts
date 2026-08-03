@@ -24,7 +24,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -32,6 +32,7 @@ import {
   type EngineClient,
   type EngineStatus,
   type GraphResult,
+  type JobView,
 } from './engine-client'
 
 /** 引擎公司档案（带 validation 降级标记）；mock COMPANIES 无 validation，结构兼容 */
@@ -126,6 +127,8 @@ interface AppState {
   contexts: DecisionAggregate[];
   /** 知识层（V2）：技能词表 + 岗位清单（引擎实时派生，不持久化；status 标注 RPC 成败——视图按诚实空态消费） */
   knowledge: { skills: Skill[]; roles: Role[]; status: 'idle' | 'ready' | 'error' };
+  /** 岗位（Job，M1）：JD 一等数据对象，引擎实时派生（jobs/ 目录），投递卡片展开/匹配用 */
+  jobs: JobView[];
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
   health: HealthReport | null;
   companies: CompanyView[];
@@ -142,6 +145,8 @@ interface AppState {
   companiesFilter: string;
   applicationsFilter: string;
   locateTarget: string | null;
+  /** 岗位页选中的岗位（跳转定位：新增投递保存后 → 岗位页选中） */
+  selectedJobId: string | null;
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
   pendingPermission: PendingPermission | null;
   /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
@@ -186,12 +191,29 @@ interface AppState {
   /** 简历导出 PDF：引擎 Edge headless 渲染；未连接 → 抛错（页面降级 window.print） */
   exportResume: (html: string) => Promise<{ pdf: string; fileName: string }>;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
+  /** 新增投递记录（手动录入；id 自动分配，persist 持久化） */
+  addApplication: (app: Omit<Application, 'id'>) => void;
+  /** 局部修改决策记录：引擎写回 md → 自动重扫广播；引擎离线抛错（组件 toast） */
+  updateDecision: (id: string, fields: Record<string, string>) => Promise<void>;
+  /** 新建岗位（M1 只有 create）：引擎写 jobs/{id}.md → jobsChanged 自动重拉 */
+  createJob: (params: {
+    company: string
+    title: string
+    location?: string
+    salary?: string
+    jdSource?: string
+    requirements?: string
+    jdText?: string
+  }) => Promise<JobRecord>;
+  /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
+  matchJob: (jobId: string, personName: string) => Promise<GapResult>;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
   setInfopoolFilter: (filter: string) => void;
   setCompaniesFilter: (filter: string) => void;
   setApplicationsFilter: (filter: string) => void;
   setLocateTarget: (target: string | null) => void;
+  setSelectedJobId: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -199,7 +221,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       currentPersonId: 1,
       currentPage: 'workbench',
-      agentPanelOpen: true,
+      agentPanelOpen: false,
       mainWidthMode: 'narrow',
       commandPaletteOpen: false,
       engineStatus: 'offline',
@@ -210,6 +232,7 @@ export const useAppStore = create<AppState>()(
       decisions: DECISIONS,
       contexts: [],
       knowledge: { skills: [], roles: [], status: 'idle' },
+      jobs: [],
       health: null,
       companies: COMPANIES,
       persons: PERSONS,
@@ -225,6 +248,7 @@ export const useAppStore = create<AppState>()(
       companiesFilter: 'all',
       applicationsFilter: '全部',
       locateTarget: null,
+      selectedJobId: null,
       pendingPermission: null,
       approvedTools: {},
       rewrite: { status: 'idle', text: '' },
@@ -464,6 +488,30 @@ export const useAppStore = create<AppState>()(
     }))
   },
 
+  addApplication: (app) => {
+    set((state) => ({
+      applications: [
+        { ...app, id: Math.max(0, ...state.applications.map((a) => a.id)) + 1 },
+        ...state.applications,
+      ],
+    }))
+  },
+
+  updateDecision: async (id, fields) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.updateDecision(id, fields)
+  },
+
+  createJob: async (params) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.createJob(params)
+  },
+
+  matchJob: async (jobId, personName) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.matchJob(jobId, personName)
+  },
+
   addDecision: (record) => {
     // 引擎 connected：决策真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉），
     // 本地只保留内存写入（演示模式不写引擎），不本地推进阶段——避免与引擎派生打架。
@@ -508,6 +556,7 @@ export const useAppStore = create<AppState>()(
   setApplicationsFilter: (filter) => set({ applicationsFilter: filter }),
 
   setLocateTarget: (target) => set({ locateTarget: target }),
+  setSelectedJobId: (id) => set({ selectedJobId: id }),
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId
@@ -686,10 +735,15 @@ export const useAppStore = create<AppState>()(
       version: 2,
       // 模型 B（角色 = 人）：旧 schema 是岗位角色，不兼容，直接重置
       migrate: () => undefined,
+      // AgentPanel 是会话级 UI 状态，不持久化（丢弃旧 localStorage 值，避免默认展开）
+      merge: (persisted, current) => {
+        const p = persisted as Record<string, unknown>
+        if (p && typeof p === 'object' && 'agentPanelOpen' in p) delete p.agentPanelOpen
+        return { ...current, ...(p as object) }
+      },
       partialize: (s) => ({
         currentPersonId: s.currentPersonId,
         currentPage: s.currentPage,
-        agentPanelOpen: s.agentPanelOpen,
         mainWidthMode: s.mainWidthMode,
         applications: s.applications,
         decisions: s.decisions,
@@ -921,6 +975,17 @@ async function pullDecisions(): Promise<void> {
   }
 }
 
+/** 岗位列表（M1：引擎实时派生；jobsChanged 事件驱动重拉） */
+async function pullJobs(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listJobs()
+    useAppStore.setState({ jobs: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 决策聚合视图（V1.5）：引擎实时派生（contexts/list），offline/未建 context 时保持空数组 */
 async function pullContexts(): Promise<void> {
   if (!engine) return
@@ -973,6 +1038,7 @@ function chainToPersonStages(chain: DecisionChain): DecisionStage[] {
     status: s.status,
     ...(s.direction !== undefined ? { direction: s.direction } : {}),
     ...(s.city !== undefined ? { city: s.city } : {}),
+    ...(s.decisionIds !== undefined ? { decisionIds: s.decisionIds } : {}),
   }))
 }
 
@@ -1037,6 +1103,7 @@ export function connectEngine(): void {
       void pullContexts()
       void pullKnowledge()
       void pullHealth()
+      void pullJobs()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {
@@ -1046,6 +1113,7 @@ export function connectEngine(): void {
     void pullGraph()
     void pullContexts()
   })
+  engine.on(EVENTS.jobsChanged, () => void pullJobs())
   engine.on(EVENTS.poolChanged, () => void pullGraph())
   engine.onAgentEvent(handleAgentEvent)
   engine.connect()

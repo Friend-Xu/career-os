@@ -16,6 +16,7 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, LAYOUT } from '../../data/constants'
 import { ThemeToggle } from './theme-toggle'
+import { DirectionViewDialog } from '../direction-view-dialog'
 
 export function TopBar() {
   const currentPerson = useAppStore((s) => s.currentPerson())
@@ -39,6 +40,14 @@ export function TopBar() {
     if (mine.length === 0) return undefined
     return [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
   }, [decisions, currentPerson.name])
+
+  // 方向数（聚合维度：该人决策记录去重方向；含未标注方向时不计入）
+  const directionCount = useMemo(() => {
+    const mine = decisions.filter((d) => d.profile === currentPerson.name && d.direction)
+    return new Set(mine.map((d) => d.direction)).size
+  }, [decisions, currentPerson.name])
+
+  const [directionViewOpen, setDirectionViewOpen] = useState(false)
 
   const openPersonMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)
   const closePersonMenu = () => setAnchor(null)
@@ -172,15 +181,28 @@ export function TopBar() {
         }}
       />
 
-      {/* 当前方向胶囊（6.7：状态层，无边框无底色，视觉让位于操作与进度） */}
+      {/* 当前方向胶囊（6.7：状态层，无边框无底色，视觉让位于操作与进度；点击 → 方向视图） */}
       {currentDirection && (
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+        <Stack
+          direction="row"
+          spacing={0.75}
+          sx={{ alignItems: 'center', cursor: 'pointer', py: 0.5, px: 0.5, borderRadius: '6px' }}
+          onClick={() => setDirectionViewOpen(true)}
+          title="查看方向视图（按方向聚合的决策时间线）"
+        >
           <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: COLORS.textMuted }} />
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
             方向 · {currentDirection}
           </Typography>
+          {directionCount > 1 && (
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, opacity: 0.8 }}>
+              · {directionCount} 个方向
+            </Typography>
+          )}
         </Stack>
       )}
+
+      <DirectionViewDialog open={directionViewOpen} onClose={() => setDirectionViewOpen(false)} />
 
       <Box sx={{ flex: 1 }} />
 
