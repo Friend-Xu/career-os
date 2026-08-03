@@ -26,6 +26,9 @@ graph-force-1.png
 # Local plans（过程文档不入库）
 .claude/plan/
 
+# Local Claude settings（本机权限/hooks 配置，不入库）
+.claude/settings.local.json
+
 # Local scripts
 __启动脚本.bat
 
