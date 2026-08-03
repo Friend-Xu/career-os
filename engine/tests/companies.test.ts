@@ -17,7 +17,7 @@ export const silentLogger: Logger = {
   trace() {},
 }
 
-const companyMd = `# 汇川技术
+const companyMd = `# 澜山自动化
 
 ## 分析摘要
 
@@ -36,14 +36,14 @@ const companyMd = `# 汇川技术
 
 ## 公司档案摘要
 
-汇川技术（300124.SZ）：国产工控自动化龙头，机器人业务位于苏州。
+澜山自动化（300124.SZ）：国产工控自动化龙头，机器人业务位于苏州。
 `
 
 test('解析合法公司档案：字段映射 + 值转换 + 无 validation', () => {
-  const { value, validation } = parseCompanyMarkdown(companyMd, '汇川技术.md')
+  const { value, validation } = parseCompanyMarkdown(companyMd, '澜山自动化.md')
   assert.equal(validation, undefined)
-  assert.equal(value.id, '汇川技术')
-  assert.equal(value.name, '汇川技术') // name 取 H1
+  assert.equal(value.id, '澜山自动化')
+  assert.equal(value.name, '澜山自动化') // name 取 H1
   assert.equal(value.city, '苏州')
   assert.equal(value.industry, '工业自动化/机器人')
   assert.equal(value.matchScore, 85) // 85% → 85
@@ -60,7 +60,7 @@ test('match_score X/10 → 0-100；中高 → high；是 → true；全角逗号
     .replace('| risk_level | 低 |', '| risk_level | 中高 |')
     .replace('| contacted | 否 |', '| contacted | 是 |')
     .replace('| tags | 国产工控龙头, 伺服/变频器, 机器人 |', '| tags | 龙头，机器人 |')
-  const { value, validation } = parseCompanyMarkdown(md, '汇川技术.md')
+  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
   assert.equal(validation, undefined)
   assert.equal(value.matchScore, 85)
   assert.equal(value.riskLevel, 'high') // 中高 → high
@@ -69,7 +69,7 @@ test('match_score X/10 → 0-100；中高 → high；是 → true；全角逗号
 })
 
 test('无分析摘要表 → invalid', () => {
-  const { validation } = parseCompanyMarkdown('# 汇川技术\n\n没有摘要表', '汇川技术.md')
+  const { validation } = parseCompanyMarkdown('# 澜山自动化\n\n没有摘要表', '澜山自动化.md')
   assert.equal(validation?.status, 'invalid')
   assert.equal(validation?.issues[0]?.severity, 'error')
 })
@@ -79,7 +79,7 @@ test('缺必填字段（city/contacted 未填）→ invalid，parkId 缺失合�
     .replace('| city | 苏州 |\n', '')
     .replace('| contacted | 否 |\n', '')
     .replace('| park_id | 1 |\n', '')
-  const { value, validation } = parseCompanyMarkdown(md, '汇川技术.md')
+  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
   assert.equal(validation?.status, 'invalid')
   const paths = validation!.issues.map((i) => i.path)
   assert.ok(paths.includes('city') && paths.includes('contacted'))
@@ -93,7 +93,7 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
     .replace('| match_score | 85% |', '| match_score | 很高 |')
     .replace('| contacted | 否 |', '| contacted | 也许 |')
     .replace('| park_id | 1 |', '| park_id | 一区 |')
-  const { value, validation } = parseCompanyMarkdown(md, '汇川技术.md')
+  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
   assert.equal(validation?.status, 'degraded')
   assert.ok(validation!.issues.every((i) => i.severity === 'warn'))
   assert.equal(value.riskLevel, '超高') // 保留原值
@@ -105,13 +105,13 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
 test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 invalid 公司', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-cmp-'))
   const ws = initWorkspace(root)
-  ws.write('companies/汇川技术.md', companyMd)
+  ws.write('companies/澜山自动化.md', companyMd)
   ws.write('companies/无摘要公司.md', '# 无摘要公司\n\n没有摘要表')
 
   const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
   const list = projection.listCompanies()
   assert.equal(list.length, 2)
-  const ok = list.find((c) => c.id === '汇川技术')
+  const ok = list.find((c) => c.id === '澜山自动化')
   const bad = list.find((c) => c.id === '无摘要公司')
   assert.ok(ok && !ok.validation, '合法公司不应带 validation')
   assert.equal(ok?.matchScore, 85)
@@ -122,7 +122,7 @@ test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 in
     companies: list,
     profileNames: [],
   })
-  assert.ok(graph.nodes.some((n) => n.id === 'company:汇川技术' && n.matchScore === 85 && n.riskLevel === 'low'))
+  assert.ok(graph.nodes.some((n) => n.id === 'company:澜山自动化' && n.matchScore === 85 && n.riskLevel === 'low'))
   assert.ok(!graph.nodes.some((n) => n.id === 'company:无摘要公司'), 'invalid 公司不应出现在图谱')
   projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
   rmSync(root, { recursive: true, force: true })

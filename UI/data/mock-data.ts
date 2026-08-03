@@ -106,7 +106,7 @@ export const DECISIONS: DecisionRecord[] = [
     keyRisk: '产业强·竞争激烈',
     status: 'completed',
     profile: '我',
-    summary: '深圳机器人产业链完整，大疆/优必选等头部聚集，竞争激烈但机会密度高',
+    summary: '深圳机器人产业链完整，天穹智航/弘毅机器人等头部聚集，竞争激烈但机会密度高',
     createdAt: '2026-08-01T10:20:00',
     protocolVersion: '2.1',
   },
@@ -206,9 +206,9 @@ export const NEXT_ACTION: NextAction = {
   title: '生成目标企业列表',
   description: 'AI 推荐下一步：基于深圳 86 分 / 技能画像 / 薪资约束筛选目标企业',
   completedStages: ['方向探索', '转行评估', '城市评估'],
-  priorities: ['深圳机器人产业园', '大疆', '优必选'],
+  priorities: ['深圳机器人产业园', '天穹智航', '弘毅机器人'],
   prompt:
-    '基于我的技能画像和深圳城市评估结果（86分），帮我生成目标企业列表。优先考虑：①深圳机器人产业园入驻企业 ②大疆 ③优必选。请按匹配度排序并标注风险。',
+    '基于我的技能画像和深圳城市评估结果（86分），帮我生成目标企业列表。优先考虑：①深圳机器人产业园入驻企业 ②天穹智航 ③弘毅机器人。请按匹配度排序并标注风险。',
   stageId: 'company',
 }
 
@@ -235,7 +235,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 1,
     personId: 1,
-    company: '大疆创新',
+    company: '天穹智航',
     position: '机器人算法工程师',
     sourceDecision: 'd-002',
     status: '面试中',
@@ -247,7 +247,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 2,
     personId: 1,
-    company: '优必选',
+    company: '弘毅机器人',
     position: '感知算法工程师',
     sourceDecision: 'd-002',
     status: '已回复',
@@ -259,7 +259,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 3,
     personId: 1,
-    company: '腾讯机器人',
+    company: '云启机器人',
     position: '具身智能研究员',
     sourceDecision: 'd-001',
     status: '已投递',
@@ -271,7 +271,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 4,
     personId: 1,
-    company: '云深处',
+    company: '深蓝足式',
     position: '运动控制工程师',
     status: '已联系',
     appliedAt: '2026-07-25',
@@ -281,7 +281,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 5,
     personId: 1,
-    company: '宇树科技',
+    company: '灵犀机器人',
     position: 'SLAM 算法工程师',
     status: '已评估',
     urgency: 'cooled',
@@ -289,7 +289,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 6,
     personId: 1,
-    company: '追觅科技',
+    company: '探境智能',
     position: '嵌入式软件工程师',
     status: '已投递',
     appliedAt: '2026-07-26',
@@ -299,7 +299,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 7,
     personId: 1,
-    company: '汇川技术',
+    company: '澜山自动化',
     position: '运动控制算法',
     status: '已拒绝',
     appliedAt: '2026-07-10',
@@ -308,7 +308,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 8,
     personId: 1,
-    company: '华为',
+    company: '星澜科技',
     position: '机器人软件开发',
     status: '面试中',
     appliedAt: '2026-07-15',
@@ -318,7 +318,7 @@ export const APPLICATIONS: Application[] = [
   {
     id: 9,
     personId: 2,
-    company: '小红书',
+    company: '柚屿社区',
     position: '内容运营',
     sourceDecision: 'd-006',
     status: '已投递',
@@ -331,7 +331,7 @@ export const APPLICATIONS: Application[] = [
 export const COMPANIES: Company[] = [
   {
     id: 'c-1',
-    name: '大疆创新',
+    name: '天穹智航',
     city: '深圳',
     industry: '机器人/无人机',
     matchScore: 91,
@@ -343,7 +343,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-2',
-    name: '优必选',
+    name: '弘毅机器人',
     city: '深圳',
     industry: '人形机器人',
     matchScore: 88,
@@ -355,7 +355,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-3',
-    name: '腾讯机器人',
+    name: '云启机器人',
     city: '深圳',
     industry: '具身智能',
     matchScore: 85,
@@ -366,7 +366,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-4',
-    name: '云深处',
+    name: '深蓝足式',
     city: '杭州',
     industry: '四足机器人',
     matchScore: 79,
@@ -377,7 +377,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-5',
-    name: '宇树科技',
+    name: '灵犀机器人',
     city: '杭州',
     industry: '四足/人形',
     matchScore: 84,
@@ -388,7 +388,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-6',
-    name: '追觅科技',
+    name: '探境智能',
     city: '苏州',
     industry: '消费机器人',
     matchScore: 72,
@@ -411,7 +411,7 @@ export const COMPANIES: Company[] = [
   },
   {
     id: 'c-8',
-    name: '傅利叶智能',
+    name: '远洲康复',
     city: '上海',
     industry: '康复/人形',
     matchScore: 76,
@@ -433,7 +433,7 @@ export const PARKS: Park[] = [
     lon: 114.05,
     source: '工信部名录',
     year: 2025,
-    companies: ['大疆创新', '优必选', '越疆科技', '工银科技'],
+    companies: ['天穹智航', '弘毅机器人', '越疆科技', '工银科技'],
   },
   {
     id: 2,
@@ -444,7 +444,7 @@ export const PARKS: Park[] = [
     lon: 121.58,
     source: '工信部名录',
     year: 2025,
-    companies: ['智元机器人', '傅利叶智能', '节卡机器人'],
+    companies: ['智元机器人', '远洲康复', '节卡机器人'],
   },
   {
     id: 3,
@@ -466,7 +466,7 @@ export const PARKS: Park[] = [
     lon: 120.02,
     source: '工信部名录',
     year: 2025,
-    companies: ['宇树科技', '云深处'],
+    companies: ['灵犀机器人', '深蓝足式'],
   },
 ]
 
@@ -481,10 +481,10 @@ export const INFO_NODES: InfoNode[] = [
   { id: 'n-d2', label: '转行评估', type: 'decision', riskLevel: 'medium', matchScore: 82, x: 250, y: 360 },
   { id: 'n-d3', label: '城市评估', type: 'decision', riskLevel: 'high', matchScore: 86, x: 400, y: 120 },
   { id: 'n-d5', label: 'CAE 方向评估', type: 'decision', riskLevel: 'medium', matchScore: 76, x: 60, y: 170 },
-  { id: 'n-c1', label: '大疆创新', type: 'company', matchScore: 91, riskLevel: 'medium', x: 700, y: 140 },
-  { id: 'n-c2', label: '优必选', type: 'company', matchScore: 88, riskLevel: 'medium', x: 750, y: 220 },
-  { id: 'n-c3', label: '腾讯机器人', type: 'company', matchScore: 85, riskLevel: 'low', x: 720, y: 320 },
-  { id: 'n-c4', label: '宇树科技', type: 'company', matchScore: 84, riskLevel: 'low', x: 500, y: 420 },
+  { id: 'n-c1', label: '天穹智航', type: 'company', matchScore: 91, riskLevel: 'medium', x: 700, y: 140 },
+  { id: 'n-c2', label: '弘毅机器人', type: 'company', matchScore: 88, riskLevel: 'medium', x: 750, y: 220 },
+  { id: 'n-c3', label: '云启机器人', type: 'company', matchScore: 85, riskLevel: 'low', x: 720, y: 320 },
+  { id: 'n-c4', label: '灵犀机器人', type: 'company', matchScore: 84, riskLevel: 'low', x: 500, y: 420 },
 ]
 
 export const INFO_EDGES: InfoEdge[] = [
@@ -546,11 +546,11 @@ export const RESUMES: ResumeVersion[] = [
   },
   {
     id: 'r-dji',
-    name: '大疆-算法工程师',
+    name: '天穹智航-算法工程师',
     personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-22',
-    targetCompany: '大疆创新',
+    targetCompany: '天穹智航',
     targetPosition: '机器人算法工程师',
     modules: [
       {
@@ -590,11 +590,11 @@ export const RESUMES: ResumeVersion[] = [
   },
   {
     id: 'r-ubtech',
-    name: '优必选-感知算法',
+    name: '弘毅机器人-感知算法',
     personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-25',
-    targetCompany: '优必选',
+    targetCompany: '弘毅机器人',
     targetPosition: '感知算法工程师',
     modules: [
       {
@@ -644,7 +644,7 @@ export const RESUMES: ResumeVersion[] = [
       {
         id: 'fa-m2',
         title: '专业摘要',
-        content: '3年新媒体内容运营经验，擅长公众号/小红书图文与活动策划，正在考虑更稳定的内容方向。',
+        content: '3年新媒体内容运营经验，擅长公众号/柚屿社区图文与活动策划，正在考虑更稳定的内容方向。',
         order: 1,
       },
       {
@@ -656,7 +656,7 @@ export const RESUMES: ResumeVersion[] = [
       {
         id: 'fa-m4',
         title: '技能',
-        content: '公众号运营 / 小红书笔记 / 活动策划 / 剪映 / Canva',
+        content: '公众号运营 / 柚屿社区笔记 / 活动策划 / 剪映 / Canva',
         order: 3,
       },
     ],
@@ -674,7 +674,7 @@ const AGENT_MESSAGES: ChatMessage[] = [
     id: 'm2',
     role: 'assistant',
     content:
-      '已读取你的 profile 与最近决策。当前阶段：**公司筛选**。\n\n基于深圳 86 分、技能画像（量化→算法）与薪资约束，我建议优先这三家：\n\n1. **大疆创新** — 匹配 91，算法岗密度高\n2. **优必选** — 匹配 88，人形/感知方向契合\n3. **腾讯机器人** — 匹配 85，研究氛围好、风险较低\n\n需要我生成完整目标企业列表并写入决策记录吗？',
+      '已读取你的 profile 与最近决策。当前阶段：**公司筛选**。\n\n基于深圳 86 分、技能画像（量化→算法）与薪资约束，我建议优先这三家：\n\n1. **天穹智航** — 匹配 91，算法岗密度高\n2. **弘毅机器人** — 匹配 88，人形/感知方向契合\n3. **云启机器人** — 匹配 85，研究氛围好、风险较低\n\n需要我生成完整目标企业列表并写入决策记录吗？',
     timestamp: '2026-08-01T09:00:12',
     reportCard: DECISIONS[0],
     thinking:

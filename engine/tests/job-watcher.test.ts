@@ -9,13 +9,13 @@ import { tmpdir } from 'node:os'
 import { createJobFile, parseJobMarkdown, scanJobs } from '../storage/job-watcher.ts'
 import { initWorkspace } from '../storage/workspace.ts'
 
-const SAMPLE_MD = `# 机器人结构工程师 — 汇川技术
+const SAMPLE_MD = `# 机器人结构工程师 — 澜山自动化
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| company | 汇川技术 |
+| company | 澜山自动化 |
 | title | 机器人结构工程师 |
 | location | 苏州 |
 | salary | 25-35万 |
@@ -31,11 +31,11 @@ const SAMPLE_MD = `# 机器人结构工程师 — 汇川技术
 `
 
 test('parseJobMarkdown：摘要表字段 + requirements 结构化', () => {
-  const p = parseJobMarkdown(SAMPLE_MD, '2026-08-04-汇川技术-机器人结构工程师.md')
+  const p = parseJobMarkdown(SAMPLE_MD, '2026-08-04-澜山自动化-机器人结构工程师.md')
   assert.equal(p.validation, undefined)
   const j = p.value
-  assert.equal(j.id, '2026-08-04-汇川技术-机器人结构工程师')
-  assert.equal(j.company, '汇川技术')
+  assert.equal(j.id, '2026-08-04-澜山自动化-机器人结构工程师')
+  assert.equal(j.company, '澜山自动化')
   assert.equal(j.title, '机器人结构工程师')
   assert.equal(j.location, '苏州')
   assert.equal(j.salary, '25-35万')
@@ -60,14 +60,14 @@ test('createJobFile：写文件闭环 + scanJobs 读回', () => {
     const ws = initWorkspace(join(dir, 'ws'))
     const now = new Date('2026-08-04T10:00:00Z')
     const created = createJobFile(ws, {
-      company: '汇川技术',
+      company: '澜山自动化',
       title: '机器人结构工程师',
       location: '苏州',
       salary: '25-35万',
       requirements: 'Python;SolidWorks',
       jdText: '负责机器人本体结构设计。',
     }, now)
-    assert.equal(created.id, '2026-08-04-汇川技术-机器人结构工程师')
+    assert.equal(created.id, '2026-08-04-澜山自动化-机器人结构工程师')
     assert.ok(ws.exists(`jobs/${created.id}.md`))
     const scanned = scanJobs(ws)
     assert.equal(scanned.length, 1)
