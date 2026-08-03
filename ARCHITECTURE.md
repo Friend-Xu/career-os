@@ -203,7 +203,9 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 **已完成（2026-08-03）**：Career Expression Standard Phase 1（机械工程）——12 岗位 JD 调研 → Signal Taxonomy → CareerContentStandard 契约 v1.1 → `standards/mechanical/` 4 语言族 → Benchmark v0.1 验证（TP/DF 20/20，防虚高红线全量生效）→ 失败归因链 A/B/C/D（ADR-006）。其余 7 方向为 Data Layer 待迁移。
 
-**进行中（Phase 2 Resume Intelligence Runtime）**：2A 标准路由（`Resume-Standard-Routing-v1` 契约 + 13 条 JD 路由验证 13/13 PASS）与 2B 反馈事件链路（`rewrite/feedback` RPC → `logs/feedback/`，只记录不学习）已完成；2C 真实案例收集（10-20 次 rewrite session → Benchmark Expansion v0.2）待用户使用反馈。
+**已完成（2026-08-03）**：Career Claim Intelligence 验证（H1/H2/E1）——H1 证明标准价值在"防虚构"而非"更漂亮"（表面质量无差异，TP 差异显著）；E1+H2 验证"职业证据提取与缺口识别"为差异化价值（Evidence Discovery Gain 0 vs 7，路径从"删风险"变为"补证据"）。沉淀为 `evidence-patterns/`（Knowledge Artifact 层：evidence-types / gap-taxonomy / elicitation-patterns / golden-cases——**文档层知识资产，inform 标准演进，非运行时层**，ADR-003 仍冻结）。
+
+**进行中（Phase 2 Resume Intelligence Runtime）**：2A 标准路由（`Resume-Standard-Routing-v1` 契约 + 13 条 JD 路由验证 13/13 PASS）与 2B 反馈事件链路（`rewrite/feedback` RPC → `logs/feedback/`，只记录不学习）已完成；2C 观察窗口（真实 UI 使用 → 入口形态决策）待用户使用。
 
 ## 9. 开发原则（CLAUDE.md 摘要）
 
