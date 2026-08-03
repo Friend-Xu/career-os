@@ -8,6 +8,7 @@ import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
+import { watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
@@ -95,8 +96,14 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.decisionsChanged })
         logger.info('decision-contexts/ 变更：已广播（contexts/list 按需重扫组装）')
       })
+      // jobs/ 变更只发信号；UI 收到 jobsChanged 重拉 jobs/list（jobs 是独立实体，不参与决策投影）
+      watchJobs(ws, (parsed) => {
+        broadcast({ event: EVENTS.jobsChanged })
+        logger.info(`jobs/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
+      logger.info('jobs/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }

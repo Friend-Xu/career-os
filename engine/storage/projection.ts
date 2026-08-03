@@ -139,6 +139,7 @@ const COMPANY_FIELD_MAP: Record<string, CompanyFieldSpec> = {
   tags: { field: 'tags', parse: (raw) => raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean), legal: '逗号分隔的标签列表' },
   contacted: { field: 'contacted', parse: (raw) => parseContacted(raw), legal: '是/否' },
   park_id: { field: 'parkId', parse: (raw) => parseParkId(raw), legal: '数字' },
+  headcount: { field: 'headcount', parse: (raw) => raw, legal: '人数规模（如 1.5万人 / 1000-5000）' },
 }
 
 function parseContacted(v: string): boolean | undefined {

@@ -50,6 +50,8 @@ export interface PersonStage {
   status: StageStatus
   direction?: string
   city?: string
+  /** 该阶段全部合法决策 id（computeChain 收集；UI 阶段点击 → 该阶段决策列表） */
+  decisionIds?: string[]
 }
 export interface DecisionChain {
   person: string // 决策记录归属人（profile）
@@ -105,6 +107,30 @@ export interface DecisionRecord {
   protocolVersion: string
 }
 
+/** 岗位要求条目（M1 只填 name/essential，默认全必需；level/category/source/confidence 为骨架位，后续能力填充） */
+export interface JobRequirement {
+  name: string
+  essential: boolean // 默认 true（M1 人工录入不区分必需/加分）
+  levelRequired?: number // 1-5（骨架位）
+  category?: string // language/infrastructure/...（骨架位）
+  source?: string // jd/人工（骨架位）
+  confidence?: Confidence // 解析置信度（骨架位）
+}
+
+/** 岗位（Job）：JD 是一等数据对象——岗位事实，非投递附属文本；jobs/{id}.md 真相源 */
+export interface JobRecord {
+  id: string
+  company: string
+  title: string
+  location?: string
+  salary?: string
+  jdSource?: string // JD 来源（URL/粘贴）
+  requirements: JobRequirement[] // 结构化要求（M1 人工录入，全 essential=true）
+  /** JD 原文（`## JD 原文` 正文段；卡片展开展示，Agent 后续分析源） */
+  jd?: string
+  createdAt: string
+}
+
 /** 公司档案：companies/{name}.md */
 export interface CompanyRecord {
   id: string
@@ -117,6 +143,8 @@ export interface CompanyRecord {
   tags: string[]
   contacted: boolean
   parkId?: number
+  /** 人数规模（如 "1.5万人" / "1000-5000"；可选，Agent 建档时填写） */
+  headcount?: string
 }
 
 // ─── V2 知识层：Skill/Role 领域对象（knowledge/*.md 真相源，V3 Capability 复用同一技能词表）──
@@ -193,6 +221,8 @@ export interface Application {
   personId: number
   company: string
   position: string
+  /** 关联岗位（jobs/{id}.md，M1 起新投递走 Job 实体；旧记录无 jobId 兼容显示 company/position） */
+  jobId?: string
   sourceDecision?: string
   status: ApplicationStatus
   appliedAt?: string

@@ -23,6 +23,8 @@ import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
+import { updateDecisionFile } from '../storage/decision-editor.ts'
+import { createJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -107,6 +109,65 @@ function gapParams(v: unknown): { person: string; roleId: string } {
   if (typeof p.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
   if (typeof p.roleId !== 'string' || p.roleId.length === 0) throw new Error('params.roleId 缺失（岗位 id）')
   return { person: p.person, roleId: p.roleId }
+}
+
+/** decisions/update 入参校验（RPC 边界：用户输入校验，fail fast） */
+function updateDecisionParams(v: unknown): { id: string; fields: Record<string, string> } {
+  if (typeof v !== 'object' || v === null) throw new Error('decisions/update 需要 params { id, fields }')
+  const p = v as Record<string, unknown>
+  if (typeof p.id !== 'string' || p.id.length === 0) throw new Error('params.id 缺失（决策文件名）')
+  if (typeof p.fields !== 'object' || p.fields === null || Array.isArray(p.fields)) {
+    throw new Error('params.fields 应为对象 { 字段: 值 }')
+  }
+  const fields: Record<string, string> = {}
+  for (const [k, val] of Object.entries(p.fields)) {
+    if (typeof val !== 'string') throw new Error(`params.fields.${k} 应为字符串`)
+    fields[k] = val
+  }
+  return { id: p.id, fields }
+}
+
+/** jobs/create 入参校验（RPC 边界：用户输入校验，fail fast） */
+function createJobParams(v: unknown): CreateJobParams {
+  if (typeof v !== 'object' || v === null) throw new Error('jobs/create 需要 params { company, title, ... }')
+  const p = v as Record<string, unknown>
+  if (typeof p.company !== 'string' || p.company.length === 0) throw new Error('params.company 缺失（公司名）')
+  if (typeof p.title !== 'string' || p.title.length === 0) throw new Error('params.title 缺失（岗位名）')
+  const out: CreateJobParams = { company: p.company, title: p.title }
+  for (const k of ['location', 'salary', 'jdSource', 'requirements', 'jdText'] as const) {
+    if (p[k] !== undefined) {
+      if (typeof p[k] !== 'string') throw new Error(`params.${k} 应为字符串`)
+      out[k] = p[k] as string
+    }
+  }
+  return out
+}
+
+/** jobs/get / jobs/match 的 id 提取（RPC 边界） */
+function jobIdParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).id !== 'string') {
+    throw new Error('params.id 缺失（岗位 id）')
+  }
+  return (v as Record<string, unknown>).id as string
+}
+
+/** jobs/match：Job.requirements（Role.skills 结构）→ computeGap → GapResult（可解释匹配，不做百分比） */
+export function computeJobMatch(workspace: Workspace, jobId: string, person: string): GapResult {
+  const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+  if (!job) throw new Error(`岗位不存在：${jobId}`)
+  const { skills, roles } = scanKnowledge(workspace)
+  const role = {
+    id: job.record.id,
+    name: job.record.title,
+    company: job.record.company,
+    skills: job.record.requirements.map((r) => ({
+      name: r.name,
+      essential: r.essential,
+      source: 'JD',
+    })),
+  }
+  const personSkills = scanProfiles(workspace).find((p) => p.name === person)?.skills ?? []
+  return computeGap({ role, person, personSkills, skills })
 }
 
 /** resume/export 入参校验（RPC 边界） */
@@ -216,6 +277,10 @@ export async function startServer(opts: {
     [METHODS.init]: () => store.init(),
     [METHODS.listDecisions]: () => store.listDecisions(),
     [METHODS.rescan]: () => store.rescan(),
+    [METHODS.updateDecision]: (params) => {
+      const { id, fields } = updateDecisionParams(params)
+      return updateDecisionFile(workspace, id, fields)
+    },
     [METHODS.listCompanies]: () => store.listCompanies(),
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.poolGraph]: () => store.graph(),
@@ -252,6 +317,22 @@ export async function startServer(opts: {
     [METHODS.rewriteFeedback]: (params) => {
       recordRewriteFeedback(join(config.paths.logs, 'feedback'), params)
       return {}
+    },
+    [METHODS.createJob]: (params) => createJobFile(workspace, createJobParams(params)),
+    [METHODS.listJobs]: () => scanJobs(workspace).map((j) => ({
+      ...j.record,
+      ...(j.validation ? { validation: j.validation } : {}),
+    })),
+    [METHODS.getJob]: (params) => {
+      const id = jobIdParams(params)
+      const job = scanJobs(workspace).find((j) => j.record.id === id)
+      if (!job) throw new Error(`岗位不存在：${id}`)
+      return job.record
+    },
+    [METHODS.matchJob]: (params) => {
+      const p = params as Record<string, unknown>
+      if (typeof p?.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
+      return computeJobMatch(workspace, jobIdParams(params), p.person)
     },
   }
 

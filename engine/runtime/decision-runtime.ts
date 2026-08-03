@@ -81,18 +81,27 @@ export class DecisionRuntime {
       .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id))
 
     const completed = new Set<StageId>()
+    const stageIds = new Map<StageId, string[]>()
     let direction: string | undefined
     let city: string | undefined
     for (const d of own) {
-      completed.add(stageOfSkill(d.skill))
+      const stage = stageOfSkill(d.skill)
+      completed.add(stage)
+      const ids = stageIds.get(stage)
+      if (ids) ids.push(d.id)
+      else stageIds.set(stage, [d.id])
       if (d.direction) direction = d.direction
       if (d.city) city = d.city
     }
 
-    const stages: PersonStage[] = STAGE_ORDER.map((stage) => ({
-      stage,
-      status: completed.has(stage) ? 'completed' : 'pending',
-    }))
+    const stages: PersonStage[] = STAGE_ORDER.map((stage) => {
+      const ids = stageIds.get(stage)
+      return {
+        stage,
+        status: completed.has(stage) ? 'completed' : 'pending',
+        ...(ids && ids.length > 0 ? { decisionIds: ids } : {}),
+      }
+    })
     // current = 首个未完成阶段（线性推进）；全部完成 → 终态，currentStage 停在最后一阶段
     const firstIncomplete = stages.find((s) => s.status === 'pending')
     const currentStage: StageId = firstIncomplete?.stage ?? '简历定制'

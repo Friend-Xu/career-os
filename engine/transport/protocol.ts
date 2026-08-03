@@ -35,6 +35,8 @@ export const METHODS = {
   listDecisions: 'decisions/list',
   /** 触发一次全量重扫描（md → IR） */
   rescan: 'decisions/rescan',
+  /** 局部修改决策记录（params: { id, fields } → 更新摘要表字段 → 写回 md → watcher 自动重扫广播；字段白名单见 decision-editor.UPDATEABLE_FIELDS） */
+  updateDecision: 'decisions/update',
   /** 决策链投影（按人分组的 computeChain 派生视图，6 阶段状态机） */
   chain: 'decisions/chain',
   /** 决策聚合视图（V1.5：DecisionContext 问题绑定 + 运行时组装，不落盘） */
@@ -63,11 +65,21 @@ export const METHODS = {
   agentPermission: 'agent/permission',
   /** 简历改写用户决策事件（params: { requestId, action, reason?, standardUsed?, selectedTextHash } → 追加 logs/feedback/rewrite-feedback.jsonl；契约 Resume-Feedback-Contract-v1，只记录不学习） */
   rewriteFeedback: 'rewrite/feedback',
+  /** 新建岗位（params: { company, title, location?, salary?, jdSource?, requirements?, jdText? } → 写 jobs/{日期}-{公司}-{岗位}.md → JobRecord；M1 只有 create，修正走版本化写入后续） */
+  createJob: 'jobs/create',
+  /** 全量岗位列表（jobs/ 目录扫描 + 校验标记） */
+  listJobs: 'jobs/list',
+  /** 单个岗位（params: { id } → JobRecord） */
+  getJob: 'jobs/get',
+  /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
+  matchJob: 'jobs/match',
 } as const
 
 export const EVENTS = {
   /** decisions/ 目录变更后推送（不含数据，客户端用 decisions/list 拉快照） */
   decisionsChanged: 'data.decisions.changed',
+  /** jobs/ 目录变更后推送（不含数据，客户端用 jobs/list 拉快照） */
+  jobsChanged: 'data.jobs.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */
