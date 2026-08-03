@@ -1,6 +1,6 @@
 /**
- * 岗位空间侧栏：岗位池列表（按公司分组 + 投递状态 chip）。
- * 点击行 → 岗位工作区（selectedJobId）。
+ * JD 空间侧栏：JD 池列表（按公司分组 + 投递状态 chip）。
+ * 点击行 → JD 工作区（selectedJobId）。
  */
 import { Box, Chip, Stack, Typography } from '@mui/material'
 import WorkIcon from '@mui/icons-material/Work'
@@ -37,7 +37,7 @@ export function JobsSidebar() {
             flex: 1,
           }}
         >
-          岗位池
+          JD 池
         </Typography>
         <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
           {jobs.length}
@@ -46,9 +46,9 @@ export function JobsSidebar() {
       <Box sx={{ flex: 1, overflow: 'auto', px: 1.25 }}>
         {jobs.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
-            暂无岗位
+            暂无 JD
             <br />
-            投递管理 → 新增投递时粘贴 JD
+            主区「增加 JD」粘贴招聘要求建档
           </Typography>
         ) : (
           byCompany.map(([company, list]) => (

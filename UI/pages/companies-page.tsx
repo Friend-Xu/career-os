@@ -230,11 +230,11 @@ export function CompaniesPage() {
               </Button>
             </Stack>
 
-            {/* 该公司岗位（尽调完看岗位 → 岗位工作区） */}
+            {/* 该公司 JD（尽调完看岗位 → JD 工作区） */}
             {companyJobs.length > 0 && (
               <Box sx={{ mt: 2.5 }}>
                 <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 1 }}>
-                  该公司岗位 · {companyJobs.length}
+                  该公司 JD · {companyJobs.length}
                 </Typography>
                 <Stack spacing={0.5}>
                   {companyJobs.map((j) => (

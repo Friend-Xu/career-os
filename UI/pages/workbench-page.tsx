@@ -75,7 +75,7 @@ function TodaySection() {
   const toAnalyze = jobs.filter(
     (j) => !personDecisions.some((d) => d.skill === 'jd-analysis' && d.title.includes(j.company)),
   )
-  if (toAnalyze.length > 0) actions.push({ label: `${toAnalyze.length} 个岗位等待分析`, page: 'jobs', jobId: toAnalyze[0].id })
+  if (toAnalyze.length > 0) actions.push({ label: `${toAnalyze.length} 个 JD 等待分析`, page: 'jobs', jobId: toAnalyze[0].id })
   const toFollow = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
   if (toFollow.length > 0) actions.push({ label: `${toFollow.length} 个投递待跟进`, page: 'applications' })
   const toApply = personApps.filter((a) => a.status === '已评估')
@@ -89,8 +89,7 @@ function TodaySection() {
   const kpis = [
     { label: '方向', value: latestDirection ?? '未建立' },
     { label: '公司', value: `${companies.length} 家` },
-    { label: '岗位', value: `${jobs.length} 个` },
-    { label: '投递', value: `${personApps.length} 条` },
+    { label: 'JD', value: `${jobs.length} 个` },    { label: '投递', value: `${personApps.length} 条` },
     { label: '决策', value: `${personDecisions.length} 条` },
   ]
 

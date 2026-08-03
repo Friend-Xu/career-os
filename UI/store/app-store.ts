@@ -11,6 +11,7 @@ import type {
   NavPageId,
   PendingPermission,
   Person,
+  ResumeVersion,
   RewriteFeedbackReason,
   RewriteState,
   Session,
@@ -21,6 +22,7 @@ import {
   COMPANIES,
   DECISIONS,
   PERSONS,
+  RESUMES,
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
@@ -122,6 +124,8 @@ interface AppState {
   sessions: Session[];
   currentSessionId: string;
   applications: Application[];
+  /** 简历版本（初始 mock；「选择 JD 派生」新建版本写入，持久化） */
+  resumes: ResumeVersion[];
   decisions: DecisionView[];
   /** 决策聚合视图（V1.5）：引擎实时派生，不持久化——offline/未建 context 时为空数组 */
   contexts: DecisionAggregate[];
@@ -199,6 +203,10 @@ interface AppState {
   updateApplicationStatus: (id: number, status: Application['status']) => void;
   /** 新增投递记录（手动录入；id 自动分配，persist 持久化） */
   addApplication: (app: Omit<Application, 'id'>) => void;
+  /** 删除投递记录（误操作撤销） */
+  deleteApplication: (id: number) => void;
+  /** 新建简历版本（选择 JD 派生的壳版本：挂 targetCompany/Position，模块复制模板作为编辑起点） */
+  createResumeVersion: (params: { name: string; targetCompany?: string; targetPosition?: string }) => string;
   /** 局部修改决策记录：引擎写回 md → 自动重扫广播；引擎离线抛错（组件 toast） */
   updateDecision: (id: string, fields: Record<string, string>) => Promise<void>;
   /** 新建岗位（M1 只有 create）：引擎写 jobs/{id}.md → jobsChanged 自动重拉 */
@@ -235,6 +243,7 @@ export const useAppStore = create<AppState>()(
       sessions: SESSIONS,
       currentSessionId: 's-current',
       applications: APPLICATIONS,
+      resumes: RESUMES,
       decisions: DECISIONS,
       contexts: [],
       knowledge: { skills: [], roles: [], status: 'idle' },
@@ -505,6 +514,37 @@ export const useAppStore = create<AppState>()(
     }))
   },
 
+  deleteApplication: (id) => {
+    set((state) => ({ applications: state.applications.filter((a) => a.id !== id) }))
+  },
+
+  createResumeVersion: ({ name, targetCompany, targetPosition }) => {
+    const personId = get().currentPersonId
+    const id = `r-${Date.now()}`
+    // 模板模块：该人第一份版本深拷贝（编辑起点），id 重生成避免冲突
+    const template = RESUMES.find((r) => r.personId === personId)
+    const modules = (template?.modules ?? []).map((m, i) => ({
+      ...m,
+      id: `m-${Date.now()}-${i}`,
+    }))
+    set((state) => ({
+      resumes: [
+        {
+          id,
+          name,
+          personId,
+          updatedAt: new Date().toISOString().slice(0, 10),
+          targetCompany,
+          targetPosition,
+          modules,
+        },
+        ...state.resumes,
+      ],
+      activeResumeId: id,
+    }))
+    return id
+  },
+
   updateDecision: async (id, fields) => {
     if (!engine) throw new Error('引擎未连接')
     await engine.updateDecision(id, fields)
@@ -756,6 +796,7 @@ export const useAppStore = create<AppState>()(
         currentPage: s.currentPage,
         mainWidthMode: s.mainWidthMode,
         applications: s.applications,
+        resumes: s.resumes,
         decisions: s.decisions,
         companies: s.companies,
         persons: s.persons,

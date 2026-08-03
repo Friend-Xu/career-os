@@ -25,7 +25,7 @@ const MAIN_NAV: NavItem[] = [
   { id: 'agent', label: '决策 Agent', icon: AutoAwesomeOutlinedIcon, shortcut: '⌘2' },
   { id: 'infopool', label: '信息池', icon: HubOutlinedIcon, shortcut: '⌘3' },
   { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘4' },
-  { id: 'jobs', label: '岗位', icon: WorkIcon, shortcut: '⌘5' },
+  { id: 'jobs', label: 'JD', icon: WorkIcon, shortcut: '⌘5' },
   { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘6' },
   { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘7' },
 ]
@@ -35,7 +35,7 @@ const SHORT_LABEL: Record<NavPageId, string> = {
   agent: 'Agent',
   infopool: '信息池',
   companies: '公司',
-  jobs: '岗位',
+  jobs: 'JD',
   applications: '投递',
   resumes: '简历',
   settings: '设置',

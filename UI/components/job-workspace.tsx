@@ -50,7 +50,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
-  const updateApplicationStatus = useAppStore((s) => s.updateApplicationStatus)
+  const addApplication = useAppStore((s) => s.addApplication)
   const setPage = useAppStore((s) => s.setPage)
   const push = useToastStore((s) => s.push)
 
@@ -92,15 +92,17 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     push('info', '已预置「简历优化」上下文')
     setPage('resumes')
   }
-  const markApplied = (): void => {
-    if (app) {
-      updateApplicationStatus(app.id, '已投递')
-    } else {
-      push('info', '请先在投递管理新增该投递记录（关联岗位）')
-      setPage('applications')
-      return
-    }
-    push('success', '已标记投递')
+  const launchApply = (): void => {
+    // 发起投递 → 自动落「已评估」（前置：JD 已分析，按钮在 analyzed 后才出现）
+    addApplication({
+      personId: person.id,
+      company: job.company,
+      position: job.title,
+      jobId: job.id,
+      status: '已评估',
+      urgency: 'waiting',
+    })
+    push('success', '已发起投递（已评估）——到投递管理推进后续状态')
   }
   const interviewPrep = (): void => {
     startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`)
@@ -175,9 +177,9 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         )}
         {st.analyzed && st.dueDiligence && !st.applied && (
           <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
-            onClick={markApplied}
+            onClick={launchApply}
             sx={{ fontSize: 12 }}>
-            已投递
+            发起投递
           </Button>
         )}
         {st.applied && !st.interviewing && (
@@ -189,9 +191,9 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         )}
       </Stack>
 
-      {/* 岗位要求 */}
+      {/* JD 要求 */}
       {job.requirements.length > 0 && (
-        <Section title="岗位要求">
+        <Section title="JD 要求">
           <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
             {job.requirements.map((r) => (
               <Chip key={r.name} size="small" label={r.name} sx={{ height: 20, fontSize: 11.5, bgcolor: COLORS.bgHover }} />
@@ -202,7 +204,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
 
       {/* 我的匹配（可解释覆盖） */}
       {job.requirements.length > 0 && (
-        <Section title="我的匹配">
+        <Section title="JD 匹配">
           {gapLoading ? (
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>计算中…</Typography>
           ) : gap && gap.satisfied.length === 0 && gap.transferable.length === 0 ? (
@@ -279,7 +281,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         <Section title="投决">
           <Stack direction="row" spacing={1.5}>
             <Box sx={{ flex: 1, p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>岗位匹配</Typography>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>JD 匹配</Typography>
               <Typography sx={{ fontSize: 12.5, color: COLORS.text }}>
                 {job.requirements.length > 0 ? `${job.requirements.length} 项要求已评估` : '未评估'}
               </Typography>

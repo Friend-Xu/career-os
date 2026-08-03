@@ -12,11 +12,11 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CloseIcon from '@mui/icons-material/Close'
 import UndoIcon from '@mui/icons-material/Undo'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { RESUMES } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
+import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 
 /** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
 const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
@@ -81,7 +81,8 @@ export function ResumesPage() {
   const cancelRewrite = useAppStore((s) => s.cancelRewrite)
   const resetRewrite = useAppStore((s) => s.resetRewrite)
   const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
-  const personResumes = useMemo(() => RESUMES.filter((r) => r.personId === person.id), [person.id])
+  const resumes = useAppStore((s) => s.resumes)
+  const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
   const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
   /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
@@ -99,6 +100,7 @@ export function ResumesPage() {
   /** 显式降级开关：error 后用户点「使用规则建议」→ 展示规则候选（R007 降级必须显式） */
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
+  const [deriveOpen, setDeriveOpen] = useState(false)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const btnRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
@@ -307,10 +309,7 @@ export function ResumesPage() {
         <Button
           size="small"
           startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
-          onClick={() => {
-            startAnalysis('请基于目标 JD 派生本简历：拆解 JD 关键词并逐模块改写')
-            push('info', '已预置「基于 JD 派生」上下文')
-          }}
+          onClick={() => setDeriveOpen(true)}
           sx={{ fontSize: 12 }}
         >
           基于 JD 派生
@@ -920,6 +919,8 @@ export function ResumesPage() {
             )}
         </Box>
       )}
+
+      <ResumeDeriveDialog open={deriveOpen} onClose={() => setDeriveOpen(false)} />
     </Box>
   )
 }

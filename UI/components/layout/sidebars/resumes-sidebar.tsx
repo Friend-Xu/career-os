@@ -1,18 +1,18 @@
 /**
- * 简历空间侧栏：版本列表（切换当前版本）。
+ * 简历空间侧栏：版本列表（切换当前版本；「选择 JD 派生」新建的版本也在这里）。
  */
 import { Stack, Typography } from '@mui/material'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import { useMemo } from 'react'
-import { RESUMES } from '../../../data/mock-data'
 import { useAppStore } from '../../../store/app-store'
 import { COLORS } from '../../../data/constants'
 
 export function ResumesSidebar() {
   const person = useAppStore((s) => s.currentPerson())
+  const resumes = useAppStore((s) => s.resumes)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
-  const personResumes = useMemo(() => RESUMES.filter((r) => r.personId === person.id), [person.id])
+  const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
 
   return (
     <Stack spacing={0.25} sx={{ p: 1.25 }}>
