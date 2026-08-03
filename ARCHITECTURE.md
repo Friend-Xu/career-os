@@ -201,7 +201,9 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 **未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map、Evidence 原子模型 / Workflow Contract / Career Graph 推理层（后三者 ADR-003/004/005 登记 defer，触发条件未到）。
 
-**进行中**：简历内容标准方向卡（8 方向 × 5 子方向调研：HR 高频词/量化锚点/强力动词/项目分组/ATS 清单——计划见 plan 文件 `pure-finding-comet.md`，Phase 1 机械工程试点）。
+**已完成（2026-08-03）**：Career Expression Standard Phase 1（机械工程）——12 岗位 JD 调研 → Signal Taxonomy → CareerContentStandard 契约 v1.1 → `standards/mechanical/` 4 语言族 → Benchmark v0.1 验证（TP/DF 20/20，防虚高红线全量生效）→ 失败归因链 A/B/C/D（ADR-006）。其余 7 方向为 Data Layer 待迁移。
+
+**进行中（下一阶段）**：Resume Intelligence 接入——Standard Runtime（UI → Agent 方向/语言族传递）→ 用户反馈闭环（Apply/Reject 回流标准）→ 真实数据 Benchmark v0.2。
 
 ## 9. 开发原则（CLAUDE.md 摘要）
 
@@ -210,6 +212,7 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 3. 单向依赖：页面 → store → 数据层 → 常量，禁反向/循环
 4. 禁止兜底：只在系统边界（用户输入、外部 API）校验，信任内部契约
 5. 环境隔离：运行时与依赖必须在项目根内（`.local/`、`node_modules/`）；禁全局安装、禁改系统 PATH
+6. 标准优先于 Prompt：Agent 行为问题优先通过知识资产与规则修正，不靠 Prompt 堆叠；失败先分类（A 标准缺失/B 标准歧义/C 链路/D 数据）再修（ADR-006）
 
 ## 10. 文档权威链（Documentation Authority）
 
