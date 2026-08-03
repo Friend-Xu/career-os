@@ -80,6 +80,7 @@ export function ResumesPage() {
   const startRewrite = useAppStore((s) => s.startRewrite)
   const cancelRewrite = useAppStore((s) => s.cancelRewrite)
   const resetRewrite = useAppStore((s) => s.resetRewrite)
+  const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
   const personResumes = useMemo(() => RESUMES.filter((r) => r.personId === person.id), [person.id])
   const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
@@ -114,6 +115,10 @@ export function ResumesPage() {
 
   /** R001：请求失效触发源——关闭/清理统一入口（running 则取消 + 复位） */
   const invalidateRewrite = () => {
+    // 2B：候选已生成但未应用 → 用户决策 reject（只记录事件，不学习）
+    if (rewrite.status === 'done' && rewrite.text.length > 0 && !revert) {
+      reportRewriteFeedback({ action: 'reject' })
+    }
     if (rewrite.status === 'thinking' || rewrite.status === 'streaming') cancelRewrite()
     else resetRewrite()
     setInstruction('')
@@ -814,6 +819,8 @@ export function ResumesPage() {
                   size="small"
                   variant="contained"
                   onClick={() => {
+                    // 2B：用户采纳 AI 候选 → apply 事件（只记录不学习）
+                    reportRewriteFeedback({ action: 'apply' })
                     applyCandidate(rewrite.text)
                     resetRewrite()
                   }}

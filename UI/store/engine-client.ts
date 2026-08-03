@@ -269,6 +269,16 @@ export class EngineClient {
     return this.rpc(METHODS.agentCancel, { taskId })
   }
 
+  /** 2B：rewrite 用户决策事件上报（只记录不学习，契约 Resume-Feedback-Contract-v1） */
+  reportRewriteFeedback(params: {
+    requestId: string
+    action: 'apply' | 'reject'
+    reason?: string
+    selectedTextHash: string
+  }): Promise<unknown> {
+    return this.rpc(METHODS.rewriteFeedback, params)
+  }
+
   permissionAgent(taskId: string, requestId: string, allow: boolean): Promise<unknown> {
     return this.rpc(METHODS.agentPermission, { taskId, requestId, allow })
   }

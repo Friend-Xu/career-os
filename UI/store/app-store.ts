@@ -11,6 +11,7 @@ import type {
   NavPageId,
   PendingPermission,
   Person,
+  RewriteFeedbackReason,
   RewriteState,
   Session,
   StageStatus,
@@ -180,6 +181,8 @@ interface AppState {
   startRewrite: (text: string, instruction: string, jdContext: string) => Promise<void>;
   cancelRewrite: () => void;
   resetRewrite: () => void;
+  /** 2B：rewrite 用户决策事件上报（只记录不学习，契约 Resume-Feedback-Contract-v1） */
+  reportRewriteFeedback: (fb: { action: 'apply' | 'reject'; reason?: RewriteFeedbackReason }) => void;
   /** 简历导出 PDF：引擎 Edge headless 渲染；未连接 → 抛错（页面降级 window.print） */
   exportResume: (html: string) => Promise<{ pdf: string; fileName: string }>;
   updateApplicationStatus: (id: number, status: Application['status']) => void;
@@ -636,7 +639,8 @@ export const useAppStore = create<AppState>()(
     try {
       const { taskId } = await engine.startAgent({ task: buildRewritePrompt(text, instruction, jdContext) })
       rewriteTaskId = taskId
-      set({ rewrite: { status: 'thinking', text: '' } })
+      const selectedTextHash = await sha256Hex(text)
+      set({ rewrite: { status: 'thinking', text: '', requestId: taskId, selectedTextHash } })
     } catch (err) {
       set({
         rewrite: {
@@ -657,6 +661,19 @@ export const useAppStore = create<AppState>()(
   resetRewrite: () => {
     rewriteTaskId = null
     set({ rewrite: { status: 'idle', text: '' } })
+  },
+
+  /** 2B：rewrite 用户决策事件上报（只记录不学习——契约 Resume-Feedback-Contract-v1） */
+  reportRewriteFeedback: (fb: { action: 'apply' | 'reject'; reason?: RewriteFeedbackReason }) => {
+    const r = get().rewrite
+    if (!engine || get().engineStatus !== 'connected') return
+    if (!r.requestId || !r.selectedTextHash) return // 规则候选/非 AI 改写不上报
+    void engine.reportRewriteFeedback({
+      requestId: r.requestId,
+      action: fb.action,
+      reason: fb.reason,
+      selectedTextHash: r.selectedTextHash,
+    })
   },
 
   exportResume: async (html) => {
@@ -705,6 +722,12 @@ const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
 
 /** 简历 AI 改写任务 id（非会话任务：事件路由到 rewrite 状态而非会话消息） */
 let rewriteTaskId: string | null = null
+
+/** 2B：选中原文 SHA-256 截断 16 位（隐私：只存 hash 不存原文，契约 Resume-Feedback-Contract-v1 §4） */
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
 
 /** 改写 prompt：只输出改写文本，避免污染浮层结果 */
 function buildRewritePrompt(text: string, instruction: string, jdContext: string): string {

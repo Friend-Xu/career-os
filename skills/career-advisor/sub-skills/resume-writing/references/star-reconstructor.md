@@ -8,6 +8,7 @@
 if 方向 == 机械工程（已迁移至 Expression Family 结构）:
   1. 读 references/direction-standards/机械工程.md（路由索引）
   2. 按岗位/子方向定位语言族 → 读 standards/mechanical/{design|automation|simulation|manufacturing}.md
+     （路径相对 sub-skills/resume-writing/ 根目录，如 skills/career-advisor/sub-skills/resume-writing/standards/mechanical/design.md）
   3. 输出时标注来源：Resume Standard Source: Career Expression Standard v1（standards/mechanical/xxx.md）
 else:
   读 references/direction-standards/{方向名}.md（旧链路，Data Layer，待 Phase 2 迁移）

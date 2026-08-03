@@ -8,6 +8,7 @@
  */
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
+import { join } from 'node:path'
 import type { EngineConfig } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
@@ -18,6 +19,7 @@ import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { exportPdf } from '../export/pdf.ts'
+import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
@@ -245,6 +247,10 @@ export async function startServer(opts: {
     [METHODS.agentPermission]: (params) => {
       const { taskId, requestId, allow } = permissionParams(params)
       agentRuntime.permission(taskId, requestId, allow)
+      return {}
+    },
+    [METHODS.rewriteFeedback]: (params) => {
+      recordRewriteFeedback(join(config.paths.logs, 'feedback'), params)
       return {}
     },
   }

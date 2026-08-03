@@ -61,6 +61,8 @@ export const METHODS = {
   agentCancel: 'agent/cancel',
   /** 工具权限决策（params: { taskId, requestId, allow } → 引擎 resolve 挂起的 canUseTool） */
   agentPermission: 'agent/permission',
+  /** 简历改写用户决策事件（params: { requestId, action, reason?, standardUsed?, selectedTextHash } → 追加 logs/feedback/rewrite-feedback.jsonl；契约 Resume-Feedback-Contract-v1，只记录不学习） */
+  rewriteFeedback: 'rewrite/feedback',
 } as const
 
 export const EVENTS = {

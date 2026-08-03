@@ -75,8 +75,20 @@ export interface RewriteError {
 export interface RewriteState {
   status: RewriteStatus
   text: string
+  /** 2B：agent 任务 id（rewrite/feedback 关联） */
+  requestId?: string
+  /** 2B：选中原文 SHA-256 截断（隐私：不存原文） */
+  selectedTextHash?: string
   error?: RewriteError
 }
+
+/** 2B：rewrite 用户决策事件（契约 Resume-Feedback-Contract-v1） */
+export type RewriteFeedbackReason =
+  | 'inaccurate_claim'
+  | 'wrong_direction'
+  | 'wording_preference'
+  | 'missing_context'
+  | 'other'
 
 export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   toolCalls?: ToolCallInfoUi[]
