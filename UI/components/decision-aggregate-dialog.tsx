@@ -9,7 +9,7 @@ import {
   Button,
   Chip,
   Divider,
-  Drawer,
+  Dialog,
   IconButton,
   Stack,
   Typography,
@@ -90,7 +90,7 @@ function RecordSummary({ record }: { record: DecisionRecord }) {
   )
 }
 
-export function DecisionAggregateDrawer({
+export function DecisionAggregateDialog({
   open,
   aggregate,
   onClose,
@@ -109,23 +109,24 @@ export function DecisionAggregateDrawer({
   }, [open])
 
   return (
-    <Drawer
-      anchor="right"
+    <Dialog
+
       open={open}
       onClose={onClose}
       slotProps={{
         paper: {
           sx: {
-            width: 400,
+            width: 460,
+            maxWidth: '92vw',
+            borderRadius: '12px',
             bgcolor: COLORS.bgElevated,
-            borderLeft: `1px solid ${COLORS.border}`,
             backgroundImage: 'none',
           },
         },
       }}
     >
       {aggregate && (
-        <Box sx={{ height: '100%', overflow: 'auto', p: 2.5 }}>
+        <Box sx={{ maxHeight: '80vh', overflow: 'auto', p: 2.5 }}>
           {/* 顶部：问题 + 状态 */}
           <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }}>
             <Typography sx={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0 }}>
@@ -355,6 +356,6 @@ export function DecisionAggregateDrawer({
           </Typography>
         </Box>
       )}
-    </Drawer>
+    </Dialog>
   )
 }

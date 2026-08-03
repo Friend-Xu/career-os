@@ -111,6 +111,7 @@ export type NavPageId =
   | 'agent'
   | 'infopool'
   | 'companies'
+  | 'jobs'
   | 'applications'
   | 'resumes'
   | 'settings';
@@ -123,6 +124,8 @@ export interface DecisionStage {
   direction?: string;
   city?: string;
   nextActions?: string[];
+  /** 该阶段全部合法决策 id（引擎链投影透传；阶段点击 → 决策列表） */
+  decisionIds?: string[];
 }
 
 export interface Park {

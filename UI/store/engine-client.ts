@@ -13,6 +13,7 @@ import type {
   DecisionRecord,
   GapResult,
   HealthReport,
+  JobRecord,
   Person,
   PoolEdge,
   PoolNode,
@@ -32,6 +33,7 @@ export interface InitResult {
 }
 
 export type DecisionView = DecisionRecord & { validation?: Validation }
+export type JobView = JobRecord & { validation?: Validation }
 
 export interface GraphResult {
   nodes: PoolNode[]
@@ -210,8 +212,41 @@ export class EngineClient {
     return this.rpc<{ count: number }>(METHODS.rescan)
   }
 
+  /** 局部修改决策记录（引擎写回 md → watcher 自动重扫 → data.decisions.changed 广播） */
+  updateDecision(id: string, fields: Record<string, string>): Promise<{ id: string; updatedFields: string[] }> {
+    return this.rpc<{ id: string; updatedFields: string[] }>(METHODS.updateDecision, { id, fields })
+  }
+
   listChains(): Promise<DecisionChain[]> {
     return this.rpc<DecisionChain[]>(METHODS.chain)
+  }
+
+  /** 新建岗位（M1 只有 create；返回 JobRecord） */
+  createJob(params: {
+    company: string
+    title: string
+    location?: string
+    salary?: string
+    jdSource?: string
+    requirements?: string
+    jdText?: string
+  }): Promise<JobRecord> {
+    return this.rpc<JobRecord>(METHODS.createJob, params)
+  }
+
+  /** 全量岗位列表（含校验标记） */
+  listJobs(): Promise<JobView[]> {
+    return this.rpc<JobView[]>(METHODS.listJobs)
+  }
+
+  /** 单个岗位 */
+  getJob(id: string): Promise<JobRecord> {
+    return this.rpc<JobRecord>(METHODS.getJob, { id })
+  }
+
+  /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
+  matchJob(jobId: string, person: string): Promise<GapResult> {
+    return this.rpc<GapResult>(METHODS.matchJob, { id: jobId, person })
   }
 
   listContexts(): Promise<DecisionAggregate[]> {
