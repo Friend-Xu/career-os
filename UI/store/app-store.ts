@@ -10,6 +10,7 @@ import type {
   NavPageId,
   PendingPermission,
   Person,
+  RewriteState,
   Session,
   StageStatus,
 } from '../types'
@@ -763,7 +764,19 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         break
       case 'done':
         rewriteTaskId = null
-        useAppStore.setState((s) => ({ rewrite: { ...s.rewrite, status: 'done' } }))
+        useAppStore.setState((s) => {
+          // R004：Agent 空输出 → empty_output（retryable），不做静默成功
+          if (s.rewrite.text.trim().length === 0) {
+            return {
+              rewrite: {
+                ...s.rewrite,
+                status: 'error',
+                error: { code: 'empty_output', message: '未生成改写内容，请重试', retryable: true },
+              },
+            }
+          }
+          return { rewrite: { ...s.rewrite, status: 'done' } }
+        })
         break
       case 'error':
         rewriteTaskId = null
@@ -960,6 +973,17 @@ export function connectEngine(): void {
   engine = createEngineClient()
   engine.on('status', (s) => {
     useAppStore.setState({ engineStatus: s as EngineStatus })
+    // R002：断线时进行中的改写任务 → transport_error（事件流不会再送达）
+    if (s !== 'connected' && rewriteTaskId !== null) {
+      rewriteTaskId = null
+      useAppStore.setState((st) => ({
+        rewrite: {
+          ...st.rewrite,
+          status: 'error',
+          error: { code: 'transport_error', message: '连接中断，未完成改写', retryable: true },
+        },
+      }))
+    }
     if (s === 'connected') {
       void pullDecisions()
       void pullChains()

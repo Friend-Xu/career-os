@@ -5,6 +5,7 @@
  */
 import type {
   AgentError,
+  AgentErrorCode,
   AgentRuntimeEvent,
   Person,
   DecisionRecord,
@@ -62,10 +63,17 @@ export interface PendingPermission {
 
 /** 简历 AI 改写任务状态（浮层状态机；running 事件流由 handleAgentEvent 分叉路由） */
 export type RewriteStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'error'
+/** UI 本地改写错误（引擎 AgentErrorCode 之外：R002 断线 / R004 空输出——不经引擎事件） */
+export type RewriteErrorCode = AgentErrorCode | 'empty_output' | 'transport_error'
+export interface RewriteError {
+  code: RewriteErrorCode
+  message: string
+  retryable: boolean
+}
 export interface RewriteState {
   status: RewriteStatus
   text: string
-  error?: AgentError
+  error?: RewriteError
 }
 
 export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {

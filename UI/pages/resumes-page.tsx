@@ -19,7 +19,7 @@ import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
 
-/** 改写策略模板：候选基于选中原文生成（演示模式，规则驱动而非真实 LLM）。 */
+/** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
 const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
   {
     tag: '量化增强',
@@ -36,12 +36,20 @@ const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
   },
 ]
 
+/** 常用改写意图（Revision Request 快捷入口，对应契约 intent chips） */
+const INTENT_CHIPS = ['对齐 JD', '更精简', '量化增强', '更专业'] as const
+
 export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
+  const engineStatus = useAppStore((s) => s.engineStatus)
+  const rewrite = useAppStore((s) => s.rewrite)
+  const startRewrite = useAppStore((s) => s.startRewrite)
+  const cancelRewrite = useAppStore((s) => s.cancelRewrite)
+  const resetRewrite = useAppStore((s) => s.resetRewrite)
   const personResumes = useMemo(() => RESUMES.filter((r) => r.personId === person.id), [person.id])
   const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
@@ -52,29 +60,55 @@ export function ResumesPage() {
     moduleId: string;
     text: string;
   } | null>(null)
-  /** 候选卡片展开状态 */
+  /** 改写浮层展开状态 */
   const [cardOpen, setCardOpen] = useState(false)
   const [cardPos, setCardPos] = useState<{ top: number; left: number } | null>(null)
+  /** 改写指令输入（Revision Request 的约束表达） */
+  const [instruction, setInstruction] = useState('')
+  /** 显式降级开关：error 后用户点「使用规则建议」→ 展示规则候选（R007 降级必须显式） */
+  const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const btnRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+
+  /** 改写目标岗位上下文（prompt 注入；契约允许"参考 JD 上下文"，非自动匹配） */
+  const jdContext = resume?.targetPosition
+    ? `目标职位：${resume.targetPosition}${resume.targetCompany ? `（${resume.targetCompany}）` : ''}`
+    : ''
 
   const closeAll = () => {
     setSelButton(null)
     setCardOpen(false)
   }
 
-  // 点击按钮/卡片之外 → 关闭候选卡片（非模态，不吞点击）
+  /** R001：请求失效触发源——关闭/清理统一入口（running 则取消 + 复位） */
+  const invalidateRewrite = () => {
+    if (rewrite.status === 'thinking' || rewrite.status === 'streaming') cancelRewrite()
+    else resetRewrite()
+    setInstruction('')
+    setFallbackOpen(false)
+  }
+
+  // R001：切换简历（模块上下文变化）→ 清理浮层与进行中的改写请求
+  useEffect(() => {
+    closeAll()
+    invalidateRewrite()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeResumeId])
+
+  // 点击按钮/卡片之外 → 关闭改写浮层（非模态，不吞点击；R001 场景 B：关闭即取消请求）
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement
       if (cardRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      if (cardOpen) invalidateRewrite()
       setCardOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardOpen])
 
   // 切人时：activeResumeId 不在当前人名下 → 回退到当前人第一份
   useEffect(() => {
@@ -113,6 +147,9 @@ export function ResumesPage() {
       setSelButton((prev) => (prev ? null : prev))
       return
     }
+    // R001 场景 A：新选区产生 → 旧改写请求立即失效（绑定旧上下文）
+    if (rewrite.status === 'thinking' || rewrite.status === 'streaming') cancelRewrite()
+    setInstruction('')
     // textarea 选区的 range 无布局信息（rect 为 0×0），回退到元素 rect
     let rect = null
     if (sel && sel.rangeCount > 0) {
@@ -519,7 +556,7 @@ export function ResumesPage() {
         </Box>
       )}
 
-      {/* 候选卡片：非模态（不吞点击），点外部/× 关闭 */}
+      {/* 改写浮层：非模态（不吞点击），点外部/× 关闭；在线=指令式改写，离线=规则建议降级 */}
       {cardOpen && cardPos && selButton && (
         <Box
           ref={cardRef}
@@ -528,7 +565,7 @@ export function ResumesPage() {
             top: cardPos.top,
             left: cardPos.left,
             zIndex: 1300,
-            width: 400,
+            width: 440,
             p: 1.5,
             bgcolor: COLORS.bgElevated,
             backgroundImage: 'none',
@@ -540,13 +577,19 @@ export function ResumesPage() {
         >
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1 }}>
             <AutoAwesomeIcon sx={{ fontSize: 14, color: COLORS.accent }} />
-            <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
-              AI 改写候选
-            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>请求改写</Typography>
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              基于选中原文生成
+              {engineStatus === 'connected' ? 'Agent 生成候选' : '规则建议（引擎离线）'}
             </Typography>
-            <IconButton size="small" onClick={closeAll} aria-label="关闭候选" sx={{ p: 0.25 }}>
+            <IconButton
+              size="small"
+              onClick={() => {
+                invalidateRewrite()
+                closeAll()
+              }}
+              aria-label="关闭改写"
+              sx={{ p: 0.25 }}
+            >
               <CloseIcon sx={{ fontSize: 15, color: COLORS.textMuted }} />
             </IconButton>
           </Stack>
@@ -565,29 +608,248 @@ export function ResumesPage() {
             原文: {selButton.text.slice(0, 80)}
             {selButton.text.length > 80 ? '…' : ''}
           </Typography>
-          <Stack spacing={0.75}>
-            {candidates.map((c, i) => (
+
+          {/* 在线 idle：意图 chips + 约束输入（Revision Request 捕获器） */}
+          {engineStatus === 'connected' && rewrite.status === 'idle' && (
+            <>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
+                期望怎么改？
+              </Typography>
+              <Stack direction="row" spacing={0.5} sx={{ mb: 1, flexWrap: 'wrap', gap: 0.5 }}>
+                {INTENT_CHIPS.map((chip) => (
+                  <Chip
+                    key={chip}
+                    size="small"
+                    label={chip}
+                    onClick={() => setInstruction(chip)}
+                    sx={{
+                      height: 22,
+                      fontSize: 11.5,
+                      cursor: 'pointer',
+                      bgcolor: instruction === chip ? COLORS.accentMuted : COLORS.bgHover,
+                      color: instruction === chip ? COLORS.accent : COLORS.textSecondary,
+                      border: `1px solid ${instruction === chip ? COLORS.accent : COLORS.border}`,
+                    }}
+                  />
+                ))}
+              </Stack>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  placeholder="补充要求（可选）：不要像教程，要像产品介绍…"
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void startRewrite(selButton.text, instruction.trim() || '优化表述', jdContext)
+                    }
+                  }}
+                  sx={{
+                    '& .MuiInputBase-root': { fontSize: 12.5, bgcolor: COLORS.bgHover },
+                  }}
+                />
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => void startRewrite(selButton.text, instruction.trim() || '优化表述', jdContext)}
+                  sx={{ fontSize: 12, minWidth: 0, px: 1.5, height: 32 }}
+                >
+                  生成改写
+                </Button>
+              </Stack>
+            </>
+          )}
+
+          {/* 在线 running：思考胶囊 + 流式候选 */}
+          {(rewrite.status === 'thinking' || rewrite.status === 'streaming') && (
+            <>
+              {rewrite.status === 'thinking' && (
+                <Box
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    px: 1.5,
+                    py: 0.5,
+                    mb: 1,
+                    borderRadius: '999px',
+                    bgcolor: COLORS.bgHover,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
+                    思考中
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {[0, 1, 2].map((i) => (
+                      <Box
+                        key={i}
+                        sx={{
+                          width: 4,
+                          height: 4,
+                          borderRadius: '50%',
+                          bgcolor: COLORS.textMuted,
+                          animation: `cos-thinking-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              )}
               <Box
-                key={i}
-                onClick={() => applyCandidate(c)}
                 sx={{
                   p: 1.25,
                   borderRadius: '6px',
+                  bgcolor: COLORS.bgHover,
                   border: `1px solid ${COLORS.border}`,
-                  cursor: 'pointer',
-                  '&:hover': {
-                    borderColor: COLORS.accent,
-                    bgcolor: COLORS.accentMuted,
-                  },
+                  minHeight: 64,
+                  maxHeight: 160,
+                  overflow: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  fontSize: 12.5,
+                  lineHeight: 1.6,
+                  color: COLORS.text,
                 }}
               >
-                <Typography sx={{ fontSize: 11.5, color: COLORS.accent, mb: 0.25 }}>
-                  {CANDIDATE_RULES[i].tag}
-                </Typography>
-                <Typography sx={{ fontSize: 12, lineHeight: 1.5 }}>{c}</Typography>
+                {rewrite.text || '正在生成改写建议…'}
               </Box>
-            ))}
-          </Stack>
+            </>
+          )}
+
+          {/* 在线 done：并排对比（原文 vs 候选）+ 应用/再调整 */}
+          {engineStatus === 'connected' && rewrite.status === 'done' && (
+            <>
+              <Stack direction="row" spacing={0.75} sx={{ mb: 0.5 }}>
+                <Typography sx={{ flex: 1, fontSize: 11.5, color: COLORS.textMuted }}>原文</Typography>
+                <Typography sx={{ flex: 1, fontSize: 11.5, color: COLORS.accent }}>改写建议</Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.75} sx={{ mb: 1 }}>
+                <Box
+                  sx={{
+                    flex: 1,
+                    p: 1,
+                    borderRadius: '6px',
+                    bgcolor: COLORS.bgHover,
+                    border: `1px solid ${COLORS.border}`,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    maxHeight: 120,
+                    overflow: 'auto',
+                    color: COLORS.textMuted,
+                  }}
+                >
+                  {selButton.text}
+                </Box>
+                <Box
+                  sx={{
+                    flex: 1,
+                    p: 1,
+                    borderRadius: '6px',
+                    bgcolor: alpha(COLORS.accent, 0.06),
+                    border: `1px solid ${alpha(COLORS.accent, 0.3)}`,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    maxHeight: 120,
+                    overflow: 'auto',
+                    color: COLORS.text,
+                  }}
+                >
+                  {rewrite.text}
+                </Box>
+              </Stack>
+              <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
+                <Button
+                  size="small"
+                  onClick={() => resetRewrite()}
+                  sx={{ fontSize: 12, minWidth: 0 }}
+                >
+                  再调整
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => {
+                    applyCandidate(rewrite.text)
+                    resetRewrite()
+                  }}
+                  sx={{ fontSize: 12, minWidth: 0, px: 1.5 }}
+                >
+                  应用改写
+                </Button>
+              </Stack>
+            </>
+          )}
+
+          {/* 在线 error：错误卡 + 重试 + 显式降级 */}
+          {engineStatus === 'connected' && rewrite.status === 'error' && (
+            <>
+              <Box
+                sx={{
+                  p: 1,
+                  mb: 1,
+                  borderRadius: '6px',
+                  bgcolor: alpha(COLORS.riskHigh, 0.08),
+                  border: `1px solid ${alpha(COLORS.riskHigh, 0.3)}`,
+                  fontSize: 12,
+                  color: COLORS.textSecondary,
+                }}
+              >
+                {rewrite.error?.message ?? '改写失败'}
+              </Box>
+              <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
+                <Button
+                  size="small"
+                  onClick={() => setFallbackOpen(true)}
+                  sx={{ fontSize: 12, minWidth: 0 }}
+                >
+                  使用规则建议
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => void startRewrite(selButton.text, instruction.trim() || '优化表述', jdContext)}
+                  sx={{ fontSize: 12, minWidth: 0, px: 1.5 }}
+                >
+                  重新生成
+                </Button>
+              </Stack>
+            </>
+          )}
+
+          {/* 降级候选（R007 显式）：离线 idle 直接可用；在线 error 后经「使用规则建议」进入 */}
+          {((engineStatus !== 'connected' && rewrite.status === 'idle') ||
+            (engineStatus === 'connected' && rewrite.status === 'error' && fallbackOpen)) && (
+            <>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
+                AI 改写不可用，使用规则建议：
+              </Typography>
+                <Stack spacing={0.75}>
+                  {candidates.map((c, i) => (
+                    <Box
+                      key={i}
+                      onClick={() => applyCandidate(c)}
+                      sx={{
+                        p: 1.25,
+                        borderRadius: '6px',
+                        border: `1px solid ${COLORS.border}`,
+                        cursor: 'pointer',
+                        '&:hover': {
+                          borderColor: COLORS.accent,
+                          bgcolor: COLORS.accentMuted,
+                        },
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 11.5, color: COLORS.accent, mb: 0.25 }}>
+                        {CANDIDATE_RULES[i].tag}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, lineHeight: 1.5 }}>{c}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </>
+            )}
         </Box>
       )}
     </Box>
