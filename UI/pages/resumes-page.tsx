@@ -11,7 +11,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CloseIcon from '@mui/icons-material/Close'
 import UndoIcon from '@mui/icons-material/Undo'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { RESUMES } from '../data/mock-data'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
@@ -192,16 +192,29 @@ export function ResumesPage() {
       if (r.width > 0 && r.height > 0) rect = r
     }
     if (!rect) rect = el.getBoundingClientRect()
-    // 按钮右对齐选区底边，防止超出视口
+    // 按钮右对齐选区底边；left/top 均防视口溢出（底部选区时按钮上移，避免出现在视口外）
     const left = Math.min(rect.right - 92, window.innerWidth - 104)
-    setSelButton({ top: rect.bottom + 4, left, moduleId, text })
+    const top = Math.min(rect.bottom + 4, window.innerHeight - 40)
+    setSelButton({ top, left, moduleId, text })
   }
 
   const openCard = () => {
     if (!selButton) return
-    setCardPos({ top: selButton.top + 30, left: selButton.left })
+    // 初值防溢出：底部选区时浮层上移（浮层高度未知，先用估计值，渲染后实测修正）
+    const top = Math.min(selButton.top + 30, window.innerHeight - 260)
+    setCardPos({ top: Math.max(8, top), left: selButton.left })
     setCardOpen(true)
   }
+
+  // 浮层渲染前按实际高度修正位置（useLayoutEffect：绘制前完成，浮层首次渲染即正确位置，
+  // 避免打开后 DOM 移动导致 mousedown/mouseup 坐标不一致而吞掉首次点击）
+  useLayoutEffect(() => {
+    if (!cardOpen || !cardRef.current || !cardPos) return
+    const h = cardRef.current.offsetHeight
+    const maxTop = window.innerHeight - h - 8
+    if (cardPos.top > maxTop) setCardPos({ ...cardPos, top: Math.max(8, maxTop) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardOpen])
 
   // 原生 select 事件不冒泡，且 MUI 不会把 onSelect 透传到 textarea——
   // 只能直接在元素上绑定原生监听器
