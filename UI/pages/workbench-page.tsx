@@ -16,6 +16,9 @@ import { useAppStore } from '../store/app-store'
 import { computePoolStats } from '../store/engine-client'
 import { DecisionAggregateDialog } from '../components/decision-aggregate-dialog'
 import { DecisionEditDialog } from '../components/decision-edit-dialog'
+import { DirectionsView } from '../components/workbench/directions-view'
+import { CitiesView } from '../components/workbench/cities-view'
+import { DecisionsView } from '../components/workbench/decisions-view'
 import { POOL_HEALTH } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, NavPageId, RiskLevel } from '../types'
@@ -449,8 +452,20 @@ function PoolHealthCard() {
 
 export function WorkbenchPage() {
   const mode = useAppStore((s) => s.mainWidthMode)
+  const view = useAppStore((s) => s.workbenchView)
 
   const maxW = mode === 'narrow' ? 810 : mode === 'wide' ? 1160 : '100%'
+
+  // 子视图界面（方向/城市/决策记录）：非弹窗，主区整页渲染
+  if (view !== 'dashboard') {
+    return (
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {view === 'directions' && <DirectionsView />}
+        {view === 'cities' && <CitiesView />}
+        {view === 'decisions' && <DecisionsView />}
+      </Box>
+    )
+  }
 
   return (
     <Box
