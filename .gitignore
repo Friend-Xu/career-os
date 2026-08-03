@@ -30,6 +30,9 @@ graph-force-1.png
 # Local Claude settings（本机权限/hooks 配置，不入库）
 .claude/settings.local.json
 
+# Project-level agent guidance（开发约定不入库；AGENTS.md 保留）
+/CLAUDE.md
+
 # Local scripts
 __启动脚本.bat
 
