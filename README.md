@@ -7,7 +7,7 @@
 一句话描述你的处境，输出有数据支撑、可执行的职业决策——
 从方向探索到简历撰写，覆盖求职决策全链路。
 
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 
 [中文](README.md) | [English](README.en.md)
@@ -120,4 +120,4 @@ bash scripts/install-to-cli.sh --codex   # 复制到 Codex skills 目录
 
 ## License
 
-MIT
+[GNU GPL v3](LICENSE)

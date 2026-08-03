@@ -7,7 +7,7 @@
 Describe your situation in one sentence. Get an executable, data-backed career decision —
 from direction exploration to resume writing, covering the full decision chain.
 
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 
 [English](README.en.md) | [中文](README.md)
@@ -101,4 +101,4 @@ Search-tool support varies by CLI — see the [CLI compatibility matrix](docs/CL
 
 ## License
 
-MIT
+[GNU GPL v3](LICENSE)
