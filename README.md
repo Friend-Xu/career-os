@@ -1,6 +1,6 @@
 <div align="center">
 
-# career-advisor
+# Career OS
 
 **求职最贵的不是投简历，是选错方向。**
 
@@ -37,11 +37,28 @@
 
 → 阅读完整案例：[docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md)
 
+## 界面预览
+
+<table>
+<tr>
+<td><img src="docs/screenshots/01-workbench.png" alt="工作台" width="100%"/><br/><sub>工作台：决策链 + 下一步行动</sub></td>
+<td><img src="docs/screenshots/02-agent.png" alt="决策 Agent" width="100%"/><br/><sub>决策 Agent：真实 LLM 对话（流式回复 / 提问卡片 / 权限弹窗）</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/03-infopool.png" alt="信息池" width="100%"/><br/><sub>信息池：决策 / 公司 / 方向 / 城市图谱</sub></td>
+<td><img src="docs/screenshots/04-companies.png" alt="公司探索" width="100%"/><br/><sub>公司探索：目标公司列表 + 尽调入口</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/05-applications.png" alt="投递管理" width="100%"/><br/><sub>投递管理：申请进度看板</sub></td>
+<td><img src="docs/screenshots/06-resumes.png" alt="简历中心" width="100%"/><br/><sub>简历中心：划词 AI 改写 + 基于 JD 派生</sub></td>
+</tr>
+</table>
+
 ## 快速开始
 
 ```bash
-git clone https://github.com/Friend-Xu/career-advisor.git
-cd career-advisor
+git clone https://github.com/Friend-Xu/career-os.git
+cd career-os
 claude --plugin-dir .
 ```
 
@@ -66,7 +83,7 @@ claude --plugin-dir .
 
 除 CLI 技能外，项目含本地工作台：引擎（Node 24 原生 TS，`engine/`）解析 markdown 数据并提供 WebSocket 桥，UI（Vite，`UI/`）可视化决策链、信息池图谱与公司档案。
 
-**一键启动**：双击 `__启动服务.bat`，或 `node start-all.mjs`（并发拉起引擎 + Vite dev）。
+**一键启动**：双击 `StarWebtUI.bat`（或 `node start-all.mjs`），并发拉起引擎 + Vite dev。项目内置便携 node（`.local/node/`），不依赖系统 Node/PATH。
 
 **端口与配置**：
 

@@ -16,6 +16,7 @@ docs/*
 !docs/CLI-COMPATIBILITY.md
 !docs/PRINCIPLES.md
 !docs/case-studies/
+!docs/screenshots/
 
 # Test artifacts
 .playwright-mcp/

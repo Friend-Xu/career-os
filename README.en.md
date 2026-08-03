@@ -1,6 +1,6 @@
 <div align="center">
 
-# career-advisor
+# Career OS
 
 **The most expensive part of a job search isn't sending resumes. It's picking the wrong direction.**
 
@@ -36,11 +36,28 @@ Walked the full chain with career-advisor: transition feasibility (75% match, so
 
 → Read the full case study: [docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md) (Chinese, virtual test user)
 
+## Screenshots
+
+<table>
+<tr>
+<td><img src="docs/screenshots/01-workbench.png" alt="Workbench" width="100%"/><br/><sub>Workbench: decision chain + next action</sub></td>
+<td><img src="docs/screenshots/02-agent.png" alt="Decision Agent" width="100%"/><br/><sub>Decision Agent: real LLM chat (streaming / question cards / permission dialogs)</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/03-infopool.png" alt="Info Pool" width="100%"/><br/><sub>Info pool: decisions / companies / directions / cities graph</sub></td>
+<td><img src="docs/screenshots/04-companies.png" alt="Companies" width="100%"/><br/><sub>Company explorer: target list + due diligence entry</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/05-applications.png" alt="Applications" width="100%"/><br/><sub>Applications: application progress board</sub></td>
+<td><img src="docs/screenshots/06-resumes.png" alt="Resumes" width="100%"/><br/><sub>Resume center: AI rewrite + JD-driven derivation</sub></td>
+</tr>
+</table>
+
 ## Quick Start
 
 ```bash
-git clone https://github.com/Friend-Xu/career-advisor.git
-cd career-advisor
+git clone https://github.com/Friend-Xu/career-os.git
+cd career-os
 claude --plugin-dir .
 ```
 
