@@ -497,6 +497,7 @@ export function InfoPoolPage() {
   const companies = useAppStore((s) => s.companies)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const engineStatus = useAppStore((s) => s.engineStatus)
+  const health = useAppStore((s) => s.health)
   const poolGraph = useAppStore((s) => s.poolGraph)
   const push = useToastStore((s) => s.push)
 
@@ -506,10 +507,13 @@ export function InfoPoolPage() {
   /** 孤立节点数（真实计算：edges 无连接的节点） */
   const isolatedCount = useMemo(() => (poolGraph ? computePoolStats(poolGraph).isolated : 0), [poolGraph])
 
+  // 健康投影（契约 v1）：优先 engine health 角标；offline → 图谱本地估算 → mock
   const healthPercent =
-    engineStatus === 'connected' && nodes.length > 0
-      ? Math.round((1 - isolatedCount / nodes.length) * 100)
-      : POOL_HEALTH.healthPercent
+    health && engineStatus === 'connected'
+      ? health.overallScore
+      : engineStatus === 'connected' && nodes.length > 0
+        ? Math.round((1 - isolatedCount / nodes.length) * 100)
+        : POOL_HEALTH.healthPercent
 
   /** 当前右键节点的公司档案（仅 company 节点可能命中）。 */
   const menuCompany = menu ? companies.find((c) => c.name === menu.node.label) : undefined

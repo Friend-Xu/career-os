@@ -6,6 +6,7 @@ import type {
   Company,
   DecisionRecord,
   DecisionStage,
+  HealthReport,
   MainWidthMode,
   NavPageId,
   PendingPermission,
@@ -124,6 +125,8 @@ interface AppState {
   contexts: DecisionAggregate[];
   /** 知识层（V2）：技能词表 + 岗位清单（引擎实时派生，不持久化；status 标注 RPC 成败——视图按诚实空态消费） */
   knowledge: { skills: Skill[]; roles: Role[]; status: 'idle' | 'ready' | 'error' };
+  /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
+  health: HealthReport | null;
   companies: CompanyView[];
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
@@ -202,6 +205,7 @@ export const useAppStore = create<AppState>()(
       decisions: DECISIONS,
       contexts: [],
       knowledge: { skills: [], roles: [], status: 'idle' },
+      health: null,
       companies: COMPANIES,
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
@@ -910,6 +914,17 @@ async function pullKnowledge(): Promise<void> {
   }
 }
 
+/** 健康投影（契约 v1）：system/health RPC；失败保持 null（页面 mock 兜底，不假死） */
+async function pullHealth(): Promise<void> {
+  if (!engine) return
+  try {
+    const report = await engine.health()
+    useAppStore.setState({ health: report })
+  } catch {
+    // offline/旧引擎：保持 null
+  }
+}
+
 /** 引擎决策链 6 阶段中文名 → UI DecisionStage.id */
 const STAGE_ID_BY_NAME: Record<DecisionChain['stages'][number]['stage'], string> = {
   方向探索: 'direction',
@@ -991,6 +1006,7 @@ export function connectEngine(): void {
       void pullGraph()
       void pullContexts()
       void pullKnowledge()
+      void pullHealth()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {

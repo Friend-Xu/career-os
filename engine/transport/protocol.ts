@@ -49,6 +49,8 @@ export const METHODS = {
   listPersons: 'persons/list',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
+  /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */
+  health: 'system/health',
   /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送） */
   agentStart: 'agent/start',
   /** 回答 AskUserQuestion（params: { taskId, text }） */

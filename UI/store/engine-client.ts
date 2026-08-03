@@ -12,6 +12,7 @@ import type {
   DecisionChain,
   DecisionRecord,
   GapResult,
+  HealthReport,
   Person,
   PoolEdge,
   PoolNode,
@@ -235,6 +236,11 @@ export class EngineClient {
 
   poolGraph(): Promise<GraphResult> {
     return this.rpc<GraphResult>(METHODS.poolGraph)
+  }
+
+  /** 健康投影（契约 v1；与 CLI --doctor 同一计算源） */
+  health(): Promise<HealthReport> {
+    return this.rpc<HealthReport>(METHODS.health)
   }
 
   // ─── Agent 通道（真实 LLM 流；事件经 agent.event 订阅）───────────────────

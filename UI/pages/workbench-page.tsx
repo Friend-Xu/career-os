@@ -361,10 +361,20 @@ function DecisionTimeline() {
 function PoolHealthCard() {
   const setPage = useAppStore((s) => s.setPage)
   const poolGraph = useAppStore((s) => s.poolGraph)
+  const health = useAppStore((s) => s.health)
   const engineStatus = useAppStore((s) => s.engineStatus)
 
-  // connected：从引擎图谱真实计算（健康 = 1 - 孤立/总数）；offline：mock 静态值
+  // 健康投影（契约 v1）：引擎 health RPC 为唯一计算源；offline/未达 → 回退图谱本地估算 → mock
   const h = (() => {
+    if (health) {
+      const graphDim = health.dimensions.find((d) => d.name === 'graph')
+      return {
+        healthPercent: health.overallScore,
+        totalNodes: poolGraph?.nodes.length ?? 0,
+        isolatedNodes: graphDim?.issues.find((i) => i.message.includes('孤立'))?.count ?? 0,
+        missingFields: 0,
+      }
+    }
     if (poolGraph && engineStatus === 'connected' && poolGraph.nodes.length > 0) {
       const stats = computePoolStats(poolGraph)
       return {

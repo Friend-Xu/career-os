@@ -276,3 +276,22 @@ export type AgentRuntimeEvent =
   | { type: 'session_id'; sessionId: string }
   | { type: 'done'; result: string }
   | { type: 'error'; error: AgentError }
+
+/** 健康投影（HealthReport 契约 v1，docs/contracts/HealthReport-contract-v1.md；CLI --doctor 与 UI 共用单一计算源） */
+export interface HealthIssue {
+  severity: 'error' | 'warn'
+  message: string
+  count: number
+}
+export type DimensionName = 'workspace' | 'decisions' | 'graph' | 'knowledge'
+export interface HealthDimension {
+  name: DimensionName
+  score: number // 0-100
+  issues: HealthIssue[]
+}
+export interface HealthReport {
+  overallScore: number // 0-100 = avg(dimensions[].score)
+  dimensions: HealthDimension[]
+  generatedAt: string
+  version: number
+}

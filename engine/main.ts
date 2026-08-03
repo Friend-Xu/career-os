@@ -10,6 +10,7 @@ import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
+import { generateHealthReport } from './health/checker.ts'
 import { ServerError, startServer } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 
@@ -52,6 +53,22 @@ async function main(args: string[]): Promise<void> {
     const initial = scanDecisions(ws)
     projection.syncFromDecisions(initial)
     logger.info(`投影就绪：decisions ${initial.length} 条（db ${config.paths.db}）`)
+
+    // ─── 健康检查（--doctor）：契约 v1 四维度投影，CLI 一次性输出（与 system/health RPC 同一计算源）
+    if (args.includes('--doctor')) {
+      const report = generateHealthReport(ws, projection)
+      const rule = (s: number): string => (s >= 90 ? '✓' : s >= 70 ? '⚠' : '✗')
+      console.log('Career Doctor')
+      console.log('━━━━━━━━━━━━━━━━')
+      for (const d of report.dimensions) {
+        console.log(`${rule(d.score)} ${d.name}: ${d.score}%`)
+        for (const issue of d.issues) {
+          console.log(`   ${issue.severity === 'error' ? '✗' : '⚠'} ${issue.message}${issue.count > 1 ? `（${issue.count}）` : ''}`)
+        }
+      }
+      console.log(`总体健康度：${report.overallScore}%（version ${report.version}）`)
+      return
+    }
 
     // ─── WebSocket 桥（RPC + 事件广播；决策链状态机 + Agent 运行时注入，derived 视图按需计算）──
     const runtime = new DecisionRuntime()

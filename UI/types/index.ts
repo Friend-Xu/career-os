@@ -7,6 +7,7 @@ import type {
   AgentError,
   AgentErrorCode,
   AgentRuntimeEvent,
+  HealthReport,
   Person,
   DecisionRecord,
   CompanyRecord,
@@ -30,6 +31,7 @@ export type { PoolNode as InfoNode };
 export type { PoolEdge as InfoEdge };
 export type { Application };
 export type { GapResult };
+export type { HealthReport };
 export type { RiskLevel };
 export type { ApplicationStatus };
 export type { FollowupUrgency };

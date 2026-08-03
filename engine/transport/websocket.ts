@@ -16,6 +16,7 @@ import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
+import { generateHealthReport } from '../health/checker.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
@@ -210,6 +211,7 @@ export async function startServer(opts: {
     [METHODS.contexts]: () => listContexts(workspace, store),
     [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
+    [METHODS.health]: () => generateHealthReport(workspace, store),
     [METHODS.agentStart]: (params) => ({
       taskId: agentRuntime.start(agentStartParams(params), {
         permissionMode: config.agent.permissionMode,
