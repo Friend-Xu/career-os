@@ -94,21 +94,27 @@ function companyPos(c: Company, idx: number): [number, number] {
   return [base[0] + ((idx % 5) - 2) * 0.06, base[1] + ((idx % 3) - 1) * 0.06]
 }
 
-/** 公司 Marker 内容（风险色圆点 + 公司名；AMap.Marker content 要求 HTML 字符串，CSS 变量跟随主题） */
-function markerHtml(c: Company, active: boolean): string {
-  const dot = active ? 'var(--cos-on-accent)' : RISK_COLOR[c.riskLevel]
-  const border = active ? 'var(--cos-accent)' : RISK_COLOR[c.riskLevel]
-  return [
-    '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;',
-    `background:${active ? 'var(--cos-accent)' : 'var(--cos-bg-elevated)'};`,
-    `border:1.5px solid ${border};`,
-    `box-shadow:${active ? '0 0 0 4px rgba(0,0,0,0.10)' : 'none'};`,
-    'cursor:pointer;white-space:nowrap;font-size:12px;',
-    `font-weight:${active ? 600 : 500};color:${active ? 'var(--cos-on-accent)' : 'var(--cos-text)'}">`,
-    `<span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block"></span>`,
-    c.name,
-    '</div>',
-  ].join('')
+/** 定位图钉图标（SVG dataURL）：风险色填充 + 白描边 + 白心；针尖 anchor bottom 对准位置点 */
+function pinSvg(color: string): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="34" viewBox="0 0 28 34">` +
+    `<path d="M14 0C6.27 0 0 6.27 0 14c0 9.8 12.4 19.6 13.2 20.2.5.3 1.1.3 1.6 0C15.6 33.6 28 23.8 28 14 28 6.27 21.73 0 14 0z" fill="${color}" stroke="#ffffff" stroke-width="2"/>` +
+    `<circle cx="14" cy="13.5" r="5" fill="#ffffff"/></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+/**
+ * 公司 LabelMarker 构建（定位图钉图标，不显示文字——完全不遮挡底图标注；
+ * 公司名/风险信息由点击后的摘要浮卡承载）。选中 = accent 色 + rank 提升（不被避让隐藏）。
+ */
+function labelMarkerOptions(c: Company, active: boolean, idx: number) {
+  const color = active ? COLORS.accent : RISK_COLOR[c.riskLevel]
+  return {
+    position: poiCache.get(c.id) ?? companyPos(c, idx),
+    rank: active ? 100 : 1,
+    zIndex: active ? 100 : 1,
+    icon: { type: 'image' as const, image: pinSvg(color), size: [28, 34] as [number, number], anchor: 'bottom' as const },
+  }
 }
 
 /** 尽调详情正文 markdown 组件映射（贴合浅色瑞士风；h1 已在卡片头展示，缩为小节） */
@@ -143,7 +149,8 @@ function MapView() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<AMap.Map | null>(null)
   const amapRef = useRef<typeof AMap | null>(null)
-  const markersRef = useRef<Map<string, AMap.Marker>>(new Map())
+  const labelsLayerRef = useRef<AMap.LabelsLayer | null>(null)
+  const markersRef = useRef<Map<string, AMap.LabelMarker>>(new Map())
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const selected = companies.find((c) => c.id === selectedCompanyId) ?? null
 
@@ -173,6 +180,15 @@ function MapView() {
           zoom: 5,
           center: [113.5, 33],
         })
+        // 公司标注层：collision（公司间避让）；allowCollision 必须 false——
+        // true 会让底图 POI 文字避让隐藏（实测全图文字消失），false 则底图文字正常显示
+        labelsLayerRef.current = new AMapNs.LabelsLayer({
+          collision: true,
+          allowCollision: false,
+          zooms: [3, 20],
+          zIndex: 1000,
+        })
+        mapRef.current.add(labelsLayerRef.current)
         setLoadState('ready')
       })
       .catch(() => {
@@ -181,42 +197,45 @@ function MapView() {
     return () => {
       cancelled = true
       amapRef.current = null
+      labelsLayerRef.current = null
       mapRef.current?.destroy()
       mapRef.current = null
       markersRef.current.clear()
     }
   }, [mapSettings?.apiKey, mapSettings?.securityJsCode])
 
-  // 公司列表变化 → 重建 markers + fitView 全量（选中高亮跟随首次渲染）
+  // 公司列表变化 → 重建 LabelMarker（LabelsLayer 避让自动生效）+ fitView 全量
   useEffect(() => {
     const map = mapRef.current
-    if (!map || loadState !== 'ready') return
-    for (const m of markersRef.current.values()) m.setMap(null)
+    const layer = labelsLayerRef.current
+    if (!map || !layer || loadState !== 'ready') return
+    // types 包未收录 LabelsLayer.add/remove，结构化断言（外部 API 边界）
+    const layerApi = layer as unknown as { add: (m: AMap.LabelMarker) => void; remove: (m: AMap.LabelMarker) => void }
+    for (const m of markersRef.current.values()) layerApi.remove(m)
     markersRef.current.clear()
-    const list: AMap.Marker[] = []
+    const list: AMap.LabelMarker[] = []
     companies.forEach((c, idx) => {
-      const marker = new AMap.Marker({
-        position: poiCache.get(c.id) ?? companyPos(c, idx),
-        content: markerHtml(c, selectedCompanyId === c.id),
-        anchor: 'center',
-      })
+      const marker = new AMap.LabelMarker(labelMarkerOptions(c, selectedCompanyId === c.id, idx))
       marker.on('click', () => setSelectedCompanyId(c.id))
-      map.add(marker)
+      layerApi.add(marker)
       markersRef.current.set(c.id, marker)
       list.push(marker)
     })
-    if (list.length > 0) map.setFitView(list, false, [60, 60, 60, 60])
+    if (list.length > 0) map.setFitView(list as unknown as AMap.Marker[], false, [60, 60, 60, 60])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companies, loadState])
 
-  // 选中变化 → 仅更新高亮 + 地图平移定位（不重置缩放）
+  // 选中变化 → 仅更新高亮样式 + rank + 地图平移定位（不重置缩放）
   useEffect(() => {
     const map = mapRef.current
     if (!map || loadState !== 'ready') return
     const sel = companies.find((c) => c.id === selectedCompanyId)
     for (const c of companies) {
       const marker = markersRef.current.get(c.id)
-      if (marker) marker.setContent(markerHtml(c, c.id === selectedCompanyId))
+      if (!marker) continue
+      const opts = labelMarkerOptions(c, c.id === selectedCompanyId, companies.indexOf(c))
+      marker.setRank(opts.rank)
+      marker.setIcon(opts.icon)
     }
     if (sel) map.setCenter(poiCache.get(sel.id) ?? companyPos(sel, companies.indexOf(sel)))
   }, [selectedCompanyId, companies, loadState])
@@ -238,12 +257,12 @@ function MapView() {
           if (marker) marker.setPosition(pos)
         }
         if (settled === pending.length) {
-          const list: AMap.Marker[] = []
+          const list: AMap.LabelMarker[] = []
           for (const cc of companies) {
             const m = markersRef.current.get(cc.id)
             if (m) list.push(m)
           }
-          if (list.length > 0) map.setFitView(list, false, [60, 60, 60, 60])
+          if (list.length > 0) map.setFitView(list as unknown as AMap.Marker[], false, [60, 60, 60, 60])
         }
       })
     })
