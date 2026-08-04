@@ -20,7 +20,7 @@ npm test         # node:test（--test-isolation=none：本机 node 无 .exe 扩�
 - **ir/schema.ts**：引擎 ↔ UI 共享契约源（8 实体 + Validation + AgentError + ProtocolVersion = '2.1'）。UI 用 `import type` 引用；UI/types/index.ts 将在桥接（第 3 步）时删除、改 import 来源。
 - **ir/validator.ts**：合法化 + 降级——必填缺失 → invalid（error）；值域非法 → degraded（warn）保留原值；完全合法不带 validation。`validateByProtocol` 按版本分派。
 - **config.ts**：来源优先级 CLI > env（COS_PORT/COS_WORKSPACE/COS_MODEL）> config.json > 默认；fail fast（ConfigError 带字段/当前值/合法值/来源，不静默降级）；首次运行生成 `../career-os.config.json`（gitignored）+ 逐字段说明。
-- **storage/workspace.ts**：唯一 fs 出口（paths/read/write/listMarkdown + `decisionFileName`）；`initWorkspace` 建目录树 + `metadata/protocol.json`（引擎单方维护，skill 不读写）；失败抛 WorkspaceError。
+- **storage/workspace.ts**：唯一 fs 出口（paths/read/write/listMarkdown）；`initWorkspace` 建目录树 + `metadata/protocol.json`（引擎单方维护，skill 不读写）；失败抛 WorkspaceError。决策文件名规范见 `storage/decision-registry.ts`（系统 ID 登记，引擎单方命名，不归 Agent）。
 - **logger.ts**：应用日志（level + logs/engine.log 持久化 + 10MB×3 轮转）+ traces 接口（`logs/traces/{sessionId}-{ts}.jsonl`，第 2 步填完整轨迹）。
 - **main.ts**：启动编排；错误输出 `❌ 模块：字段 = 当前值（合法值：…）`，退出码非 0。
 

@@ -131,6 +131,13 @@ export function parseJobMarkdown(md: string, sourceFile: string): Validated<JobR
   for (const field of JOB_REQUIRED) {
     if (!record[field]) checks.push({ path: field, reason: '缺失（摘要表未填）', severity: 'error' })
   }
+  // 证据追问分隔规范（M1.6）：多个问句必须分号分隔；逗号连接是输出方质量问题——不修复只标记（parser 不猜）
+  for (const r of record.responsibilities as JobResponsibility[]) {
+    if (r.source !== 'ai') continue
+    if (r.evidenceExpectations.some((e) => e.questions.some((q) => /[？?][，,].*[？?]/.test(q)))) {
+      checks.push({ path: `responsibilities.${r.id}`, reason: '证据追问疑似逗号连接多个问句（规范：分号 `；` 分隔）', severity: 'warn' })
+    }
+  }
   return finalize(record as JobRecord, checks)
 }
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decisionFileName, initWorkspace, WorkspaceError } from '../storage/workspace.ts'
+import { initWorkspace, WorkspaceError } from '../storage/workspace.ts'
 
 function tempWorkspace(): string {
   return mkdtempSync(join(tmpdir(), 'cos-ws-'))
@@ -67,8 +67,4 @@ test('write 自动创建嵌套父目录', () => {
   ws.write('sub/deep/file.md', 'x')
   assert.ok(existsSync(join(root, 'sub', 'deep', 'file.md')))
   rmSync(root, { recursive: true, force: true })
-})
-
-test('decisionFileName：{日期}-{主题}.md', () => {
-  assert.equal(decisionFileName('2026-08-01', '转行分析'), '2026-08-01-转行分析.md')
 })

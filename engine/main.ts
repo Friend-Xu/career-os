@@ -7,6 +7,7 @@ import { ConfigError, describeConfig, loadConfig } from './config.ts'
 import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
+import { registerDecisionIdentity } from './storage/decision-registry.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -30,6 +31,10 @@ async function main(args: string[]): Promise<void> {
     const ws = initWorkspace(config.paths.workspace)
     logger.info(`信息池工作区就绪：${ws.paths.root}`)
     logger.info(`协议版本：career-os v${ProtocolVersion}（metadata/protocol.json，引擎单方维护）`)
+
+    // ─── 决策身份登记（M1.6）：引擎离线期间写入的决策文件 → 补登记系统 ID（幂等；监听期 add 事件即时登记）───
+    const registered = registerDecisionIdentity(ws).registered
+    if (registered > 0) logger.info(`决策登记：${registered} 个决策文件分配系统 ID（decision_YYYYMMDD_NNNNN）`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)

@@ -110,3 +110,26 @@ test('scanDecisions：坏文件标 invalid 不崩', () => {
   assert.equal(good?.validation, undefined)
   rmSync(root, { recursive: true, force: true })
 })
+
+test('登记后文件（frontmatter）：id/created_at 取系统值，正文照常解析', () => {
+  const md = `---
+id: decision_20260805_00001
+created_at: 2026-08-05
+source_file: 2026-08-01-转行分析
+---
+
+${transitionMd}`
+  const { value, validation } = parseDecisionMarkdown(md, 'decision_20260805_00001.md')
+  assert.equal(validation, undefined)
+  assert.equal(value.id, 'decision_20260805_00001')
+  assert.equal(value.createdAt, '2026-08-05')
+  assert.equal(value.direction, '机器人结构设计')
+  assert.equal(value.title, '李明 — 转行可行性分析：非标自动化 → 机器人结构设计')
+})
+
+test('decision_ 文件名（无 frontmatter）：createdAt 从系统文件名派生', () => {
+  const { value } = parseDecisionMarkdown(transitionMd, 'decision_20260805_00002.md')
+  assert.equal(value.id, 'decision_20260805_00002')
+  assert.equal(value.createdAt, '2026-08-05')
+})
+

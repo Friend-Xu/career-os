@@ -11,6 +11,7 @@ import type { Confidence, DecisionRecord, RiskLevel, Validation } from '../ir/sc
 import { validateByProtocol, type FieldCheck, type Validated, finalize } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
+import { registerDecisionIdentity, splitFrontmatter } from './decision-registry.ts'
 
 const SUMMARY_RE = /##\s*分析摘要\s*\n((?:\|[^\n]*\|\n)+)/
 const ROW_RE = /^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/
@@ -65,8 +66,12 @@ function deriveTitle(md: string, file: string): string {
   return h1 ? h1[1].trim() : file.replace(/\.md$/, '')
 }
 
+/** createdAt 派生：旧协议文件名（2026-08-01-主题）→ 日期；系统登记文件名（decision_20260801_NNNNN）→ 日期 */
 function deriveCreatedAt(file: string): string {
-  return file.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? ''
+  const legacy = file.match(/^(\d{4}-\d{2}-\d{2})/)?.[1]
+  if (legacy) return legacy
+  const sys = file.match(/^decision_(\d{4})(\d{2})(\d{2})_/)
+  return sys ? `${sys[1]}-${sys[2]}-${sys[3]}` : ''
 }
 
 /** 分析摘要表之后第一个非空文本段（非标题/表格/分隔线） */
@@ -97,9 +102,11 @@ export function parseSummaryTable(md: string): Record<string, string> | null {
   return fields
 }
 
-/** 单个决策 md → IR（摘要表缺失 → invalid；版本分派校验） */
+/** 单个决策 md → IR（摘要表缺失 → invalid；版本分派校验）。
+ *  引擎登记（M1.6）后文件头有 frontmatter（id/created_at 系统生成），解析优先取其值，fallback 文件名。 */
 export function parseDecisionMarkdown(md: string, sourceFile: string): Validated<DecisionRecord> {
-  const fields = parseSummaryTable(md)
+  const { meta, body } = splitFrontmatter(md)
+  const fields = parseSummaryTable(body)
   if (!fields) {
     return finalize({} as DecisionRecord, [
       { path: sourceFile, reason: '未找到 `## 分析摘要` 表格', severity: 'error' },
@@ -107,10 +114,10 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
   }
 
   const record: Record<string, unknown> = {
-    id: sourceFile.replace(/\.md$/, ''),
-    title: deriveTitle(md, sourceFile),
-    createdAt: deriveCreatedAt(sourceFile),
-    summary: deriveSummary(md) || deriveTitle(md, sourceFile),
+    id: meta.id ?? sourceFile.replace(/\.md$/, ''),
+    title: deriveTitle(body, sourceFile),
+    createdAt: meta.created_at ?? deriveCreatedAt(sourceFile),
+    summary: deriveSummary(body) || deriveTitle(body, sourceFile),
   }
   for (const [tableField, irField] of Object.entries(FIELD_MAP)) {
     const raw = fields[tableField]
@@ -161,13 +168,16 @@ export function scanDecisions(ws: Workspace): ParsedDecision[] {
 
 /**
  * decisions/ 目录监听（第 3 步）：add/change/unlink 任一触发 → 全量重扫 → onChanged(parsed)。
+ * add 事件先做身份登记（M1.6：新决策文件 → 系统 ID；登记后文件名变化再触发 unlink/add 重扫，幂等）。
  * 全量重扫是明确决策（个人工具文件量小，增量复杂度不值）；返回 { close } 供测试/退出。
  */
 export function watchDecisions(ws: Workspace, onChanged: (parsed: ParsedDecision[]) => void): { close: () => Promise<void> } {
   const watcher = watch(ws.paths.decisions, { ignoreInitial: true })
   const rescan = (): void => onChanged(scanDecisions(ws))
   watcher.on('add', (path: string) => {
-    if (path.endsWith('.md')) rescan()
+    if (!path.endsWith('.md')) return
+    registerDecisionIdentity(ws)
+    rescan()
   })
   watcher.on('change', (path: string) => {
     if (path.endsWith('.md')) rescan()

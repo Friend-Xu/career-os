@@ -80,6 +80,54 @@ test('parseJobMarkdown：岗位智能段 → ai responsibilities（user+ai 合�
   assert.deepEqual(ai[1].evidenceExpectations, [{ patternId: 'engineering_impact', questions: ['优化后成本变化多少？'] }])
 })
 
+test('岗位智能 questions：分号分隔正常拆分 + 同序配对（Case 1）', () => {
+  const md = SAMPLE_MD + `
+## 岗位智能
+
+| Responsibility | Priority | Capabilities | Evidence Patterns | Questions |
+|---|---|---|---|---|
+| 自动化设备结构设计 | must | 机械设计 | scope;method;validation | 你负责设计哪些模块？;采用什么流程？;如何验证设计有效？ |
+`
+  const ai = parseJobMarkdown(md, 'x.md').value.responsibilities.filter((r) => r.source === 'ai')
+  assert.deepEqual(ai[0].evidenceExpectations, [
+    { patternId: 'engineering_scope', questions: ['你负责设计哪些模块？'] },
+    { patternId: 'engineering_method', questions: ['采用什么流程？'] },
+    { patternId: 'engineering_validation', questions: ['如何验证设计有效？'] },
+  ])
+})
+
+test('岗位智能 questions：逗号连接 → 不崩溃、原文保留、warn 标记（Case 2 防御）', () => {
+  const md = SAMPLE_MD + `
+## 岗位智能
+
+| Responsibility | Priority | Capabilities | Evidence Patterns | Questions |
+|---|---|---|---|---|
+| 自动化设备结构设计 | must | 机械设计 | scope | 你负责设计哪些模块？,采用什么流程？ |
+`
+  const p = parseJobMarkdown(md, 'x.md')
+  const ai = p.value.responsibilities.filter((r) => r.source === 'ai')
+  // 不拆分、不修复：逗号不参与切分，整句保留为单个追问
+  assert.deepEqual(ai[0].evidenceExpectations, [
+    { patternId: 'engineering_scope', questions: ['你负责设计哪些模块？,采用什么流程？'] },
+  ])
+  // 解析不崩 + 明确标记输出方质量问题（degraded，不降为 invalid）
+  assert.equal(p.validation?.status, 'degraded')
+  const warn = p.validation?.issues.find((i) => i.severity === 'warn')
+  assert.ok(warn?.reason.includes('逗号连接'))
+})
+
+test('岗位智能 questions：问句内部正常逗号不误报（单问句）', () => {
+  const md = SAMPLE_MD + `
+## 岗位智能
+
+| Responsibility | Priority | Capabilities | Evidence Patterns | Questions |
+|---|---|---|---|---|
+| 自动化设备结构设计 | must | 机械设计 | scope | 你负责哪些模块，如何设计？ |
+`
+  const p = parseJobMarkdown(md, 'x.md')
+  assert.equal(p.validation, undefined)
+})
+
 test('createJobFile：写文件闭环 + scanJobs 读回', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cos-job-test-'))
   try {

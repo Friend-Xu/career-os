@@ -1,9 +1,9 @@
 /**
  * 工作目录服务：引擎的唯一文件系统出口。
- * - paths：子目录解析 + 文件名规范（{日期}-{主题}.md）
+ * - paths：子目录解析（决策文件名规范见 decision-registry：系统 ID 登记，引擎单方命名）
  * - read/write：统一 fs 封装（同步；本地个人工具、文件小）
  * - initWorkspace：首次运行创建目录树（对齐 AGENTS.md 既有承诺）
- *   + metadata/protocol.json（{ protocol: 'career-os', version: '2.1', created }，
+ *   + metadata/protocol.json（{ protocol: 'career-os', version: '2.2', created }，
  *   引擎单方维护，skill 不读写）
  * 目录创建失败/不可写 → WorkspaceError fail fast（系统边界校验）。
  */
@@ -135,9 +135,4 @@ export function initWorkspace(root: string): Workspace {
       return readdirSync(dir).filter((f) => f.endsWith('.md'))
     },
   }
-}
-
-/** 文件名规范：{日期}-{主题}.md（AGENTS.md 决策记录协议） */
-export function decisionFileName(date: string, topic: string): string {
-  return `${date}-${topic}.md`
 }
