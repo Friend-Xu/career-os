@@ -9,6 +9,8 @@ export const LAYOUT = {
   secondaryDefault: 268,
   secondaryMax: 268,
   agentPanel: 350,
+  /** AI 面板收起态把手宽度（右侧竖条，点击呼出） */
+  agentRail: 44,
   mainNarrow: 810,
   mainWide: 1160,
 } as const

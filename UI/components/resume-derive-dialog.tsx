@@ -65,7 +65,7 @@ export function ResumeDeriveDialog({ open, onClose }: { open: boolean; onClose: 
             {jobs.map((j) => (
               <Box
                 key={j.id}
-                onClick={() => derive(j.company, j.title, j.requirements.map((r) => r.name), j.jd)}
+                onClick={() => derive(j.company, j.title, j.responsibilities.map((r) => r.statement), j.jd)}
                 sx={{
                   p: 1.25,
                   borderRadius: '8px',
@@ -82,12 +82,12 @@ export function ResumeDeriveDialog({ open, onClose }: { open: boolean; onClose: 
                     {j.company} · {j.title}
                   </Typography>
                   <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
-                    {j.requirements.length} 项要求
+                    {j.responsibilities.length} 项要求
                   </Typography>
                 </Stack>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }} noWrap>
-                  {j.requirements.length > 0
-                    ? j.requirements.map((r) => r.name).join(' / ')
+                  {j.responsibilities.length > 0
+                    ? j.responsibilities.map((r) => r.statement).join(' / ')
                     : j.jd
                       ? '有 JD 原文'
                       : '无内容（按岗位名推断）'}

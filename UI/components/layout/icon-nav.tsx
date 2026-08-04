@@ -24,8 +24,8 @@ const MAIN_NAV: NavItem[] = [
   { id: 'workbench', label: '工作台', icon: HomeOutlinedIcon, shortcut: '⌘1' },
   { id: 'agent', label: '决策 Agent', icon: AutoAwesomeOutlinedIcon, shortcut: '⌘2' },
   { id: 'infopool', label: '信息池', icon: HubOutlinedIcon, shortcut: '⌘3' },
-  { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘4' },
-  { id: 'jobs', label: 'JD', icon: WorkIcon, shortcut: '⌘5' },
+  { id: 'jobs', label: 'JD', icon: WorkIcon, shortcut: '⌘4' },
+  { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘5' },
   { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘6' },
   { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘7' },
 ]

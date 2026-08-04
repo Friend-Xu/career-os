@@ -240,7 +240,7 @@ export function ApplicationsPage() {
           <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, lineHeight: 1.7 }}>
             去 JD 池粘贴招聘要求建档，
             <br />
-            分析匹配、尽调公司后发起投递，状态会出现在这里
+            建档即自动进入「已评估」，状态在这里推进
           </Typography>
           <Button
             size="small"
@@ -275,7 +275,7 @@ export function ApplicationsPage() {
         )}
         <Box sx={{ flex: 1 }} />
         <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-          新增入口在 JD 池 · 已评估 = JD 已分析
+          JD 建档自动进入 · 已评估 = 建档占位，状态在此推进
         </Typography>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 30 }}>
           <Tab icon={<ViewKanbanIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="看板" sx={{ minHeight: 30 }} />

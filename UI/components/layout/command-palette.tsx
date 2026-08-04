@@ -39,6 +39,7 @@ export function CommandPalette() {
       { id: 'nav-wb', label: '工作台', group: '导航', page: 'workbench' },
       { id: 'nav-agent', label: '决策 Agent', group: '导航', page: 'agent' },
       { id: 'nav-pool', label: '信息池', group: '导航', page: 'infopool' },
+      { id: 'nav-jd', label: 'JD', group: '导航', page: 'jobs' },
       { id: 'nav-co', label: '公司探索', group: '导航', page: 'companies' },
       { id: 'nav-app', label: '投递管理', group: '导航', page: 'applications' },
       { id: 'nav-cv', label: '简历中心', group: '导航', page: 'resumes' },

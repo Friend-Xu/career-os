@@ -5,7 +5,7 @@
  * - 投决 = 岗位匹配（能不能胜任）+ 公司评估（能不能去）两维度并列
  * - Agent 是能力层：Actions 按钮预置上下文唤起；决策记录是证据层（本岗位分析历史）
  */
-import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, Stack, Typography } from '@mui/material'
+import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
@@ -20,8 +20,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import type { GapResult, JobRecord } from '../../engine/ir/schema.ts'
+import { EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
+import type { GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
+
+/** store companies 成员（CompanyRecord + validation 标记；占位公司 = invalid = 待尽调） */
+type CompanyWithValidation = Company & { validation?: Validation }
+
+/** pattern 模板追问（evidenceExpectations.questions 缺省时的展示 fallback） */
+const PATTERN_QUESTION = new Map(EVIDENCE_PATTERNS_V0.map((p) => [p.id, p.question]))
 
 /** JD 原文 markdown 排版（浅色瑞士风；原文为纯文本+列表，映射段落层级与配色） */
 const JD_MD_COMPONENTS: Components = {
@@ -76,7 +83,7 @@ function cleanJd(jd: string, job: JobRecord): string {
       .replace(/[（(].*?[）)]/g, '')
       .replace(/[:：]$/, '')
       .replace(/(股份有限公司|有限公司|公司|集团)/g, '')
-  const reqNorms = job.requirements.map((r) => norm(r.name))
+  const reqNorms = job.responsibilities.map((r) => norm(r.statement))
   const titleNorm = norm(job.title)
   const companyNorm = norm(job.company)
   const locationNorm = job.location ? norm(job.location) : ''
@@ -109,14 +116,16 @@ function companyInTitle(d: { title: string }, company: string): boolean {
   return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
 }
 
-/** 岗位工作区状态（从数据派生）：分析/建档/投递/面试 */
-function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string }[], company: Company | undefined, appliedStatus?: string) {
+/** 岗位工作区状态（从数据派生）：分析/建档/投递/面试
+ *  - 建档自动占位投递「已评估」→ applied 判定：状态推进到「已投递」才算投出
+ *  - 占位公司（validation invalid）= 待尽调，不视为已尽调 */
+function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string }[], company: CompanyWithValidation | undefined, appliedStatus?: string) {
   // 已分析判定：该公司的 jd-analysis 决策（公司名匹配，title 匹配过宽会误判）
   const analyzed = decisions.some(
     (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
-  const dueDiligence = company !== undefined
-  const applied = Boolean(appliedStatus)
+  const dueDiligence = company !== undefined && company.validation?.status !== 'invalid'
+  const applied = Boolean(appliedStatus) && appliedStatus !== '已评估'
   const interviewing = appliedStatus === '面试中'
   return { analyzed, dueDiligence, applied, interviewing }
 }
@@ -140,7 +149,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
-  const addApplication = useAppStore((s) => s.addApplication)
+  const updateApplicationStatus = useAppStore((s) => s.updateApplicationStatus)
   const setPage = useAppStore((s) => s.setPage)
   const push = useToastStore((s) => s.push)
 
@@ -155,7 +164,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
 
   useEffect(() => {
     setGap(null)
-    if (!job || job.requirements.length === 0) return
+    if (!job || job.responsibilities.length === 0) return
     setGapLoading(true)
     matchJob(job.id, person.name)
       .then(setGap)
@@ -169,6 +178,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const jobDecisions = decisions.filter(
     (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
+  const aiResponsibilities = job.responsibilities.filter((r) => r.source === 'ai')
 
   const analyze = (): void => {
     startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`)
@@ -183,17 +193,11 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     push('info', '已预置「简历优化」上下文')
     setPage('resumes')
   }
-  const launchApply = (): void => {
-    // 发起投递 → 自动落「已评估」（前置：JD 已分析，按钮在 analyzed 后才出现）
-    addApplication({
-      personId: person.id,
-      company: job.company,
-      position: job.title,
-      jobId: job.id,
-      status: '已评估',
-      urgency: 'waiting',
-    })
-    push('success', '已发起投递（已评估）——到投递管理推进后续状态')
+  const advanceApply = (): void => {
+    // 建档已自动占位「已评估」；此处推进到「已投递」（前置：分析 + 尽调完成）
+    if (!app) return
+    updateApplicationStatus(app.id, '已投递')
+    push('success', '已推进投递（已投递）——到投递管理推进后续状态')
   }
   const interviewPrep = (): void => {
     startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`)
@@ -242,8 +246,8 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
             {job.location && (
               <Chip size="small" label={`📍 ${job.location}`} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover }} />
             )}
-            {job.requirements.length > 0 && (
-              <Chip size="small" label={`${job.requirements.length} 项要求`} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover }} />
+            {job.responsibilities.length > 0 && (
+              <Chip size="small" label={`${job.responsibilities.length} 项要求`} sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover }} />
             )}
           </Stack>
 
@@ -268,11 +272,13 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
           {/* Actions（Agent 能力层入口，按状态显示） */}
           <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
             {!st.analyzed && (
-              <Button size="small" variant="contained" startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
-                onClick={analyze}
-                sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}>
-                分析 JD
-              </Button>
+              <Tooltip title="提取岗位要求与证据需求，写回岗位档案">
+                <Button size="small" variant="contained" startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
+                  onClick={analyze}
+                  sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}>
+                  分析 JD
+                </Button>
+              </Tooltip>
             )}
             {st.analyzed && !st.dueDiligence && (
               <Button size="small" variant="outlined" startIcon={<BusinessCenterIcon sx={{ fontSize: 14 }} />}
@@ -288,11 +294,11 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 优化简历
               </Button>
             )}
-            {st.analyzed && st.dueDiligence && !st.applied && (
+            {st.analyzed && st.dueDiligence && app?.status === '已评估' && (
               <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
-                onClick={launchApply}
+                onClick={advanceApply}
                 sx={{ fontSize: 12 }}>
-                发起投递
+                推进投递
               </Button>
             )}
             {st.applied && !st.interviewing && (
@@ -316,30 +322,83 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
           </Section>
         )}
 
-        {/* 任职要求（匹配色 chips：✓符合 / △有基础 / ✗不足 / 未评估） */}
-        {job.requirements.length > 0 && (
-          <Section title="任职要求">
-            <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-                {job.requirements.map((r) => {
-                  const st2 = reqStatus(r.name, gap)
-                  const s = REQ_STATUS_STYLE[st2]
-                  return (
-                    <Chip
-                      key={r.name}
-                      size="small"
-                      label={`${REQ_STATUS_PREFIX[st2]}${r.name}`}
-                      sx={{ height: 22, fontSize: 11.5, bgcolor: s.chip, color: s.text }}
-                    />
-                  )
-                })}
+        {/* 岗位理解（Job Intelligence：AI 拆解后——这个岗位负责什么 / 面试会验证什么） */}
+        {aiResponsibilities.length > 0 && (
+          <Section title="岗位理解">
+            <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.accent, 0.25)}`, bgcolor: alpha(COLORS.accent, 0.05) }}>
+              <Stack spacing={1.5}>
+                {aiResponsibilities.map((r) => (
+                  <Box key={r.id}>
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5 }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{r.statement}</Typography>
+                      <Chip
+                        size="small"
+                        label={r.priority === 'must' ? '核心' : '加分'}
+                        sx={{
+                          height: 16,
+                          fontSize: 10,
+                          bgcolor: r.priority === 'must' ? alpha(COLORS.accent, 0.14) : COLORS.bgHover,
+                          color: r.priority === 'must' ? COLORS.accent : COLORS.textMuted,
+                        }}
+                      />
+                    </Stack>
+                    {r.capabilities.length > 0 && (
+                      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                        {r.capabilities.map((c) => (
+                          <Chip key={c} size="small" label={c} sx={{ height: 18, fontSize: 10.5, bgcolor: COLORS.bgHover, color: COLORS.textSecondary }} />
+                        ))}
+                      </Stack>
+                    )}
+                    {r.evidenceExpectations.length > 0 && (
+                      <Box sx={{ mt: 0.75 }}>
+                        <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mb: 0.25 }}>
+                          需要证明
+                        </Typography>
+                        {r.evidenceExpectations.map((e, i) => (
+                          <Stack key={i} direction="row" spacing={0.5} sx={{ alignItems: 'flex-start' }}>
+                            <CheckCircleIcon sx={{ fontSize: 13, color: RISK_COLOR.low, mt: 0.35 }} />
+                            <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>
+                              {e.questions[0] ?? PATTERN_QUESTION.get(e.patternId) ?? e.patternId}
+                            </Typography>
+                          </Stack>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                ))}
               </Stack>
             </Box>
           </Section>
         )}
 
+        {/* 任职要求（Signal Layer：建档技能词匹配色 chips；ai 责任单元在岗位理解区，物理分家） */}
+        {(() => {
+          const userReqs = job.responsibilities.filter((r) => r.source === 'user')
+          if (userReqs.length === 0) return null
+          return (
+            <Section title="任职要求">
+              <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+                <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                  {userReqs.map((r) => {
+                    const st2 = reqStatus(r.statement, gap)
+                    const s = REQ_STATUS_STYLE[st2]
+                    return (
+                      <Chip
+                        key={r.id}
+                        size="small"
+                        label={`${REQ_STATUS_PREFIX[st2]}${r.statement}`}
+                        sx={{ height: 22, fontSize: 11.5, bgcolor: s.chip, color: s.text }}
+                      />
+                    )
+                  })}
+                </Stack>
+              </Box>
+            </Section>
+          )
+        })()}
+
         {/* 匹配摘要（可解释覆盖） */}
-        {job.requirements.length > 0 && (
+        {job.responsibilities.length > 0 && (
           <Section title="JD 匹配">
             {gapLoading ? (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>计算中…</Typography>
@@ -374,30 +433,54 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         {/* 公司评估（能不能去） */}
         <Section title="公司评估">
           {company ? (
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: '10px',
-                border: `1px solid ${COLORS.border}`,
-                bgcolor: COLORS.bg,
-              }}
-            >
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{company.name}</Typography>
-                {company.matchScore > 0 && (
-                  <Chip size="small" label={`${company.matchScore}%`} sx={{ height: 18, fontSize: 11, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
-                )}
-                {company.riskLevel && (
-                  <Chip size="small" label={`风险${RISK_LABEL[company.riskLevel]}`} sx={{ height: 18, fontSize: 11, bgcolor: COLORS.bgHover }} />
-                )}
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
-                {company.city && `${company.city} · `}
-                {company.industry}
-                {company.headcount && ` · ${company.headcount}`}
-                {company.tags.length > 0 && ` · ${company.tags.join('/')}`}
-              </Typography>
-            </Box>
+            company.validation?.status === 'invalid' ? (
+              /* 占位档案（建档自动创建，invalid = 待尽调） */
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: '10px',
+                  border: `1px solid ${alpha(RISK_COLOR.medium, 0.4)}`,
+                  bgcolor: alpha(RISK_COLOR.medium, 0.06),
+                }}
+              >
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{company.name}</Typography>
+                  <Chip
+                    size="small"
+                    label="待尽调"
+                    sx={{ height: 18, fontSize: 11, bgcolor: alpha(RISK_COLOR.medium, 0.15), color: RISK_COLOR.medium }}
+                  />
+                </Stack>
+                <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
+                  {company.city ? `${company.city} · ` : ''}占位档案——投递前建议先做公司尽调，确认规模/风险/业务，别被坑
+                </Typography>
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: '10px',
+                  border: `1px solid ${COLORS.border}`,
+                  bgcolor: COLORS.bg,
+                }}
+              >
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{company.name}</Typography>
+                  {company.matchScore > 0 && (
+                    <Chip size="small" label={`${company.matchScore}%`} sx={{ height: 18, fontSize: 11, bgcolor: COLORS.accentMuted, color: COLORS.accent }} />
+                  )}
+                  {company.riskLevel && (
+                    <Chip size="small" label={`风险${RISK_LABEL[company.riskLevel]}`} sx={{ height: 18, fontSize: 11, bgcolor: COLORS.bgHover }} />
+                  )}
+                </Stack>
+                <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
+                  {company.city && `${company.city} · `}
+                  {company.industry}
+                  {company.headcount && ` · ${company.headcount}`}
+                  {company.tags.length > 0 && ` · ${company.tags.join('/')}`}
+                </Typography>
+              </Box>
+            )
           ) : (
             <Box
               sx={{
@@ -421,13 +504,13 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
               <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>JD 匹配</Typography>
                 <Typography sx={{ fontSize: 12.5, color: COLORS.text }}>
-                  {job.requirements.length > 0 ? `${job.requirements.length} 项要求已评估` : '未评估'}
+                  {job.responsibilities.length > 0 ? `${job.responsibilities.length} 项要求已评估` : '未评估'}
                 </Typography>
               </Box>
               <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>公司评估</Typography>
-                <Typography sx={{ fontSize: 12.5, color: company ? COLORS.text : COLORS.textMuted }}>
-                  {company ? '已尽调' : '未尽调'}
+                <Typography sx={{ fontSize: 12.5, color: st.dueDiligence ? COLORS.text : COLORS.textMuted }}>
+                  {st.dueDiligence ? '已尽调' : company ? '待尽调' : '未尽调'}
                 </Typography>
               </Box>
             </Stack>

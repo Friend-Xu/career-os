@@ -164,7 +164,7 @@ function extractJdParams(v: unknown): { jdText: string } {
   return { jdText: text }
 }
 
-/** jobs/match：Job.requirements（Role.skills 结构）→ computeGap → GapResult（可解释匹配，不做百分比） */
+/** jobs/match：Job.responsibilities（capabilities 对齐源）→ computeGap → GapResult（Signal Layer：可解释匹配，不做百分比） */
 export function computeJobMatch(workspace: Workspace, jobId: string, person: string): GapResult {
   const job = scanJobs(workspace).find((j) => j.record.id === jobId)
   if (!job) throw new Error(`岗位不存在：${jobId}`)
@@ -173,11 +173,22 @@ export function computeJobMatch(workspace: Workspace, jobId: string, person: str
     id: job.record.id,
     name: job.record.title,
     company: job.record.company,
-    skills: job.record.requirements.map((r) => ({
-      name: r.name,
-      essential: r.essential,
-      source: 'JD',
-    })),
+    // capabilities 为对齐源；迁移数据（capabilities 空）回退 statement——旧技能词等价旧行为；
+    // 去重：ai capabilities 可能与 user statement 重叠（computeGap 的 missing 不去重）
+    skills: (() => {
+      const seen = new Set<string>()
+      return job.record.responsibilities.flatMap((r) =>
+        (r.capabilities.length > 0 ? r.capabilities : [r.statement]).map((name) => ({
+          name,
+          essential: r.priority === 'must',
+          source: 'JD',
+        })),
+      ).filter((s) => {
+        if (seen.has(s.name)) return false
+        seen.add(s.name)
+        return true
+      })
+    })(),
   }
   const personSkills = scanProfiles(workspace).find((p) => p.name === person)?.skills ?? []
   return computeGap({ role, person, personSkills, skills })
@@ -577,7 +588,12 @@ export async function startServer(opts: {
       recordRewriteFeedback(join(config.paths.logs, 'feedback'), params)
       return {}
     },
-    [METHODS.createJob]: (params) => createJobFile(workspace, createJobParams(params)),
+    [METHODS.createJob]: (params) => {
+      const job = createJobFile(workspace, createJobParams(params))
+      // 建档联带占位公司（companies/ 无 watcher，显式广播；jobs 由 watchJobs 广播）
+      broadcast({ event: EVENTS.companiesChanged })
+      return job
+    },
     [METHODS.deleteJob]: (params) => {
       deleteJobFile(workspace, jobIdParams(params))
       return {}

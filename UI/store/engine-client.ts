@@ -276,7 +276,7 @@ export class EngineClient {
     return this.rpc<JobRecord>(METHODS.getJob, { id })
   }
 
-  /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
+  /** 岗位能力覆盖（Signal Layer：Job.responsibilities.capabilities 对齐源，可解释匹配不做百分比） */
   matchJob(jobId: string, person: string): Promise<GapResult> {
     return this.rpc<GapResult>(METHODS.matchJob, { id: jobId, person })
   }

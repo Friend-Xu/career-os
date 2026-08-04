@@ -6,6 +6,7 @@ import { TopBar } from './top-bar'
 import { IconNav } from './icon-nav'
 import { SecondarySidebar } from './secondary-sidebar'
 import { AgentPanel } from './agent-panel'
+import { AgentPanelTab } from './agent-panel-tab'
 import { StatusBar } from './status-bar'
 import { CommandPalette } from './command-palette'
 import { PersonSwitchDialog } from './person-switch-dialog'
@@ -103,8 +104,11 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handler)
   }, [setCommandPaletteOpen, toggleAgentPanel, setPage, createSession, currentPage])
 
-  const showAgent =
-    agentPanelOpen && currentPage !== 'agent' && currentPage !== 'resumes' && currentPage !== 'settings'
+  // AI 面板交互模型：Agent 页主区即 AI（无面板区）；设置页隐藏。
+  // 其余页面默认收起 → 44px 把手；显式动作（把手/⌘B/AI 动作）展开 → 350px Dock。
+  const panelZone = currentPage !== 'agent' && currentPage !== 'settings'
+  const showAgent = agentPanelOpen && panelZone
+  const showAgentTab = !agentPanelOpen && panelZone
 
   return (
     <Box
@@ -143,6 +147,11 @@ export function AppShell() {
         {showAgent && (
           <div className="cos-print-hidden" style={{ display: 'contents' }}>
             <AgentPanel />
+          </div>
+        )}
+        {showAgentTab && (
+          <div className="cos-print-hidden" style={{ display: 'contents' }}>
+            <AgentPanelTab />
           </div>
         )}
       </Box>

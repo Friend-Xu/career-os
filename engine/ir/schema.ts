@@ -6,7 +6,7 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.1' as const
+export const ProtocolVersion = '2.2' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'
@@ -107,14 +107,47 @@ export interface DecisionRecord {
   protocolVersion: string
 }
 
-/** 岗位要求条目（M1 只填 name/essential，默认全必需；level/category/source/confidence 为骨架位，后续能力填充） */
-export interface JobRequirement {
-  name: string
-  essential: boolean // 默认 true（M1 人工录入不区分必需/加分）
-  levelRequired?: number // 1-5（骨架位）
-  category?: string // language/infrastructure/...（骨架位）
-  source?: string // jd/人工（骨架位）
-  confidence?: Confidence // 解析置信度（骨架位）
+// ─── V2.1：Evidence Pattern Registry v0（工程族岗位证据词表；引擎单方定义，扩展走 Registry 条目）──
+
+/** 证据维度：岗位需要什么证明方式（Job Intelligence 的 evidenceExpectations 引用） */
+export type EvidenceDimension = 'impact' | 'validation' | 'scope' | 'method' | 'adoption'
+
+/** 证据模式（Registry 条目）：维度 + 通用追问模板。岗位特定追问由 Agent 依 responsibility 生成，存 requirement 级 questions。 */
+export interface EvidencePattern {
+  id: string // 'engineering_validation'（角色族前缀）
+  dimension: EvidenceDimension
+  question: string // 通用追问模板（展示 fallback / 面试准备）
+  applicableRoles: string[] // v0 仅工程族；管理/研究族未来扩展
+}
+
+/** v0 注册表（工程族 5 模式，M1 冻结）。运行时数据：引擎解析校验 patternId 用；
+ *  UI 如需模板展示可 import（数据极小，bundle 无害）。 */
+export const EVIDENCE_PATTERNS_V0: readonly EvidencePattern[] = [
+  { id: 'engineering_scope', dimension: 'scope', question: '你负责设计哪些模块？', applicableRoles: ['engineering'] },
+  { id: 'engineering_method', dimension: 'method', question: '采用什么设计流程/工具？', applicableRoles: ['engineering'] },
+  { id: 'engineering_validation', dimension: 'validation', question: '如何验证设计有效？', applicableRoles: ['engineering'] },
+  { id: 'engineering_impact', dimension: 'impact', question: '改善了什么指标？', applicableRoles: ['engineering'] },
+  { id: 'engineering_adoption', dimension: 'adoption', question: '方案/成果是否被采纳应用？', applicableRoles: ['engineering'] },
+]
+
+// ─── V2.2：Job Intelligence（M1：JD 从文本容器升级为岗位责任单元 + 证据需求）──
+
+/**
+ * 岗位责任单元——JD 分析的分析单元是「岗位责任」而非「技能要求」。
+ * M1 迁移：旧 requirements[].name 解析映射为 statement（source: user）；AI 分析写回完整责任单元（source: ai）。
+ */
+export interface JobResponsibility {
+  id: string // 'user-1' / 'ai-1'（溯源前缀 + 序号）
+  statement: string // 岗位责任："自动化设备结构设计"（旧数据迁移：技能词暂居此位）
+  priority: 'must' | 'nice' // 沿用 skill 阶段2 Must/Nice 分级（旧数据默认 must）
+  capabilities: string[] // 岗位语言；Signal Layer 对齐源（自由文本 + 可选词表 ID；AI 分析填充）
+  /** 岗位需要什么证明（不是用户证据——方向相反，避免提前触发 ADR-003）；patternId 引用 EVIDENCE_PATTERNS_V0 */
+  evidenceExpectations: {
+    patternId: string
+    questions: string[] // 岗位特定追问，Agent 生成（pattern 提供模板）
+  }[]
+  source: 'user' | 'ai' // 溯源：建档输入 vs AI 分析
+  confidence?: Confidence // 解析置信度（AI 条目）
 }
 
 /** 岗位（Job）：JD 是一等数据对象——岗位事实，非投递附属文本；jobs/{id}.md 真相源 */
@@ -125,7 +158,7 @@ export interface JobRecord {
   location?: string
   salary?: string
   jdSource?: string // JD 来源（URL/粘贴）
-  requirements: JobRequirement[] // 结构化要求（M1 人工录入，全 essential=true）
+  responsibilities: JobResponsibility[] // 岗位责任单元（M1 建档 source=user；AI 分析写回 source=ai）
   /** JD 原文（`## JD 原文` 正文段；卡片展开展示，Agent 后续分析源） */
   jd?: string
   createdAt: string

@@ -8,7 +8,7 @@ import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
-import { watchJobs } from './storage/job-watcher.ts'
+import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
@@ -81,6 +81,16 @@ async function main(args: string[]): Promise<void> {
       runtime,
     })
     const { port, broadcast } = handle
+
+    // ─── 三模块联动补账：存量 JD 缺公司占位 → 启动补一次（新建档由 createJobFile 联带）──
+    let placeholders = 0
+    for (const j of scanJobs(ws)) {
+      if (ensureCompanyPlaceholder(ws, j.record.company, j.record.location)) placeholders++
+    }
+    if (placeholders > 0) {
+      logger.info(`占位公司补账：为 ${placeholders} 个存量 JD 创建待尽调占位档案`)
+      broadcast({ event: EVENTS.companiesChanged })
+    }
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）

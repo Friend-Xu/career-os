@@ -129,6 +129,34 @@
 
 ---
 
+## 岗位智能表（Job Intelligence · 双输出写回 jobs/{id}.md）
+
+完整分析时（用户从岗位工作区发起），除决策摘要表写入 `decisions/` 外，把岗位智能表写回岗位文件：
+读取 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md`，在文件末尾追加（或整体替换已有段落）：
+
+```markdown
+## 岗位智能
+
+| Responsibility | Priority | Capabilities | Evidence Patterns | Questions |
+|---|---|---|---|---|
+| 自动化设备结构设计 | must | 机械设计;结构优化 | scope;method;validation | 你负责设计哪些模块？;采用什么设计流程？;如何验证设计有效？ |
+| 成本优化 | nice | 成本分析 | impact;adoption | 优化后成本变化多少？;优化方案是否被采纳？ |
+```
+
+规则（与引擎 Evidence Pattern Registry v0 契约同步）：
+- **每行一个责任单元**——分析单元是岗位责任（"负责自动化设备结构设计"），不是技能名
+- `Priority`：must / nice（沿用阶段2 的 Must/Nice 分级）
+- `Capabilities`：分号分隔的岗位语言（工具/方法/领域词）
+- `Evidence Patterns`：固定词表 5 个——`scope`（负责范围）/ `method`（方法工具）/ `validation`（验证方式）/ `impact`（结果指标）/ `adoption`（采纳应用）
+- `Questions` 与 `Evidence Patterns` **同序配对**（第 i 个 pattern ↔ 第 i 个问题）；**多个问题之间用分号 `；` 分隔**（不是逗号——引擎解析按分号切分）；每个问题是一个完整问句，问句内部不再嵌套分隔标点
+- 该段落只表达"岗位需要什么证明"，不写用户有没有
+
+**Anti-Hallucination 边界（强制）**：
+- JD 原文信息不足（无具体职责/要求描述，如仅"招聘机械工程师"这类简略文本）→ **不输出岗位智能段**，只在分析中说明信息不足、建议补充哪些信息
+- 禁止从岗位名称推断职责——"机械工程师"≠"负责机械结构设计"，岗位智能段的每个责任单元必须有 JD 原文依据
+
+---
+
 ## 阶段4输出：投递行动包
 
 ```markdown

@@ -93,7 +93,7 @@ export function validateDecisionRecord(input: unknown, opts: { requireProfile?: 
 
   const version = protocolVersionOf(value)
   if (!isSupportedVersion(version)) {
-    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1）`, severity: 'error' })
+    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2）`, severity: 'error' })
   }
   const required = opts.requireProfile ? DECISION_REQUIRED.v21 : DECISION_REQUIRED.v20
   for (const field of required) {
@@ -219,13 +219,14 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
   const value = isRecord(input) ? input : {}
   const version = protocolVersionOf(value)
   switch (version) {
+    case '2.2':
     case '2.1':
       return validateDecisionRecord(value, { requireProfile: true })
     case '2.0':
       return validateDecisionRecord(value)
     default:
       return finalize(value as DecisionRecord, [
-        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1）`, severity: 'error' },
+        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2）`, severity: 'error' },
       ])
   }
 }

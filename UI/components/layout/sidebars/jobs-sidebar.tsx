@@ -3,6 +3,7 @@
  * 点击行 → JD 工作区（selectedJobId）。hover 行尾删除按钮（确认后删 JD 文件，引擎广播重拉）。
  */
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import WorkIcon from '@mui/icons-material/Work'
 import { useMemo } from 'react'
@@ -15,6 +16,7 @@ export function JobsSidebar() {
   const applications = useAppStore((s) => s.applications)
   const selectedJobId = useAppStore((s) => s.selectedJobId)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
+  const setJdAddOpen = useAppStore((s) => s.setJdAddOpen)
   const deleteJob = useAppStore((s) => s.deleteJob)
   const push = useToastStore((s) => s.push)
 
@@ -47,12 +49,35 @@ export function JobsSidebar() {
           {jobs.length}
         </Typography>
       </Stack>
+      {/* 新增入口：虚线卡片（区别于 JD 实体卡片实线边框 + 白底） */}
+      <Box sx={{ px: 1.25, pb: 0.75 }}>
+        <Stack
+          direction="row"
+          spacing={0.75}
+          onClick={() => setJdAddOpen(true)}
+          sx={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            px: 1.25,
+            py: 1.1,
+            borderRadius: '8px',
+            cursor: 'pointer',
+            border: `1px dashed ${alpha(COLORS.accent, 0.45)}`,
+            bgcolor: alpha(COLORS.accent, 0.05),
+            color: COLORS.accent,
+            '&:hover': { bgcolor: alpha(COLORS.accent, 0.12) },
+          }}
+        >
+          <AddIcon sx={{ fontSize: 16 }} />
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>新增 JD</Typography>
+        </Stack>
+      </Box>
       <Box sx={{ flex: 1, overflow: 'auto', px: 1.25 }}>
         {jobs.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
             暂无 JD
             <br />
-            主区「增加 JD」粘贴招聘要求建档
+            上方「新增 JD」粘贴招聘要求建档
           </Typography>
         ) : (
           byCompany.map(([company, list]) => (
@@ -132,7 +157,7 @@ export function JobsSidebar() {
                       {j.company}
                     </Typography>
                     <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-                      {[j.location, j.salary, j.requirements.length > 0 ? `${j.requirements.length} 项要求` : null]
+                      {[j.location, j.salary, j.responsibilities.length > 0 ? `${j.responsibilities.length} 项要求` : null]
                         .filter(Boolean)
                         .join(' · ')}
                     </Typography>

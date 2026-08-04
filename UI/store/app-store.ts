@@ -2,10 +2,12 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
   Application,
+  ApplicationStatus,
   ChatMessage,
   Company,
   DecisionRecord,
   DecisionStage,
+  FollowupUrgency,
   HealthReport,
   MainWidthMode,
   NavPageId,
@@ -119,6 +121,8 @@ interface AppState {
   currentPersonId: number;
   currentPage: NavPageId;
   agentPanelOpen: boolean;
+  /** JD 建档 Dialog（侧栏「新增 JD」与主区「增加 JD」共用同一打开入口） */
+  jdAddOpen: boolean;
   mainWidthMode: MainWidthMode;
   commandPaletteOpen: boolean;
   engineStatus: EngineStatus;
@@ -132,6 +136,8 @@ interface AppState {
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   applications: Application[];
+  /** 显式删除过投递的 jobId（建档自动占位不回补；persist） */
+  deletedAppJobIds: string[];
   /** 简历版本（初始 mock；「选择 JD 派生」新建版本写入，持久化） */
   resumes: ResumeVersion[];
   decisions: DecisionView[];
@@ -183,6 +189,7 @@ interface AppState {
   archivePerson: (personId: number) => void;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
+  setJdAddOpen: (open: boolean) => void;
   setMainWidthMode: (mode: MainWidthMode) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setAgentDraft: (draft: string) => void;
@@ -247,7 +254,7 @@ interface AppState {
     requirements?: string
     jdText?: string
   }) => Promise<JobRecord>;
-  /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
+  /** 岗位能力覆盖（Signal Layer：Job.responsibilities.capabilities 对齐源，可解释匹配不做百分比） */
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
   /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
   deleteJob: (id: string) => Promise<void>;
@@ -270,6 +277,7 @@ export const useAppStore = create<AppState>()(
       currentPersonId: 1,
       currentPage: 'workbench',
       agentPanelOpen: false,
+      jdAddOpen: false,
       mainWidthMode: 'narrow',
       commandPaletteOpen: false,
       engineStatus: 'offline',
@@ -280,6 +288,7 @@ export const useAppStore = create<AppState>()(
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' } },
       availableModels: { source: 'cli', models: [] },
       applications: APPLICATIONS,
+      deletedAppJobIds: [],
       resumes: RESUMES,
       decisions: DECISIONS,
       contexts: [],
@@ -315,51 +324,23 @@ export const useAppStore = create<AppState>()(
 
   setPage: (page) => {
     const state = get()
-    // 决策 Agent / 简历中心：收起 AI 面板
-    if (page === 'agent' || page === 'resumes') {
-      set({
-        currentPage: page,
-        agentPanelOpen: false,
-        mainWidthMode: page === 'resumes' ? 'fullscreen' : 'fullscreen',
-      })
+    // AI 面板全局交互模型：页面不决定面板开合（消除「切页自动弹面板」），
+    // 只由显式动作（把手/⌘B/AI 动作）改变 agentPanelOpen，状态跨页保持。
+    // 决策 Agent / 简历中心 / 信息池：全屏主区（Agent 页主区即 AI，无面板区）
+    if (page === 'agent' || page === 'resumes' || page === 'infopool') {
+      set({ currentPage: page, mainWidthMode: 'fullscreen' })
       return
     }
-    // 信息池默认全屏
-    if (page === 'infopool') {
-      set({
-        currentPage: page,
-        agentPanelOpen: false,
-        mainWidthMode: 'fullscreen',
-      })
+    // 投递管理 / 设置：宽档
+    if (page === 'applications' || page === 'settings') {
+      set({ currentPage: page, mainWidthMode: 'wide' })
       return
     }
-    // 投递管理默认宽档
-    if (page === 'applications') {
-      set({
-        currentPage: page,
-        agentPanelOpen: true,
-        mainWidthMode: 'wide',
-      })
-      return
-    }
-    // 设置：面板收窄
-    if (page === 'settings') {
-      set({
-        currentPage: page,
-        agentPanelOpen: false,
-        mainWidthMode: 'wide',
-      })
-      return
-    }
-    // 工作台默认窄档 + 面板展开
+    // 工作台 / 公司 / JD：默认宽档
     set({
       currentPage: page,
-      agentPanelOpen: state.agentPanelOpen || page === 'workbench',
-      mainWidthMode: page === 'workbench' ? 'narrow' : state.mainWidthMode,
+      mainWidthMode: page === 'workbench' ? 'wide' : state.mainWidthMode,
     })
-    if (page === 'workbench') {
-      set({ agentPanelOpen: true, mainWidthMode: 'narrow' })
-    }
   },
 
   setPerson: (personId) => {
@@ -433,6 +414,8 @@ export const useAppStore = create<AppState>()(
   },
 
   setAgentPanelOpen: (open) => set({ agentPanelOpen: open }),
+
+  setJdAddOpen: (open) => set({ jdAddOpen: open }),
 
   setMainWidthMode: (mode) => {
     if (mode === 'fullscreen') {
@@ -631,7 +614,17 @@ export const useAppStore = create<AppState>()(
   },
 
   deleteApplication: (id) => {
-    set((state) => ({ applications: state.applications.filter((a) => a.id !== id) }))
+    set((state) => {
+      const target = state.applications.find((a) => a.id === id)
+      // 显式删除 → 该 job 建档占位不回补（pullJobs 补账跳过）
+      const deletedAppJobIds = target?.jobId && !state.deletedAppJobIds.includes(target.jobId)
+        ? [...state.deletedAppJobIds, target.jobId]
+        : state.deletedAppJobIds
+      return {
+        applications: state.applications.filter((a) => a.id !== id),
+        deletedAppJobIds,
+      }
+    })
   },
 
   createResumeVersion: ({ name, targetCompany, targetPosition }) => {
@@ -669,7 +662,26 @@ export const useAppStore = create<AppState>()(
 
   createJob: async (params) => {
     if (!engine) throw new Error('引擎未连接')
-    return engine.createJob(params)
+    const job = await engine.createJob(params)
+    // 三模块联动：建档 → 投递空间自动占位「已评估」（同 job 去重；公司占位由引擎建档联带）
+    const { currentPersonId, applications } = get()
+    if (!applications.some((a) => a.jobId === job.id)) {
+      set((state) => ({
+        applications: [
+          {
+            id: Math.max(0, ...state.applications.map((a) => a.id)) + 1,
+            personId: currentPersonId,
+            company: job.company,
+            position: job.title,
+            jobId: job.id,
+            status: '已评估',
+            urgency: 'waiting',
+          },
+          ...state.applications,
+        ],
+      }))
+    }
+    return job
   },
 
   matchJob: async (jobId, personName) => {
@@ -937,6 +949,7 @@ export const useAppStore = create<AppState>()(
         currentPage: s.currentPage,
         mainWidthMode: s.mainWidthMode,
         applications: s.applications,
+        deletedAppJobIds: s.deletedAppJobIds,
         resumes: s.resumes,
         decisions: s.decisions,
         companies: s.companies,
@@ -1179,12 +1192,33 @@ async function pullDecisions(): Promise<void> {
   }
 }
 
-/** 岗位列表（M1：引擎实时派生；jobsChanged 事件驱动重拉） */
+/** 岗位列表（M1：引擎实时派生；jobsChanged 事件驱动重拉）
+ *  三模块联动补账：无投递占位且未被显式删除的 JD → 自动补「已评估」占位记录 */
 async function pullJobs(): Promise<void> {
   if (!engine) return
   try {
     const list = await engine.listJobs()
-    useAppStore.setState({ jobs: list })
+    const { currentPersonId, applications, deletedAppJobIds } = useAppStore.getState()
+    const missing = list.filter(
+      (j) => !applications.some((a) => a.jobId === j.id) && !deletedAppJobIds.includes(j.id),
+    )
+    let apps = applications
+    if (missing.length > 0) {
+      const maxId = Math.max(0, ...applications.map((a) => a.id))
+      apps = [
+        ...missing.map((j, i) => ({
+          id: maxId + 1 + i,
+          personId: currentPersonId,
+          company: j.company,
+          position: j.title,
+          jobId: j.id,
+          status: '已评估' as ApplicationStatus,
+          urgency: 'waiting' as FollowupUrgency,
+        })),
+        ...applications,
+      ]
+    }
+    useAppStore.setState({ jobs: list, applications: apps })
   } catch {
     // offline：保持现有数据
   }

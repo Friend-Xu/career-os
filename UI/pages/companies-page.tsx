@@ -28,6 +28,10 @@ import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { Company } from '../types'
 import type { CompanyDetail } from '../store/engine-client'
+import type { Validation } from '../../engine/ir/schema.ts'
+
+/** store companies 成员（CompanyRecord + validation 标记；占位公司 = invalid = 待尽调） */
+type CompanyWithValidation = Company & { validation?: Validation }
 
 /** 城市 → 经纬度（高德 GCJ-02 坐标系，城市中心近似）；未收录城市落中部默认点 */
 const CITY_COORDS: Record<string, [number, number]> = {
@@ -368,10 +372,17 @@ function MapView() {
               {selected.city} · {selected.industry}
             </Typography>
             <Stack direction="row" spacing={1}>
-              <Typography sx={{ fontSize: 12, color: COLORS.accent }}>匹配 {selected.matchScore}%</Typography>
-              <Typography sx={{ fontSize: 12, color: RISK_COLOR[selected.riskLevel] }}>
-                风险 {RISK_LABEL[selected.riskLevel]}
-              </Typography>
+              {selected.matchScore > 0 && (
+                <Typography sx={{ fontSize: 12, color: COLORS.accent }}>匹配 {selected.matchScore}%</Typography>
+              )}
+              {selected.riskLevel && (
+                <Typography sx={{ fontSize: 12, color: RISK_COLOR[selected.riskLevel] }}>
+                  风险 {RISK_LABEL[selected.riskLevel]}
+                </Typography>
+              )}
+              {selected.validation?.status === 'invalid' && (
+                <Typography sx={{ fontSize: 12, color: RISK_COLOR.medium }}>待尽调</Typography>
+              )}
             </Stack>
           </Stack>
           <Button size="small" fullWidth variant="contained" onClick={() => setView('profile')} sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}>
@@ -384,7 +395,7 @@ function MapView() {
 }
 
 /** 「公司档案」视图：左侧公司卡片（460px）+ 右侧尽调详情正文 */
-function ProfileView({ selected }: { selected: Company | null }) {
+function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
@@ -456,7 +467,16 @@ function ProfileView({ selected }: { selected: Company | null }) {
         }}
       >
         <Box>
-          <Typography sx={{ fontSize: 17, fontWeight: 600, mb: 1.5 }}>{selected.name}</Typography>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1.5 }}>
+            <Typography sx={{ fontSize: 17, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
+            {selected.validation?.status === 'invalid' && (
+              <Chip
+                size="small"
+                label="待尽调"
+                sx={{ height: 20, fontSize: 11, bgcolor: alpha(RISK_COLOR.medium, 0.15), color: RISK_COLOR.medium }}
+              />
+            )}
+          </Stack>
           <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
             {(selected.tags ?? []).map((t) => (
               <Chip key={t} size="small" label={t} sx={{ height: 22, fontSize: 12 }} />
@@ -472,12 +492,12 @@ function ProfileView({ selected }: { selected: Company | null }) {
           >
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1 }}>尽调摘要</Typography>
             <Stack spacing={1}>
-              <Row label="城市" value={selected.city} />
-              <Row label="产业" value={selected.industry} />
-              <Row label="匹配度" value={`${selected.matchScore}%`} color={COLORS.accent} />
-              <Row label="风险" value={RISK_LABEL[selected.riskLevel]} color={RISK_COLOR[selected.riskLevel]} />
+              <Row label="城市" value={selected.city || '—'} />
+              <Row label="产业" value={selected.industry || '—'} />
+              <Row label="匹配度" value={selected.matchScore > 0 ? `${selected.matchScore}%` : '—'} color={COLORS.accent} />
+              <Row label="风险" value={selected.riskLevel ? RISK_LABEL[selected.riskLevel] : '—'} color={selected.riskLevel ? RISK_COLOR[selected.riskLevel] : undefined} />
               <Row label="规模" value={selected.headcount || '—'} />
-              <Row label="来源" value={selected.source} />
+              <Row label="来源" value={selected.source || '—'} />
             </Stack>
           </Box>
         </Box>
@@ -538,7 +558,7 @@ function ProfileView({ selected }: { selected: Company | null }) {
                   <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
                     {j.location && `${j.location} · `}
                     {j.salary ?? ''}
-                    {j.requirements.length > 0 && ` · ${j.requirements.map((r) => r.name).join('/')}`}
+                    {j.responsibilities.length > 0 && ` · ${j.responsibilities.map((r) => r.statement).join('/')}`}
                   </Typography>
                 </Box>
               ))}

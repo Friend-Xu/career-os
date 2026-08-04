@@ -135,6 +135,8 @@ Read `references/jd-parsing-guide.md` 和 `references/euphemism-dictionary.md`�
 
 输出按 `output-template.md` 阶段2格式。结尾问"要继续评估匹配度吗？"
 
+**Job Intelligence 双输出（M1）**：用户从岗位工作区发起完整分析时，除对话输出与决策摘要表（写 `decisions/`）外，把「岗位智能表」写回岗位文件 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md`（找不到文件名时询问用户）——格式与词表见 `output-template.md`「岗位智能表」。决策摘要表照旧，双输出互不替代。**重复分析同一岗位时，决策文件主题加序号（如「JD分析：X（2）」）**——决策文件名 `{日期}-{主题}` 同日同主题会覆盖历史。
+
 ---
 
 ## 阶段3：匹配度计算
@@ -177,6 +179,7 @@ Read `references/resume-tailoring-guide.md` 和 `references/interview-prep-guide
 | 情况 | 处理 |
 |------|------|
 | JD大量复制粘贴、无具体信息 | 阶段1判SKIP |
+| JD 过于简略（仅岗位名/一句招聘语，无具体职责要求） | 不写岗位智能表（Anti-Hallucination：禁止从岗位名推断职责） |
 | 用户无简历无技能画像 | 阶段3快速模式，定性判断，不计算精确% |
 | 转行跨度极大 + 匹配<30% | 诚实标注，建议中间跳板 |
 | JD未提及公司名 | 跳过公司上下文，标注"公司信息不可得" |

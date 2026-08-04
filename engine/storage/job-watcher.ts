@@ -2,25 +2,68 @@
  * job-watcher：jobs/*.md → JobRecord（JD 一等数据对象；M1 只存事实，不做分析）。
  * - parseJobMarkdown：单文件解析（摘要表协议：company/title/location/salary/jd_source/
  *   requirements/created_at；`## JD 原文` 正文段保留原文）
- * - requirements：分号分隔技能列表 → [{ name, essential: true }]（M1 人工录入默认全必需；
- *   非必需标记与结构化解析是后续能力升级，不是数据迁移）
- * - createJobFile：新建岗位（jobs/create RPC 的写入端；id = {日期}-{公司}-{岗位}）
+ * - responsibilities：分号分隔要求文本 → 岗位责任单元（M1 迁移映射：statement=旧技能词，
+ *   source=user；capabilities/evidenceExpectations 由 AI 分析写回）
+ * - createJobFile：新建岗位（jobs/create RPC 的写入端；id = {日期}-{公司}-{岗位}；
+ *   自动为同公司建档占位公司档案——三模块联动：JD 建档 → 公司空间占位 + 投递空间占位）
  * - watchJobs：监听 jobs/ 目录（add/change/unlink → 全量重扫 → 广播 data.jobs.changed）
  */
-import type { JobRecord, JobRequirement, Validation } from '../ir/schema.ts'
+import type { JobRecord, JobResponsibility, Validation } from '../ir/schema.ts'
+import { EVIDENCE_PATTERNS_V0 } from '../ir/schema.ts'
 import { finalize, validateByProtocol, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 
 const REQUIREMENTS_SEP = /[;；]/
 
-/** 分号分隔技能列表 → 结构化要求（M1 默认全 essential=true） */
-function parseRequirements(raw: string): JobRequirement[] {
+/** 分号分隔要求文本 → 岗位责任单元（M1 迁移映射：旧技能词 → statement，source=user；
+ *  capabilities/evidenceExpectations 留空，AI 分析后填充） */
+function parseResponsibilities(raw: string): JobResponsibility[] {
   return raw
     .split(REQUIREMENTS_SEP)
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((name) => ({ name, essential: true }))
+    .map((statement, i) => ({
+      id: `user-${i + 1}`,
+      statement,
+      priority: 'must',
+      capabilities: [],
+      evidenceExpectations: [],
+      source: 'user',
+    }))
+}
+
+/** `## 岗位智能` 段落（Agent 双输出写回）→ responsibilities（source: ai）。
+ *  Evidence Patterns 列写 dimension 短名（scope/method/...，skill 词表），
+ *  解析映射为 Registry id（engineering_scope）；词表外 dimension 过滤（Agent 是外部输出方，边界校验）。 */
+function parseJobIntelligence(md: string): JobResponsibility[] {
+  const m = md.match(/##\s*岗位智能\s*\n((?:\|[^\n]*\|\n)+)/)
+  if (!m) return []
+  const idByDimension = new Map(EVIDENCE_PATTERNS_V0.map((p) => [p.dimension, p.id]))
+  const rows = m[1].split('\n').filter((l) => {
+    const t = l.trim()
+    return t.startsWith('|') && !/^\|[\s\-|]+\|$/.test(t) && !t.includes('Responsibility')
+  })
+  return rows.flatMap((line, i) => {
+    const cols = line.match(/^\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/)
+    if (!cols) return []
+    const [, statement, priority, caps, patterns, questions] = cols
+    const capabilities = caps.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const dims = patterns.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const questionList = questions.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const evidenceExpectations = dims.flatMap((dim, j) => {
+      const patternId = idByDimension.get(dim)
+      return patternId ? [{ patternId, questions: questionList[j] ? [questionList[j]] : [] }] : []
+    })
+    return [{
+      id: `ai-${i + 1}`,
+      statement: statement || `责任单元 ${i + 1}`,
+      priority: priority === 'nice' ? 'nice' : 'must',
+      capabilities,
+      evidenceExpectations,
+      source: 'ai',
+    }] as JobResponsibility[]
+  })
 }
 
 function deriveH1(md: string, fallback: string): string {
@@ -44,11 +87,12 @@ function parseSummary(md: string): Record<string, string> | null {
   return fields
 }
 
-/** `## JD 原文` 段落全文（JD 是岗位核心资产，正文原样保留） */
+/** `## JD 原文` 段落全文（JD 是岗位核心资产，正文原样保留；截断到下一个 `##` 段——岗位智能等后置段不混入） */
 function deriveJdText(md: string): string {
   const parts = md.split(/##\s*JD\s*原文/, 2)
   if (parts.length < 2) return ''
   return parts[1]
+    .split(/\n##\s+/)[0]
     .split('\n')
     .map((l) => l.trimEnd())
     .join('\n')
@@ -71,13 +115,15 @@ export function parseJobMarkdown(md: string, sourceFile: string): Validated<JobR
     title: fields.title || deriveH1(md, sourceFile.replace(/\.md$/, '')),
     company: fields.company ?? '',
     createdAt: fields.created_at ?? sourceFile.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? '',
-    requirements: [],
+    responsibilities: [],
   }
   if (fields.location) record.location = fields.location
   if (fields.salary) record.salary = fields.salary
   if (fields.jd_source) record.jdSource = fields.jd_source
-  if (fields.requirements) record.requirements = parseRequirements(fields.requirements)
-  else record.requirements = []
+  if (fields.requirements) record.responsibilities = parseResponsibilities(fields.requirements)
+  else record.responsibilities = []
+  // 双输出合并：建档输入（user）在前，AI 岗位智能（ai）在后
+  record.responsibilities = [...(record.responsibilities as JobResponsibility[]), ...parseJobIntelligence(md)]
   const jdText = deriveJdText(md)
   if (jdText) record.jd = jdText
 
@@ -126,6 +172,36 @@ export function deleteJobFile(ws: Workspace, id: string): void {
   ws.delete(rel)
 }
 
+/** 占位公司档案：摘要表仅 city（其余必填 `-` 缺失）→ invalid = 待尽调标记 */
+export function ensureCompanyPlaceholder(ws: Workspace, company: string, city?: string): string | null {
+  const existing = ws.listMarkdown('companies')
+  // 简称/全称容错（"示例智造科技" vs "示例智造科技有限公司"）：双向子串判定
+  const hit = existing.find((f) => {
+    const name = f.replace(/\.md$/, '')
+    return name.includes(company) || company.includes(name)
+  })
+  if (hit) return null
+  const md = `# ${company}
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+${city ? `| city | ${city} |\n` : ''}| industry | - |
+| match_score | - |
+| risk_level | - |
+| source | - |
+| tags | - |
+| contacted | - |
+
+---
+
+> 占位档案：JD 建档自动创建，待 Agent 尽调后补充完整。
+`
+  ws.write(`companies/${company}.md`, md)
+  return company
+}
+
 export interface CreateJobParams {
   company: string
   title: string
@@ -167,5 +243,6 @@ ${rows.join('\n')}
 ${params.jdText ? `\n---\n\n## JD 原文\n\n${params.jdText}\n` : ''}
 `
   ws.write(rel, md)
+  ensureCompanyPlaceholder(ws, params.company, params.location)
   return { ...parseJobMarkdown(md, `${id}.md`).value, id }
 }

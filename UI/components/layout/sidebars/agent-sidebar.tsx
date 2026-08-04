@@ -1,11 +1,11 @@
 /**
  * Agent 空间侧栏：会话列表（切换 + 新建）。
  */
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import dayjs from 'dayjs'
 import { useAppStore } from '../../../store/app-store'
-import { COLORS } from '../../../data/constants'
+import { alpha, COLORS } from '../../../data/constants'
 
 export function AgentSidebar() {
   const sessions = useAppStore((s) => s.sessions)
@@ -33,16 +33,28 @@ export function AgentSidebar() {
           {list.length}
         </Typography>
       </Stack>
+      {/* 新建入口：虚线卡片（区别于会话实体卡片实线边框 + 白底） */}
       <Box sx={{ px: 1.25, pb: 0.75 }}>
-        <Button
-          size="small"
-          fullWidth
-          startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+        <Stack
+          direction="row"
+          spacing={0.75}
           onClick={() => createSession()}
-          sx={{ fontSize: 12 }}
+          sx={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            px: 1.25,
+            py: 1.1,
+            borderRadius: '8px',
+            cursor: 'pointer',
+            border: `1px dashed ${alpha(COLORS.accent, 0.45)}`,
+            bgcolor: alpha(COLORS.accent, 0.05),
+            color: COLORS.accent,
+            '&:hover': { bgcolor: alpha(COLORS.accent, 0.12) },
+          }}
         >
-          + 新会话
-        </Button>
+          <AddIcon sx={{ fontSize: 16 }} />
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>新建会话</Typography>
+        </Stack>
       </Box>
       <Stack sx={{ flex: 1, overflow: 'auto', px: 1 }}>
         {list.length === 0 ? (
