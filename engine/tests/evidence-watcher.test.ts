@@ -108,6 +108,12 @@ test('parseEvidenceMarkdown：维度小节无内容行 → 该维度不产生键
   assert.ok(value.evidence.validation)
 })
 
+test('parseEvidenceMarkdown：`-` 占位值过滤（摘要表缺失惯例不适用于证据段）', () => {
+  const md = SAMPLE_MD.replace('## 来源', '### impact\n- -\n- 降低整机重量\n\n## 来源')
+  const { value } = parseEvidenceMarkdown(md, 'x.md')
+  assert.deepEqual(value.evidence.impact, [{ content: '降低整机重量' }])
+})
+
 test('parseEvidenceMarkdown：status 全枚举合法（raw/candidate/trusted/archived）', () => {
   for (const s of ['raw', 'candidate', 'trusted', 'archived']) {
     const md = SAMPLE_MD.replace('| status | candidate |', `| status | ${s} |`)

@@ -66,8 +66,10 @@ workspace/career-advisor/evidence/{日期}-{事件名}.md
 
 1. **维度词表固定 5 个**：`scope` / `method` / `validation` / `impact` / `adoption`——**禁止发明维度**（如 leadership/innovation 不是证据维度；引擎会过滤词表外小节）
 2. **一维度可多条证明**（`- ` 行），如 validation 下可同时有"样机测试"与"EMC 测试"
-3. **内容必须来自用户口述或已有素材，禁止编造**——用户没说"结果/验证"就不填该维度（Anti-Hallucination）
-4. **半写状态合法**：用户只说了经历没确认细节 → `status: candidate`，不强行补全
-5. **trusted 仅在用户明确确认后**：确认时写 `verification_type: user_confirmed` + `confirmed_at`
-6. **`role` ≠ 岗位责任**：role 是"我在事件中是什么身份"（如"机械结构负责人"），不是 JD 要求的责任
-7. `source_type` 默认 `user_input`（JD 驱动入口产生的条目内容也来自用户口述）
+3. **没有的维度不出现**：用户没说"结果/验证"就**整节省略**该维度——禁止空小节（`### impact` 下无内容）也禁止 `- ` 占位行。`-` 是摘要表协议的缺失惯例，**证据段不适用**：每个 `- ` 行必须是有内容的证明（引擎会过滤 `-` 值）
+4. **内容必须来自用户口述或已有素材，禁止编造**——用户没说"结果/验证"就不填该维度（Anti-Hallucination）
+5. **半写状态合法**：用户只说了经历没确认细节 → `status: candidate`，不强行补全
+6. **trusted 仅在用户明确确认后**：确认时写 `verification_type: user_confirmed` + `confirmed_at`
+7. **`role` ≠ 岗位责任**：role 是"我在事件中是什么身份"（如"机械结构负责人"），不是 JD 要求的责任
+8. `source_type` 默认 `user_input`（JD 驱动入口产生的条目内容也来自用户口述）
+9. **维度只记口述明确的证据，禁止推导归属**：adoption（被采纳应用）只记口述**明确说明**的采纳事实（"方案被采纳"/"已量产"/"客户验收"/"正式上线"）；禁止从 impact 指标变化（如"产能提升"）推断"已投产使用"——指标变化是 impact 的证据，投产是 adoption 的证据，口述没明确说就不记

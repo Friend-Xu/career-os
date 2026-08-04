@@ -53,7 +53,7 @@ function deriveContext(md: string): string | undefined {
   return text || undefined
 }
 
-/** `## 证据` 段：`### {dimension}` 小节 → `- {content}` 行 → dimensionId → EvidenceValue[]（词表外维度过滤） */
+/** `## 证据` 段：`### {dimension}` 小节 → `- {content}` 行 → dimensionId → EvidenceValue[]（词表外维度过滤；`-` 占位值过滤） */
 function parseEvidenceSection(md: string): Record<string, EvidenceValue[]> {
   const known = new Set(EVIDENCE_DIMENSIONS_V0.map((d) => d.id))
   const parts = md.split(/##\s*证据/, 2)
@@ -70,7 +70,7 @@ function parseEvidenceSection(md: string): Record<string, EvidenceValue[]> {
     const content = line.match(/^\s*[-*]\s*(.+)$/)
     if (current && content) {
       const c = content[1].trim()
-      if (c) (evidence[current] ??= []).push({ content: c })
+      if (c && c !== '-') (evidence[current] ??= []).push({ content: c }) // `-` 是摘要表缺失惯例，证据段无意义（契约规则 3）
     }
   }
   return evidence
