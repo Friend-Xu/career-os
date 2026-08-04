@@ -101,6 +101,22 @@ test('parseEvidenceMarkdown：无证据段 → 空 evidence（raw 未结构化�
   assert.equal(validation, undefined)
 })
 
+test('parseEvidenceMarkdown：维度小节无内容行 → 该维度不产生键（缺证明 = 无值，合法）', () => {
+  const md = SAMPLE_MD + '\n### impact\n'
+  const { value } = parseEvidenceMarkdown(md, 'x.md')
+  assert.equal(value.evidence.impact, undefined)
+  assert.ok(value.evidence.validation)
+})
+
+test('parseEvidenceMarkdown：status 全枚举合法（raw/candidate/trusted/archived）', () => {
+  for (const s of ['raw', 'candidate', 'trusted', 'archived']) {
+    const md = SAMPLE_MD.replace('| status | candidate |', `| status | ${s} |`)
+    const { value, validation } = parseEvidenceMarkdown(md, 'x.md')
+    assert.equal(value.status, s)
+    assert.equal(validation, undefined)
+  }
+})
+
 test('parseEvidenceMarkdown：登记后 frontmatter → id/created_at 取系统值', () => {
   const md = `---
 id: evidence_20260805_00001
