@@ -79,6 +79,10 @@ export const METHODS = {
   extractJd: 'jobs/extract',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
   deleteJob: 'jobs/delete',
+  /** 岗位证据覆盖（params: { jobId } → ResponsibilityCoverage[]：evidenceExpectations × Inventory，三态不做匹配分；M2） */
+  jobCoverage: 'jobs/coverage',
+  /** 全量证据条目（evidence/ 目录扫描 + 校验标记；M2） */
+  listEvidence: 'evidence/list',
   /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
   deleteCompany: 'companies/delete',
   /** 读取 Agent 设置（params: 无 → { model, apiKey, permissionMode, allowedTools, maxTurns }，来自 config.json） */

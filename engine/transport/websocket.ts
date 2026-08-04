@@ -26,6 +26,8 @@ import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { scanEvidence } from '../storage/evidence-watcher.ts'
+import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
 import { deleteCompanyFile, readCompanyFile } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
@@ -598,6 +600,16 @@ export async function startServer(opts: {
       deleteJobFile(workspace, jobIdParams(params))
       return {}
     },
+    [METHODS.jobCoverage]: (params) => {
+      const id = jobIdParams(params)
+      const job = scanJobs(workspace).find((j) => j.record.id === id)
+      if (!job) throw new Error(`岗位不存在：${id}`)
+      return computeEvidenceCoverage(job.record, scanEvidence(workspace).map((e) => e.record))
+    },
+    [METHODS.listEvidence]: () => scanEvidence(workspace).map((e) => ({
+      ...e.record,
+      ...(e.validation ? { validation: e.validation } : {}),
+    })),
     [METHODS.deleteCompany]: (params) => {
       deleteCompanyFile(workspace, jobIdParams(params))
       broadcast({ event: EVENTS.companiesChanged })
