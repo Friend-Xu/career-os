@@ -28,7 +28,8 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -147,6 +148,10 @@ interface AppState {
   knowledge: { skills: Skill[]; roles: Role[]; status: 'idle' | 'ready' | 'error' };
   /** 岗位（Job，M1）：JD 一等数据对象，引擎实时派生（jobs/ 目录），投递卡片展开/匹配用 */
   jobs: JobView[];
+  /** 证据资产（M2）：Evidence Inventory 全量条目（evidence/ 目录，引擎实时派生） */
+  evidence: EvidenceItem[];
+  /** 岗位证据覆盖缓存（M2：jobId → ResponsibilityCoverage[]，按岗位拉取） */
+  evidenceCoverage: Record<string, ResponsibilityCoverage[]>;
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
   health: HealthReport | null;
   companies: CompanyView[];
@@ -256,6 +261,8 @@ interface AppState {
   }) => Promise<JobRecord>;
   /** 岗位能力覆盖（Signal Layer：Job.responsibilities.capabilities 对齐源，可解释匹配不做百分比） */
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
+  /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态；结果缓存 evidenceCoverage[jobId]） */
+  fetchJobCoverage: (jobId: string) => Promise<void>;
   /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
   deleteJob: (id: string) => Promise<void>;
   /** 删除公司档案（引擎删 companies/{id}.md → companiesChanged 自动重拉；删除当前选中则清空） */
@@ -294,6 +301,9 @@ export const useAppStore = create<AppState>()(
       contexts: [],
       knowledge: { skills: [], roles: [], status: 'idle' },
       jobs: [],
+      evidence: [],
+      /** 岗位证据覆盖缓存（jobId → ResponsibilityCoverage[]；M2 层3 三态） */
+      evidenceCoverage: {},
       health: null,
       companies: COMPANIES,
       persons: PERSONS,
@@ -687,6 +697,16 @@ export const useAppStore = create<AppState>()(
   matchJob: async (jobId, personName) => {
     if (!engine) throw new Error('引擎未连接')
     return engine.matchJob(jobId, personName)
+  },
+
+  fetchJobCoverage: async (jobId) => {
+    if (!engine) return
+    try {
+      const coverage = await engine.jobCoverage(jobId)
+      set((state) => ({ evidenceCoverage: { ...state.evidenceCoverage, [jobId]: coverage } }))
+    } catch {
+      // offline：保持现有缓存
+    }
   },
 
   deleteJob: async (id) => {
@@ -1224,6 +1244,17 @@ async function pullJobs(): Promise<void> {
   }
 }
 
+/** 证据资产（M2）：evidence/list 全量拉取；evidenceChanged 事件驱动重拉 */
+async function pullEvidence(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listEvidence()
+    useAppStore.setState({ evidence: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 决策聚合视图（V1.5）：引擎实时派生（contexts/list），offline/未建 context 时保持空数组 */
 async function pullContexts(): Promise<void> {
   if (!engine) return
@@ -1342,6 +1373,7 @@ export function connectEngine(): void {
       void pullKnowledge()
       void pullHealth()
       void pullJobs()
+      void pullEvidence()
       void useAppStore.getState().loadAgentSettings()
       void useAppStore.getState().loadAvailableModels()
     }
@@ -1354,6 +1386,11 @@ export function connectEngine(): void {
     void pullContexts()
   })
   engine.on(EVENTS.jobsChanged, () => void pullJobs())
+  engine.on(EVENTS.evidenceChanged, () => {
+    void pullEvidence()
+    // 覆盖缓存失效：证据变更后按已缓存岗位重算（缓存键清空，下次打开岗位时重拉）
+    useAppStore.setState({ evidenceCoverage: {} })
+  })
   engine.on(EVENTS.companiesChanged, () => {
     void pullCompanies()
     void pullGraph()

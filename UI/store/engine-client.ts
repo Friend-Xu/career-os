@@ -11,6 +11,7 @@ import type {
   DecisionAggregate,
   DecisionChain,
   DecisionRecord,
+  EvidenceItem,
   GapResult,
   HealthReport,
   JobRecord,
@@ -21,6 +22,7 @@ import type {
   Skill,
   Validation,
 } from '../../engine/ir/schema.ts'
+import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
@@ -284,6 +286,16 @@ export class EngineClient {
   /** JD 信息 AI 提取（粘贴 JD 自动回填建档表单；LLM 慢操作，超时放宽到 90s） */
   extractJd(jdText: string): Promise<JdExtractResult> {
     return this.rpc<{ result: JdExtractResult }>(METHODS.extractJd, { jdText }, 90_000).then((r) => r.result)
+  }
+
+  /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态不做匹配分） */
+  jobCoverage(jobId: string): Promise<ResponsibilityCoverage[]> {
+    return this.rpc<ResponsibilityCoverage[]>(METHODS.jobCoverage, { id: jobId })
+  }
+
+  /** 全量证据条目（M2：evidence/ 目录扫描 + 校验标记） */
+  listEvidence(): Promise<EvidenceItem[]> {
+    return this.rpc<EvidenceItem[]>(METHODS.listEvidence)
   }
 
   /** 删除岗位（删 jobs/{id}.md，引擎 watcher 广播后 UI 自动重拉） */

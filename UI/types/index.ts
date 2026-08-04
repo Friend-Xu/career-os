@@ -22,7 +22,9 @@ import type {
   ToolCallInfo,
   ToolCallStatus,
   GapResult,
+  EvidenceItem,
 } from '../../engine/ir/schema.ts';
+import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts';
 
 export type { Person };
 export type { DecisionRecord };
@@ -37,6 +39,8 @@ export type { ApplicationStatus };
 export type { FollowupUrgency };
 export type { AgentError };
 export type { AgentRuntimeEvent };
+export type { EvidenceItem };
+export type { ResponsibilityCoverage };
 
 /**
  * UI 会话扩展（引擎契约字段之外，仅 UI 会话渲染用）：

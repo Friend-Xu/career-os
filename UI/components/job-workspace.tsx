@@ -13,6 +13,7 @@ import BusinessCenterIcon from '@mui/icons-material/BusinessCenter'
 import DescriptionIcon from '@mui/icons-material/Description'
 import SendIcon from '@mui/icons-material/Send'
 import HistoryIcon from '@mui/icons-material/History'
+import PsychologyIcon from '@mui/icons-material/Psychology'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
@@ -20,7 +21,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import { EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
+import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
 import type { GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
 
@@ -29,6 +30,16 @@ type CompanyWithValidation = Company & { validation?: Validation }
 
 /** pattern 模板追问（evidenceExpectations.questions 缺省时的展示 fallback） */
 const PATTERN_QUESTION = new Map(EVIDENCE_PATTERNS_V0.map((p) => [p.id, p.question]))
+
+/** dimension 名称映射（EvidenceDimensionDefinition.name，如 validation → 验证方式） */
+const DIMENSION_NAME = new Map(EVIDENCE_DIMENSIONS_V0.map((d) => [d.id, d.name]))
+
+/** 证据覆盖三态样式（✓ 已覆盖 / △ 有经历缺证明 / ✗ 无相关经历） */
+const COVERAGE_STYLE: Record<'covered' | 'partial' | 'missing', { icon: string; color: string }> = {
+  covered: { icon: '✓', color: RISK_COLOR.low },
+  partial: { icon: '△', color: RISK_COLOR.medium },
+  missing: { icon: '✗', color: RISK_COLOR.high },
+}
 
 /** JD 原文 markdown 排版（浅色瑞士风；原文为纯文本+列表，映射段落层级与配色） */
 const JD_MD_COMPONENTS: Components = {
@@ -149,6 +160,9 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
+  const fetchJobCoverage = useAppStore((s) => s.fetchJobCoverage)
+  const evidenceCoverage = useAppStore((s) => s.evidenceCoverage)
+  const evidenceItems = useAppStore((s) => s.evidence)
   const updateApplicationStatus = useAppStore((s) => s.updateApplicationStatus)
   const setPage = useAppStore((s) => s.setPage)
   const push = useToastStore((s) => s.push)
@@ -170,6 +184,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       .then(setGap)
       .catch(() => {})
       .finally(() => setGapLoading(false))
+    fetchJobCoverage(job.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId])
 
@@ -202,6 +217,14 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const interviewPrep = (): void => {
     startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`)
     push('info', '已预置「面试准备」上下文')
+  }
+  const collectEvidence = (): void => {
+    // 入口 B（JD 驱动沉淀）：岗位智能表证明需求 × 证据库存缺口 → 引导沉淀（无则诚实说明）
+    startAnalysis(
+      `请检查岗位「${job.company} · ${job.title}」的证明需求（岗位智能表的 Evidence Expectations）与我的证据库存：` +
+        '找出缺口，用岗位的追问引导我沉淀相关经历（按 evidence 子模块契约写入 evidence/ 目录）。没有相关经历就诚实说明缺口。',
+    )
+    push('info', '已预置「证据沉淀」上下文')
   }
 
   const step = (done: boolean, label: string): ReactNode => (
@@ -370,6 +393,74 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
             </Box>
           </Section>
         )}
+
+        {/* 该岗位证据覆盖（M2 层3：要求证明什么 / 我已有什么 / 还缺什么——三态不做匹配分）
+            全 missing（无任何相关经历）→ 引导空态，不显示一排 ✗（避免用户误读为失败） */}
+        {(() => {
+          const coverage = evidenceCoverage[job.id]
+          if (!coverage || coverage.length === 0) return null
+          const titleOf = (id: string): string => evidenceItems.find((e) => e.id === id)?.event.title ?? id
+          const allMissing = coverage.every((rc) => rc.expectations.every((e) => e.status === 'missing'))
+          return (
+            <Section title="该岗位证据覆盖">
+              {allMissing ? (
+                <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(RISK_COLOR.medium, 0.25)}`, bgcolor: alpha(RISK_COLOR.medium, 0.04) }}>
+                  <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mb: 1 }}>
+                    暂无相关经历——AI 会在分析岗位缺口时帮助你补充证据
+                  </Typography>
+                  <Button size="small" variant="outlined" startIcon={<PsychologyIcon sx={{ fontSize: 14 }} />} onClick={collectEvidence} sx={{ fontSize: 12 }}>
+                    整理相关经历
+                  </Button>
+                </Box>
+              ) : (
+                <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(RISK_COLOR.medium, 0.25)}`, bgcolor: alpha(RISK_COLOR.medium, 0.04) }}>
+                  <Stack spacing={1.5}>
+                    {coverage.map((rc) => (
+                      <Box key={rc.responsibilityId}>
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 0.5 }}>{rc.statement}</Typography>
+                        <Stack spacing={0.25}>
+                          {rc.expectations.map((e, i) => {
+                            const s = COVERAGE_STYLE[e.status]
+                            return (
+                              <Stack key={i} direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
+                                <Typography sx={{ fontSize: 12, color: s.color, fontFamily: COLORS.mono, lineHeight: '20px', width: 12 }}>
+                                  {s.icon}
+                                </Typography>
+                                <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, flex: 1 }}>
+                                  {DIMENSION_NAME.get(e.dimension) ?? e.dimension}
+                                  {e.status === 'covered' && e.matchedItems.length > 0 && (
+                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                      {' — '}已覆盖：{e.matchedItems.map(titleOf).join('、')}
+                                    </Typography>
+                                  )}
+                                  {e.status === 'partial' && (
+                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                      {' — '}有相关经历，缺该维度证明
+                                    </Typography>
+                                  )}
+                                  {e.status === 'missing' && (
+                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                      {' — '}无相关经历
+                                    </Typography>
+                                  )}
+                                </Typography>
+                              </Stack>
+                            )
+                          })}
+                        </Stack>
+                      </Box>
+                    ))}
+                    <Box>
+                      <Button size="small" variant="outlined" startIcon={<PsychologyIcon sx={{ fontSize: 14 }} />} onClick={collectEvidence} sx={{ fontSize: 12 }}>
+                        整理相关经历
+                      </Button>
+                    </Box>
+                  </Stack>
+                </Box>
+              )}
+            </Section>
+          )
+        })()}
 
         {/* 任职要求（Signal Layer：建档技能词匹配色 chips；ai 责任单元在岗位理解区，物理分家） */}
         {(() => {

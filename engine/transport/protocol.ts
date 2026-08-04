@@ -79,7 +79,7 @@ export const METHODS = {
   extractJd: 'jobs/extract',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
   deleteJob: 'jobs/delete',
-  /** 岗位证据覆盖（params: { jobId } → ResponsibilityCoverage[]：evidenceExpectations × Inventory，三态不做匹配分；M2） */
+  /** 岗位证据覆盖（params: { id: jobId } → ResponsibilityCoverage[]：evidenceExpectations × Inventory，三态不做匹配分；M2） */
   jobCoverage: 'jobs/coverage',
   /** 全量证据条目（evidence/ 目录扫描 + 校验标记；M2） */
   listEvidence: 'evidence/list',
