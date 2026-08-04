@@ -66,67 +66,76 @@ export function JobsSidebar() {
                 return (
                   <Stack
                     key={j.id}
-                    direction="row"
-                    spacing={0.75}
                     onClick={() => setSelectedJobId(j.id)}
                     sx={{
-                      alignItems: 'center',
-                      px: 1,
-                      py: 0.6,
-                      borderRadius: '6px',
+                      mb: 0.5,
+                      px: 1.25,
+                      py: 1,
+                      borderRadius: '8px',
                       cursor: 'pointer',
-                      bgcolor: active ? COLORS.accentMuted : 'transparent',
+                      border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+                      bgcolor: active ? COLORS.accentMuted : COLORS.bg,
                       '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
-                      '&:hover .row-delete': { display: 'block' },
+                      '&:hover .card-delete': { opacity: 1 },
                     }}
                   >
-                    <Typography
-                      sx={{
-                        fontSize: 12.5,
-                        fontWeight: active ? 600 : 400,
-                        color: active ? COLORS.accent : COLORS.text,
-                        flex: 1,
-                        minWidth: 0,
-                      }}
-                      noWrap
-                    >
-                      {j.title}
-                    </Typography>
-                    {app && (
-                      <Chip
-                        size="small"
-                        label={app.status}
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                      <Typography
                         sx={{
-                          height: 16,
-                          fontSize: 10.5,
-                          bgcolor: alpha(COLORS.accent, 0.1),
-                          color: COLORS.accent,
-                          flexShrink: 0,
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: active ? COLORS.accent : COLORS.text,
+                          flex: 1,
+                          minWidth: 0,
                         }}
-                      />
-                    )}
-                    <Box className="row-delete" sx={{ display: 'none' }}>
-                      <IconButton
-                        size="small"
-                        title="删除 JD"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const apps = applications.filter((a) => a.jobId === j.id).length
-                          const link = [`投递 ${apps}`].filter((x) => !x.includes(' 0')).join(' · ')
-                          const hint = link
-                            ? `关联：${link}——删除后投递记录保留但显示「未挂 JD」，决策/简历版本不受影响。`
-                            : '决策/投递/简历版本不受影响。'
-                          if (!window.confirm(`删除 JD「${j.company} · ${j.title}」？不可恢复。${hint}`)) return
-                          void deleteJob(j.id).then(
-                            () => push('info', `已删除 JD：${j.company} · ${j.title}`),
-                            (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
-                          )
-                        }}
-                        sx={{ p: 0.25, fontSize: 13 }}
+                        noWrap
                       >
-                        <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
-                      </IconButton>
-                    </Box>
+                        {j.title}
+                      </Typography>
+                      {app && (
+                        <Chip
+                          size="small"
+                          label={app.status}
+                          sx={{
+                            height: 16,
+                            fontSize: 10.5,
+                            bgcolor: alpha(COLORS.accent, 0.1),
+                            color: COLORS.accent,
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <Box className="card-delete" sx={{ opacity: 0, flexShrink: 0 }}>
+                        <IconButton
+                          size="small"
+                          title="删除 JD"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const apps = applications.filter((a) => a.jobId === j.id).length
+                            const link = [`投递 ${apps}`].filter((x) => !x.includes(' 0')).join(' · ')
+                            const hint = link
+                              ? `关联：${link}——删除后投递记录保留但显示「未挂 JD」，决策/简历版本不受影响。`
+                              : '决策/投递/简历版本不受影响。'
+                            if (!window.confirm(`删除 JD「${j.company} · ${j.title}」？不可恢复。${hint}`)) return
+                            void deleteJob(j.id).then(
+                              () => push('info', `已删除 JD：${j.company} · ${j.title}`),
+                              (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
+                            )
+                          }}
+                          sx={{ p: 0.25 }}
+                        >
+                          <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+                        </IconButton>
+                      </Box>
+                    </Stack>
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }} noWrap>
+                      {j.company}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                      {[j.location, j.salary, j.requirements.length > 0 ? `${j.requirements.length} 项要求` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Typography>
                   </Stack>
                 )
               })}

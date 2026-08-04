@@ -44,7 +44,7 @@ export function AgentSidebar() {
           + 新会话
         </Button>
       </Box>
-      <Stack spacing={0.25} sx={{ flex: 1, overflow: 'auto', px: 1 }}>
+      <Stack sx={{ flex: 1, overflow: 'auto', px: 1 }}>
         {list.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
             暂无会话
@@ -57,18 +57,20 @@ export function AgentSidebar() {
                 key={s.id}
                 onClick={() => setCurrentSession(s.id)}
                 sx={{
-                  px: 1,
-                  py: 0.6,
-                  borderRadius: '6px',
+                  mb: 0.5,
+                  px: 1.25,
+                  py: 1,
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  bgcolor: active ? COLORS.accentMuted : 'transparent',
+                  border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+                  bgcolor: active ? COLORS.accentMuted : COLORS.bg,
                   '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
                 }}
               >
                 <Typography
                   sx={{
                     fontSize: 12.5,
-                    fontWeight: active ? 600 : 400,
+                    fontWeight: active ? 600 : 500,
                     color: active ? COLORS.accent : COLORS.text,
                   }}
                   noWrap

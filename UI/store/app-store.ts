@@ -650,6 +650,7 @@ export const useAppStore = create<AppState>()(
           name,
           personId,
           updatedAt: new Date().toISOString().slice(0, 10),
+          parentId: template?.id,
           targetCompany,
           targetPosition,
           modules,

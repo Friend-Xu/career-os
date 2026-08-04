@@ -6,7 +6,7 @@ import { useMemo } from 'react'
 import { INFO_NODES } from '../../../data/mock-data'
 import { useAppStore } from '../../../store/app-store'
 import { computePoolStats } from '../../../store/engine-client'
-import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
 
 const FILTERS = [
   { id: 'all', label: '全部' },
@@ -65,7 +65,7 @@ export function InfoPoolSidebar() {
       {FILTERS.map((f) => {
         const active = infopoolFilter === f.id
         const n = countOf(f.id)
-        const warn = f.id === 'isolated' || f.id === 'invalid'
+        const warn = (f.id === 'isolated' || f.id === 'invalid') && n > 0
         return (
           <Stack
             key={f.id}
@@ -87,7 +87,7 @@ export function InfoPoolSidebar() {
                 width: 9,
                 height: 9,
                 borderRadius: '50%',
-                bgcolor: warn ? (n > 0 ? RISK_COLOR.medium : COLORS.border) : active ? COLORS.accent : COLORS.border,
+                bgcolor: warn ? RISK_COLOR.medium : active ? COLORS.accent : COLORS.border,
                 flexShrink: 0,
               }}
             />
@@ -101,7 +101,31 @@ export function InfoPoolSidebar() {
             >
               {f.label}
             </Typography>
-            <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>{n}</Typography>
+            {/* 计数徽标：告警琥珀 / 选中 accent / 零计数灰化弱化 */}
+            <Box
+              sx={{
+                px: 0.75,
+                py: 0.25,
+                borderRadius: '999px',
+                bgcolor: warn
+                  ? alpha(RISK_COLOR.medium, 0.15)
+                  : n === 0
+                    ? 'transparent'
+                    : active
+                      ? COLORS.accentMuted
+                      : COLORS.bgHover,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontFamily: COLORS.mono,
+                  color: warn ? RISK_COLOR.medium : n === 0 ? COLORS.textMuted : active ? COLORS.accent : COLORS.textSecondary,
+                }}
+              >
+                {n}
+              </Typography>
+            </Box>
           </Stack>
         )
       })}

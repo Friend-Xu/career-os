@@ -18,9 +18,17 @@ export function ResumesSidebar() {
   const deleteResumeVersion = useAppStore((s) => s.deleteResumeVersion)
   const push = useToastStore((s) => s.push)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
+  /** 原始简历（命名契约「原始简历」，存量派生版本可能缺 parentId）始终置顶；派生版本保持原顺序 */
+  const sorted = useMemo(
+    () =>
+      [...personResumes].sort(
+        (a, b) => Number(b.name.includes('原始简历')) - Number(a.name.includes('原始简历')),
+      ),
+    [personResumes],
+  )
 
   return (
-    <Stack spacing={0.25} sx={{ p: 1.25 }}>
+    <Stack sx={{ p: 1.25 }}>
       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
         <DescriptionOutlinedIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
         <Typography
@@ -43,55 +51,57 @@ export function ResumesSidebar() {
           暂无简历版本
         </Typography>
       ) : (
-        personResumes.map((r) => {
+        sorted.map((r) => {
           const active = r.id === activeResumeId
+          const target = [r.targetPosition, r.targetCompany].filter(Boolean).join(' · ')
           return (
             <Stack
               key={r.id}
-              direction="row"
-              spacing={1}
               onClick={() => setActiveResumeId(r.id)}
               sx={{
-                alignItems: 'center',
-                px: 1,
-                py: 0.6,
-                borderRadius: '6px',
+                mb: 0.5,
+                px: 1.25,
+                py: 1,
+                borderRadius: '8px',
                 cursor: 'pointer',
-                bgcolor: active ? COLORS.accentMuted : 'transparent',
+                border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+                bgcolor: active ? COLORS.accentMuted : COLORS.bg,
                 '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
-                '&:hover .row-delete': { display: 'block' },
+                '&:hover .card-delete': { opacity: 1 },
               }}
             >
-              <Typography
-                sx={{
-                  fontSize: 12.5,
-                  fontWeight: active ? 600 : 400,
-                  color: active ? COLORS.accent : COLORS.text,
-                  flex: 1,
-                  minWidth: 0,
-                }}
-                noWrap
-              >
-                {r.name}
-              </Typography>
-              <Box
-                className="row-delete"
-                onClick={(e) => e.stopPropagation()}
-                sx={{ display: 'none' }}
-              >
-                <IconButton
-                  size="small"
-                  title="删除版本"
-                  onClick={() => {
-                    if (!window.confirm(`删除简历版本「${r.name}」？不可恢复。`)) return
-                    deleteResumeVersion(r.id)
-                    push('info', `已删除版本：${r.name}`)
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                <Typography
+                  sx={{
+                    fontSize: 12.5,
+                    fontWeight: active ? 600 : 500,
+                    color: active ? COLORS.accent : COLORS.text,
+                    flex: 1,
+                    minWidth: 0,
                   }}
-                  sx={{ p: 0.25, fontSize: 13 }}
+                  noWrap
                 >
-                  <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
-                </IconButton>
-              </Box>
+                  {r.name}
+                </Typography>
+                <Box className="card-delete" onClick={(e) => e.stopPropagation()} sx={{ opacity: 0, flexShrink: 0 }}>
+                  <IconButton
+                    size="small"
+                    title="删除版本"
+                    onClick={() => {
+                      if (!window.confirm(`删除简历版本「${r.name}」？不可恢复。`)) return
+                      deleteResumeVersion(r.id)
+                      push('info', `已删除版本：${r.name}`)
+                    }}
+                    sx={{ p: 0.25 }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+                  </IconButton>
+                </Box>
+              </Stack>
+              <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                {r.updatedAt.slice(5)}
+                {target ? ` · ${target}` : ''}
+              </Typography>
             </Stack>
           )
         })

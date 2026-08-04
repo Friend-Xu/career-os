@@ -135,7 +135,7 @@ export function CompaniesSidebar() {
           })}
         </Stack>
       </Box>
-      <Stack spacing={0.25} sx={{ flex: 1, overflow: 'auto', px: 1 }}>
+      <Stack sx={{ flex: 1, overflow: 'auto', px: 1 }}>
         {filtered.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
             无匹配公司
@@ -152,13 +152,15 @@ export function CompaniesSidebar() {
                 id={`company-${c.id}`}
                 onClick={() => setSelectedCompanyId(c.id)}
                 sx={{
-                  px: 1,
-                  py: 0.6,
-                  borderRadius: '6px',
+                  mb: 0.5,
+                  px: 1.25,
+                  py: 1,
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  bgcolor: active ? COLORS.accentMuted : 'transparent',
+                  border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+                  bgcolor: active ? COLORS.accentMuted : COLORS.bg,
                   '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
-                  '&:hover .row-delete': { display: 'block' },
+                  '&:hover .card-delete': { opacity: 1 },
                 }}
               >
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -180,7 +182,7 @@ export function CompaniesSidebar() {
                       {c.matchScore}
                     </Typography>
                   )}
-                  <Box className="row-delete" sx={{ display: 'none' }}>
+                  <Box className="card-delete" sx={{ opacity: 0, flexShrink: 0 }}>
                     <IconButton
                       size="small"
                       title="删除公司档案"
@@ -201,7 +203,7 @@ export function CompaniesSidebar() {
                           (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
                         )
                       }}
-                      sx={{ p: 0.25, fontSize: 13 }}
+                      sx={{ p: 0.25 }}
                     >
                       <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
                     </IconButton>

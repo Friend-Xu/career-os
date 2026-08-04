@@ -55,6 +55,7 @@ export function ApplicationsSidebar() {
       )}
       {(['全部', ...COLUMNS] as const).map((s) => {
         const active = applicationsFilter === s
+        const n = countOf(s)
         return (
           <Stack
             key={s}
@@ -90,9 +91,25 @@ export function ApplicationsSidebar() {
             >
               {s}
             </Typography>
-            <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
-              {countOf(s)}
-            </Typography>
+            {/* 计数徽标：选中 accent / 零计数灰化弱化 */}
+            <Box
+              sx={{
+                px: 0.75,
+                py: 0.25,
+                borderRadius: '999px',
+                bgcolor: n === 0 ? 'transparent' : active ? COLORS.accentMuted : COLORS.bgHover,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontFamily: COLORS.mono,
+                  color: n === 0 ? COLORS.textMuted : active ? COLORS.accent : COLORS.textSecondary,
+                }}
+              >
+                {n}
+              </Typography>
+            </Box>
           </Stack>
         )
       })}
