@@ -39,6 +39,55 @@ const CITY_COORDS: Record<string, [number, number]> = {
   常州: [119.97, 31.81],
 }
 
+/** POI 搜索精确定位：会话级缓存（切视图/重建不重复搜索，刷新后重搜）+ 串行队列（高德搜索有 QPS 限制） */
+const poiCache = new Map<string, [number, number]>()
+let poiSearchChain: Promise<unknown> = Promise.resolve()
+
+interface PoiHit {
+  name: string
+  location: { lng: number; lat: number }
+}
+
+/** 公司名 → 高德 POI 搜索取精确经纬度；无命中/搜索失败返回 null（调用方回退城市中心） */
+function searchCompanyPoi(amap: typeof AMap, c: Company): Promise<[number, number] | null> {
+  // types 包未收录 PlaceSearch/plugin 完整签名，结构化断言（外部 API 边界）
+  const amapApi = amap as unknown as {
+    plugin: (name: string, cb: () => void) => void
+    PlaceSearch: new (opts: { city: string; citylimit: boolean; pageSize: number }) => {
+      search: (
+        keyword: string,
+        cb: (status: string, result: { poiList?: { pois?: PoiHit[] } }) => void,
+      ) => void
+    }
+  }
+  const run = (): Promise<[number, number] | null> =>
+    new Promise((resolve) => {
+      // 官方教程标准：AMap.plugin 按需加载（幂等；loader plugins 已声明时立即回调）
+      amapApi.plugin('AMap.PlaceSearch', () => {
+        const placeSearch = new amapApi.PlaceSearch({ city: c.city, citylimit: true, pageSize: 5 })
+        placeSearch.search(c.name, (status, result) => {
+          // 2.0 插件回调结构：result.poiList.pois；location 为 AMap.LngLat 对象（.lng/.lat，JSON 显示数组是 toJSON）
+          const pois = result.poiList?.pois
+          if (status !== 'complete' || !pois || pois.length === 0) {
+            resolve(null)
+            return
+          }
+          // 匹配策略：名称归一化完全相等 > 名称互相包含 > 首条（citylimit 已强制同城）
+          const norm = (s: string) => s.replace(/[（(].*?[）)]/g, '').replace(/(股份有限公司|有限公司|公司|集团)/g, '')
+          const target = norm(c.name)
+          const exact = pois.find((p) => norm(p.name) === target)
+          const partial =
+            exact ??
+            pois.find((p) => norm(p.name).includes(target) || target.includes(norm(p.name)))
+          const hit = partial ?? pois[0]
+          resolve([hit.location.lng, hit.location.lat])
+        })
+      })
+    })
+  poiSearchChain = poiSearchChain.then(run).catch(() => null)
+  return poiSearchChain as Promise<[number, number] | null>
+}
+
 /** 公司打点位置：城市经纬度 + 同城按索引偏移散开（确定性，不随渲染跳动） */
 function companyPos(c: Company, idx: number): [number, number] {
   const base = CITY_COORDS[c.city] ?? [113.5, 33]
@@ -93,6 +142,7 @@ function MapView() {
   const setPage = useAppStore((s) => s.setPage)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<AMap.Map | null>(null)
+  const amapRef = useRef<typeof AMap | null>(null)
   const markersRef = useRef<Map<string, AMap.Marker>>(new Map())
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const selected = companies.find((c) => c.id === selectedCompanyId) ?? null
@@ -100,18 +150,24 @@ function MapView() {
   // 地图初始化（key/安全密钥变化时重建；卸载时销毁）
   useEffect(() => {
     if (!mapSettings?.apiKey) return
+    // 官方安全密钥机制：loader 从 window._AMapSecurityConfig 读取（JS API 加载教程），非 loader 参数
+    if (mapSettings.securityJsCode) {
+      ;(window as unknown as { _AMapSecurityConfig?: { securityJsCode: string } })._AMapSecurityConfig = {
+        securityJsCode: mapSettings.securityJsCode,
+      }
+    }
     let cancelled = false
     setLoadState('loading')
-    // loader 官方类型缺 securityJsCode 字段（运行时支持），断言补全
     const opts = {
       key: mapSettings.apiKey,
       version: '2.0',
-      securityJsCode: mapSettings.securityJsCode,
-    } as Parameters<typeof loadAMap>[0] & { securityJsCode?: string }
+      plugins: ['AMap.PlaceSearch'],
+    } as Parameters<typeof loadAMap>[0]
     void loadAMap(opts)
       .then((amap) => {
         if (cancelled || !containerRef.current) return
         const AMapNs = amap as typeof AMap
+        amapRef.current = AMapNs
         mapRef.current = new AMapNs.Map(containerRef.current, {
           viewMode: '2D',
           zoom: 5,
@@ -124,6 +180,7 @@ function MapView() {
       })
     return () => {
       cancelled = true
+      amapRef.current = null
       mapRef.current?.destroy()
       mapRef.current = null
       markersRef.current.clear()
@@ -139,7 +196,7 @@ function MapView() {
     const list: AMap.Marker[] = []
     companies.forEach((c, idx) => {
       const marker = new AMap.Marker({
-        position: companyPos(c, idx),
+        position: poiCache.get(c.id) ?? companyPos(c, idx),
         content: markerHtml(c, selectedCompanyId === c.id),
         anchor: 'center',
       })
@@ -161,8 +218,37 @@ function MapView() {
       const marker = markersRef.current.get(c.id)
       if (marker) marker.setContent(markerHtml(c, c.id === selectedCompanyId))
     }
-    if (sel) map.setCenter(companyPos(sel, companies.indexOf(sel)))
+    if (sel) map.setCenter(poiCache.get(sel.id) ?? companyPos(sel, companies.indexOf(sel)))
   }, [selectedCompanyId, companies, loadState])
+
+  // POI 精确搜索：缓存缺失的公司串行搜索 → setPosition + 缓存 → 全部完成重 fitView
+  useEffect(() => {
+    const map = mapRef.current
+    const amap = amapRef.current
+    if (!map || !amap || loadState !== 'ready') return
+    const pending = companies.filter((c) => !poiCache.has(c.id))
+    if (pending.length === 0) return
+    let settled = 0
+    pending.forEach((c) => {
+      void searchCompanyPoi(amap, c).then((pos) => {
+        settled++
+        if (pos) {
+          poiCache.set(c.id, pos)
+          const marker = markersRef.current.get(c.id)
+          if (marker) marker.setPosition(pos)
+        }
+        if (settled === pending.length) {
+          const list: AMap.Marker[] = []
+          for (const cc of companies) {
+            const m = markersRef.current.get(cc.id)
+            if (m) list.push(m)
+          }
+          if (list.length > 0) map.setFitView(list, false, [60, 60, 60, 60])
+        }
+      })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies, loadState])
 
   if (!mapSettings?.apiKey) {
     return (
