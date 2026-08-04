@@ -6,7 +6,7 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.2' as const
+export const ProtocolVersion = '2.3' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'
@@ -162,6 +162,72 @@ export interface JobRecord {
   /** JD 原文（`## JD 原文` 正文段；卡片展开展示，Agent 后续分析源） */
   jd?: string
   createdAt: string
+}
+
+// ─── V2.3：Evidence Inventory（M2：个人证据资产——"我有什么证明"，与 Job/Decision 平行的第三实体）──
+
+/** 证据生命周期（原地演进不追加版本；trusted = 可表达授权，仅 trusted 可被消费者读取） */
+export type EvidenceStatus = 'raw' | 'candidate' | 'trusted' | 'archived'
+
+/** 可信度确立方式（trusted 时写入；与 source 两轴：内容从哪来 vs 可信怎么确立） */
+export type EvidenceVerificationType = 'user_confirmed' | 'document_supported' | 'imported'
+
+export interface EvidenceVerification {
+  type: EvidenceVerificationType
+  confirmedAt: string // ISO 时间戳
+}
+
+/** 一条证明（一维度可多条："样机测试 + EMC 测试"；未来扩展字段直接加，不破 schema） */
+export interface EvidenceValue {
+  content: string
+}
+
+/** 内容来源（溯源不是证据本身——引用允许腐烂，内容自足） */
+export type EvidenceSourceType = 'user_input' | 'resume' | 'document' | 'conversation' | 'decision'
+
+export interface EvidenceSource {
+  type: EvidenceSourceType
+  locator?: { artifactId?: string; section?: string; offset?: string } // 粗粒度溯源，不精确到行
+  capturedAt: string
+}
+
+/**
+ * 证据维度定义（Registry 条目）：id 是 immutable key（引用键——改名使历史证据全失效）；
+ * name/description 可改（version 递增记录演进）；岗位族扩展（软件/产品）走注册 + Benchmark 验证，
+ * 内容/软技能（leadership 等）永远不是维度（M1 Freeze 2 纪律）。
+ */
+export interface EvidenceDimensionDefinition {
+  id: string
+  name: string
+  description: string
+  applicableDomains: string[] // v0 仅 engineering
+  version: number
+}
+
+/** v0 注册表（工程族 5 维，M2 冻结）：与 EvidencePattern.dimension 同源（岗位/个人共用一词表） */
+export const EVIDENCE_DIMENSIONS_V0: readonly EvidenceDimensionDefinition[] = [
+  { id: 'scope', name: '设计范围', description: '负责/设计的范围与模块', applicableDomains: ['engineering'], version: 1 },
+  { id: 'method', name: '方法工具', description: '采用的设计流程/工具/方法', applicableDomains: ['engineering'], version: 1 },
+  { id: 'validation', name: '验证方式', description: '如何验证设计/成果有效', applicableDomains: ['engineering'], version: 1 },
+  { id: 'impact', name: '结果指标', description: '改善了什么指标/结果', applicableDomains: ['engineering'], version: 1 },
+  { id: 'adoption', name: '采纳应用', description: '方案/成果是否被采纳应用', applicableDomains: ['engineering'], version: 1 },
+]
+
+/** 个人证据条目（Event 为根；role/contribution 分离——岗位责任与个人贡献语义不同） */
+export interface EvidenceItem {
+  id: string // evidence_{YYYYMMDD}_{NNNNN}，引擎登记生成（artifact-registry）
+  event: {
+    title: string // 事件名："减速机壳体结构设计项目"
+    context?: string // 背景（可选）
+    period?: string // 时间（可选，自由文本）
+  }
+  role: string // 职责身份："机械结构负责人"
+  contribution: string // 实际贡献："负责机架和传动模块设计"（coverage 关联键）
+  evidence: Record<string, EvidenceValue[]> // dimensionId → 证明列表（维度 id 引用 EVIDENCE_DIMENSIONS_V0）
+  source: EvidenceSource
+  verification?: EvidenceVerification // trusted 时写入
+  confidence?: Confidence // AI 结构化置信度（raw 未结构化时无）
+  status: EvidenceStatus
 }
 
 /** 公司档案：companies/{name}.md */
