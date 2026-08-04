@@ -1,11 +1,13 @@
 /**
  * JD 空间侧栏：JD 池列表（按公司分组 + 投递状态 chip）。
- * 点击行 → JD 工作区（selectedJobId）。
+ * 点击行 → JD 工作区（selectedJobId）。hover 行尾删除按钮（确认后删 JD 文件，引擎广播重拉）。
  */
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
+import DeleteIcon from '@mui/icons-material/Delete'
 import WorkIcon from '@mui/icons-material/Work'
 import { useMemo } from 'react'
 import { useAppStore } from '../../../store/app-store'
+import { useToastStore } from '../../../store/toast-store'
 import { alpha, COLORS } from '../../../data/constants'
 
 export function JobsSidebar() {
@@ -13,6 +15,8 @@ export function JobsSidebar() {
   const applications = useAppStore((s) => s.applications)
   const selectedJobId = useAppStore((s) => s.selectedJobId)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
+  const deleteJob = useAppStore((s) => s.deleteJob)
+  const push = useToastStore((s) => s.push)
 
   const byCompany = useMemo(() => {
     const map = new Map<string, typeof jobs>()
@@ -73,6 +77,7 @@ export function JobsSidebar() {
                       cursor: 'pointer',
                       bgcolor: active ? COLORS.accentMuted : 'transparent',
                       '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
+                      '&:hover .row-delete': { display: 'block' },
                     }}
                   >
                     <Typography
@@ -100,6 +105,28 @@ export function JobsSidebar() {
                         }}
                       />
                     )}
+                    <Box className="row-delete" sx={{ display: 'none' }}>
+                      <IconButton
+                        size="small"
+                        title="删除 JD"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const apps = applications.filter((a) => a.jobId === j.id).length
+                          const link = [`投递 ${apps}`].filter((x) => !x.includes(' 0')).join(' · ')
+                          const hint = link
+                            ? `关联：${link}——删除后投递记录保留但显示「未挂 JD」，决策/简历版本不受影响。`
+                            : '决策/投递/简历版本不受影响。'
+                          if (!window.confirm(`删除 JD「${j.company} · ${j.title}」？不可恢复。${hint}`)) return
+                          void deleteJob(j.id).then(
+                            () => push('info', `已删除 JD：${j.company} · ${j.title}`),
+                            (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
+                          )
+                        }}
+                        sx={{ p: 0.25, fontSize: 13 }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+                      </IconButton>
+                    </Box>
                   </Stack>
                 )
               })}

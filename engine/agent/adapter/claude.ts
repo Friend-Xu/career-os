@@ -49,6 +49,10 @@ export interface QueryOptions {
   allowedTools?: string[]
   maxTurns?: number
   model?: string // 模型覆盖（config.agent.model，缺省用 CLI 默认）
+  /** API 密钥：传则走 API 模式（SDK options.apiKey）；留空复用本机 claude CLI 登录态 */
+  apiKey?: string
+  /** API 端点根地址（SDK options.baseURL）；留空 = 官方 */
+  baseUrl?: string
   abortController?: AbortController // 取消 → AgentError 'cancelled'
   /** 权限决策源：permission_request 事件抛出后，模块 await 此回调的决策（true=放行/false=拒绝）。缺省时权限请求交由 SDK 默认处理（不抛事件）。 */
   onPermissionRequest?: (tool: string) => Promise<boolean>
@@ -185,6 +189,8 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     maxTurns: opts.maxTurns,
     resume: opts.resumeSessionId,
     model: opts.model,
+    ...(opts.apiKey !== undefined && opts.apiKey !== '' ? { apiKey: opts.apiKey } : {}),
+    ...(opts.baseUrl !== undefined && opts.baseUrl !== '' ? { baseURL: opts.baseUrl } : {}),
     // 管道模式实测 AskUserQuestion 会立即跳过（tool_use_result 已含 "did not answer"）：
     // 显式给 10 分钟等待窗口，回答（前端点击）才来得及送达
     askUserQuestionTimeout: '10m',

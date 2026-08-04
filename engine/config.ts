@@ -16,6 +16,16 @@ export const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'career-os.config.json')
 export type PermissionMode = 'acceptEdits' | 'ask' | 'bypassPermissions'
 export type ConfigSource = 'CLI' | 'env' | 'config.json' | '默认值'
 
+/** 模型服务商连接（设置页服务商卡片；id 稳定标识，models = 用户勾选的模型） */
+export interface AgentProvider {
+  id: string
+  label?: string
+  baseUrl?: string
+  apiKey?: string
+  enabled: boolean
+  models?: string[]
+}
+
 export interface EngineConfig {
   server: {
     host: string
@@ -23,6 +33,14 @@ export interface EngineConfig {
   }
   agent: {
     model?: string
+    /** API 密钥（可选）：传则走 API 模式；留空复用本机 claude CLI 登录态 */
+    apiKey?: string
+    /** API 端点根地址（可选）：默认官方 https://api.anthropic.com；留空 = 官方 */
+    baseUrl?: string
+    /** 启用 API 模型配置（设置页大胶囊勾选）；false = 忽略 apiKey/baseUrl/model，Agent 走 CLI 登录态 */
+    enabled?: boolean
+    /** 服务商连接数组（设置页卡片式管理的唯一事实源；旧 model/apiKey/baseUrl 字段仅迁移兼容） */
+    providers?: AgentProvider[]
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -35,6 +53,14 @@ export interface EngineConfig {
   }
   watcher: {
     enabled: boolean
+  }
+  map: {
+    /** 地图服务商（当前仅高德 Web JS API） */
+    provider: string
+    /** 高德 JS API key（纯前端消费；与 agent.apiKey 同存 config.json，受同一 gitignore 保护） */
+    apiKey?: string
+    /** 高德 JS API 安全密钥（2021-12 后申请的 key 必须；明文方式 _AMapSecurityConfig，同存 config.json 保护） */
+    securityJsCode?: string
   }
 }
 
@@ -69,6 +95,7 @@ export function defaultConfig(): EngineConfig {
       db: resolve(workspace, '.career-os.db'),
     },
     watcher: { enabled: true },
+    map: { provider: 'amap' },
   }
 }
 
@@ -109,6 +136,66 @@ function assertModel(v: unknown, source: ConfigSource): string | undefined {
   return v
 }
 
+function assertApiKey(v: unknown, source: ConfigSource): string | undefined {
+  if (v === undefined || v === null || v === '') return undefined
+  if (typeof v !== 'string') throw new ConfigError('agent.apiKey', v, '字符串或空（复用本机 CLI 登录态）', source)
+  return v
+}
+
+function assertBaseUrl(v: unknown, source: ConfigSource): string | undefined {
+  if (v === undefined || v === null || v === '') return undefined
+  if (typeof v !== 'string') throw new ConfigError('agent.baseUrl', v, '字符串或空（默认官方 API）', source)
+  try {
+    new URL(v)
+  } catch {
+    throw new ConfigError('agent.baseUrl', v, '合法 URL（如 https://api.anthropic.com）', source)
+  }
+  return v
+}
+
+function assertAgentEnabled(v: unknown, source: ConfigSource): boolean | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v !== 'boolean') throw new ConfigError('agent.enabled', v, '布尔或空（默认启用）', source)
+  return v
+}
+
+function assertProviders(v: unknown, source: ConfigSource): AgentProvider[] | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v)) throw new ConfigError('agent.providers', v, '服务商数组', source)
+  return v.map((item, i) => {
+    if (typeof item !== 'object' || item === null) {
+      throw new ConfigError(`agent.providers[${i}]`, item, '对象', source)
+    }
+    const p = item as Record<string, unknown>
+    if (typeof p.id !== 'string' || p.id.length === 0) {
+      throw new ConfigError(`agent.providers[${i}].id`, p.id, '非空字符串', source)
+    }
+    if (p.label !== undefined && typeof p.label !== 'string') {
+      throw new ConfigError(`agent.providers[${i}].label`, p.label, '字符串', source)
+    }
+    if (p.baseUrl !== undefined && typeof p.baseUrl !== 'string') {
+      throw new ConfigError(`agent.providers[${i}].baseUrl`, p.baseUrl, '字符串', source)
+    }
+    if (p.apiKey !== undefined && typeof p.apiKey !== 'string') {
+      throw new ConfigError(`agent.providers[${i}].apiKey`, p.apiKey, '字符串', source)
+    }
+    if (typeof p.enabled !== 'boolean') {
+      throw new ConfigError(`agent.providers[${i}].enabled`, p.enabled, '布尔', source)
+    }
+    if (p.models !== undefined && (!Array.isArray(p.models) || p.models.some((m) => typeof m !== 'string'))) {
+      throw new ConfigError(`agent.providers[${i}].models`, p.models, 'string[]', source)
+    }
+    return {
+      id: p.id,
+      ...(p.label !== undefined ? { label: p.label } : {}),
+      ...(p.baseUrl !== undefined ? { baseUrl: p.baseUrl } : {}),
+      ...(p.apiKey !== undefined ? { apiKey: p.apiKey } : {}),
+      enabled: p.enabled,
+      ...(p.models !== undefined ? { models: p.models } : {}),
+    } as AgentProvider
+  })
+}
+
 function assertMaxTurns(v: unknown, source: ConfigSource): number | undefined {
   if (v === undefined || v === null) return undefined
   if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
@@ -127,6 +214,27 @@ function assertPath(v: unknown, source: ConfigSource): string {
 function assertEnabled(v: unknown, source: ConfigSource): boolean {
   if (typeof v !== 'boolean') throw new ConfigError('watcher.enabled', v, 'true/false', source)
   return v
+}
+
+function assertMap(v: unknown, source: ConfigSource): { provider: string; apiKey?: string; securityJsCode?: string } {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    throw new ConfigError('map', v, '对象 { provider, apiKey?, securityJsCode? }', source)
+  }
+  const m = v as Record<string, unknown>
+  if (typeof m.provider !== 'string' || m.provider.length === 0) {
+    throw new ConfigError('map.provider', m.provider, '非空字符串', source)
+  }
+  if (m.apiKey !== undefined && typeof m.apiKey !== 'string') {
+    throw new ConfigError('map.apiKey', m.apiKey, '字符串或空', source)
+  }
+  if (m.securityJsCode !== undefined && typeof m.securityJsCode !== 'string') {
+    throw new ConfigError('map.securityJsCode', m.securityJsCode, '字符串或空', source)
+  }
+  return {
+    provider: m.provider,
+    ...(m.apiKey !== undefined ? { apiKey: m.apiKey } : {}),
+    ...(m.securityJsCode !== undefined ? { securityJsCode: m.securityJsCode } : {}),
+  }
 }
 
 // ─── 来源解析 ─────────────────────────────────────────────────────────────
@@ -194,6 +302,10 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
     }
     if (file.agent) {
       if (file.agent.model !== undefined) config.agent.model = assertModel(file.agent.model, 'config.json')
+      if (file.agent.apiKey !== undefined) config.agent.apiKey = assertApiKey(file.agent.apiKey, 'config.json')
+      if (file.agent.baseUrl !== undefined) config.agent.baseUrl = assertBaseUrl(file.agent.baseUrl, 'config.json')
+      if (file.agent.enabled !== undefined) config.agent.enabled = assertAgentEnabled(file.agent.enabled, 'config.json')
+      if (file.agent.providers !== undefined) config.agent.providers = assertProviders(file.agent.providers, 'config.json')
       if (file.agent.permissionMode !== undefined) config.agent.permissionMode = assertPermissionMode(file.agent.permissionMode, 'config.json')
       if (file.agent.allowedTools !== undefined) config.agent.allowedTools = assertTools(file.agent.allowedTools, 'config.json')
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')
@@ -207,12 +319,29 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
     if (file.watcher && file.watcher.enabled !== undefined) {
       config.watcher.enabled = assertEnabled(file.watcher.enabled, 'config.json')
     }
+    if (file.map) {
+      config.map = assertMap(file.map, 'config.json')
+    }
   } else {
     writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n')
   }
 
   applyEnv(config)
   applyCli(config, cli)
+
+  // 旧字段迁移：providers 是唯一事实源；无 providers 但配了 apiKey → 迁移为自定义服务商
+  if (!config.agent.providers && config.agent.apiKey) {
+    config.agent.providers = [
+      {
+        id: 'custom',
+        label: '自定义',
+        baseUrl: config.agent.baseUrl,
+        apiKey: config.agent.apiKey,
+        enabled: config.agent.enabled !== false,
+        models: config.agent.model ? [config.agent.model] : [],
+      },
+    ]
+  }
 
   return { config, firstRun: !file, configPath }
 }
@@ -223,6 +352,9 @@ export function describeConfig(config: EngineConfig): string[] {
     `server.host = ${config.server.host}（监听地址，个人使用默认仅回环）`,
     `server.port = ${config.server.port}（与前端 5288 相邻；占用时 +1 递增兜底）`,
     `agent.model = ${config.agent.model ?? '（空）用 claude CLI 默认模型'}`,
+    `agent.apiKey = ${config.agent.apiKey ? '已配置（API 模式）' : '（空）复用本机 claude CLI 登录态'}`,
+    `agent.baseUrl = ${config.agent.baseUrl ?? '（空）官方 API https://api.anthropic.com'}`,
+    `agent.enabled = ${config.agent.enabled === false ? 'false（未启用：Agent 走本机 CLI 登录态）' : 'true（启用 API 模型配置）'}`,
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,

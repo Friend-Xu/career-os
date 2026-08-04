@@ -1,11 +1,15 @@
 /**
- * 公司空间侧栏：公司列表（搜索 + 城市/产业过滤）。
- * 点击行 → 档案 Dialog（selectedCompanyId 驱动）；locateTarget 定位滚动。
+ * 公司空间侧栏：公司列表（搜索 + 城市/产业过滤），标题「公司空间」在列表上方。
+ * 视图切换（公司档案/地图探索）在主区顶部左侧（companies-page）。
+ * 点击行 → 选中公司（selectedCompanyId 驱动两视图联动）；locateTarget 定位滚动；
+ * hover 行尾删除按钮（确认后删公司档案文件，引擎广播重拉）。
  */
-import { Box, Chip, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import { Box, Chip, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import DeleteIcon from '@mui/icons-material/Delete'
 import SearchIcon from '@mui/icons-material/Search'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../../store/app-store'
+import { useToastStore } from '../../../store/toast-store'
 import { COLORS, RISK_COLOR } from '../../../data/constants'
 
 const FILTERS = [
@@ -24,6 +28,11 @@ export function CompaniesSidebar() {
   const setCompaniesFilter = useAppStore((s) => s.setCompaniesFilter)
   const selectedCompanyId = useAppStore((s) => s.selectedCompanyId)
   const setSelectedCompanyId = useAppStore((s) => s.setSelectedCompanyId)
+  const deleteCompany = useAppStore((s) => s.deleteCompany)
+  const applications = useAppStore((s) => s.applications)
+  const decisions = useAppStore((s) => s.decisions)
+  const resumes = useAppStore((s) => s.resumes)
+  const push = useToastStore((s) => s.push)
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const [search, setSearch] = useState('')
@@ -82,7 +91,7 @@ export function CompaniesSidebar() {
               flex: 1,
             }}
           >
-            公司
+            公司空间
           </Typography>
           <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
             {companies.length}
@@ -149,6 +158,7 @@ export function CompaniesSidebar() {
                   cursor: 'pointer',
                   bgcolor: active ? COLORS.accentMuted : 'transparent',
                   '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
+                  '&:hover .row-delete': { display: 'block' },
                 }}
               >
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -170,6 +180,32 @@ export function CompaniesSidebar() {
                       {c.matchScore}
                     </Typography>
                   )}
+                  <Box className="row-delete" sx={{ display: 'none' }}>
+                    <IconButton
+                      size="small"
+                      title="删除公司档案"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const appN = applications.filter((a) => a.company === c.name).length
+                        const decN = decisions.filter((d) => d.title.includes(c.name)).length
+                        const resN = resumes.filter((r) => r.targetCompany === c.name).length
+                        const link = [appN && `投递 ${appN}`, decN && `决策 ${decN}`, resN && `简历版本 ${resN}`]
+                          .filter(Boolean)
+                          .join(' · ')
+                        const hint = link
+                          ? `关联：${link}——删除后投递/决策/简历版本保留（尽调状态回落「尚未建档」）。`
+                          : '投递/决策/简历版本不受影响。'
+                        if (!window.confirm(`删除公司档案「${c.name}」？不可恢复。${hint}`)) return
+                        void deleteCompany(c.id).then(
+                          () => push('info', `已删除公司：${c.name}`),
+                          (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
+                        )
+                      }}
+                      sx={{ p: 0.25, fontSize: 13 }}
+                    >
+                      <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+                    </IconButton>
+                  </Box>
                 </Stack>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                   <Typography sx={{ fontSize: 11, color: COLORS.textMuted, flex: 1, minWidth: 0 }} noWrap>

@@ -30,11 +30,13 @@ import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, GapResult, Jo
 import {
   EVENTS,
   createEngineClient,
+  type AgentProviderView,
   type DecisionView,
   type EngineClient,
   type EngineStatus,
   type GraphResult,
   type JobView,
+  type MapSettings,
 } from './engine-client'
 
 /** 引擎公司档案（带 validation 降级标记）；mock COMPANIES 无 validation，结构兼容 */
@@ -123,6 +125,12 @@ interface AppState {
   poolGraph: GraphResult | null;
   sessions: Session[];
   currentSessionId: string;
+  /** 当前运行中的 Agent 任务（sessionId 归属；无任务为 null，不持久化）——停止按钮的驱动源 */
+  activeTask: { taskId: string; sessionId: string } | null;
+  /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
+  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings };
+  /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
+  availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   applications: Application[];
   /** 简历版本（初始 mock；「选择 JD 派生」新建版本写入，持久化） */
   resumes: ResumeVersion[];
@@ -155,6 +163,8 @@ interface AppState {
   selectedCompanyId: string | null;
   /** 工作台子视图（驾驶舱内部导航：Dashboard/方向/城市/决策记录） */
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
+  /** 公司空间子视图（档案：卡片+尽调正文 / 地图：散点定位） */
+  companiesView: 'profile' | 'map';
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
   pendingPermission: PendingPermission | null;
   /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
@@ -183,7 +193,25 @@ interface AppState {
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
+  setCompaniesView: (view: 'profile' | 'map') => void;
   createSession: (title?: string) => void;
+  /** 停止当前会话运行中的 Agent 任务（agent/cancel RPC + 占位消息标记「已停止」） */
+  cancelCurrentTask: () => void;
+  /** 从引擎拉取 Agent 设置（config.json）到 agentSettings */
+  loadAgentSettings: () => Promise<void>;
+  /** 拉取可用模型列表（模型切换器 options；可选 params 传临时 apiKey/baseUrl——「提取模型」按钮用，缺省引擎配置） */
+  loadAvailableModels: (params?: { apiKey?: string; baseUrl?: string }) => Promise<void>;
+  /** 保存 Agent 设置到引擎 config.json（apiKey 空串 = 清除；下次任务生效） */
+  saveAgentSettings: (patch: {
+    model?: string
+    apiKey?: string
+    baseUrl?: string
+    enabled?: boolean
+    providers?: AgentProviderView[]
+    map?: { apiKey?: string; securityJsCode?: string }
+  }) => Promise<void>;
+  /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings */
+  setAgentModel: (model: string) => void;
   /** 权限消费入口（真实 Agent 流 + 演示共用）：会话内已批量放行 → 立即放行；否则挂起弹窗等待决策 */
   requestPermission: (toolName: string, description: string) => Promise<boolean>;
   approvePermission: () => void;
@@ -221,6 +249,12 @@ interface AppState {
   }) => Promise<JobRecord>;
   /** 岗位要求覆盖（可解释匹配：Job.requirements 当 Role 喂 computeGap） */
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
+  /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
+  deleteJob: (id: string) => Promise<void>;
+  /** 删除公司档案（引擎删 companies/{id}.md → companiesChanged 自动重拉；删除当前选中则清空） */
+  deleteCompany: (id: string) => Promise<void>;
+  /** 删除简历版本（本地 resumes 过滤；删除当前版本回退到第一份） */
+  deleteResumeVersion: (id: string) => void;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
   setInfopoolFilter: (filter: string) => void;
@@ -242,6 +276,9 @@ export const useAppStore = create<AppState>()(
       poolGraph: null,
       sessions: SESSIONS,
       currentSessionId: 's-current',
+      activeTask: null,
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' } },
+      availableModels: { source: 'cli', models: [] },
       applications: APPLICATIONS,
       resumes: RESUMES,
       decisions: DECISIONS,
@@ -266,6 +303,7 @@ export const useAppStore = create<AppState>()(
       selectedJobId: null,
       selectedCompanyId: null,
       workbenchView: 'dashboard',
+      companiesView: 'profile',
       pendingPermission: null,
       approvedTools: {},
       rewrite: { status: 'idle', text: '' },
@@ -450,6 +488,7 @@ export const useAppStore = create<AppState>()(
 
     // 真实 Agent 流（引擎在线）：task 直接发 prompt，Agent 在 workspace 根自读信息池；
     // 有 SDK 会话凭据则 resume 续接（会话连续性）
+    // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === currentSessionId)
       void runAgentTask(currentSessionId, content, session?.sdkSessionId)
@@ -496,6 +535,83 @@ export const useAppStore = create<AppState>()(
       currentSessionId: id,
     }))
   },
+
+  cancelCurrentTask: () => {
+    const { activeTask } = get()
+    if (!activeTask) return
+    void engine?.cancelAgent(activeTask.taskId)
+    const task = agentTasks.get(activeTask.taskId)
+    if (task) {
+      // 占位消息标记停止（内容为空 → 「已停止」；已有流式内容 → 追加停止标记）
+      patchStreamingMessage(task.sessionId, task.messageId, (m) => ({
+        ...m,
+        isThinking: false,
+        content: m.content === '' ? '（已停止）' : `${m.content}\n\n（已停止）`,
+      }))
+      agentTasks.delete(activeTask.taskId)
+    }
+    set({ activeTask: null })
+  },
+
+  loadAgentSettings: async () => {
+    if (!engine) return
+    try {
+      const s = await engine.getAgentSettings()
+      set({
+        agentSettings: {
+          model: s.model ?? '',
+          apiKey: s.apiKey ?? '',
+          baseUrl: s.baseUrl ?? '',
+          enabled: s.enabled !== false,
+          providers: s.providers ?? [],
+          map: s.map ?? { provider: 'amap' },
+        },
+      })
+    } catch {
+      // 离线/引擎未实现：保持现有
+    }
+  },
+
+  loadAvailableModels: async (params) => {
+    if (!engine) return
+    try {
+      const m = await engine.getAvailableModels(params)
+      set({ availableModels: m })
+    } catch {
+      // 离线：保持空（切换器仅自由输入）
+    }
+  },
+
+  saveAgentSettings: async (patch) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.updateAgentSettings(patch)
+    set((s) => ({
+      agentSettings: {
+        model: patch.model !== undefined ? patch.model : s.agentSettings.model,
+        apiKey: patch.apiKey !== undefined ? patch.apiKey : s.agentSettings.apiKey,
+        baseUrl: patch.baseUrl !== undefined ? patch.baseUrl : s.agentSettings.baseUrl,
+        enabled: patch.enabled !== undefined ? patch.enabled : s.agentSettings.enabled,
+        providers: patch.providers !== undefined ? patch.providers : s.agentSettings.providers,
+        map: patch.map !== undefined ? { ...s.agentSettings.map, ...patch.map } : s.agentSettings.map,
+      },
+    }))
+  },
+
+  /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings。
+   * 选模型时同步该模型所属服务商的 apiKey/baseUrl（Agent 任务凭证来源） */
+  setAgentModel: (model) =>
+    set((s) => {
+      const provider = s.agentSettings.providers.find((p) => (p.models ?? []).includes(model))
+      return {
+        agentSettings: {
+          ...s.agentSettings,
+          model,
+          ...(provider
+            ? { apiKey: provider.apiKey ?? '', baseUrl: provider.baseUrl ?? '' }
+            : {}),
+        },
+      }
+    }),
 
   updateApplicationStatus: (id, status) => {
     set((state) => ({
@@ -560,6 +676,29 @@ export const useAppStore = create<AppState>()(
     return engine.matchJob(jobId, personName)
   },
 
+  deleteJob: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.deleteJob(id)
+    const { selectedJobId } = get()
+    if (selectedJobId === id) set({ selectedJobId: null })
+  },
+
+  deleteCompany: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.deleteCompany(id)
+    const { selectedCompanyId } = get()
+    if (selectedCompanyId === id) set({ selectedCompanyId: null })
+  },
+
+  deleteResumeVersion: (id) => {
+    const { resumes, activeResumeId } = get()
+    const remaining = resumes.filter((r) => r.id !== id)
+    set({
+      resumes: remaining,
+      activeResumeId: activeResumeId === id ? (remaining[0]?.id ?? '') : activeResumeId,
+    })
+  },
+
   addDecision: (record) => {
     // 引擎 connected：决策真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉），
     // 本地只保留内存写入（演示模式不写引擎），不本地推进阶段——避免与引擎派生打架。
@@ -607,6 +746,7 @@ export const useAppStore = create<AppState>()(
   setSelectedJobId: (id) => set({ selectedJobId: id }),
   setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
   setWorkbenchView: (view) => set({ workbenchView: view }),
+  setCompaniesView: (view) => set({ companiesView: view }),
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId
@@ -870,6 +1010,15 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
     const { taskId } = await engine.startAgent({
       task: content,
       ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
+      ...(useAppStore.getState().agentSettings.model
+        ? { model: useAppStore.getState().agentSettings.model }
+        : {}),
+      ...(useAppStore.getState().agentSettings.apiKey
+        ? { apiKey: useAppStore.getState().agentSettings.apiKey }
+        : {}),
+      ...(useAppStore.getState().agentSettings.baseUrl
+        ? { baseUrl: useAppStore.getState().agentSettings.baseUrl }
+        : {}),
     })
     const messageId = `msg-${Date.now()}`
     appendToSession(sessionId, {
@@ -880,6 +1029,7 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
       timestamp: new Date().toISOString(),
     })
     agentTasks.set(taskId, { sessionId, messageId })
+    useAppStore.setState({ activeTask: { taskId, sessionId } })
   } catch (err) {
     appendToSession(sessionId, {
       id: `msg-${Date.now()}`,
@@ -1001,6 +1151,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
     case 'done':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       agentTasks.delete(taskId)
+      if (useAppStore.getState().activeTask?.taskId === taskId) useAppStore.setState({ activeTask: null })
       break
     case 'error':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
@@ -1012,6 +1163,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         error: ev.error,
       })
       agentTasks.delete(taskId)
+      if (useAppStore.getState().activeTask?.taskId === taskId) useAppStore.setState({ activeTask: null })
       break
   }
 }
@@ -1155,6 +1307,8 @@ export function connectEngine(): void {
       void pullKnowledge()
       void pullHealth()
       void pullJobs()
+      void useAppStore.getState().loadAgentSettings()
+      void useAppStore.getState().loadAvailableModels()
     }
   })
   engine.on(EVENTS.decisionsChanged, () => {
@@ -1165,6 +1319,10 @@ export function connectEngine(): void {
     void pullContexts()
   })
   engine.on(EVENTS.jobsChanged, () => void pullJobs())
+  engine.on(EVENTS.companiesChanged, () => {
+    void pullCompanies()
+    void pullGraph()
+  })
   engine.on(EVENTS.poolChanged, () => void pullGraph())
   engine.onAgentEvent(handleAgentEvent)
   engine.connect()

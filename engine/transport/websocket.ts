@@ -8,8 +8,9 @@
  */
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EngineConfig } from '../config.ts'
+import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
 import type { DecisionAggregate, DecisionChain, DecisionRecord, GapResult } from '../ir/schema.ts'
@@ -24,7 +25,8 @@ import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanProfiles } from '../storage/projection.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
-import { createJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { deleteCompanyFile, readCompanyFile } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
@@ -144,10 +146,10 @@ function createJobParams(v: unknown): CreateJobParams {
   return out
 }
 
-/** jobs/get / jobs/match 的 id 提取（RPC 边界） */
+/** jobs/get / jobs/match / jobs/delete / companies/get / companies/delete 的 id 提取（RPC 边界） */
 function jobIdParams(v: unknown): string {
   if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).id !== 'string') {
-    throw new Error('params.id 缺失（岗位 id）')
+    throw new Error('params.id 缺失')
   }
   return (v as Record<string, unknown>).id as string
 }
@@ -242,7 +244,167 @@ function agentStartParams(v: unknown): AgentStartParams {
     if (typeof p.maxTurns !== 'number' || p.maxTurns < 1) throw new Error('params.maxTurns 应为正整数')
     out.maxTurns = p.maxTurns
   }
+  if (p.model !== undefined) {
+    if (typeof p.model !== 'string') throw new Error('params.model 应为字符串')
+    out.model = p.model
+  }
+  if (p.apiKey !== undefined) {
+    if (typeof p.apiKey !== 'string') throw new Error('params.apiKey 应为字符串')
+    out.apiKey = p.apiKey
+  }
+  if (p.baseUrl !== undefined) {
+    if (typeof p.baseUrl !== 'string') throw new Error('params.baseUrl 应为字符串')
+    try {
+      new URL(p.baseUrl)
+    } catch {
+      throw new Error('params.baseUrl 应为合法 URL（如 https://api.anthropic.com）')
+    }
+    out.baseUrl = p.baseUrl
+  }
   return out
+}
+
+/** settings/update 入参校验（RPC 边界：undefined = 不修改该字段） */
+function settingsUpdateParams(v: unknown): {
+  model?: string
+  apiKey?: string
+  baseUrl?: string
+  enabled?: boolean
+  providers?: AgentProvider[]
+  permissionMode?: PermissionMode
+  allowedTools?: string[]
+  maxTurns?: number
+  map?: { apiKey?: string; securityJsCode?: string }
+} {
+  if (typeof v !== 'object' || v === null) throw new Error('settings/update 需要 params 对象')
+  const p = v as Record<string, unknown>
+  const out: NonNullable<ReturnType<typeof settingsUpdateParams>> = {}
+  if (p.model !== undefined) {
+    if (typeof p.model !== 'string') throw new Error('params.model 应为字符串')
+    out.model = p.model
+  }
+  if (p.apiKey !== undefined) {
+    if (typeof p.apiKey !== 'string') throw new Error('params.apiKey 应为字符串')
+    out.apiKey = p.apiKey
+  }
+  if (p.baseUrl !== undefined) {
+    if (typeof p.baseUrl !== 'string') throw new Error('params.baseUrl 应为字符串')
+    try {
+      new URL(p.baseUrl)
+    } catch {
+      throw new Error('params.baseUrl 应为合法 URL（如 https://api.anthropic.com）')
+    }
+    out.baseUrl = p.baseUrl
+  }
+  if (p.enabled !== undefined) {
+    if (typeof p.enabled !== 'boolean') throw new Error('params.enabled 应为布尔')
+    out.enabled = p.enabled
+  }
+  if (p.providers !== undefined) {
+    if (!Array.isArray(p.providers)) throw new Error('params.providers 应为数组')
+    for (const item of p.providers) {
+      if (typeof item !== 'object' || item === null) throw new Error('params.providers 每项应为对象')
+      const pr = item as Record<string, unknown>
+      if (typeof pr.id !== 'string' || pr.id.length === 0) throw new Error('params.providers[].id 应为非空字符串')
+      if (pr.enabled !== undefined && typeof pr.enabled !== 'boolean') throw new Error('params.providers[].enabled 应为布尔')
+      if (pr.models !== undefined && (!Array.isArray(pr.models) || pr.models.some((m) => typeof m !== 'string'))) {
+        throw new Error('params.providers[].models 应为 string[]')
+      }
+    }
+    out.providers = p.providers as AgentProvider[]
+  }
+  if (p.permissionMode !== undefined) {
+    if (!['acceptEdits', 'ask', 'bypassPermissions'].includes(p.permissionMode as string)) {
+      throw new Error('params.permissionMode 应为 acceptEdits/ask/bypassPermissions')
+    }
+    out.permissionMode = p.permissionMode as PermissionMode
+  }
+  if (p.allowedTools !== undefined) {
+    if (!Array.isArray(p.allowedTools) || p.allowedTools.length === 0 || p.allowedTools.some((t) => typeof t !== 'string')) {
+      throw new Error('params.allowedTools 应为非空 string[]')
+    }
+    out.allowedTools = p.allowedTools as string[]
+  }
+  if (p.maxTurns !== undefined) {
+    if (typeof p.maxTurns !== 'number' || p.maxTurns < 1) throw new Error('params.maxTurns 应为正整数')
+    out.maxTurns = p.maxTurns
+  }
+  if (p.map !== undefined) {
+    if (typeof p.map !== 'object' || p.map === null || Array.isArray(p.map)) {
+      throw new Error('params.map 应为对象 { apiKey?, securityJsCode? }')
+    }
+    const m = p.map as Record<string, unknown>
+    if (m.apiKey !== undefined && typeof m.apiKey !== 'string') throw new Error('params.map.apiKey 应为字符串')
+    if (m.securityJsCode !== undefined && typeof m.securityJsCode !== 'string') {
+      throw new Error('params.map.securityJsCode 应为字符串')
+    }
+    out.map = {
+      ...(m.apiKey !== undefined ? { apiKey: m.apiKey as string } : {}),
+      ...(m.securityJsCode !== undefined ? { securityJsCode: m.securityJsCode as string } : {}),
+    }
+  }
+  return out
+}
+
+/** settings/models 入参（可选）：临时 apiKey/baseUrl——未保存也能提取模型（「提取模型」按钮）；
+ * 缺省用引擎配置 config.agent.apiKey/baseUrl */
+function settingsModelsParams(v: unknown): { apiKey?: string; baseUrl?: string } {
+  if (v === undefined || v === null) return {}
+  const p = v as Record<string, unknown>
+  const out: { apiKey?: string; baseUrl?: string } = {}
+  if (p.apiKey !== undefined) {
+    if (typeof p.apiKey !== 'string') throw new Error('params.apiKey 应为字符串')
+    out.apiKey = p.apiKey
+  }
+  if (p.baseUrl !== undefined) {
+    if (typeof p.baseUrl !== 'string') throw new Error('params.baseUrl 应为字符串')
+    try {
+      new URL(p.baseUrl)
+    } catch {
+      throw new Error('params.baseUrl 应为合法 URL（如 https://api.anthropic.com）')
+    }
+    out.baseUrl = p.baseUrl
+  }
+  return out
+}
+
+/** 可用模型列表：只从 API 提取（不预制）——有 apiKey 时探测端点拉真实可用模型；
+ * 无 key（CLI 模式）→ 空列表（模型由 claude CLI 决定，UI 仅自由输入）。
+ * 探测链（第三方兼容网关差异适配，外部 API 边界）：Anthropic 标准 /v1/models →
+ * OpenAI 风格 /models → baseUrl 以 /anthropic 结尾时去掉后缀探测根 /models（DeepSeek 类网关：
+ * 兼容端点无模型列表，原生端点有）。401/403 直接判定 Key 无效（其余路径必同结果），
+ * 404/405 视为该路径不存在继续探测。 */
+const ANTHROPIC_DEFAULT_BASE_URL = 'https://api.anthropic.com'
+
+async function listAvailableModels(
+  apiKey?: string,
+  baseUrl?: string,
+): Promise<{ source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' }> {
+  if (apiKey === undefined || apiKey === '') return { source: 'cli', models: [] }
+  const base = (baseUrl ?? ANTHROPIC_DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const candidates = [
+    `${base}/v1/models`,
+    `${base}/models`,
+    ...(base.endsWith('/anthropic') ? [`${base.slice(0, -'/anthropic'.length)}/models`] : []),
+  ]
+  const headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers })
+      if (res.ok) {
+        const json = (await res.json()) as { data: { id: string }[] }
+        if (Array.isArray(json.data)) return { source: 'api', models: json.data.map((m) => m.id) }
+        return { source: 'api_error', models: [], error: 'no_endpoint' }
+      }
+      if (res.status === 401 || res.status === 403) return { source: 'api_error', models: [], error: 'auth' }
+      if (res.status !== 404 && res.status !== 405) {
+        return { source: 'api_error', models: [], error: 'no_endpoint' }
+      }
+    } catch {
+      return { source: 'api_error', models: [], error: 'network' }
+    }
+  }
+  return { source: 'api_error', models: [], error: 'no_endpoint' }
 }
 
 /** agent/answer|cancel|permission 的 taskId 提取（RPC 边界） */
@@ -260,6 +422,32 @@ function permissionParams(v: unknown): { taskId: string; requestId: string; allo
   if (typeof p.requestId !== 'string' || p.requestId.length === 0) throw new Error('params.requestId 缺失')
   if (typeof p.allow !== 'boolean') throw new Error('params.allow 应为 boolean')
   return { taskId, requestId: p.requestId, allow: p.allow }
+}
+
+/**
+ * Agent 技能身份注入：任务启动前引导 Agent 阅读技能文件（人设 + 协议来源）。
+ * 不注入时模型仅凭 cwd 猜身份（曾出现把自己当成"公司分析助手"的开场白）。
+ * 同时注入工作区初始化状态：SKILL.md 的首次检查依赖 CLAUDE_PROJECT_DIR 环境变量，
+ * 引擎 spawn 的 CLI 进程未设置该变量 → Agent 会把已初始化工作区误判为"首次使用"，
+ * 此处用真实文件状态直接覆盖该检查。
+ */
+function buildSkillIdentity(skillsDir: string, workspaceRoot: string): string {
+  const indexExists = existsSync(join(workspaceRoot, 'INDEX.md'))
+  const initState = indexExists
+    ? `当前工作区已初始化（${join(workspaceRoot, 'INDEX.md')} 存在），直接跳过 SKILL.md 中的"首次运行检查"步骤。`
+    : `当前工作区尚未初始化（缺 ${join(workspaceRoot, 'INDEX.md')}），按 SKILL.md 的"首次运行检查"执行初始化。`
+  try {
+    const skill = readFileSync(join(skillsDir, 'SKILL.md'), 'utf8')
+    return [
+      '你是 Career OS 的职业决策助手（技能：career-advisor）。',
+      `你的完整协议与工作流程定义在技能文件 ${join(skillsDir, 'SKILL.md')}（本任务工作目录下可访问），开始处理任务前请先阅读它。`,
+      initState,
+      '技能概述（节选）：',
+      skill.slice(0, 1500),
+    ].join('\n')
+  } catch {
+    return `你是 Career OS 的职业决策助手，请依据工作区中的 profiles/、decisions/ 等数据为用户提供职业决策建议。${initState}`
+  }
 }
 
 export async function startServer(opts: {
@@ -293,6 +481,7 @@ export async function startServer(opts: {
       return updateDecisionFile(workspace, id, fields)
     },
     [METHODS.listCompanies]: () => store.listCompanies(),
+    [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.chain]: () => computeChains(store.listDecisions() as DecisionRecord[], runtime),
@@ -301,14 +490,73 @@ export async function startServer(opts: {
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
     [METHODS.health]: () => generateHealthReport(workspace, store),
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
-    [METHODS.agentStart]: (params) => ({
-      taskId: agentRuntime.start(agentStartParams(params), {
-        permissionMode: config.agent.permissionMode,
-        allowedTools: config.agent.allowedTools,
-        maxTurns: config.agent.maxTurns,
-        model: config.agent.model,
-      }, workspace.paths.root),
+    [METHODS.agentStart]: (params) => {
+      const p = agentStartParams(params)
+      // 技能身份注入：人设 + 协议引导拼在任务前（不注入会因缺上下文导致身份漂移）
+      const identity = buildSkillIdentity(config.paths.skills, workspace.paths.root)
+      return {
+        taskId: agentRuntime.start(
+          { ...p, context: [identity, p.context].filter(Boolean).join('\n\n') },
+          {
+            permissionMode: config.agent.permissionMode,
+            allowedTools: config.agent.allowedTools,
+            maxTurns: config.agent.maxTurns,
+            model: config.agent.enabled === false ? undefined : config.agent.model,
+            apiKey: config.agent.enabled === false ? undefined : config.agent.apiKey,
+            baseUrl: config.agent.enabled === false ? undefined : config.agent.baseUrl,
+          },
+          workspace.paths.root,
+        ),
+      }
+    },
+    [METHODS.settingsGet]: () => ({
+      model: config.agent.model,
+      apiKey: config.agent.apiKey,
+      baseUrl: config.agent.baseUrl,
+      enabled: config.agent.enabled !== false,
+      providers: config.agent.providers,
+      permissionMode: config.agent.permissionMode,
+      allowedTools: config.agent.allowedTools,
+      maxTurns: config.agent.maxTurns,
+      map: config.map,
     }),
+    [METHODS.settingsUpdate]: (params) => {
+      const patch = settingsUpdateParams(params)
+      // 更新内存（下次任务立即生效）
+      if (patch.model !== undefined) config.agent.model = patch.model || undefined
+      if (patch.apiKey !== undefined) config.agent.apiKey = patch.apiKey || undefined
+      if (patch.baseUrl !== undefined) config.agent.baseUrl = patch.baseUrl || undefined
+      if (patch.enabled !== undefined) config.agent.enabled = patch.enabled
+      if (patch.providers !== undefined) config.agent.providers = patch.providers
+      if (patch.permissionMode !== undefined) config.agent.permissionMode = patch.permissionMode
+      if (patch.allowedTools !== undefined) config.agent.allowedTools = patch.allowedTools
+      if (patch.maxTurns !== undefined) config.agent.maxTurns = patch.maxTurns
+      if (patch.map !== undefined) config.map = { provider: config.map.provider, ...patch.map }
+      // 写回 config.json（保持其他字段不动；空串 → 删除该字段）
+      const full = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, 'utf8')) as Record<string, unknown>
+      const agent = (full.agent ?? {}) as Record<string, unknown>
+      const { map: mapPatch, ...agentPatch } = patch
+      for (const [k, v] of Object.entries(agentPatch)) {
+        if (v === '') delete agent[k]
+        else agent[k] = v
+      }
+      full.agent = agent
+      // map 段独立写回（provider 保持不动，只更新 apiKey / securityJsCode）
+      if (mapPatch) {
+        const map = (full.map ?? { provider: 'amap' }) as Record<string, unknown>
+        if (mapPatch.apiKey === '') delete map.apiKey
+        else map.apiKey = mapPatch.apiKey
+        if (mapPatch.securityJsCode === '') delete map.securityJsCode
+        else map.securityJsCode = mapPatch.securityJsCode
+        full.map = map
+      }
+      writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(full, null, 2) + '\n', 'utf8')
+      return { ok: true }
+    },
+    [METHODS.settingsModels]: (params) => {
+      const p = settingsModelsParams(params)
+      return listAvailableModels(p.apiKey ?? config.agent.apiKey, p.baseUrl ?? config.agent.baseUrl)
+    },
     [METHODS.agentAnswer]: (params) => {
       const taskId = taskIdParams(params) // 返回字符串，不可解构
       const p = params as Record<string, unknown>
@@ -330,6 +578,15 @@ export async function startServer(opts: {
       return {}
     },
     [METHODS.createJob]: (params) => createJobFile(workspace, createJobParams(params)),
+    [METHODS.deleteJob]: (params) => {
+      deleteJobFile(workspace, jobIdParams(params))
+      return {}
+    },
+    [METHODS.deleteCompany]: (params) => {
+      deleteCompanyFile(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.companiesChanged })
+      return {}
+    },
     [METHODS.listJobs]: () => scanJobs(workspace).map((j) => ({
       ...j.record,
       ...(j.validation ? { validation: j.validation } : {}),

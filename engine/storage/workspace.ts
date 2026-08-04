@@ -7,7 +7,7 @@
  *   引擎单方维护，skill 不读写）
  * 目录创建失败/不可写 → WorkspaceError fail fast（系统边界校验）。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { ProtocolVersion } from '../ir/schema.ts'
 
@@ -43,6 +43,8 @@ export interface Workspace {
   /** 相对 root 写文件（自动创建父目录） */
   write(relPath: string, content: string): void
   exists(relPath: string): boolean
+  /** 相对 root 删除文件（不存在抛 WorkspaceError） */
+  delete(relPath: string): void
   /** 列出子目录下的 .md 文件（无目录则抛 WorkspaceError） */
   listMarkdown(subDir: string): string[]
 }
@@ -118,6 +120,14 @@ export function initWorkspace(root: string): Workspace {
     },
     exists(relPath) {
       return existsSync(join(root, relPath))
+    },
+    delete(relPath) {
+      const full = join(root, relPath)
+      try {
+        unlinkSync(full)
+      } catch {
+        throw new WorkspaceError(relPath, '文件不存在或不可删除')
+      }
     },
     listMarkdown(subDir) {
       const dir = join(root, subDir)

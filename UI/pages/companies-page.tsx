@@ -1,272 +1,463 @@
 /**
- * 公司空间主区：园区地图（浏览态）+ 档案 Dialog（理解/操作）。
- * 公司列表在侧栏（CompaniesSidebar）——浏览 → 列表 → 档案三层分工。
+ * 公司空间主区：双视图（主区顶部切换；侧栏 CompaniesSidebar 的公司卡片列表两视图联动）——
+ * 「公司档案」：左侧公司卡片（460px：标签/尽调摘要/差距分析/操作/JD）+ 右侧尽调详情正文（companies/get md 原文）
+ * 「地图探索」：高德真实地图（公司按真实经纬度散点，key/安全密钥来自 config.json map 段），
+ * 点公司 → 高亮 + 摘要浮卡 → 「查看档案」切回；未配置 key 时显示引导空态。
  */
-import { Box, Button, Chip, Dialog, IconButton, Stack, Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  IconButton,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
-import { useState } from 'react'
-import { PARKS } from '../data/mock-data'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Components } from 'react-markdown'
+import { load as loadAMap } from '@amap/amap-jsapi-loader'
+import '@amap/amap-jsapi-types'
 import { GapAnalysisSection } from '../components/gap-analysis-section'
-import { useAppStore } from '../store/app-store'
+import { getEngine, useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import type { Company } from '../types'
+import type { CompanyDetail } from '../store/engine-client'
 
-export function CompaniesPage() {
-  const [parkId, setParkId] = useState<number | null>(null)
-  const setPage = useAppStore((s) => s.setPage)
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
+/** 城市 → 经纬度（高德 GCJ-02 坐标系，城市中心近似）；未收录城市落中部默认点 */
+const CITY_COORDS: Record<string, [number, number]> = {
+  北京: [116.4, 39.9],
+  上海: [121.47, 31.23],
+  杭州: [120.15, 30.28],
+  深圳: [114.06, 22.55],
+  苏州: [120.58, 31.3],
+  常州: [119.97, 31.81],
+}
+
+/** 公司打点位置：城市经纬度 + 同城按索引偏移散开（确定性，不随渲染跳动） */
+function companyPos(c: Company, idx: number): [number, number] {
+  const base = CITY_COORDS[c.city] ?? [113.5, 33]
+  return [base[0] + ((idx % 5) - 2) * 0.06, base[1] + ((idx % 3) - 1) * 0.06]
+}
+
+/** 公司 Marker 内容（风险色圆点 + 公司名；AMap.Marker content 要求 HTML 字符串，CSS 变量跟随主题） */
+function markerHtml(c: Company, active: boolean): string {
+  const dot = active ? 'var(--cos-on-accent)' : RISK_COLOR[c.riskLevel]
+  const border = active ? 'var(--cos-accent)' : RISK_COLOR[c.riskLevel]
+  return [
+    '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;',
+    `background:${active ? 'var(--cos-accent)' : 'var(--cos-bg-elevated)'};`,
+    `border:1.5px solid ${border};`,
+    `box-shadow:${active ? '0 0 0 4px rgba(0,0,0,0.10)' : 'none'};`,
+    'cursor:pointer;white-space:nowrap;font-size:12px;',
+    `font-weight:${active ? 600 : 500};color:${active ? 'var(--cos-on-accent)' : 'var(--cos-text)'}">`,
+    `<span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block"></span>`,
+    c.name,
+    '</div>',
+  ].join('')
+}
+
+/** 尽调详情正文 markdown 组件映射（贴合浅色瑞士风；h1 已在卡片头展示，缩为小节） */
+const MD_COMPONENTS: Components = {
+  h2: ({ children }) => (
+    <Typography sx={{ fontSize: 15, fontWeight: 600, mb: 1.5, mt: 3, color: COLORS.text }}>{children}</Typography>
+  ),
+  h3: ({ children }) => (
+    <Typography sx={{ fontSize: 13.5, fontWeight: 600, mb: 1, mt: 2.5, color: COLORS.text }}>{children}</Typography>
+  ),
+  p: ({ children }) => (
+    <Typography sx={{ fontSize: 13.5, lineHeight: 1.8, color: COLORS.textSecondary, mb: 1.5 }}>{children}</Typography>
+  ),
+  strong: ({ children }) => (
+    <Box component="strong" sx={{ color: COLORS.text, fontWeight: 600 }}>{children}</Box>
+  ),
+  ul: ({ children }) => <Box component="ul" sx={{ pl: 3, mb: 1.5 }}>{children}</Box>,
+  ol: ({ children }) => <Box component="ol" sx={{ pl: 3, mb: 1.5 }}>{children}</Box>,
+  li: ({ children }) => (
+    <Box component="li" sx={{ fontSize: 13.5, lineHeight: 1.8, color: COLORS.textSecondary, mb: 0.5 }}>{children}</Box>
+  ),
+}
+
+/** 「地图探索」视图：高德真实地图 + 公司经纬度散点；点公司 → 高亮 + 右上摘要浮卡 */
+function MapView() {
+  const mapSettings = useAppStore((s) => s.agentSettings.map)
   const companies = useAppStore((s) => s.companies)
-  const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
-  const jobs = useAppStore((s) => s.jobs)
-  const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
   const selectedCompanyId = useAppStore((s) => s.selectedCompanyId)
   const setSelectedCompanyId = useAppStore((s) => s.setSelectedCompanyId)
-  const push = useToastStore((s) => s.push)
-
+  const setView = useAppStore((s) => s.setCompaniesView)
+  const setPage = useAppStore((s) => s.setPage)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<AMap.Map | null>(null)
+  const markersRef = useRef<Map<string, AMap.Marker>>(new Map())
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const selected = companies.find((c) => c.id === selectedCompanyId) ?? null
-  const activePark = PARKS.find((p) => p.id === parkId)
-  const companyJobs = jobs.filter((j) => j.company === selected?.name)
 
-  return (
-    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 1.5, overflow: 'hidden' }}>
-      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
-        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>公司探索</Typography>
-        <Chip size="small" label={`${companies.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
-        <Box sx={{ flex: 1 }} />
-        <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>左侧列表选择公司查看档案</Typography>
-      </Stack>
+  // 地图初始化（key/安全密钥变化时重建；卸载时销毁）
+  useEffect(() => {
+    if (!mapSettings?.apiKey) return
+    let cancelled = false
+    setLoadState('loading')
+    // loader 官方类型缺 securityJsCode 字段（运行时支持），断言补全
+    const opts = {
+      key: mapSettings.apiKey,
+      version: '2.0',
+      securityJsCode: mapSettings.securityJsCode,
+    } as Parameters<typeof loadAMap>[0] & { securityJsCode?: string }
+    void loadAMap(opts)
+      .then((amap) => {
+        if (cancelled || !containerRef.current) return
+        const AMapNs = amap as typeof AMap
+        mapRef.current = new AMapNs.Map(containerRef.current, {
+          viewMode: '2D',
+          zoom: 5,
+          center: [113.5, 33],
+        })
+        setLoadState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState('error')
+      })
+    return () => {
+      cancelled = true
+      mapRef.current?.destroy()
+      mapRef.current = null
+      markersRef.current.clear()
+    }
+  }, [mapSettings?.apiKey, mapSettings?.securityJsCode])
 
-      {/* 园区地图（浏览态） */}
+  // 公司列表变化 → 重建 markers + fitView 全量（选中高亮跟随首次渲染）
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || loadState !== 'ready') return
+    for (const m of markersRef.current.values()) m.setMap(null)
+    markersRef.current.clear()
+    const list: AMap.Marker[] = []
+    companies.forEach((c, idx) => {
+      const marker = new AMap.Marker({
+        position: companyPos(c, idx),
+        content: markerHtml(c, selectedCompanyId === c.id),
+        anchor: 'center',
+      })
+      marker.on('click', () => setSelectedCompanyId(c.id))
+      map.add(marker)
+      markersRef.current.set(c.id, marker)
+      list.push(marker)
+    })
+    if (list.length > 0) map.setFitView(list, false, [60, 60, 60, 60])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies, loadState])
+
+  // 选中变化 → 仅更新高亮 + 地图平移定位（不重置缩放）
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || loadState !== 'ready') return
+    const sel = companies.find((c) => c.id === selectedCompanyId)
+    for (const c of companies) {
+      const marker = markersRef.current.get(c.id)
+      if (marker) marker.setContent(markerHtml(c, c.id === selectedCompanyId))
+    }
+    if (sel) map.setCenter(companyPos(sel, companies.indexOf(sel)))
+  }, [selectedCompanyId, companies, loadState])
+
+  if (!mapSettings?.apiKey) {
+    return (
       <Box
         sx={{
           flex: 1,
-          position: 'relative',
+          m: 2,
           borderRadius: '10px',
           border: `1px solid ${COLORS.border}`,
           bgcolor: COLORS.canvas,
-          overflow: 'hidden',
+          display: 'grid',
+          placeItems: 'center',
         }}
       >
-        <svg width="100%" height="100%" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <line key={`h${i}`} x1={0} y1={i * 52} x2={900} y2={i * 52} stroke={alpha(COLORS.text, 0.06)} />
-          ))}
-          {Array.from({ length: 12 }).map((_, i) => (
-            <line key={`v${i}`} x1={i * 75} y1={0} x2={i * 75} y2={520} stroke={alpha(COLORS.text, 0.06)} />
-          ))}
-          {[
-            { name: '北京', x: 520, y: 80 },
-            { name: '上海', x: 700, y: 260 },
-            { name: '杭州', x: 640, y: 340 },
-            { name: '深圳', x: 620, y: 440 },
-          ].map((c) => (
-            <text key={c.name} x={c.x} y={c.y} fill={COLORS.textMuted} fontSize={11} textAnchor="middle">
-              {c.name}
-            </text>
-          ))}
-        </svg>
+        <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>地图未配置</Typography>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, lineHeight: 1.7 }}>
+            高德地图需要 Key 与安全密钥，
+            <br />
+            在设置页「地图服务」配置后启用
+          </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() => setPage('settings')}
+            sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}
+          >
+            去配置 →
+          </Button>
+        </Stack>
+      </Box>
+    )
+  }
 
-        {PARKS.map((park, i) => {
-          const x = ((park.lon - 113) / 5) * 700 + 80
-          const y = ((41 - park.lat) / 12) * 420 + 40
-          const active = parkId === park.id
-          return (
-            <Box
-              key={park.id}
-              onClick={() => setParkId(active ? null : park.id)}
-              sx={{
-                position: 'absolute',
-                left: x,
-                top: y,
-                transform: 'translate(-50%, -50%)',
-                px: 1.5,
-                py: 1,
-                borderRadius: '10px',
-                bgcolor: active ? COLORS.accentMuted : COLORS.bgElevated,
-                border: `1.5px solid ${active ? COLORS.accent : COLORS.border}`,
-                cursor: 'pointer',
-                animation: `fade-in 0.35s ${EASE} ${i * 0.08}s both`,
-                '&:hover': { borderColor: COLORS.accent },
-                minWidth: 120,
-                textAlign: 'center',
-              }}
-            >
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{park.name}</Typography>
-              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
-                {park.city} · {park.companies.length} 家 · {park.year}
+  return (
+    <Box sx={{ flex: 1, minHeight: 0, m: 2, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        ref={containerRef}
+        sx={{ flex: 1, borderRadius: '10px', border: `1px solid ${COLORS.border}`, overflow: 'hidden' }}
+      />
+      {loadState === 'loading' && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: alpha(COLORS.canvas, 0.8),
+            borderRadius: '10px',
+          }}
+        >
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <CircularProgress size={14} thickness={5} />
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>正在加载高德地图…</Typography>
+          </Stack>
+        </Box>
+      )}
+      {loadState === 'error' && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: alpha(COLORS.canvas, 0.8),
+            borderRadius: '10px',
+          }}
+        >
+          <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.high }}>
+            地图加载失败（Key 无效或网络异常），请检查设置页配置
+          </Typography>
+        </Box>
+      )}
+
+      {/* 摘要浮卡（选中公司） */}
+      {selected && (
+        <Box
+          sx={{
+            position: 'absolute',
+            right: 16,
+            top: 16,
+            width: 250,
+            p: 2,
+            borderRadius: '10px',
+            bgcolor: alpha(COLORS.bgElevated, 0.96),
+            border: `1px solid ${COLORS.borderStrong}`,
+            zIndex: 3,
+          }}
+        >
+          <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
+            <IconButton size="small" onClick={() => setSelectedCompanyId(null)}>
+              <CloseIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Stack>
+          <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+              {selected.city} · {selected.industry}
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Typography sx={{ fontSize: 12, color: COLORS.accent }}>匹配 {selected.matchScore}%</Typography>
+              <Typography sx={{ fontSize: 12, color: RISK_COLOR[selected.riskLevel] }}>
+                风险 {RISK_LABEL[selected.riskLevel]}
               </Typography>
-            </Box>
-          )
-        })}
+            </Stack>
+          </Stack>
+          <Button size="small" fullWidth variant="contained" onClick={() => setView('profile')} sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}>
+            查看档案 →
+          </Button>
+        </Box>
+      )}
+    </Box>
+  )
+}
 
-        {activePark && (
+/** 「公司档案」视图：左侧公司卡片（460px）+ 右侧尽调详情正文 */
+function ProfileView({ selected }: { selected: Company | null }) {
+  const setPage = useAppStore((s) => s.setPage)
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
+  const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
+  const jobs = useAppStore((s) => s.jobs)
+  const push = useToastStore((s) => s.push)
+  const [detail, setDetail] = useState<CompanyDetail | null>(null)
+  const [detailError, setDetailError] = useState(false)
+
+  // 选中公司 → 拉取档案全文（尽调详情正文）
+  useEffect(() => {
+    let cancelled = false
+    setDetail(null)
+    setDetailError(false)
+    if (!selected) return
+    const engine = getEngine()
+    if (!engine) {
+      setDetailError(true)
+      return
+    }
+    engine
+      .getCompanyDetail(selected.id)
+      .then((d) => {
+        if (!cancelled) setDetail(d)
+      })
+      .catch(() => {
+        if (!cancelled) setDetailError(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selected?.id])
+
+  // 只渲染 `## 尽调详情` 之后的正文（摘要表已在左侧卡片展示，不重复）
+  const detailMd = useMemo(() => {
+    if (!detail) return ''
+    const idx = detail.markdown.indexOf('## 尽调详情')
+    return idx >= 0 ? detail.markdown.slice(idx) : detail.markdown
+  }, [detail])
+
+  if (!selected) {
+    return (
+      <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center' }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>选择一家公司查看尽调档案</Typography>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted }}>
+            左侧列表或「地图探索」视图中点击公司
+          </Typography>
+        </Stack>
+      </Box>
+    )
+  }
+
+  const companyJobs = jobs.filter((j) => j.company === selected.name)
+
+  return (
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+      {/* 左侧公司卡片（460px，沿用原档案 Dialog 宽度与内容） */}
+      <Box
+        sx={{
+          width: 460,
+          minWidth: 460,
+          overflowY: 'auto',
+          borderRight: `1px solid ${COLORS.border}`,
+          p: 2.5,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
+        <Box>
+          <Typography sx={{ fontSize: 17, fontWeight: 600, mb: 1.5 }}>{selected.name}</Typography>
+          <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
+            {(selected.tags ?? []).map((t) => (
+              <Chip key={t} size="small" label={t} sx={{ height: 22, fontSize: 12 }} />
+            ))}
+          </Stack>
           <Box
             sx={{
-              position: 'absolute',
-              right: 16,
-              top: 16,
-              width: 260,
-              p: 2,
-              borderRadius: '10px',
-              bgcolor: alpha(COLORS.bgElevated, 0.95),
-              border: `1px solid ${COLORS.borderStrong}`,
+              p: 1.5,
+              borderRadius: '8px',
+              bgcolor: COLORS.bgHover,
+              border: `1px solid ${COLORS.border}`,
             }}
           >
-            <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{activePark.name}</Typography>
-              <IconButton size="small" onClick={() => setParkId(null)}>
-                <CloseIcon sx={{ fontSize: 14 }} />
-              </IconButton>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1 }}>尽调摘要</Typography>
+            <Stack spacing={1}>
+              <Row label="城市" value={selected.city} />
+              <Row label="产业" value={selected.industry} />
+              <Row label="匹配度" value={`${selected.matchScore}%`} color={COLORS.accent} />
+              <Row label="风险" value={RISK_LABEL[selected.riskLevel]} color={RISK_COLOR[selected.riskLevel]} />
+              <Row label="规模" value={selected.headcount || '—'} />
+              <Row label="来源" value={selected.source} />
             </Stack>
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
-              {activePark.industry} · 来源 {activePark.source} ({activePark.year})
+          </Box>
+        </Box>
+
+        <GapAnalysisSection companyName={selected.name} />
+
+        <Stack spacing={1}>
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={() => {
+              startAnalysis(
+                `请对「${selected.name}」（${selected.city} · ${selected.industry}）开展公司尽调：背调、风险、竞争力与入职建议`,
+              )
+              push('info', '已预置「公司尽调」上下文')
+            }}
+          >
+            开始尽调
+          </Button>
+          <Button
+            variant="outlined"
+            fullWidth
+            onClick={() => {
+              markCompanyContacted(selected.id)
+              push('success', `已标记「${selected.name}」为已联系 · 投递管理已同步`)
+              setPage('applications')
+            }}
+          >
+            标记已联系 → 投递管理
+          </Button>
+        </Stack>
+
+        {/* 该公司 JD（尽调完看岗位 → JD 工作区） */}
+        {companyJobs.length > 0 && (
+          <Box>
+            <Typography
+              sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 1 }}
+            >
+              该公司 JD · {companyJobs.length}
             </Typography>
-            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.75 }}>入驻企业</Typography>
             <Stack spacing={0.5}>
-              {activePark.companies.map((name) => {
-                const co = companies.find((c) => c.name === name)
-                return (
-                  <Box
-                    key={name}
-                    onClick={() => co && setSelectedCompanyId(co.id)}
-                    sx={{
-                      px: 1,
-                      py: 0.75,
-                      borderRadius: '6px',
-                      bgcolor: COLORS.bgHover,
-                      cursor: co ? 'pointer' : 'default',
-                      '&:hover': co ? { bgcolor: COLORS.bgActive } : {},
-                    }}
-                  >
-                    <Typography sx={{ fontSize: 12 }}>{name}</Typography>
-                    {co && (
-                      <Typography sx={{ fontSize: 11.5, color: COLORS.accent }}>
-                        匹配 {co.matchScore}
-                      </Typography>
-                    )}
-                  </Box>
-                )
-              })}
+              {companyJobs.map((j) => (
+                <Box
+                  key={j.id}
+                  onClick={() => {
+                    setSelectedJobId(j.id)
+                    setPage('jobs')
+                  }}
+                  sx={{
+                    p: 1,
+                    borderRadius: '8px',
+                    border: `1px solid ${COLORS.border}`,
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: COLORS.bgHover, borderColor: COLORS.borderStrong },
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>{j.title}</Typography>
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
+                    {j.location && `${j.location} · `}
+                    {j.salary ?? ''}
+                    {j.requirements.length > 0 && ` · ${j.requirements.map((r) => r.name).join('/')}`}
+                  </Typography>
+                </Box>
+              ))}
             </Stack>
           </Box>
         )}
       </Box>
 
-      <Dialog
-        open={Boolean(selected)}
-        onClose={() => setSelectedCompanyId(null)}
-        slotProps={{
-          paper: {
-            sx: {
-              width: 460,
-              maxWidth: '92vw',
-              borderRadius: '12px',
-              bgcolor: COLORS.bgElevated,
-              backgroundImage: 'none',
-            },
-          },
-        }}
-      >
-        {selected && (
-          <Box sx={{ p: 2.5, maxHeight: '80vh', overflowY: 'auto' }}>
-            <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }}>
-              <Typography sx={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{selected.name}</Typography>
-              <IconButton size="small" onClick={() => setSelectedCompanyId(null)}>
-                <CloseIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Stack>
-
-            <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 0.5 }}>
-              {(selected.tags ?? []).map((t) => (
-                <Chip key={t} size="small" label={t} sx={{ height: 22, fontSize: 12 }} />
-              ))}
-            </Stack>
-
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: '8px',
-                bgcolor: COLORS.bgHover,
-                border: `1px solid ${COLORS.border}`,
-                mb: 2,
-              }}
-            >
-              <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1 }}>尽调摘要</Typography>
-              <Stack spacing={1}>
-                <Row label="城市" value={selected.city} />
-                <Row label="产业" value={selected.industry} />
-                <Row label="匹配度" value={`${selected.matchScore}%`} color={COLORS.accent} />
-                <Row label="风险" value={RISK_LABEL[selected.riskLevel]} color={RISK_COLOR[selected.riskLevel]} />
-                <Row label="来源" value={selected.source} />
-              </Stack>
-            </Box>
-
-            <GapAnalysisSection companyName={selected.name} />
-
-            <Stack spacing={1}>
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={() => {
-                  startAnalysis(
-                    `请对「${selected.name}」（${selected.city} · ${selected.industry}）开展公司尽调：背调、风险、竞争力与入职建议`,
-                  )
-                  push('info', '已预置「公司尽调」上下文')
-                }}
-              >
-                开始尽调
-              </Button>
-              <Button
-                variant="outlined"
-                fullWidth
-                onClick={() => {
-                  markCompanyContacted(selected.id)
-                  push('success', `已标记「${selected.name}」为已联系 · 投递管理已同步`)
-                  setSelectedCompanyId(null)
-                  setPage('applications')
-                }}
-              >
-                标记已联系 → 投递管理
-              </Button>
-            </Stack>
-
-            {/* 该公司 JD（尽调完看岗位 → JD 工作区） */}
-            {companyJobs.length > 0 && (
-              <Box sx={{ mt: 2.5 }}>
-                <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 1 }}>
-                  该公司 JD · {companyJobs.length}
-                </Typography>
-                <Stack spacing={0.5}>
-                  {companyJobs.map((j) => (
-                    <Box
-                      key={j.id}
-                      onClick={() => {
-                        setSelectedJobId(j.id)
-                        setSelectedCompanyId(null)
-                        setPage('jobs')
-                      }}
-                      sx={{
-                        p: 1,
-                        borderRadius: '8px',
-                        border: `1px solid ${COLORS.border}`,
-                        cursor: 'pointer',
-                        '&:hover': { bgcolor: COLORS.bgHover, borderColor: COLORS.borderStrong },
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>{j.title}</Typography>
-                      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25 }}>
-                        {j.location && `${j.location} · `}
-                        {j.salary ?? ''}
-                        {j.requirements.length > 0 && ` · ${j.requirements.map((r) => r.name).join('/')}`}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              </Box>
-            )}
+      {/* 右侧尽调详情正文（档案 md 原文渲染） */}
+      <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', p: 3 }}>
+        {detailError ? (
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted }}>
+            尽调详情加载失败（引擎未连接或档案缺失）
+          </Typography>
+        ) : !detail ? (
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted }}>加载尽调详情…</Typography>
+        ) : (
+          <Box sx={{ maxWidth: 720 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+              {detailMd}
+            </ReactMarkdown>
           </Box>
         )}
-      </Dialog>
+      </Box>
     </Box>
   )
 }
@@ -275,7 +466,55 @@ function Row({ label, value, color }: { label: string; value: string; color?: st
   return (
     <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
       <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>{label}</Typography>
-      <Typography sx={{ fontSize: 12, fontWeight: 500, color: color ?? COLORS.text }}>{value}</Typography>
+      <Typography sx={{ fontSize: 12, fontWeight: 500, color: color ?? COLORS.text, textAlign: 'right' }}>
+        {value}
+      </Typography>
     </Stack>
+  )
+}
+
+export function CompaniesPage() {
+  const view = useAppStore((s) => s.companiesView)
+  const setView = useAppStore((s) => s.setCompaniesView)
+  const companies = useAppStore((s) => s.companies)
+  const selectedCompanyId = useAppStore((s) => s.selectedCompanyId)
+  const selected = companies.find((c) => c.id === selectedCompanyId) ?? null
+
+  return (
+    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* 视图切换放主区顶部左侧（靠右用户不易发现）；侧栏只留「公司空间」标题 + 公司列表 */}
+      <Stack
+        direction="row"
+        sx={{ alignItems: 'center', px: 2, py: 1, borderBottom: `1px solid ${COLORS.border}` }}
+        spacing={1.5}
+      >
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={view}
+          onChange={(_, v: 'profile' | 'map' | null) => v && setView(v)}
+          sx={{
+            '& .MuiToggleButton-root': {
+              px: 1.5,
+              py: 0.25,
+              fontSize: 12,
+              color: COLORS.textMuted,
+              borderColor: COLORS.border,
+              '&.Mui-selected': {
+                color: COLORS.accent,
+                bgcolor: COLORS.accentMuted,
+              },
+            },
+          }}
+        >
+          <ToggleButton value="profile">公司档案</ToggleButton>
+          <ToggleButton value="map">地图探索</ToggleButton>
+        </ToggleButtonGroup>
+        <Box sx={{ flex: 1 }} />
+        <Chip size="small" label={`${companies.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
+      </Stack>
+
+      {view === 'map' ? <MapView /> : <ProfileView selected={selected} />}
+    </Box>
   )
 }

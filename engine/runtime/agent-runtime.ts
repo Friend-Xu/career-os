@@ -21,6 +21,12 @@ export interface AgentStartParams {
   permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
   allowedTools?: string[]
   maxTurns?: number
+  /** 模型覆盖（聊天界面切换器；缺省用引擎 config.agent.model） */
+  model?: string
+  /** API 密钥覆盖（设置页配置；缺省用引擎 config.agent.apiKey） */
+  apiKey?: string
+  /** API 端点根地址覆盖（缺省用引擎 config.agent.baseUrl；空 = 官方） */
+  baseUrl?: string
 }
 
 /** config.agent 默认值（start 时合并；前端不传则用引擎配置） */
@@ -29,6 +35,8 @@ export interface AgentDefaults {
   allowedTools: string[]
   maxTurns?: number
   model?: string
+  apiKey?: string
+  baseUrl?: string
 }
 
 interface TaskState {
@@ -63,7 +71,9 @@ export class AgentRuntime {
         permissionMode: params.permissionMode ?? defaults.permissionMode,
         allowedTools: params.allowedTools ?? defaults.allowedTools,
         maxTurns: params.maxTurns ?? defaults.maxTurns,
-        model: defaults.model,
+        model: params.model ?? defaults.model,
+        apiKey: params.apiKey ?? defaults.apiKey,
+        baseUrl: params.baseUrl ?? defaults.baseUrl,
         abortController: abort,
         logger: this.logger,
         onPermissionRequest: (tool) =>

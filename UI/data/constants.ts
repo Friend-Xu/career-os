@@ -68,3 +68,13 @@ export function alpha(color: string, opacity: number): string {
  * 短促起步 + 长尾收尾，交互反馈"先快后稳"。
  */
 export const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
+
+/**
+ * Agent API 服务商预设（设置页 Base URL 一键填入）。
+ * 只收录确认支持 Anthropic 兼容端点的服务商（DeepSeek 官方文档明示 /anthropic 端点；
+ * 其余网关大多仅 OpenAI 兼容，不列以免误导）。
+ */
+export const PROVIDER_PRESETS: { id: string; label: string; desc: string; baseUrl: string }[] = [
+  { id: 'anthropic', label: 'Anthropic 官方', desc: '默认端点', baseUrl: 'https://api.anthropic.com' },
+  { id: 'deepseek', label: 'DeepSeek 兼容', desc: 'Anthropic 兼容端点，claude-* 模型名自动映射', baseUrl: 'https://api.deepseek.com/anthropic' },
+]

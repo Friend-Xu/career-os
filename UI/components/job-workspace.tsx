@@ -19,11 +19,18 @@ import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { GapResult, JobRecord } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
 
+/** 决策标题里的公司名可能为简称（"示例智造科技" vs 建档全称"示例智造科技有限公司"）——双向子串容错 */
+function companyInTitle(d: { title: string }, company: string): boolean {
+  if (d.title.includes(company)) return true
+  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
+  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
+}
+
 /** 岗位工作区状态（从数据派生）：分析/建档/投递/面试 */
 function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string }[], company: Company | undefined, appliedStatus?: string) {
   // 已分析判定：该公司的 jd-analysis 决策（公司名匹配，title 匹配过宽会误判）
   const analyzed = decisions.some(
-    (d) => d.skill === 'jd-analysis' && d.title.includes(job.company),
+    (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
   const dueDiligence = company !== undefined
   const applied = Boolean(appliedStatus)
@@ -76,7 +83,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   if (!job || !st) return null
 
   const jobDecisions = decisions.filter(
-    (d) => d.skill === 'jd-analysis' && d.title.includes(job.company),
+    (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
 
   const analyze = (): void => {

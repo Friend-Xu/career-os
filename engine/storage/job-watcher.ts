@@ -118,6 +118,14 @@ export function watchJobs(ws: Workspace, onChanged: (parsed: ParsedJob[]) => voi
   return { close: () => watcher.close() }
 }
 
+/** 删除岗位文件：id = {日期}-{公司}-{岗位}（文件名无 .md；watcher unlink 自动重扫广播） */
+export function deleteJobFile(ws: Workspace, id: string): void {
+  if (!/^[^\\/]+$/.test(id)) throw new Error(`非法岗位 id：${JSON.stringify(id)}`)
+  const rel = `jobs/${id}.md`
+  if (!ws.exists(rel)) throw new Error(`岗位不存在：${id}`)
+  ws.delete(rel)
+}
+
 export interface CreateJobParams {
   company: string
   title: string

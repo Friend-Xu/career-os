@@ -8,9 +8,11 @@ import {
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
+import StopCircleIcon from '@mui/icons-material/StopCircle'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -21,6 +23,7 @@ import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
+import { ModelSelect } from '../components/model-select'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord, QuestionCard } from '../types'
 
@@ -403,10 +406,19 @@ export function AgentPage() {
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
   const simulateQuestionRequest = useAppStore((s) => s.simulateQuestionRequest)
+  const activeTask = useAppStore((s) => s.activeTask)
+  const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
+  const agentSettings = useAppStore((s) => s.agentSettings)
+  const setAgentModel = useAppStore((s) => s.setAgentModel)
   const push = useToastStore((s) => s.push)
   const [demoAnchor, setDemoAnchor] = useState<HTMLElement | null>(null)
 
   const session = sessions.find((s) => s.id === currentSessionId)
+  const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
+  /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
+  const providerModels = useAppStore((s) => s.agentSettings.providers)
+    .filter((p) => p.enabled)
+    .flatMap((p) => p.models ?? [])
 
   useEffect(() => {
     if (!locateTarget) return
@@ -486,7 +498,7 @@ export function AgentPage() {
               fullWidth
               multiline
               maxRows={6}
-              placeholder="描述你的决策问题…（Enter 发送，Shift+Enter 换行）"
+              placeholder={taskRunning ? '任务运行中…（可点 ⏹ 停止）' : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -495,6 +507,7 @@ export function AgentPage() {
                   send(draft.trim())
                 }
               }}
+              disabled={taskRunning}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   bgcolor: COLORS.bgElevated,
@@ -502,8 +515,30 @@ export function AgentPage() {
                 },
               }}
             />
+            {taskRunning && (
+              <Tooltip title="停止当前 Agent 任务">
+                <IconButton
+                  size="small"
+                  aria-label="停止当前 Agent 任务"
+                  onClick={() => {
+                    cancelCurrentTask()
+                    push('info', '已停止 Agent 任务')
+                  }}
+                  sx={{
+                    borderRadius: '8px',
+                    width: 40,
+                    height: 40,
+                    color: COLORS.riskHigh,
+                    border: `1px solid ${COLORS.border}`,
+                    '&:hover': { bgcolor: alpha(COLORS.riskHigh, 0.1) },
+                  }}
+                >
+                  <StopCircleIcon sx={{ fontSize: 19 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <IconButton
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || taskRunning}
               onClick={() => draft.trim() && send(draft.trim())}
               sx={{
                 bgcolor: COLORS.accent,
@@ -517,6 +552,13 @@ export function AgentPage() {
             >
               <SendIcon sx={{ fontSize: 18 }} />
             </IconButton>
+            <ModelSelect
+              compact
+              value={agentSettings.model}
+              onChange={(m) => setAgentModel(m)}
+              options={providerModels}
+              freeInput={false}
+            />
           </Stack>
         </Box>
       </Box>

@@ -157,6 +157,22 @@ function parseParkId(v: string): number | undefined {
  * - 摘要表缺失 → invalid；必填字段缺失 → invalid（error）
  * - 字段存在但值域非法 → degraded（warn）保留原值展示（validator 降级惯例）
  */
+/** 删除公司档案文件：id = 文件名（无 .md）；companies/ 无 watcher，删除后由 RPC 层广播 */
+export function deleteCompanyFile(workspace: Workspace, id: string): void {
+  if (!/^[^\\/]+$/.test(id)) throw new Error(`非法公司 id：${JSON.stringify(id)}`)
+  const rel = `companies/${id}.md`
+  if (!workspace.exists(rel)) throw new Error(`公司不存在：${id}`)
+  workspace.delete(rel)
+}
+
+/** 读取公司档案全文（尽调详情正文渲染：UI 端截取 `## 尽调详情` 之后渲染） */
+export function readCompanyFile(workspace: Workspace, id: string): { id: string; markdown: string } {
+  if (!/^[^\\/]+$/.test(id)) throw new Error(`非法公司 id：${JSON.stringify(id)}`)
+  const rel = `companies/${id}.md`
+  if (!workspace.exists(rel)) throw new Error(`公司不存在：${id}`)
+  return { id, markdown: workspace.read(rel) }
+}
+
 export function parseCompanyMarkdown(md: string, sourceFile: string): Validated<CompanyRecord> {
   const id = sourceFile.replace(/\.md$/, '')
   const fields = parseSummaryTable(md)

@@ -33,6 +33,17 @@ export function AgentSidebar() {
           {list.length}
         </Typography>
       </Stack>
+      <Box sx={{ px: 1.25, pb: 0.75 }}>
+        <Button
+          size="small"
+          fullWidth
+          startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+          onClick={() => createSession()}
+          sx={{ fontSize: 12 }}
+        >
+          + 新会话
+        </Button>
+      </Box>
       <Stack spacing={0.25} sx={{ flex: 1, overflow: 'auto', px: 1 }}>
         {list.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
@@ -72,17 +83,6 @@ export function AgentSidebar() {
           })
         )}
       </Stack>
-      <Box sx={{ p: 1 }}>
-        <Button
-          size="small"
-          fullWidth
-          startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-          onClick={() => createSession()}
-          sx={{ fontSize: 12 }}
-        >
-          + 新会话
-        </Button>
-      </Box>
     </Stack>
   )
 }

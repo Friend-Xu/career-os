@@ -1,10 +1,13 @@
 /**
  * 简历空间侧栏：版本列表（切换当前版本；「选择 JD 派生」新建的版本也在这里）。
+ * hover 行尾删除按钮（确认后删版本，删除当前版本回退第一份）。
  */
-import { Stack, Typography } from '@mui/material'
+import { Box, IconButton, Stack, Typography } from '@mui/material'
+import DeleteIcon from '@mui/icons-material/Delete'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import { useMemo } from 'react'
 import { useAppStore } from '../../../store/app-store'
+import { useToastStore } from '../../../store/toast-store'
 import { COLORS } from '../../../data/constants'
 
 export function ResumesSidebar() {
@@ -12,6 +15,8 @@ export function ResumesSidebar() {
   const resumes = useAppStore((s) => s.resumes)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
+  const deleteResumeVersion = useAppStore((s) => s.deleteResumeVersion)
+  const push = useToastStore((s) => s.push)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
 
   return (
@@ -54,6 +59,7 @@ export function ResumesSidebar() {
                 cursor: 'pointer',
                 bgcolor: active ? COLORS.accentMuted : 'transparent',
                 '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
+                '&:hover .row-delete': { display: 'block' },
               }}
             >
               <Typography
@@ -68,6 +74,24 @@ export function ResumesSidebar() {
               >
                 {r.name}
               </Typography>
+              <Box
+                className="row-delete"
+                onClick={(e) => e.stopPropagation()}
+                sx={{ display: 'none' }}
+              >
+                <IconButton
+                  size="small"
+                  title="删除版本"
+                  onClick={() => {
+                    if (!window.confirm(`删除简历版本「${r.name}」？不可恢复。`)) return
+                    deleteResumeVersion(r.id)
+                    push('info', `已删除版本：${r.name}`)
+                  }}
+                  sx={{ p: 0.25, fontSize: 13 }}
+                >
+                  <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+                </IconButton>
+              </Box>
             </Stack>
           )
         })

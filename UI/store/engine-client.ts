@@ -25,6 +25,16 @@ import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
 
+/** 模型服务商连接（设置页服务商卡片；models = 用户勾选启用列表） */
+export interface AgentProviderView {
+  id: string
+  label?: string
+  baseUrl?: string
+  apiKey?: string
+  enabled: boolean
+  models?: string[]
+}
+
 export interface InitResult {
   protocol: string
   version: string
@@ -34,6 +44,19 @@ export interface InitResult {
 
 export type DecisionView = DecisionRecord & { validation?: Validation }
 export type JobView = JobRecord & { validation?: Validation }
+
+/** 公司档案全文（companies/get 返回：markdown 原文，UI 截取 `## 尽调详情` 渲染） */
+export interface CompanyDetail {
+  id: string
+  markdown: string
+}
+
+/** 地图服务配置（config.json map 段：provider + 高德 JS API key + 安全密钥） */
+export interface MapSettings {
+  provider: string
+  apiKey?: string
+  securityJsCode?: string
+}
 
 /** JD 信息提取结果（jobs/extract 返回：粘贴 JD 自动回填建档表单） */
 export interface JdExtractResult {
@@ -263,6 +286,21 @@ export class EngineClient {
     return this.rpc<{ result: JdExtractResult }>(METHODS.extractJd, { jdText }, 90_000).then((r) => r.result)
   }
 
+  /** 删除岗位（删 jobs/{id}.md，引擎 watcher 广播后 UI 自动重拉） */
+  deleteJob(id: string): Promise<unknown> {
+    return this.rpc(METHODS.deleteJob, { id })
+  }
+
+  /** 删除公司档案（删 companies/{id}.md，引擎广播 data.companies.changed） */
+  deleteCompany(id: string): Promise<unknown> {
+    return this.rpc(METHODS.deleteCompany, { id })
+  }
+
+  /** 单个公司档案全文（尽调详情正文渲染） */
+  getCompanyDetail(id: string): Promise<CompanyDetail> {
+    return this.rpc<CompanyDetail>(METHODS.companyGet, { id })
+  }
+
   listContexts(): Promise<DecisionAggregate[]> {
     return this.rpc<DecisionAggregate[]>(METHODS.contexts)
   }
@@ -306,8 +344,48 @@ export class EngineClient {
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     allowedTools?: string[]
     maxTurns?: number
+    model?: string
+    apiKey?: string
+    baseUrl?: string
   }): Promise<{ taskId: string }> {
     return this.rpc<{ taskId: string }>(METHODS.agentStart, params)
+  }
+
+  /** Agent 设置（settings/get：来自 config.json） */
+  getAgentSettings(): Promise<{
+    model?: string
+    apiKey?: string
+    baseUrl?: string
+    enabled?: boolean
+    providers?: AgentProviderView[]
+    permissionMode?: string
+    allowedTools?: string[]
+    maxTurns?: number
+    map?: MapSettings
+  }> {
+    return this.rpc(METHODS.settingsGet)
+  }
+
+  /** 更新 Agent 设置（settings/update：写回 config.json + 引擎内存，下次任务生效；undefined 字段不修改） */
+  updateAgentSettings(patch: {
+    model?: string
+    apiKey?: string
+    baseUrl?: string
+    enabled?: boolean
+    providers?: AgentProviderView[]
+    map?: { apiKey?: string; securityJsCode?: string }
+  }): Promise<unknown> {
+    return this.rpc(METHODS.settingsUpdate, patch)
+  }
+
+  /** 可用模型列表（settings/models：有 apiKey 时引擎调 {baseUrl}/v1/models 拉真实模型；
+   * 可选 params 传临时 apiKey/baseUrl——未保存也能提取（「提取模型」按钮），缺省用引擎配置 */
+  getAvailableModels(params?: { apiKey?: string; baseUrl?: string }): Promise<{
+    source: 'api' | 'cli' | 'api_error'
+    models: string[]
+    error?: 'auth' | 'no_endpoint' | 'network'
+  }> {
+    return this.rpc(METHODS.settingsModels, params)
   }
 
   answerAgent(taskId: string, text: string): Promise<unknown> {

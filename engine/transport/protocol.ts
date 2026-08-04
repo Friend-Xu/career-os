@@ -47,6 +47,8 @@ export const METHODS = {
   knowledgeGap: 'knowledge/gap',
   /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
+  /** 单个公司档案全文（params: { id } → { id, markdown }；尽调详情正文渲染用） */
+  companyGet: 'companies/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
@@ -75,6 +77,16 @@ export const METHODS = {
   matchJob: 'jobs/match',
   /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
   extractJd: 'jobs/extract',
+  /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
+  deleteJob: 'jobs/delete',
+  /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
+  deleteCompany: 'companies/delete',
+  /** 读取 Agent 设置（params: 无 → { model, apiKey, permissionMode, allowedTools, maxTurns }，来自 config.json） */
+  settingsGet: 'settings/get',
+  /** 更新 Agent 设置（params: { model?, apiKey?, permissionMode?, allowedTools?, maxTurns? }，undefined 字段不修改 → 写回 config.json + 更新内存，下次任务生效） */
+  settingsUpdate: 'settings/update',
+  /** 可用模型列表（params: 无 → { source: 'api'|'cli'|'api_error', models: string[] }；配置了 apiKey 时调 Anthropic /v1/models 拉真实模型，否则返回官方当前模型 ID） */
+  settingsModels: 'settings/models',
 } as const
 
 export const EVENTS = {
@@ -82,6 +94,8 @@ export const EVENTS = {
   decisionsChanged: 'data.decisions.changed',
   /** jobs/ 目录变更后推送（不含数据，客户端用 jobs/list 拉快照） */
   jobsChanged: 'data.jobs.changed',
+  /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
+  companiesChanged: 'data.companies.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */

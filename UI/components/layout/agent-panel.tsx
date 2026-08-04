@@ -11,11 +11,13 @@ import {
 import CloseIcon from '@mui/icons-material/Close'
 import OpenInFullIcon from '@mui/icons-material/OpenInFull'
 import SendIcon from '@mui/icons-material/Send'
+import StopCircleIcon from '@mui/icons-material/StopCircle'
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
+import { ModelSelect } from '../model-select'
 import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
 import type { DecisionRecord } from '../../types'
@@ -32,6 +34,10 @@ export function AgentPanel() {
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
+  const activeTask = useAppStore((s) => s.activeTask)
+  const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
+  const agentSettings = useAppStore((s) => s.agentSettings)
+  const setAgentModel = useAppStore((s) => s.setAgentModel)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
   const person = useAppStore((s) => s.currentPerson())
@@ -39,6 +45,11 @@ export function AgentPanel() {
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
+  const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
+  /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
+  const providerModels = useAppStore((s) => s.agentSettings.providers)
+    .filter((p) => p.enabled)
+    .flatMap((p) => p.models ?? [])
 
   useEffect(() => {
     if (pendingPrompt && open) {
@@ -205,7 +216,7 @@ export function AgentPanel() {
             fullWidth
             multiline
             maxRows={4}
-            placeholder="输入消息…"
+            placeholder={taskRunning ? '任务运行中…（可点 ⏹ 停止）' : '输入消息…'}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -214,6 +225,7 @@ export function AgentPanel() {
                 send(draft.trim())
               }
             }}
+            disabled={taskRunning}
             size="small"
             sx={{
               '& .MuiOutlinedInput-root': {
@@ -222,9 +234,31 @@ export function AgentPanel() {
               },
             }}
           />
+          {taskRunning && (
+            <Tooltip title="停止当前 Agent 任务">
+              <IconButton
+                size="small"
+                aria-label="停止当前 Agent 任务"
+                onClick={() => {
+                  cancelCurrentTask()
+                  push('info', '已停止 Agent 任务')
+                }}
+                sx={{
+                  borderRadius: '6px',
+                  width: 32,
+                  height: 32,
+                  color: COLORS.riskHigh,
+                  border: `1px solid ${COLORS.border}`,
+                  '&:hover': { bgcolor: alpha(COLORS.riskHigh, 0.1) },
+                }}
+              >
+                <StopCircleIcon sx={{ fontSize: 17 }} />
+              </IconButton>
+            </Tooltip>
+          )}
           <IconButton
             size="small"
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || taskRunning}
             onClick={() => draft.trim() && send(draft.trim())}
             sx={{
               bgcolor: COLORS.accent,
@@ -238,6 +272,7 @@ export function AgentPanel() {
           >
             <SendIcon sx={{ fontSize: 16 }} />
           </IconButton>
+          <ModelSelect compact value={agentSettings.model} onChange={(m) => setAgentModel(m)} options={providerModels} freeInput={false} />
         </Stack>
         <Button
           fullWidth
