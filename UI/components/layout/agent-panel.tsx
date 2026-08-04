@@ -17,7 +17,6 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { ModelSelect } from '../model-select'
 import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
 import type { DecisionRecord } from '../../types'
@@ -36,8 +35,6 @@ export function AgentPanel() {
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
   const activeTask = useAppStore((s) => s.activeTask)
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
-  const agentSettings = useAppStore((s) => s.agentSettings)
-  const setAgentModel = useAppStore((s) => s.setAgentModel)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
   const person = useAppStore((s) => s.currentPerson())
@@ -46,10 +43,6 @@ export function AgentPanel() {
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
   const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
-  /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
-  const providerModels = useAppStore((s) => s.agentSettings.providers)
-    .filter((p) => p.enabled)
-    .flatMap((p) => p.models ?? [])
 
   useEffect(() => {
     if (pendingPrompt && open) {
@@ -272,7 +265,6 @@ export function AgentPanel() {
           >
             <SendIcon sx={{ fontSize: 16 }} />
           </IconButton>
-          <ModelSelect compact value={agentSettings.model} onChange={(m) => setAgentModel(m)} options={providerModels} freeInput={false} />
         </Stack>
         <Button
           fullWidth
