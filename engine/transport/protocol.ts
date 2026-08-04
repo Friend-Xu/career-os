@@ -94,6 +94,8 @@ export const EVENTS = {
   decisionsChanged: 'data.decisions.changed',
   /** jobs/ 目录变更后推送（不含数据，客户端用 jobs/list 拉快照） */
   jobsChanged: 'data.jobs.changed',
+  /** evidence/ 目录变更后推送（不含数据，客户端用 evidence/list 拉快照；M2） */
+  evidenceChanged: 'data.evidence.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
   poolChanged: 'data.pool.changed',

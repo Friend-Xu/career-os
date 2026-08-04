@@ -30,6 +30,7 @@ export interface WorkspacePaths {
   decisionContexts: string
   companies: string
   jobs: string
+  evidence: string
   knowledge: string
   metadata: string
   indexFile: string
@@ -57,6 +58,7 @@ export function buildPaths(root: string): WorkspacePaths {
     decisionContexts: join(root, 'decision-contexts'),
     companies: join(root, 'companies'),
     jobs: join(root, 'jobs'),
+    evidence: join(root, 'evidence'),
     knowledge: join(root, 'knowledge'),
     metadata: join(root, 'metadata'),
     indexFile: join(root, 'INDEX.md'),
@@ -91,6 +93,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.decisionContexts, { recursive: true })
     mkdirSync(paths.companies, { recursive: true })
     mkdirSync(paths.jobs, { recursive: true })
+    mkdirSync(paths.evidence, { recursive: true })
     mkdirSync(paths.knowledge, { recursive: true })
     mkdirSync(paths.metadata, { recursive: true })
   } catch {

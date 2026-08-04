@@ -8,6 +8,8 @@ import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { registerDecisionIdentity } from './storage/decision-registry.ts'
+import { registerArtifacts } from './storage/artifact-registry.ts'
+import { EVIDENCE_SPEC, watchEvidence } from './storage/evidence-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -35,6 +37,9 @@ async function main(args: string[]): Promise<void> {
     // ─── 决策身份登记（M1.6）：引擎离线期间写入的决策文件 → 补登记系统 ID（幂等；监听期 add 事件即时登记）───
     const registered = registerDecisionIdentity(ws).registered
     if (registered > 0) logger.info(`决策登记：${registered} 个决策文件分配系统 ID（decision_YYYYMMDD_NNNNN）`)
+    // ─── 证据资产登记（M2）：同上，evidence/ 独立前缀与计数
+    const evidenceRegistered = registerArtifacts(ws, EVIDENCE_SPEC).registered
+    if (evidenceRegistered > 0) logger.info(`证据登记：${evidenceRegistered} 个证据文件分配系统 ID（evidence_YYYYMMDD_NNNNN）`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)
@@ -116,9 +121,15 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.jobsChanged })
         logger.info(`jobs/ 变更：重扫 ${parsed.length} 条并广播`)
       })
+      // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
+      watchEvidence(ws, (parsed) => {
+        broadcast({ event: EVENTS.evidenceChanged })
+        logger.info(`evidence/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
+      logger.info('evidence/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }
