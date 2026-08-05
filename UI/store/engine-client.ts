@@ -27,6 +27,7 @@ import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
+import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
@@ -360,6 +361,11 @@ export class EngineClient {
   /** AI Read Model（M3.5.4：全资产投影——Studio provenance/validation 数据源） */
   aiContext(jobId?: string): Promise<CareerContext> {
     return this.rpc<CareerContext>(METHODS.aiContext, jobId ? { jobId } : {})
+  }
+
+  /** 四 Artifact 类级 Summary（M4-5.1：Engine Context → ArtifactSummary[] → Cards；UI 不读文件） */
+  listArtifactSummaries(): Promise<ArtifactSummary[]> {
+    return this.rpc<ArtifactSummary[]>(METHODS.listArtifactSummaries)
   }
 
   /** 删除岗位（删 jobs/{id}.md，引擎 watcher 广播后 UI 自动重拉） */

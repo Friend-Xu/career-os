@@ -6,6 +6,7 @@ import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined'
 import WorkIcon from '@mui/icons-material/Work'
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import type { ComponentType } from 'react'
 import type { SvgIconProps } from '@mui/material/SvgIcon'
@@ -27,7 +28,8 @@ const MAIN_NAV: NavItem[] = [
   { id: 'jobs', label: 'JD', icon: WorkIcon, shortcut: '⌘4' },
   { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘5' },
   { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘6' },
-  { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘7' },
+  { id: 'artifacts', label: 'Artifact Studio', icon: FolderCopyOutlinedIcon, shortcut: '⌘7' },
+  { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘8' },
 ]
 
 const SHORT_LABEL: Record<NavPageId, string> = {
@@ -37,6 +39,7 @@ const SHORT_LABEL: Record<NavPageId, string> = {
   companies: '公司',
   jobs: 'JD',
   applications: '投递',
+  artifacts: 'Artifacts',
   resumes: '简历',
   settings: '设置',
 }

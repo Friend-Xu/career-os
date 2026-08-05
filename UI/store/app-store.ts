@@ -30,6 +30,7 @@ import {
 } from '../data/mock-data'
 import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
@@ -163,6 +164,8 @@ interface AppState {
   resumeVersions: ResumeDocument[];
   /** 提案（M3.5.6）：proposals/ 引擎实时派生（AI 建议层——Human Approval Console 数据源） */
   proposals: ResumeProposal[];
+  /** 四 Artifact 类级 Summary（M4-5.1）：artifacts/summaries 引擎实时派生（UI projection——Assets 视图数据源） */
+  artifactSummaries: ArtifactSummary[];
   /** AI Read Model（M3.5.4）：CareerContext 投影——Studio provenance/validation 数据源（引擎实时派生） */
   careerContext: CareerContext | null;
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
@@ -347,6 +350,8 @@ export const useAppStore = create<AppState>()(
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
       resumeVersions: [],
       proposals: [],
+      /** 四 Artifact 类级 Summary（M4-5.1）：引擎实时派生（offline 为空数组——页面诚实空态） */
+      artifactSummaries: [],
       /** AI Read Model（M3.5.4）：CareerContext 投影（引擎实时派生；offline 为 null） */
       careerContext: null,
       health: null,
@@ -1392,6 +1397,17 @@ async function pullProposals(): Promise<void> {
   }
 }
 
+/** 四 Artifact 类级 Summary（M4-5.1）：artifacts/summaries 拉取；任何 Artifact 域变更事件驱动重拉 */
+async function pullArtifactSummaries(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listArtifactSummaries()
+    useAppStore.setState({ artifactSummaries: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** AI Read Model（M3.5.4）：ai/context 拉取——Studio provenance/validation 数据源；资产变更时重拉 */
 async function pullCareerContext(): Promise<void> {
   if (!engine) return
@@ -1526,6 +1542,7 @@ export function connectEngine(): void {
       void pullResumes()
       void pullCareerContext()
       void pullProposals()
+      void pullArtifactSummaries()
       void useAppStore.getState().loadAgentSettings()
       void useAppStore.getState().loadAvailableModels()
     }
@@ -1553,6 +1570,12 @@ export function connectEngine(): void {
     void pullCareerContext() // 版本变化影响 Context 投影
   })
   engine.on(EVENTS.proposalsChanged, () => void pullProposals())
+  // M4-5.1：四 Artifact 域任一变更 → 类级 Summary 重拉（UI projection 是派生数据，不缓存局部）
+  engine.on(EVENTS.resumesChanged, () => void pullArtifactSummaries())
+  engine.on(EVENTS.proposalsChanged, () => void pullArtifactSummaries())
+  engine.on(EVENTS.portfolioChanged, () => void pullArtifactSummaries())
+  engine.on(EVENTS.interviewChanged, () => void pullArtifactSummaries())
+  engine.on(EVENTS.coverLetterChanged, () => void pullArtifactSummaries())
   engine.on(EVENTS.companiesChanged, () => {
     void pullCompanies()
     void pullGraph()

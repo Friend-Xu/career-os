@@ -27,6 +27,7 @@ import type {
   ClaimCoverageRow,
 } from '../../engine/ir/schema.ts';
 import type { ResumeDocument, ResumeBullet, ResumeSection } from '../../engine/ir/resume.ts';
+import type { ArtifactSummary, ArtifactType } from '../../engine/ir/artifact-summary.ts';
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts';
 
 export type { Person };
@@ -49,6 +50,8 @@ export type { ClaimCoverageRow };
 export type { ResumeDocument };
 export type { ResumeBullet };
 export type { ResumeSection };
+export type { ArtifactSummary };
+export type { ArtifactType };
 
 /**
  * UI 会话扩展（引擎契约字段之外，仅 UI 会话渲染用）：
@@ -125,6 +128,7 @@ export type NavPageId =
   | 'companies'
   | 'jobs'
   | 'applications'
+  | 'artifacts'
   | 'resumes'
   | 'settings';
 

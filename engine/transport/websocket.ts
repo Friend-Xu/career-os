@@ -60,6 +60,7 @@ import {
   transitionCoverLetter,
 } from '../storage/cover-letter-watcher.ts'
 import type { CoverLetterStatus } from '../ir/cover-letter.ts'
+import { buildArtifactSummaries } from '../artifact-summary/index.ts'
 import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
@@ -827,6 +828,7 @@ export async function startServer(opts: {
       broadcast({ event: EVENTS.coverLetterChanged })
       return updated
     },
+    [METHODS.listArtifactSummaries]: () => buildArtifactSummaries(workspace),
     [METHODS.aiContext]: (params) => {
       const p = params as Record<string, unknown> | undefined
       const jobId = typeof p?.jobId === 'string' ? p.jobId : undefined

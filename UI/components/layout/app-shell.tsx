@@ -17,6 +17,7 @@ import { InfoPoolPage } from '../../pages/infopool-page'
 import { CompaniesPage } from '../../pages/companies-page'
 import { JobsPage } from '../../pages/jobs-page'
 import { ApplicationsPage } from '../../pages/applications-page'
+import { ArtifactsPage } from '../../pages/artifacts-page'
 import { ResumesPage } from '../../pages/resumes-page'
 import { SettingsPage } from '../../pages/settings-page'
 
@@ -35,6 +36,8 @@ function MainContent() {
     return <JobsPage />
   case 'applications':
     return <ApplicationsPage />
+  case 'artifacts':
+    return <ArtifactsPage />
   case 'resumes':
     return <ResumesPage />
   case 'settings':
@@ -94,9 +97,9 @@ export function AppShell() {
         e.preventDefault()
         createSession()
       }
-      if (meta && e.key >= '1' && e.key <= '6') {
+      if (meta && e.key >= '1' && e.key <= '8') {
         e.preventDefault()
-        const pages = ['workbench', 'agent', 'infopool', 'companies', 'jobs', 'applications'] as const
+        const pages = ['workbench', 'agent', 'infopool', 'companies', 'jobs', 'applications', 'artifacts', 'resumes'] as const
         setPage(pages[Number(e.key) - 1])
       }
     }

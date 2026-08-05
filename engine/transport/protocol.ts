@@ -147,6 +147,8 @@ export const METHODS = {
   settingsUpdate: 'settings/update',
   /** 可用模型列表（params: 无 → { source: 'api'|'cli'|'api_error', models: string[] }；配置了 apiKey 时调 Anthropic /v1/models 拉真实模型，否则返回官方当前模型 ID） */
   settingsModels: 'settings/models',
+  /** 四 Artifact 类级 Summary（M4-5.1 UI projection endpoint：Engine Context → ArtifactSummary[] → Cards；UI 不读文件，内部四 adapter Concrete First） */
+  listArtifactSummaries: 'artifacts/summaries',
 } as const
 
 export const EVENTS = {
