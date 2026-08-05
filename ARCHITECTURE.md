@@ -272,7 +272,8 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 **已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动 → 健康投影（契约 v1 + --doctor + RPC）→ 简历改写（指令式 Revision Request，审计闭环）→ 简历 PDF 导出（Edge headless，零依赖）→ 文档权威链 + ADR 登记。
 → **M3 表达链路（M3-0 → M3.5.8）**：Claim/Evidence 双入口 → 表达候选选择 → Resume Assembly → Proposal Layer（AI 只能写提案）→ 决策反馈投影 → 架构总索引（三层模型 + 七条不变量）
 → **M3-3 Artifact Evolution Benchmark v0.1**：10 case 数据集 → Runner 确定性审计 → Report Projection（无总分/无 ranking/无 AI Judge）
-→ **M4 Artifact Evolution**：Admission Contract（C1-C6 准入 + System Invariants）→ Portfolio（项目事实治理：P-01~P-07、immutable published、draft(v+1)）→ Interview（三层问答资产：I-01~I-08、draft→reviewed→ready）→ 各 Runtime Validation 5 case（引擎测试 290/290 全绿）
+→ **M4 Artifact Evolution**：Admission Contract（C1-C6 准入 + System Invariants）→ Portfolio（项目事实治理：P-01~P-07、immutable published、draft(v+1)）→ Interview（三层问答资产：I-01~I-08、draft→reviewed→ready）→ Cover Letter（第一个 Projection Artifact：NarrativeUnit 引用源 Fact Layer，adapt only）→ Artifact Reference Protocol（宪法层：Owner + Target Fact Locator + Relation，resolveLocator 只答存在性，无 registry）→ 各 Runtime Validation（引擎测试 351/351 全绿）
+→ **M4-5 Artifact Studio（Governance UI）**：四 slice——Assets 概览（ArtifactSummary 类级投影：Engine Context → Cards，无 version）→ Proposal Center（统一评审 Workflow，Diff 只统一 Presentation Contract；领域层四 adapter Concrete First，Accept/Reject 走原 watcher）→ Evolution Timeline（ArtifactTimelineEvent 确定性投影：at → append order → id，Proposal 是 source 非事件）→ Fact Traceability（Cover Letter 表达单元 → sourceRefs → Resolved Fact 只读定位，断链显式无 fallback）。治理闭环：**Decision → Evidence → Artifact Evolution → Controlled Composition → Reference Protocol → Governance UI**
 
 **未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map、Evidence 原子模型 / Workflow Contract / Career Graph 推理层（后三者 ADR-003/004/005 登记 defer，触发条件未到）。
 
