@@ -27,7 +27,9 @@ import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanPersons } from '../storage/person-watcher.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
-import { commitLedgerEvent, readLedgerEvents } from '../storage/ledger-writer.ts'
+import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
+import { projectDecision } from '../ir/decision-projection.ts'
+import { detectDecisionChange } from '../runtime/decision-change-detector.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -295,6 +297,60 @@ function ledgerCommitParams(v: unknown): {
   return {
     ...base,
     unit: p.unit,
+    trigger: { type: t.type as CandidateTrigger['type'], ...(typeof t.source === 'string' && t.source.length > 0 ? { source: t.source } : {}), ...(refs ? { refs } : {}) },
+    attribution: { why: a.why, ...(sourceRefs ? { sourceRefs } : {}) },
+    confirmation: { type: c.type as 'user_confirmation', ref: c.ref },
+  }
+}
+
+/** decision/commit 入参校验（RPC 边界：结构校验；why/防漂移不变量在引擎函数层） */
+function decisionCommitParams(v: unknown): {
+  personId: string
+  decisionId: string
+  changeUnit: string
+  changeType: 'decision' | 'preference' | 'constraint'
+  before?: string
+  after: string
+  trigger: CandidateTrigger
+  attribution: { why: string; sourceRefs?: string[] }
+  confirmation: { type: 'user_confirmation' | 'decision_confirmation' | 'evidence_confirmation'; ref: string }
+} {
+  if (typeof v !== 'object' || v === null) throw new Error('decision/commit 需要 params { personId, decisionId, changeUnit, after, … }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+  if (typeof p.decisionId !== 'string' || p.decisionId.length === 0) throw new Error('params.decisionId 缺失')
+  if (!['direction_target', 'city_constraint', 'salary_constraint', 'jd_strategy'].includes(String(p.changeUnit))) {
+    throw new Error('params.changeUnit 非法（direction_target | city_constraint | salary_constraint | jd_strategy）')
+  }
+  if (!['decision', 'preference', 'constraint'].includes(String(p.changeType))) throw new Error('params.changeType 非法')
+  if (typeof p.after !== 'string' || p.after.length === 0) throw new Error('params.after 缺失')
+  const t = p.trigger as Record<string, unknown> | undefined
+  if (!t || !['snapshot_change', 'decision_changed', 'external_event'].includes(String(t.type))) {
+    throw new Error('params.trigger.type 非法')
+  }
+  const a = p.attribution as Record<string, unknown> | undefined
+  if (!a || typeof a.why !== 'string') throw new Error('params.attribution.why 缺失')
+  const c = p.confirmation as Record<string, unknown> | undefined
+  if (!c || !['user_confirmation', 'decision_confirmation', 'evidence_confirmation'].includes(String(c.type)) || typeof c.ref !== 'string') {
+    throw new Error('params.confirmation 非法（type + ref）')
+  }
+  let sourceRefs: string[] | undefined
+  if (a.sourceRefs !== undefined) {
+    if (!Array.isArray(a.sourceRefs) || !a.sourceRefs.every((s) => typeof s === 'string')) throw new Error('params.attribution.sourceRefs 需为字符串数组')
+    sourceRefs = a.sourceRefs as string[]
+  }
+  let refs: string[] | undefined
+  if (t.refs !== undefined) {
+    if (!Array.isArray(t.refs) || !t.refs.every((s) => typeof s === 'string')) throw new Error('params.trigger.refs 需为字符串数组')
+    refs = t.refs as string[]
+  }
+  return {
+    personId: p.personId,
+    decisionId: p.decisionId,
+    changeUnit: p.changeUnit as string,
+    changeType: p.changeType as 'decision',
+    ...(typeof p.before === 'string' && p.before.length > 0 ? { before: p.before } : {}),
+    after: p.after,
     trigger: { type: t.type as CandidateTrigger['type'], ...(typeof t.source === 'string' && t.source.length > 0 ? { source: t.source } : {}), ...(refs ? { refs } : {}) },
     attribution: { why: a.why, ...(sourceRefs ? { sourceRefs } : {}) },
     confirmation: { type: c.type as 'user_confirmation', ref: c.ref },
@@ -636,7 +692,14 @@ export async function startServer(opts: {
     [METHODS.rescan]: () => store.rescan(),
     [METHODS.updateDecision]: (params) => {
       const { id, fields } = updateDecisionParams(params)
-      return updateDecisionFile(workspace, id, fields)
+      // M7.3：变更时点检测——写回前/后各取一次投影，Detector 生成认知变化候选（不写 Ledger）
+      const rel = `decisions/${id}.md`
+      const beforeMd = workspace.read(rel)
+      const result = updateDecisionFile(workspace, id, fields)
+      const afterMd = workspace.read(rel)
+      const before = projectDecision(beforeMd, id, '')
+      const after = projectDecision(afterMd, id, '')
+      return { ...result, candidates: detectDecisionChange(before, after) }
     },
     [METHODS.listCompanies]: () => store.listCompanies(),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
@@ -659,6 +722,10 @@ export async function startServer(opts: {
       return { rejected: true } // 显式否定无副作用（v1：拒绝 = 不 commit）
     },
     [METHODS.ledgerList]: (params) => readLedgerEvents(workspace, snapshotVersionsParams(params)),
+    [METHODS.decisionCommit]: (params) => {
+      const p = decisionCommitParams(params)
+      return commitDecisionLedgerEvent(workspace, p.personId, p)
+    },
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.decisionHistory]: () => computeHistories(store.listDecisions() as DecisionRecord[], runtime),
     [METHODS.contexts]: () => listContexts(workspace, store),

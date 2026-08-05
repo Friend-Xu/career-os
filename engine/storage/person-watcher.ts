@@ -12,7 +12,7 @@ import { readdirSync } from 'node:fs'
 import type { PersonSkill, PersonSnapshot } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
-import { parseSummaryTable } from './report-watcher.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 
 export interface PersonManifest {
   id: string
@@ -24,7 +24,7 @@ export interface PersonManifest {
 const STATUSES = ['active', 'archived'] as const
 
 /** manifest.md → 根声明（frontmatter id/name/status 必填；缺任一 → undefined） */
-export function parsePersonManifest(md: string, sourceFile: string): PersonManifest | undefined {
+export function parsePersonManifest(md: string): PersonManifest | undefined {
   const { meta, body } = splitFrontmatter(md)
   const fields = parseSummaryTable(body)
   const id = meta.id?.trim() || fields?.id?.trim()
@@ -105,7 +105,7 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     const pid = e.name
     const manifestPath = `persons/${pid}/manifest.md`
     if (!ws.exists(manifestPath)) continue
-    const manifest = parsePersonManifest(ws.read(manifestPath), manifestPath)
+    const manifest = parsePersonManifest(ws.read(manifestPath))
     if (!manifest) continue
 
     const identity = snapshotOf(ws, pid, 'identity.md')
@@ -126,6 +126,7 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
       name: manifest.name,
       status: manifest.status,
       manifestPath,
+      eventCount: 0,
     }
     if (identity) {
       snapshot.identity = {

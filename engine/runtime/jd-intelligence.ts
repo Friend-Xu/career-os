@@ -11,7 +11,7 @@
  * 不产生 user_decision（ADR-010：系统输出可能性空间，selected 只来自人）。
  * 引擎不自己打分——support/gap 是清单分类，risk 是约束比对，confidence 不产出（数据缺口由 unknowns 承载）。
  */
-import type { DecisionInputs, JDIntelligenceResult, JobRecord, PersonSnapshot } from '../ir/schema.ts'
+import type { DecisionInputs, JDIntelligenceOption, JDIntelligenceResult, JobRecord, PersonSnapshot, Skill } from '../ir/schema.ts'
 import { computeGap } from './gap-calculator.ts'
 
 export type { JDIntelligenceResult, JDIntelligenceOption } from '../ir/schema.ts'
@@ -53,7 +53,7 @@ export function analyzeJob(opts: {
   job: JobRecord
   person: PersonSnapshot
   /** knowledge 词表（computeGap 别名归一化） */
-  skills: { name: string; level: number }[]
+  skills: Skill[]
 }): JDIntelligenceResult {
   const { job, person, skills } = opts
   const gap = computeGap({ role: roleFromJob(job), person: person.name, personSkills: person.skills ?? [], skills })

@@ -26,7 +26,7 @@ import type {
 import { finalize, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter, nextArtifactId, registerArtifacts, type ArtifactSpec } from './artifact-registry.ts'
-import { parseSummaryTable } from './report-watcher.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 import { indexEvidence, canUseClaim } from './claim-policy.ts'
 import { scanClaims } from './claim-watcher.ts'
 import { scanEvidence } from './evidence-watcher.ts'

@@ -12,7 +12,7 @@ import { finalize, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 import { registerArtifacts, splitFrontmatter, type ArtifactSpec } from './artifact-registry.ts'
-import { parseSummaryTable } from './report-watcher.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 
 export const EVIDENCE_SPEC: ArtifactSpec = {
   type: 'evidence',

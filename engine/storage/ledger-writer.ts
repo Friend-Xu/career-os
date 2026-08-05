@@ -12,8 +12,8 @@
 import type { Workspace } from './workspace.ts'
 import { WorkspaceError } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
-import { readSnapshotVersion } from './snapshot-archive.ts'
 import { diffSnapshotVersions, type CandidateTrigger, type Confidence, type LedgerChangeType } from '../runtime/ledger-candidate.ts'
+import { projectDecision } from '../ir/decision-projection.ts'
 
 export interface CandidateConfirmation {
   type: 'user_confirmation' | 'decision_confirmation' | 'evidence_confirmation'
@@ -166,9 +166,74 @@ export function commitLedgerEvent(ws: Workspace, pid: string, input: CommitLedge
   return rec
 }
 
+export interface CommitDecisionLedgerInput {
+  decisionId: string
+  changeUnit: string
+  changeType: LedgerChangeType
+  before?: string
+  after: string
+  trigger: CandidateTrigger
+  attribution: { why: string; sourceRefs?: string[] }
+  confirmation: CandidateConfirmation
+}
+
+/** change_unit → decision 文件字段（after 防漂移验证用；jd_strategy 载体在 DecisionContext，v1 跳过） */
+const DECISION_FIELD_OF: Record<string, 'direction' | 'city' | 'salaryFeasible'> = {
+  direction_target: 'direction',
+  city_constraint: 'city',
+  salary_constraint: 'salaryFeasible',
+}
+
+/**
+ * decision 来源候选 → 事件落盘（M7.3.3：复用 M7.2 落盘格式/id 登记/manifest）。
+ * 不变量：why 非空 + after 与当前 decision 文件投影一致（防漂移——候选基于变更时点，提交时须仍成立）。
+ * before_ref/after_ref = decision:{id}（状态载体 = 决策文件 + 事件摘要；无 snapshot 版本对）。
+ */
+export function commitDecisionLedgerEvent(ws: Workspace, pid: string, input: CommitDecisionLedgerInput): LedgerEventRecord {
+  const why = input.attribution.why?.trim()
+  if (!why) throw new WorkspaceError(`ledger（person ${pid}）`, 'commit 必须 why 非空（confirmed + committed 不变式）')
+
+  const rel = `decisions/${input.decisionId}.md`
+  if (!ws.exists(rel)) throw new WorkspaceError(`ledger（person ${pid}）`, `决策不存在：${input.decisionId}`)
+  const field = DECISION_FIELD_OF[input.changeUnit]
+  if (field) {
+    const current = projectDecision(ws.read(rel), input.decisionId, '')
+    const cur = current[field]
+    const expected = field === 'salaryFeasible' ? input.after === 'true' : input.after
+    if (cur !== expected) {
+      throw new WorkspaceError(
+        `ledger（person ${pid}）`,
+        `commit 漂移：决策 ${input.decisionId} 当前 ${field}=${String(cur)}，候选 after=${input.after}（决策已再次变化）`,
+      )
+    }
+  }
+
+  const now = new Date().toISOString()
+  const change = `${input.before ?? '（新增）'}\n\n→\n\n${input.after}`
+  const rec: LedgerEventRecord = {
+    id: nextLedgerEventId(ws, pid),
+    personId: pid,
+    type: input.changeType,
+    status: 'committed',
+    timestamp: now,
+    changeUnit: input.changeUnit,
+    trigger: { type: input.trigger.type, ...(input.trigger.source ? { source: input.trigger.source } : {}), refs: input.trigger.refs ?? [] },
+    beforeRef: `decision:${input.decisionId}`,
+    beforeScope: input.changeUnit,
+    afterRef: `decision:${input.decisionId}`,
+    afterScope: input.changeUnit,
+    change,
+    why,
+    sourceRefs: input.attribution.sourceRefs ?? [],
+    confidence: 'high',
+  }
+  ws.write(`${eventsDir(pid)}/${rec.id}.md`, renderEvent(rec, change))
+  ensureManifest(ws, pid)
+  return rec
+}
+
 /** ledger/events/ 扫描 → 事件列表（正序；目录缺失 → 空） */
-export function readLedgerEvents(ws: Workspace, pid: string): LedgerEventRecord[] {
-  const out: LedgerEventRecord[] = []
+export function readLedgerEvents(ws: Workspace, pid: string): LedgerEventRecord[] {  const out: LedgerEventRecord[] = []
   for (const f of listEventFiles(ws, pid)) {
     const rec = parseLedgerEvent(ws.read(`${eventsDir(pid)}/${f}`))
     if (rec) out.push(rec)

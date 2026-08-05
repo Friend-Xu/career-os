@@ -65,6 +65,8 @@ export const METHODS = {
   ledgerReject: 'ledger/reject',
   /** Ledger 事件列表（params: { personId } → LedgerEventRecord[] 正序；ledger/ 缺失 → 空） */
   ledgerList: 'ledger/list',
+  /** Decision 变化候选提交（M7.3：params { decisionId, changeUnit, changeType, before?, after, trigger, attribution, confirmation } → LedgerEventRecord；防漂移：after 须与决策文件当前投影一致） */
+  decisionCommit: 'decision/commit',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
   /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */

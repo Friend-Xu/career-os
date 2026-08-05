@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
 import { parsePersonManifest, parseSnapshotTable, scanPersons } from '../storage/person-watcher.ts'
-import { silentLogger } from './companies.test.ts'
 
 const manifestMd = `---
 id: person_001
@@ -53,7 +52,7 @@ const careerMd = `## 分析摘要
 - CAE 仿真 78%
 `
 
-function makeWorkspace(personId: string, files: Record<string, string>): string {
+function makeWorkspace(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'cos-person-'))
   initWorkspace(dir)
   for (const [rel, content] of Object.entries(files)) {
@@ -69,7 +68,7 @@ function cleanup(dir: string): void {
 }
 
 test('parsePersonManifest：合法 manifest → 根声明', () => {
-  const m = parsePersonManifest(manifestMd, 'persons/person_001/manifest.md')
+  const m = parsePersonManifest(manifestMd)
   assert.ok(m)
   assert.equal(m.id, 'person_001')
   assert.equal(m.name, '我')
@@ -78,8 +77,8 @@ test('parsePersonManifest：合法 manifest → 根声明', () => {
 })
 
 test('parsePersonManifest：缺 id/name/非法 status → undefined', () => {
-  assert.equal(parsePersonManifest('# x\n\n## 分析摘要\n\n| id | person_001 |', 'a.md'), undefined) // 缺 name
-  assert.equal(parsePersonManifest(manifestMd.replace('status: active', 'status: banned'), 'a.md'), undefined) // 非法 status
+  assert.equal(parsePersonManifest('# x\n\n## 分析摘要\n\n| id | person_001 |'), undefined) // 缺 name
+  assert.equal(parsePersonManifest(manifestMd.replace('status: active', 'status: banned')), undefined) // 非法 status
 })
 
 test('parseSnapshotTable：摘要表解析 + 待采集/占位过滤', () => {
@@ -91,7 +90,7 @@ test('parseSnapshotTable：摘要表解析 + 待采集/占位过滤', () => {
 })
 
 test('scanPersons：person_001 完整扫描（identity/career/preference/events 计数）', () => {
-  const dir = makeWorkspace('person_001', {
+  const dir = makeWorkspace({
     'persons/person_001/manifest.md': manifestMd,
     'persons/person_001/snapshot/current/identity.md': identityMd,
     'persons/person_001/snapshot/current/career_profile.md': careerMd,
@@ -116,7 +115,7 @@ test('scanPersons：person_001 完整扫描（identity/career/preference/events 
 })
 
 test('scanPersons：缺 manifest / 无 persons 目录 → 降级空数组', () => {
-  const dir = makeWorkspace('person_001', { 'persons/person_001/snapshot/current/identity.md': identityMd })
+  const dir = makeWorkspace({ 'persons/person_001/snapshot/current/identity.md': identityMd })
   try {
     const ws = initWorkspace(dir)
     assert.equal(scanPersons(ws).length, 0) // 缺 manifest → 跳过

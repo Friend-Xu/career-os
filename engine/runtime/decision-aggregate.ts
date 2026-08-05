@@ -21,7 +21,7 @@
  * - factors/evidence/risks：正文段落（`## 考虑因素` / `## 证据` / `## 风险` 列表）；
  *   conclusion 取 `## 结论` 首项；段落缺失 → 空数组 / 缺省，不崩
  */
-import type { DecisionAggregate, DecisionRecord, UserDecision, Validation } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionAnalysis, DecisionRecord, UserDecision, Validation } from '../ir/schema.ts'
 import type { ParsedContext } from '../storage/context-watcher.ts'
 
 /** 按 context 组装聚合（invalid context 尽力组装：能用多少用多少，不崩） */
@@ -61,10 +61,10 @@ export function buildAggregates(contexts: ParsedContext[], decisions: DecisionRe
 
     // Contract analysis：method 段落 + confidence 从最后关联决策透传（不强制量化）
     const lastRecord = related[related.length - 1]
-    const confidence =
+    const confidence: DecisionAnalysis['confidence'] =
       lastRecord && (lastRecord.directionConfidence || lastRecord.directionMatch > 0)
         ? {
-            ...(lastRecord.directionConfidence ? { level: lastRecord.directionConfidence } : {}),
+            level: lastRecord.directionConfidence ?? 'medium', // 只有 score 时 level 缺省（分析声明缺失不阻塞）
             ...(lastRecord.directionMatch > 0 ? { score: lastRecord.directionMatch / 100 } : {}),
           }
         : undefined
@@ -86,9 +86,8 @@ export function buildAggregates(contexts: ParsedContext[], decisions: DecisionRe
     if (ctx.sections.conclusion) aggregate.conclusion = ctx.sections.conclusion
     if (ctx.sections.review) aggregate.review = ctx.sections.review
 
-    // Contract user_decision：从 conclusion/options 派生（分析 ≠ 选择，deferred/commitment 预留）
-    const selected =
-      aggregate.conclusion?.selected ?? options.find((o) => o.status === 'selected')?.name ?? null
+    // Contract user_decision：从 conclusion 派生（分析 ≠ 选择；options 只表达 rejected——selected 只来自人）
+    const selected = aggregate.conclusion?.selected ?? null
     const rejected = options.filter((o) => o.status === 'rejected').map((o) => o.name)
     if (selected !== null || rejected.length > 0) {
       const userDecision: UserDecision = { selected, rejected, deferred: [] }

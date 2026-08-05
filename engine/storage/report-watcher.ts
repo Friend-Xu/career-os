@@ -9,12 +9,10 @@
  */
 import type { Confidence, DecisionInputs, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
 import { validateByProtocol, type Validated, finalize } from '../ir/validator.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 import { registerDecisionIdentity, splitFrontmatter } from './decision-registry.ts'
-
-const SUMMARY_RE = /##\s*分析摘要\s*\n((?:\|[^\n]*\|\n)+)/
-const ROW_RE = /^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/
 
 /** 摘要表字段 → IR 字段（snake_case → camelCase；IR 无对应字段的不映射） */
 const FIELD_MAP: Record<string, keyof DecisionRecord> = {
@@ -84,23 +82,6 @@ function deriveSummary(md: string): string {
     return t.slice(0, 200)
   }
   return ''
-}
-
-/** 摘要表解析：`## 分析摘要` 两列表格 → { 字段: 值 }（决策/公司档案共用协议） */
-export function parseSummaryTable(md: string): Record<string, string> | null {
-  const m = md.match(SUMMARY_RE)
-  if (!m) return null
-  const fields: Record<string, string> = {}
-  for (const line of m[1].split('\n')) {
-    if (!line.trim().startsWith('|')) continue
-    if (/^\|[\s\-|]+\|$/.test(line)) continue // 分隔行
-    const r = line.match(ROW_RE)
-    if (r) {
-      const key = r[1].trim()
-      if (key && key !== '字段') fields[key] = r[2].trim()
-    }
-  }
-  return fields
 }
 
 /** 单个决策 md → IR（摘要表缺失 → invalid；版本分派校验）。

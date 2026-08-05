@@ -11,7 +11,7 @@ const SUMMARY_HEADING = '## 分析摘要'
 const FIELD_ROW_RE = /^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/
 const SEPARATOR_RE = /^\|[\s\-|]+\|$/
 
-/** 可编辑字段（snake_case，与摘要表协议一致） */
+/** 可编辑字段（snake_case，与摘要表协议一致；selected_change 为 M7.3 user_decision 显式动作入口） */
 export const UPDATEABLE_FIELDS: readonly string[] = [
   'skill',
   'direction',
@@ -23,6 +23,7 @@ export const UPDATEABLE_FIELDS: readonly string[] = [
   'risk_level',
   'key_risk',
   'status',
+  'selected_change',
 ]
 
 /** 决策文件局部修改：读 md → 更新白名单字段 → 写回（watcher 自动重扫；profile/protocol_version 不可编辑） */

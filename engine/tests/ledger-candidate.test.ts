@@ -162,7 +162,7 @@ test('diffSnapshotVersions：pf/ct 条目分型（preference vs constraint）+ s
       ['ct-01', '班制', '夜班'],
       ['ct-02', '工作时长', '长期 996'],
     ]))
-    const v3 = archiveCurrentSnapshot(ws, 'person_001', { reason: 'preference_update' })!.id
+    archiveCurrentSnapshot(ws, 'person_001', { reason: 'preference_update' })
     const v3pref = ws.read('persons/person_001/snapshot/current/preference_constraints.md')
     ws.write('persons/person_001/snapshot/current/preference_constraints.md', v3pref.replace('11-13K/月', '13-15K/月'))
     const v4 = archiveCurrentSnapshot(ws, 'person_001', { reason: 'salary_update' })!.id

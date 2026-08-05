@@ -19,7 +19,7 @@ import type {
 } from '../ir/resume.ts'
 import { finalize, type Validated } from '../ir/validator.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
-import { parseSummaryTable } from './report-watcher.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 import { canUseClaim, indexEvidence } from './claim-policy.ts'
 
 // ─── 1. Draft Parser（md → manifest）──

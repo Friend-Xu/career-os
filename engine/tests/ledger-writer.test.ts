@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace, WorkspaceError } from '../storage/workspace.ts'
 import { archiveCurrentSnapshot } from '../storage/snapshot-archive.ts'
-import { commitLedgerEvent, parseLedgerEvent, readLedgerEvents } from '../storage/ledger-writer.ts'
+import { commitDecisionLedgerEvent, commitLedgerEvent, parseLedgerEvent, readLedgerEvents } from '../storage/ledger-writer.ts'
 
 const manifestMd = `---
 id: person_001
@@ -153,6 +153,91 @@ test('readLedgerEvents：目录缺失 → 空；解析后正序', () => {
     assert.equal(events[0]!.trigger.type, 'snapshot_change')
     assert.equal(events[0]!.trigger.source, 'user_skill_confirmation')
     assert.deepEqual(events[0]!.trigger.refs, ['session_001'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+const decisionMd = `# 我 — 方向探索
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| direction | 机械结构工程师 |
+| city | 苏州 |
+| salary_feasible | true |
+| status | exploring |
+| protocol_version | 2.3 |
+| profile | 我 |
+`
+
+function makeDecisionWorkspace(): { root: string; ws: ReturnType<typeof initWorkspace> } {
+  const root = mkdtempSync(join(tmpdir(), 'cos-ledgerd-'))
+  const ws = initWorkspace(root)
+  ws.write('persons/person_001/manifest.md', manifestMd)
+  ws.write('decisions/decision_001.md', decisionMd)
+  return { root, ws }
+}
+
+const decisionCommit = (after: string) => ({
+  decisionId: 'decision_001',
+  changeUnit: 'direction_target',
+  changeType: 'decision' as const,
+  before: '机械结构工程师',
+  after,
+  trigger: { type: 'decision_changed' as const, source: 'user_decision', refs: ['session_002'] },
+  attribution: { why: '用户确认方向调整：从机械结构转向机械+AI', sourceRefs: ['evidence_002'] },
+  confirmation: { type: 'user_confirmation' as const, ref: 'session_002' },
+})
+
+test('commitDecisionLedgerEvent：decision 候选 → 落盘（decision_ref 引用 + 与 snapshot 事件共用目录/id 登记）', () => {
+  const { root, ws } = makeDecisionWorkspace()
+  try {
+    ws.write('decisions/decision_001.md', decisionMd.replace('机械结构工程师', '机械+AI 交叉'))
+    const rec = commitDecisionLedgerEvent(ws, 'person_001', decisionCommit('机械+AI 交叉'))
+    assert.match(rec.id, /^ledger_\d{8}_\d{5}$/)
+    assert.equal(rec.type, 'decision')
+    assert.equal(rec.changeUnit, 'direction_target')
+    assert.equal(rec.beforeRef, 'decision:decision_001')
+    assert.equal(rec.why, '用户确认方向调整：从机械结构转向机械+AI')
+    const md = ws.read(`persons/person_001/ledger/events/${rec.id}.md`)
+    assert.ok(md.includes('trigger_type: decision_changed'))
+    assert.ok(md.includes('trigger_source: user_decision'))
+    assert.ok(md.includes('before_ref: decision:decision_001'))
+    assert.ok(md.includes('机械+AI 交叉'))
+    // 与 snapshot 事件共用 id 登记（同日连续 +1）
+    assert.deepEqual(parseLedgerEvent(md), rec)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('commitDecisionLedgerEvent：防漂移——决策文件当前值与候选 after 不一致 → 拒绝写入', () => {
+  const { root, ws } = makeDecisionWorkspace()
+  try {
+    ws.write('decisions/decision_001.md', decisionMd.replace('机械结构工程师', '工业软件工程师')) // 已再次变化
+    assert.throws(
+      () => commitDecisionLedgerEvent(ws, 'person_001', decisionCommit('机械+AI 交叉')),
+      /commit 漂移/,
+    )
+    assert.deepEqual(readLedgerEvents(ws, 'person_001'), []) // 无事件写入
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('commitDecisionLedgerEvent：决策不存在 / why 空 → 拒绝（不变量）', () => {
+  const { root, ws } = makeDecisionWorkspace()
+  try {
+    assert.throws(
+      () => commitDecisionLedgerEvent(ws, 'person_001', { ...decisionCommit('机械+AI 交叉'), decisionId: 'decision_ghost' }),
+      /决策不存在/,
+    )
+    assert.throws(
+      () => commitDecisionLedgerEvent(ws, 'person_001', { ...decisionCommit('机械+AI 交叉'), attribution: { why: ' ' } }),
+      /why 非空/,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

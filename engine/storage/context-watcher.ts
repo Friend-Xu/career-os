@@ -21,7 +21,7 @@ import type { DecisionContext, DecisionStatus, Validation } from '../ir/schema.t
 import { normalizeDecisionStatus } from '../ir/decision-status.ts'
 import { finalize, type FieldCheck } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
-import { parseSummaryTable } from './report-watcher.ts'
+import { parseSummaryTable } from '../ir/summary-table.ts'
 import { watch } from 'chokidar'
 
 /** 中文状态 → DecisionStatus（Contract v1 4 值；legacy 评估中=exploring 归一化） */
