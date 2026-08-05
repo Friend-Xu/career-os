@@ -1,10 +1,10 @@
 /**
  * resume IR 单测（M3-2.1）：ResumeDocument 形状约束——claimId 必填（TS 编译期 + 运行时断言）、
- * status 枚举、Skills 章节 assetRefs 模式、LegacyResumeBullet 独立不污染主模型。
+ * status 枚举、Skills 章节 assetRefs 模式。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LegacyResumeBullet, ResumeBullet, ResumeDocument } from '../ir/resume.ts'
+import type { ResumeDocument } from '../ir/resume.ts'
 
 /** 合法 ResumeDocument 构造（Claim 主链：sentence + claimId 必填 + expectation 元数据） */
 function doc(overrides: Partial<ResumeDocument> = {}): ResumeDocument {
@@ -75,13 +75,4 @@ test('ResumeDocument：targetJobId / metadata 可选字段缺省合法', () => {
   })
   assert.equal(d.targetJobId, undefined)
   assert.equal(d.sections[0].bullets[0].metadata, undefined)
-})
-
-test('LegacyResumeBullet：独立类型不污染主模型（无 claimId 字段）', () => {
-  const legacy: LegacyResumeBullet = { sentence: '素材池拼接的子弹句', sourceNote: '用户口述·第1轮' }
-  // 主链 bullet 必须有 claimId；legacy 类型无 claimId 字段——运行时断言防误用
-  const mainBullet: ResumeBullet = { sentence: '主链 bullet', claimId: 'claim_20260804_00001' }
-  assert.equal(mainBullet.claimId, 'claim_20260804_00001')
-  assert.equal('claimId' in legacy, false)
-  assert.equal(legacy.sourceNote, '用户口述·第1轮')
 })

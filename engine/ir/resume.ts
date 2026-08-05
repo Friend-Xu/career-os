@@ -4,7 +4,6 @@
  *   Assembly 禁止修改 Sentence / 新增 Claim / 重新选择 Evidence（契约 §3 内容边界）
  * - bullet 携带 expectation 锚点元数据："为什么这条 bullet 出现在这份简历"可全链回溯
  * - Skills 章节不由 Assembly 创建内容：assetRefs 引用现有资产，Assembly 不编造技能
- * - Legacy fallback 独立类型（旧 star-reconstructor 链路），不污染主模型
  */
 export type ResumeStatus = 'draft' | 'review' | 'exported' | 'archived'
 export type ResumeSectionType = 'summary' | 'experience' | 'projects' | 'skills' | 'education'
@@ -44,12 +43,6 @@ export interface ResumeDocument {
   lineage?: ResumeLineage // M3.5：派生链（append-only 历史）
   operations?: ResumeOperation[] // M3.5：生命周期操作审计（append-only）
   validation?: ResumeValidation // M3.5.4：assemble 快照（Context 投影展示；重算需反推 manifest 不可靠）
-}
-
-/** Legacy fallback（旧 star-reconstructor 素材池链路）：独立类型，不污染主模型 */
-export interface LegacyResumeBullet {
-  sentence: string
-  sourceNote?: string // 溯源说明（素材池/口述）
 }
 
 // ─── M3.5：Version Management（契约 RESUME-VERSION-M3-v0.2）──
