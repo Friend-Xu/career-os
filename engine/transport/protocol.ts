@@ -107,6 +107,26 @@ export const METHODS = {
   acceptProposal: 'proposals/accept',
   /** 拒绝提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
   rejectProposal: 'proposals/reject',
+  /** 全量 Portfolio 项目（portfolio/projects/ 扫描；M4-1 集合型 Artifact） */
+  listPortfolioProjects: 'portfolio/projects/list',
+  /** 全量 Portfolio 提案（portfolio/proposals/ 扫描 + 校验标记；M4-1 Intent Layer） */
+  listPortfolioProposals: 'portfolio/proposals/list',
+  /** 项目状态转移（params: { id, targetStatus } → 单向状态机校验 + 演化记录追加；published 不可回退，修改必须走提案） */
+  transitionPortfolio: 'portfolio/transition',
+  /** 接受 Portfolio 提案（params: { id, reason? } → P-01~P-07 校验 → statement 改写 + version+1 + status=draft + transitions 追加；永不覆盖历史） */
+  acceptPortfolioProposal: 'portfolio/proposals/accept',
+  /** 拒绝 Portfolio 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  rejectPortfolioProposal: 'portfolio/proposals/reject',
+  /** 全量 Interview QA（interviews/ 扫描；M4-2 问答资产——Fact/Expression/Strategy 三层） */
+  listInterviewQas: 'interviews/list',
+  /** 全量 Interview 提案（interviews/proposals/ 扫描 + 校验标记；M4-2 Intent Layer） */
+  listInterviewProposals: 'interviews/proposals/list',
+  /** QA 状态转移（params: { id, targetStatus } → 单向状态机校验 + 演化记录追加；ready 不可直接回退，修改必须走提案） */
+  transitionInterview: 'interviews/transition',
+  /** 接受 Interview 提案（params: { id, reason? } → I-01~I-08 校验 → AnswerStatement.text 改写 + status=draft + transitions 追加；永不覆盖历史） */
+  acceptInterviewProposal: 'interviews/proposals/accept',
+  /** 拒绝 Interview 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  rejectInterviewProposal: 'interviews/proposals/reject',
   /** AI Read Model（params 可选 { jobId } → CareerContext：全资产投影——AI 不直接读数据库结构；M3.5.4） */
   aiContext: 'ai/context',
   /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
@@ -132,6 +152,10 @@ export const EVENTS = {
   resumesChanged: 'data.resumes.changed',
   /** proposals/ 目录变更后推送（不含数据，客户端用 proposals/list 拉快照；M3.5.6） */
   proposalsChanged: 'data.proposals.changed',
+  /** portfolio/ 目录变更后推送（不含数据，客户端用 portfolio/projects|proposals/list 拉快照；M4-1） */
+  portfolioChanged: 'data.portfolio.changed',
+  /** interviews/ 目录变更后推送（不含数据，客户端用 interviews/list 拉快照；M4-2） */
+  interviewChanged: 'data.interviews.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
   poolChanged: 'data.pool.changed',

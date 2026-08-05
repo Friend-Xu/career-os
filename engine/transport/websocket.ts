@@ -36,6 +36,22 @@ import { exportResumePdf, serializeExportRecord } from '../export/resume-export.
 import { buildCareerContext } from '../context/career-context.ts'
 import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
 import { acceptProposalFile, rejectProposalFile, scanProposals } from '../storage/proposal-watcher.ts'
+import {
+  acceptPortfolioProposal,
+  rejectPortfolioProposal,
+  scanPortfolioProjects,
+  scanPortfolioProposals,
+  transitionPortfolioProject,
+} from '../storage/portfolio-watcher.ts'
+import type { PortfolioStatus } from '../ir/portfolio.ts'
+import {
+  acceptInterviewProposal,
+  rejectInterviewProposal,
+  scanInterviewProposals,
+  scanInterviewQas,
+  transitionInterviewQa,
+} from '../storage/interview-watcher.ts'
+import type { InterviewStatus } from '../ir/interview.ts'
 import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
@@ -705,6 +721,70 @@ export async function startServer(opts: {
       const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
       const updated = rejectProposalFile(workspace, jobIdParams(params), reason)
       broadcast({ event: EVENTS.proposalsChanged })
+      return updated
+    },
+    [METHODS.listPortfolioProjects]: () => scanPortfolioProjects(workspace).map((p) => ({
+      ...p.record,
+      ...(p.issues.length > 0 ? { issues: p.issues } : {}),
+    })),
+    [METHODS.listPortfolioProposals]: () => scanPortfolioProposals(workspace).map((p) => ({
+      ...p.record,
+      ...(p.issues.length > 0 ? { issues: p.issues } : {}),
+    })),
+    [METHODS.transitionPortfolio]: (params) => {
+      const p = params as Record<string, unknown>
+      const target = p?.targetStatus
+      if (typeof target !== 'string' || !['draft', 'reviewed', 'published'].includes(target)) {
+        throw new Error('params.targetStatus 缺失/非法（draft/reviewed/published）')
+      }
+      const updated = transitionPortfolioProject(workspace, jobIdParams(params), target as PortfolioStatus)
+      broadcast({ event: EVENTS.portfolioChanged })
+      return updated
+    },
+    [METHODS.acceptPortfolioProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const { project } = acceptPortfolioProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.portfolioChanged })
+      return project
+    },
+    [METHODS.rejectPortfolioProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const updated = rejectPortfolioProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.portfolioChanged })
+      return updated
+    },
+    [METHODS.listInterviewQas]: () => scanInterviewQas(workspace).map((q) => ({
+      ...q.record,
+      ...(q.issues.length > 0 ? { issues: q.issues } : {}),
+    })),
+    [METHODS.listInterviewProposals]: () => scanInterviewProposals(workspace).map((p) => ({
+      ...p.record,
+      ...(p.issues.length > 0 ? { issues: p.issues } : {}),
+    })),
+    [METHODS.transitionInterview]: (params) => {
+      const p = params as Record<string, unknown>
+      const target = p?.targetStatus
+      if (typeof target !== 'string' || !['draft', 'reviewed', 'ready'].includes(target)) {
+        throw new Error('params.targetStatus 缺失/非法（draft/reviewed/ready）')
+      }
+      const updated = transitionInterviewQa(workspace, jobIdParams(params), target as InterviewStatus)
+      broadcast({ event: EVENTS.interviewChanged })
+      return updated
+    },
+    [METHODS.acceptInterviewProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const { qa } = acceptInterviewProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.interviewChanged })
+      return qa
+    },
+    [METHODS.rejectInterviewProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const updated = rejectInterviewProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.interviewChanged })
       return updated
     },
     [METHODS.aiContext]: (params) => {

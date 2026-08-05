@@ -6,7 +6,7 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.4' as const
+export const ProtocolVersion = '2.6' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'

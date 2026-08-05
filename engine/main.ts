@@ -13,6 +13,8 @@ import { EVIDENCE_SPEC, watchEvidence } from './storage/evidence-watcher.ts'
 import { CLAIM_SPEC, watchClaims } from './storage/claim-watcher.ts'
 import { RESUME_SPEC, watchResumes } from './storage/resume-watcher.ts'
 import { registerPendingProposals, watchProposals } from './storage/proposal-watcher.ts'
+import { registerPendingPortfolioProjects, registerPendingPortfolioProposals, watchPortfolio } from './storage/portfolio-watcher.ts'
+import { registerPendingInterviewQas, registerPendingInterviewProposals, watchInterviews } from './storage/interview-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -52,6 +54,16 @@ async function main(args: string[]): Promise<void> {
     // ─── 提案补登（M3.5.6）：引擎离线期间 AI 写入的提案（invalid 不登记，AI 修正后 watcher 重试）
     const proposalsRegistered = registerPendingProposals(ws)
     if (proposalsRegistered > 0) logger.info(`提案登记：${proposalsRegistered} 个提案文件分配系统 ID（proposal_YYYYMMDD_NNNNN）`)
+    // ─── Portfolio 补登（M4-1）：用户写入的项目事实 + AI 提案（幂等；无事实项目/非法提案不登记）
+    const projectsRegistered = registerPendingPortfolioProjects(ws)
+    if (projectsRegistered > 0) logger.info(`Portfolio 项目登记：${projectsRegistered} 个项目文件分配系统 ID（project_YYYYMMDD_NNNNN）`)
+    const ppRegistered = registerPendingPortfolioProposals(ws)
+    if (ppRegistered > 0) logger.info(`Portfolio 提案登记：${ppRegistered} 个提案文件分配系统 ID（pp_YYYYMMDD_NNNNN）`)
+    // ─── Interview 补登（M4-2）：用户写入的 QA + AI 提案（幂等；无问题 QA/非法提案不登记）
+    const qasRegistered = registerPendingInterviewQas(ws)
+    if (qasRegistered > 0) logger.info(`Interview QA 登记：${qasRegistered} 个问答文件分配系统 ID（qa_YYYYMMDD_NNNNN）`)
+    const ipRegistered = registerPendingInterviewProposals(ws)
+    if (ipRegistered > 0) logger.info(`Interview 提案登记：${ipRegistered} 个提案文件分配系统 ID（ip_YYYYMMDD_NNNNN）`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)
@@ -153,6 +165,16 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.proposalsChanged })
         logger.info(`proposals/ 变更：重扫 ${parsed.length} 条并广播`)
       })
+      // portfolio/ 变更只发信号（M4-1：项目事实 + 提案——文件登记 + RPC 状态流转/transition 都触发）
+      watchPortfolio(ws, () => {
+        broadcast({ event: EVENTS.portfolioChanged })
+        logger.info('portfolio/ 变更：已广播（portfolio/projects|proposals/list 按需重扫）')
+      })
+      // interviews/ 变更只发信号（M4-2：问答资产 + 提案——文件登记 + RPC 状态流转/transition 都触发）
+      watchInterviews(ws, () => {
+        broadcast({ event: EVENTS.interviewChanged })
+        logger.info('interviews/ 变更：已广播（interviews/list 按需重扫）')
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
@@ -160,6 +182,8 @@ async function main(args: string[]): Promise<void> {
       logger.info('claims/ 监听已启用（watcher.enabled=true）')
       logger.info('resumes/ 监听已启用（watcher.enabled=true）')
       logger.info('proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('portfolio/ 监听已启用（watcher.enabled=true）')
+      logger.info('interviews/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }
