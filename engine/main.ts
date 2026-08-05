@@ -17,6 +17,7 @@ import { registerPendingPortfolioProjects, registerPendingPortfolioProposals, wa
 import { registerPendingInterviewQas, registerPendingInterviewProposals, watchInterviews } from './storage/interview-watcher.ts'
 import { registerPendingCoverLetters, registerPendingCoverLetterProposals, watchCoverLetters } from './storage/cover-letter-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
+import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
@@ -39,6 +40,12 @@ async function main(args: string[]): Promise<void> {
     const ws = initWorkspace(config.paths.workspace)
     logger.info(`信息池工作区就绪：${ws.paths.root}`)
     logger.info(`协议版本：career-os v${ProtocolVersion}（metadata/protocol.json，引擎单方维护）`)
+
+    // ─── Snapshot 版本存档迁移（M7.1）：旧平铺 snapshot/*.md → current/ + bootstrap 版本（幂等）───
+    const bootstrapped = migrateSnapshotLayout(ws)
+    if (bootstrapped) {
+      logger.info(`快照存档迁移：${bootstrapped}（layout → snapshot/current/ + versions/ append-only）`)
+    }
 
     // ─── 决策身份登记（M1.6）：引擎离线期间写入的决策文件 → 补登记系统 ID（幂等；监听期 add 事件即时登记）───
     const registered = registerDecisionIdentity(ws).registered

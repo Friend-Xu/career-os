@@ -42,6 +42,7 @@ export interface WorkspacePaths {
   coverLetters: string
   coverLetterProposals: string
   knowledge: string
+  persons: string
   metadata: string
   indexFile: string
   protocolFile: string
@@ -58,6 +59,8 @@ export interface Workspace {
   delete(relPath: string): void
   /** 列出子目录下的 .md 文件（无目录则抛 WorkspaceError） */
   listMarkdown(subDir: string): string[]
+  /** 列出子目录下的子目录名（无目录则抛 WorkspaceError） */
+  listDirs(subDir: string): string[]
 }
 
 export function buildPaths(root: string): WorkspacePaths {
@@ -80,6 +83,7 @@ export function buildPaths(root: string): WorkspacePaths {
     coverLetters: join(root, 'cover-letters'),
     coverLetterProposals: join(root, 'cover-letters', 'proposals'),
     knowledge: join(root, 'knowledge'),
+    persons: join(root, 'persons'),
     metadata: join(root, 'metadata'),
     indexFile: join(root, 'INDEX.md'),
     protocolFile: join(root, 'metadata', 'protocol.json'),
@@ -128,6 +132,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.coverLetters, { recursive: true })
     mkdirSync(paths.coverLetterProposals, { recursive: true })
     mkdirSync(paths.knowledge, { recursive: true })
+    mkdirSync(paths.persons, { recursive: true })
     mkdirSync(paths.metadata, { recursive: true })
   } catch {
     throw new WorkspaceError(root, '目录创建失败（权限/路径非法）')
@@ -169,6 +174,11 @@ export function initWorkspace(root: string): Workspace {
       const dir = join(root, subDir)
       if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
       return readdirSync(dir).filter((f) => f.endsWith('.md'))
+    },
+    listDirs(subDir) {
+      const dir = join(root, subDir)
+      if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
+      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
     },
   }
 }

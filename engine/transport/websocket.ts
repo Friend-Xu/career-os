@@ -13,17 +13,19 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionChain, DecisionRecord, GapResult } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDIntelligenceResult, PersonSkill } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
+import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { scanProfiles } from '../storage/projection.ts'
+import { scanPersons } from '../storage/person-watcher.ts'
+import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -108,11 +110,11 @@ function isRpcRequest(v: unknown): v is RpcRequest {
 }
 
 /**
- * decisions/chain 处理器派生：listDecisions() 按 profile 分组 → 每人对该人决策调 computeChain。
- * 空链过滤：computeChain 内部已排除 invalid 决策（Validation.status === 'invalid'），
- * 链上无 completed 阶段即该人无合法决策（无进展）→ 不返回。
+ * decision/history 处理器派生：listDecisions() 按 profile 分组 → 每人对该人决策调 computeHistory。
+ * 空历史过滤：computeHistory 内部已排除 invalid 决策（Validation.status === 'invalid'），
+ * 无任何决策类型（groups 为空）即该人无合法决策 → 不返回。
  */
-export function computeChains(decisions: DecisionRecord[], runtime: DecisionRuntime): DecisionChain[] {
+export function computeHistories(decisions: DecisionRecord[], runtime: DecisionRuntime): DecisionHistory[] {
   const byPerson = new Map<string, DecisionRecord[]>()
   for (const d of decisions) {
     if (!d.profile) continue // v2.0 旧记录无 profile，无法归属人
@@ -120,12 +122,12 @@ export function computeChains(decisions: DecisionRecord[], runtime: DecisionRunt
     if (list) list.push(d)
     else byPerson.set(d.profile, [d])
   }
-  const chains: DecisionChain[] = []
+  const histories: DecisionHistory[] = []
   for (const person of [...byPerson.keys()].sort()) {
-    const chain = runtime.computeChain(byPerson.get(person)!, person)
-    if (chain.stages.some((s) => s.status === 'completed')) chains.push(chain)
+    const history = runtime.computeHistory(byPerson.get(person)!, person)
+    if (history.groups.length > 0) histories.push(history)
   }
-  return chains
+  return histories
 }
 
 /** contexts/list 处理器派生：context 目录扫描 + 决策投影 → 按 context 组装聚合（纯函数，不落盘） */
@@ -138,8 +140,32 @@ export function computeKnowledgeGap(workspace: Workspace, params: { person: stri
   const { skills, roles } = scanKnowledge(workspace)
   const role = roles.find((r) => r.id === params.roleId)
   if (!role) throw new Error(`角色不存在：${params.roleId}`)
-  const personSkills = scanProfiles(workspace).find((p) => p.name === params.person)?.skills ?? []
+  const personSkills = personSkillsOf(workspace, params.person)
   return computeGap({ role, person: params.person, personSkills, skills })
+}
+
+/** M6.6.5：Person 技能声明唯一来源 = persons/（skill_inventory.md 派生）；旧 profiles 失去输入权 */
+function personSkillsOf(workspace: Workspace, person: string): PersonSkill[] {
+  return scanPersons(workspace).find((p) => p.name === person)?.skills ?? []
+}
+
+/** jd/analyze 处理器：JobRecord + Person Aggregate → JDIntelligenceResult（Contract 形态，不产生 user_decision） */
+export function computeJdAnalysis(workspace: Workspace, params: { jobId: string; personId: string }): JDIntelligenceResult {
+  const job = scanJobs(workspace).find((j) => j.record.id === params.jobId)
+  if (!job) throw new Error(`岗位不存在：${params.jobId}`)
+  const person = scanPersons(workspace).find((p) => p.personId === params.personId)
+  if (!person) throw new Error(`人不存在：${params.personId}`)
+  const { skills } = scanKnowledge(workspace)
+  return analyzeJob({ job: job.record, person, skills })
+}
+
+/** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
+function jdAnalyzeParams(v: unknown): { jobId: string; personId: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('jd/analyze 需要 params { jobId, personId }')
+  const p = v as Record<string, unknown>
+  if (typeof p.jobId !== 'string' || p.jobId.length === 0) throw new Error('params.jobId 缺失（岗位 id）')
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失（person_xxx）')
+  return { jobId: p.jobId, personId: p.personId }
 }
 
 /** knowledge/gap 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -191,6 +217,35 @@ function jobIdParams(v: unknown): string {
   return (v as Record<string, unknown>).id as string
 }
 
+/** snapshot/archive 入参校验（RPC 边界：reason 白名单字符，sourceRefs 字符串数组） */
+function snapshotArchiveParams(v: unknown): { personId: string; reason: string; trigger?: string; sourceRefs?: string[] } {
+  if (typeof v !== 'object' || v === null) throw new Error('snapshot/archive 需要 params { personId, reason }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失（person_xxx）')
+  if (typeof p.reason !== 'string' || p.reason.length === 0) throw new Error('params.reason 缺失（归档原因，如 skill_update）')
+  let sourceRefs: string[] | undefined
+  if (p.sourceRefs !== undefined) {
+    if (!Array.isArray(p.sourceRefs) || !p.sourceRefs.every((s) => typeof s === 'string')) {
+      throw new Error('params.sourceRefs 需为字符串数组')
+    }
+    sourceRefs = p.sourceRefs as string[]
+  }
+  return {
+    personId: p.personId,
+    reason: p.reason,
+    ...(typeof p.trigger === 'string' && p.trigger.length > 0 ? { trigger: p.trigger } : {}),
+    ...(sourceRefs ? { sourceRefs } : {}),
+  }
+}
+
+/** snapshot/versions 入参校验（RPC 边界：personId 缺失 fail fast） */
+function snapshotVersionsParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).personId !== 'string') {
+    throw new Error('snapshot/versions 需要 params { personId }')
+  }
+  return (v as Record<string, unknown>).personId as string
+}
+
 /** jobs/extract 入参校验（RPC 边界：用户输入校验，fail fast） */
 function extractJdParams(v: unknown): { jdText: string } {
   if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).jdText !== 'string') {
@@ -227,7 +282,7 @@ export function computeJobMatch(workspace: Workspace, jobId: string, person: str
       })
     })(),
   }
-  const personSkills = scanProfiles(workspace).find((p) => p.name === person)?.skills ?? []
+  const personSkills = personSkillsOf(workspace, person)
   return computeGap({ role, person, personSkills, skills })
 }
 
@@ -531,11 +586,17 @@ export async function startServer(opts: {
     [METHODS.listCompanies]: () => store.listCompanies(),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
+    [METHODS.snapshotArchive]: (params) => {
+      const p = snapshotArchiveParams(params)
+      return archiveCurrentSnapshot(workspace, p.personId, p)
+    },
+    [METHODS.snapshotVersions]: (params) => listSnapshotVersions(workspace, snapshotVersionsParams(params)),
     [METHODS.poolGraph]: () => store.graph(),
-    [METHODS.chain]: () => computeChains(store.listDecisions() as DecisionRecord[], runtime),
+    [METHODS.decisionHistory]: () => computeHistories(store.listDecisions() as DecisionRecord[], runtime),
     [METHODS.contexts]: () => listContexts(workspace, store),
     [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
+    [METHODS.jdAnalyze]: (params) => computeJdAnalysis(workspace, jdAnalyzeParams(params)),
     [METHODS.health]: () => generateHealthReport(workspace, store as ProjectionStore),
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => {

@@ -37,20 +37,26 @@ export const METHODS = {
   rescan: 'decisions/rescan',
   /** 局部修改决策记录（params: { id, fields } → 更新摘要表字段 → 写回 md → watcher 自动重扫广播；字段白名单见 decision-editor.UPDATEABLE_FIELDS） */
   updateDecision: 'decisions/update',
-  /** 决策链投影（按人分组的 computeChain 派生视图，6 阶段状态机） */
-  chain: 'decisions/chain',
+  /** 决策历史投影（按人分组的 computeHistory 派生视图，按类型分组无推进语义） */
+  decisionHistory: 'decision/history',
   /** 决策聚合视图（V1.5：DecisionContext 问题绑定 + 运行时组装，不落盘） */
   contexts: 'contexts/list',
   /** 知识层（V2）：技能词表 + 岗位清单（Skill[] + Role[]，图谱节点派生） */
   knowledgeGraph: 'knowledge/graph',
   /** 差距分析（V2）：params { person, roleId } → GapResult（满足/可迁移/缺失清单，纯派生不打分） */
   knowledgeGap: 'knowledge/gap',
+  /** JD 分析（M6.6.5 Contract 样板）：params { jobId, personId } → JDIntelligenceResult（options/unknowns/inputs，不产生 user_decision） */
+  jdAnalyze: 'jd/analyze',
   /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
   /** 单个公司档案全文（params: { id } → { id, markdown }；尽调详情正文渲染用） */
   companyGet: 'companies/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
+  /** 快照版本存档（M7.1：写入 current 前调用，params { personId, reason, trigger?, sourceRefs? } → SnapshotVersionManifest | null；增量 append-only） */
+  snapshotArchive: 'snapshot/archive',
+  /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */
+  snapshotVersions: 'snapshot/versions',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
   /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */
