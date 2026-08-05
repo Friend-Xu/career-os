@@ -26,6 +26,8 @@ import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { scanPersons } from '../storage/person-watcher.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
+import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
+import { commitLedgerEvent, readLedgerEvents } from '../storage/ledger-writer.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -244,6 +246,59 @@ function snapshotVersionsParams(v: unknown): string {
     throw new Error('snapshot/versions 需要 params { personId }')
   }
   return (v as Record<string, unknown>).personId as string
+}
+
+/** ledger/candidates 入参校验（RPC 边界：版本对 + personId） */
+function ledgerVersionsParams(v: unknown): { personId: string; fromId: string; toId: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('ledger/* 需要 params { personId, fromId, toId }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+  if (typeof p.fromId !== 'string' || typeof p.toId !== 'string' || p.fromId.length === 0 || p.toId.length === 0) {
+    throw new Error('params.fromId/toId 缺失（快照版本 id）')
+  }
+  return { personId: p.personId, fromId: p.fromId, toId: p.toId }
+}
+
+/** ledger/commit 入参校验（RPC 边界：结构校验；why/confirmation 不变量在引擎函数层） */
+function ledgerCommitParams(v: unknown): {
+  personId: string
+  fromId: string
+  toId: string
+  unit: string
+  trigger: CandidateTrigger
+  attribution: { why: string; sourceRefs?: string[] }
+  confirmation: { type: 'user_confirmation' | 'decision_confirmation' | 'evidence_confirmation'; ref: string }
+} {
+  const base = ledgerVersionsParams(v)
+  const p = v as Record<string, unknown>
+  if (typeof p.unit !== 'string' || p.unit.length === 0) throw new Error('params.unit 缺失（变化单位）')
+  const t = p.trigger as Record<string, unknown> | undefined
+  if (!t || !['snapshot_change', 'decision_changed', 'external_event'].includes(String(t.type))) {
+    throw new Error('params.trigger.type 非法（snapshot_change | decision_changed | external_event）')
+  }
+  const a = p.attribution as Record<string, unknown> | undefined
+  if (!a || typeof a.why !== 'string') throw new Error('params.attribution.why 缺失')
+  const c = p.confirmation as Record<string, unknown> | undefined
+  if (!c || !['user_confirmation', 'decision_confirmation', 'evidence_confirmation'].includes(String(c.type)) || typeof c.ref !== 'string') {
+    throw new Error('params.confirmation 非法（type + ref）')
+  }
+  let sourceRefs: string[] | undefined
+  if (a.sourceRefs !== undefined) {
+    if (!Array.isArray(a.sourceRefs) || !a.sourceRefs.every((s) => typeof s === 'string')) throw new Error('params.attribution.sourceRefs 需为字符串数组')
+    sourceRefs = a.sourceRefs as string[]
+  }
+  let refs: string[] | undefined
+  if (t.refs !== undefined) {
+    if (!Array.isArray(t.refs) || !t.refs.every((s) => typeof s === 'string')) throw new Error('params.trigger.refs 需为字符串数组')
+    refs = t.refs as string[]
+  }
+  return {
+    ...base,
+    unit: p.unit,
+    trigger: { type: t.type as CandidateTrigger['type'], ...(typeof t.source === 'string' && t.source.length > 0 ? { source: t.source } : {}), ...(refs ? { refs } : {}) },
+    attribution: { why: a.why, ...(sourceRefs ? { sourceRefs } : {}) },
+    confirmation: { type: c.type as 'user_confirmation', ref: c.ref },
+  }
 }
 
 /** jobs/extract 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -591,6 +646,19 @@ export async function startServer(opts: {
       return archiveCurrentSnapshot(workspace, p.personId, p)
     },
     [METHODS.snapshotVersions]: (params) => listSnapshotVersions(workspace, snapshotVersionsParams(params)),
+    [METHODS.ledgerCandidates]: (params) => {
+      const p = ledgerVersionsParams(params)
+      return buildCandidates(workspace, p.personId, { fromId: p.fromId, toId: p.toId, trigger: { type: 'snapshot_change' } })
+    },
+    [METHODS.ledgerCommit]: (params) => {
+      const p = ledgerCommitParams(params)
+      return commitLedgerEvent(workspace, p.personId, p)
+    },
+    [METHODS.ledgerReject]: (params) => {
+      ledgerVersionsParams(params)
+      return { rejected: true } // 显式否定无副作用（v1：拒绝 = 不 commit）
+    },
+    [METHODS.ledgerList]: (params) => readLedgerEvents(workspace, snapshotVersionsParams(params)),
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.decisionHistory]: () => computeHistories(store.listDecisions() as DecisionRecord[], runtime),
     [METHODS.contexts]: () => listContexts(workspace, store),

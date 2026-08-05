@@ -57,6 +57,14 @@ export const METHODS = {
   snapshotArchive: 'snapshot/archive',
   /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */
   snapshotVersions: 'snapshot/versions',
+  /** Ledger 候选生成（M7.2：params { personId, fromId, toId } → LedgerCandidate[]；diff 原语无副作用） */
+  ledgerCandidates: 'ledger/candidates',
+  /** Ledger 事件提交（M7.2：params { personId, fromId, toId, unit, trigger, attribution, confirmation } → LedgerEventRecord；不变量：refs 可读 + confirmation + why 非空） */
+  ledgerCommit: 'ledger/commit',
+  /** Ledger 候选拒绝（M7.2：params { personId, fromId, toId, unit } → { rejected: true }；显式否定无副作用——拒绝 = 不 commit） */
+  ledgerReject: 'ledger/reject',
+  /** Ledger 事件列表（params: { personId } → LedgerEventRecord[] 正序；ledger/ 缺失 → 空） */
+  ledgerList: 'ledger/list',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
   /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */
