@@ -151,6 +151,8 @@ export const METHODS = {
   listArtifactSummaries: 'artifacts/summaries',
   /** 四 Artifact 演化 Timeline（M4-5.3 UI projection：Engine Events → Timeline Adapter → ArtifactTimelineEvent[]；确定性排序 at→order→id；Proposal 是 source 非事件） */
   listArtifactTimeline: 'artifacts/timeline',
+  /** 表达单元溯源（M4-5.4 params: { artifact:'cover-letter', scopeId, unitId } → TraceabilityContext；只读定位——查看 ≠ 产生 Artifact state） */
+  artifactTraceability: 'artifacts/traceability/context',
 } as const
 
 export const EVENTS = {

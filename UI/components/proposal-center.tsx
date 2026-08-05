@@ -16,6 +16,7 @@ import type { ArtifactType } from '../types'
 import type { ArtifactDiffViewModel } from '../types'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
+import { TraceabilityPanel } from './traceability-panel'
 import { projectCoverLetterProposal, projectInterviewProposal, projectPortfolioProposal, projectResumeProposal } from '../store/proposal-adapters'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 
@@ -117,12 +118,17 @@ export function ProposalCenter() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [rejectOpen, setRejectOpen] = useState<ProposalListItem | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [traceOpen, setTraceOpen] = useState<{ clId: string; unitId: string } | null>(null)
 
   const all = buildList({ proposals, portfolioProposals, interviewProposals, coverLetterProposals })
   const filtered = all.filter(
     (p) => (typeFilter === 'all' || p.vm.artifactType === typeFilter) && (statusFilter === 'all' || p.status === statusFilter),
   )
   const selected = all.find((p) => p.vm.proposalId === selectedId) ?? null
+  // M4-5.4：cover-letter 提案的原始 changes（unitId 定位——viewModel.changes 与原始 changes 顺序一致）
+  const rawCl = selected?.vm.artifactType === 'cover-letter'
+    ? coverLetterProposals.find((p) => p.id === selected.vm.proposalId)
+    : undefined
 
   const doAccept = async (item: ProposalListItem): Promise<void> => {
     try {
@@ -259,6 +265,19 @@ export function ProposalCenter() {
                   {c.reason && (
                     <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.5, mt: 0.5 }}>为什么：{c.reason}</Typography>
                   )}
+                  {/* M4-5.4：cover-letter 表达单元溯源入口（评审时最需要"这 unit 依赖什么"） */}
+                  {selected.vm.artifactType === 'cover-letter' && rawCl && rawCl.changes[i]?.unitId && (
+                    <Box sx={{ mt: 0.75 }}>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => setTraceOpen({ clId: rawCl.clId, unitId: rawCl.changes[i].unitId })}
+                        sx={{ fontSize: 11, p: 0, minWidth: 0, color: COLORS.accent, textTransform: 'none' }}
+                      >
+                        View Sources
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
               ))}
             </Box>
@@ -315,6 +334,14 @@ export function ProposalCenter() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* M4-5.4：表达单元溯源（只读定位浮层） */}
+      <TraceabilityPanel
+        open={traceOpen !== null}
+        onClose={() => setTraceOpen(null)}
+        scopeId={traceOpen?.clId ?? ''}
+        unitId={traceOpen?.unitId ?? ''}
+      />
     </Box>
   )
 }

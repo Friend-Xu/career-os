@@ -35,6 +35,7 @@ import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.t
 import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts'
+import type { TraceabilityContext } from '../../engine/ir/traceability.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
@@ -212,6 +213,8 @@ interface AppState {
   artifactsView: 'assets' | 'proposals' | 'evolution';
   /** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 引擎实时派生（已确定性排序，UI 不重排） */
   timelineEvents: ArtifactTimelineEvent[];
+  /** 表达单元溯源（M4-5.4）：Traceability Panel 数据源（浮层临时数据，不持久化；null = 未查询） */
+  traceability: TraceabilityContext | null;
   /** 当前选中的简历版本（M3.5.5：共享 Artifact——Studio/Agent/导出跳转定位；由侧栏/页面/Agent 共同读写） */
   selectedResumeId: string | null;
   /** 当前选中的草稿（预留：Agent 定位编辑区；M3.5.5 暂不深度使用） */
@@ -337,6 +340,8 @@ interface AppState {
   acceptCoverLetterProposal: (id: string, reason?: string) => Promise<CoverLetter>;
   /** 拒绝 Cover Letter 提案（M4-3：pending → rejected，单向不 reopen） */
   rejectCoverLetterProposal: (id: string, reason?: string) => Promise<CoverLetterProposal>;
+  /** 表达单元溯源（M4-5.4：只读定位——查看 ≠ 产生 Artifact state；结果缓存进 traceability，null 清空） */
+  loadTraceability: (scopeId: string, unitId: string) => Promise<TraceabilityContext | null>;
   /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
   deleteJob: (id: string) => Promise<void>;
   /** 删除公司档案（引擎删 companies/{id}.md → companiesChanged 自动重拉；删除当前选中则清空） */
@@ -417,6 +422,7 @@ export const useAppStore = create<AppState>()(
       resumesView: 'workspace',
       artifactsView: 'assets',
       timelineEvents: [],
+      traceability: null,
       selectedResumeId: null,
       selectedDraftId: null,
       pendingPermission: null,
@@ -903,6 +909,18 @@ export const useAppStore = create<AppState>()(
     const p = await engine.rejectCoverLetterProposal(id, reason)
     void pullCoverLetter()
     return p
+  },
+
+  /** 表达单元溯源（M4-5.4）：拉取 TraceabilityContext（引擎只读定位，无副作用） */
+  loadTraceability: async (scopeId, unitId) => {
+    if (!engine) return null
+    try {
+      const ctx = await engine.getTraceability({ artifact: 'cover-letter', scopeId, unitId })
+      useAppStore.setState({ traceability: ctx })
+      return ctx
+    } catch {
+      return null
+    }
   },
 
   deleteJob: async (id) => {

@@ -62,6 +62,7 @@ import {
 import type { CoverLetterStatus } from '../ir/cover-letter.ts'
 import { buildArtifactSummaries } from '../artifact-summary/index.ts'
 import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
+import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
 import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
@@ -831,6 +832,17 @@ export async function startServer(opts: {
     },
     [METHODS.listArtifactSummaries]: () => buildArtifactSummaries(workspace),
     [METHODS.listArtifactTimeline]: () => buildArtifactTimeline(workspace),
+    [METHODS.artifactTraceability]: (params) => {
+      const p = params as Record<string, unknown>
+      const artifact = p?.artifact
+      const scopeId = typeof p?.scopeId === 'string' ? p.scopeId : ''
+      const unitId = typeof p?.unitId === 'string' ? p.unitId : ''
+      if (artifact !== 'cover-letter') {
+        throw new Error('params.artifact 仅支持 cover-letter（v0.1 唯一 Reference adoption）')
+      }
+      if (!scopeId || !unitId) throw new Error('params.scopeId/unitId 缺失')
+      return buildCoverLetterTraceability(workspace, scopeId, unitId)
+    },
     [METHODS.aiContext]: (params) => {
       const p = params as Record<string, unknown> | undefined
       const jobId = typeof p?.jobId === 'string' ? p.jobId : undefined
