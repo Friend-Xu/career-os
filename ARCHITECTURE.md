@@ -1,10 +1,10 @@
 # Career OS 架构与现状总览
 
-> 2026-08-03 | 反映当前实现状态（引擎 V2 完成 + Agent 通道落地 + 思考过程），非愿景
+> 2026-08-05 | 反映当前实现状态（M4 Artifact Evolution 完成），非愿景
 
 ## 0. 一句话概括
 
-Career OS 是一个**个人职业决策分析系统**，三件套：`skills/`（Claude Code 插件：知识与分析协议源）+ `engine/`（本地 Node 引擎：markdown 真相源 → SQLite 投影 → WebSocket RPC/事件）+ `UI/`（React 工作台：7 页可视化 + 常驻 AI 面板）。
+Career OS 是一个**基于证据链的职业决策 + Artifact Evolution 系统**（Decision → Evolution Pipeline）：输入方向/JD/公司/行业信息，经分析、映射、验证、决策，输出可验证职业资产（Resume / Portfolio / Interview）。三件套：`skills/`（Claude Code 插件：知识与分析协议源）+ `engine/`（本地 Node 引擎：markdown 真相源 → IR 契约 → SQLite 投影 → WebSocket RPC/事件）+ `UI/`（React 工作台：可视化 + 常驻 AI 面板）。
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ flowchart LR
     end
 
     subgraph 数据["workspace/career-advisor/（markdown 真相源）"]
-        MD["profiles/ + decisions/ + companies/ +<br/>decision-contexts/ + knowledge/ + cities/"]
+        MD["profiles/ + decisions/ + companies/ + decision-contexts/<br/>knowledge/ + jobs/ + evidence/ + claims/ +<br/>resumes/ + proposals/ + portfolio/ + interviews/"]
     end
 
     SK -->|读取| DIR
@@ -55,8 +55,33 @@ flowchart LR
 | 层 | 目录 | 职责 | 关键点 |
 |----|------|------|--------|
 | 技能层 | `skills/career-advisor/` | 分析协议与知识源：意图路由、7 子流程、8 方向画像卡、14 字段摘要协议 | Claude Code 插件，`--plugin-dir .` 加载；产出 markdown 真相源 |
-| 引擎层 | `engine/` | markdown 真相源 → IR 契约 → SQLite 投影 → WS RPC/事件；Agent 对话通道 | Node 24 原生 TS（type-stripping，零构建、仅 erasable syntax）；**零依赖外部服务**（除 better-sqlite3/chokidar/ws/SDK） |
+| 引擎层 | `engine/` | markdown 真相源 → IR 契约 → SQLite 投影 → WS RPC/事件；Agent 对话通道；**Artifact 演化（Resume/Portfolio/Interview：Fact → Proposal → 用户决策 → 版本）** | Node 24 原生 TS（type-stripping，零构建、仅 erasable syntax）；**零依赖外部服务**（除 better-sqlite3/chokidar/ws/SDK） |
 | 前端层 | `UI/` | 工作台可视化 + AI 对话 | React 19 + Vite 5 + MUI + zustand 5；浅色瑞士风默认 |
+
+## 1.5 系统定位：Decision → Evolution Pipeline
+
+Career OS 不是"决策分析系统"或"简历工具"的单一职责，而是**决策入口 + 资产演化出口**的闭环：
+
+```
+输入：方向 / JD / 公司 / 行业信息
+        ↓
+Decision Layer（分析、映射、验证、决策）
+        ↓
+Evidence Mapping（evidence/claims 事实层）
+        ↓
+Artifact Layer（可验证职业资产演化）
+        ↓
+输出：Resume / Portfolio / Interview
+```
+
+| 层 | 职责 | 资产 |
+|----|------|------|
+| Decision Layer | JD 分析、公司尽调、方向评估、差距分析、推荐 | decisions/ companies/ jobs/ knowledge/ |
+| Evidence Mapping | 事实层——分析结论落为可消费事实，Artifact Fact 锚定于此 | claims/ evidence/ |
+| Artifact Layer | 同一治理范式（Fact Preservation + Controlled Evolution + Projection）的独立实例 | resumes/ portfolio/ interviews/ |
+
+- 依赖单向：Decision → Evidence → Artifact；Artifact 演化不反向修改分析资产
+- Artifact 间引用（Artifact Reference Protocol）**尚未设计**（M4-4 待决）；Cover Letter 需求出现前不做通用引用协议（Concrete first）
 
 ## 2. 引擎架构
 
@@ -67,27 +92,47 @@ engine/
 ├── main.ts                 启动编排：config → workspace → logger → 投影 → WS 桥 → watcher
 ├── config.ts               CLI > env > config.json > 默认；fail fast（ConfigError）
 ├── logger.ts               应用日志（logs/engine.log，10MB×3 轮转）+ traces（logs/traces/）
-├── ir/schema.ts            ★ 契约源：8 实体 + Validation + AgentError/AgentQuestion + ProtocolVersion（引擎单方维护）
+├── ir/
+│   ├── schema.ts           ★ 契约源：8 实体 + Validation + AgentError/AgentQuestion + ProtocolVersion（引擎单方维护）
+│   ├── resume.ts           ResumeDocument IR（claimId 必填主链 + M3.5 版本/Proposal IR）
+│   ├── portfolio.ts        Portfolio Artifact IR（M4-1：FactItem→Evidence 模型）
+│   └── interview.ts        Interview Artifact IR（M4-2：Fact/Expression/Strategy 三层）
 ├── ir/validator.ts         合法化 + 降级（必填缺失→invalid；值域非法→degraded）
 ├── storage/                markdown 真相源唯一出口
 │   ├── workspace.ts        目录树 + metadata/protocol.json
 │   ├── report-watcher.ts   decisions/*.md → IR（扫描 + chokidar 监听）
 │   ├── context-watcher.ts  decision-contexts/{问题}.md 解析 + 监听
 │   ├── knowledge-watcher.ts knowledge/skills.md + roles.md 词表（别名归一化）
+│   ├── evidence-watcher.ts / claim-watcher.ts   evidence/ claims/ → IR（M2/M3-0 事实层）
+│   ├── job-watcher.ts      jobs/ → IR + 建档（M1）
+│   ├── resume-watcher.ts   resumes/ 版本系统（M3.5：documents/drafts/exports + 状态机）
+│   ├── proposal-watcher.ts proposals/ AI 建议层（M3.5.6：登记 + 12 校验码 + accept/reject + 决策反馈投影）
+│   ├── portfolio-watcher.ts portfolio/ 项目事实治理（M4-1：P-01~P-07 + immutable published）
+│   ├── interview-watcher.ts interviews/ 问答资产治理（M4-2：I-01~I-08 + draft→reviewed→ready）
+│   ├── resume-draft.ts     Draft Manifest → ResumeDocument 组装（Assembly，AI 只写草稿不写 IR）
+│   ├── artifact-registry.ts 系统 ID 登记（决策/证据/Claim/简历/项目/QA 共用）
 │   ├── projection.ts       better-sqlite3 5 张投影表
 │   └── graph-builder.ts    图谱派生（pool/graph）
+├── benchmark/              M3-3 Artifact Evolution Benchmark：runner/parser/reference-check/
+│                           provenance-check/report（确定性审计，无 AI Judge、无总分、无 ranking）
+├── context/career-context.ts AI Read Model（CareerContext 投影——AI 不直接读 IR）
 ├── runtime/
 │   ├── decision-runtime.ts 决策链状态机（6 阶段，computeChain 纯投影）
 │   ├── decision-aggregate.ts 聚合视图（contexts/list，只聚合不评分）
 │   ├── gap-calculator.ts   差距分析（满足≥3/可迁移 1-2/缺失，不打分）
+│   ├── claim-coverage.ts / claim-selector.ts  表达候选选择（M3-0/M3-1，可解释 priority）
+│   ├── evidence-coverage.ts 岗位证据覆盖（M2，三态不做匹配分）
 │   └── agent-runtime.ts    Agent 任务注册表 + 权限挂起表（requestId 往返）+ cancel
+├── export/resume-export.ts Resume PDF 导出（Edge headless，复现三元组 + checksum）
+├── feedback/writer.ts      rewrite/feedback 事件记录（只记录不学习）
+├── health/checker.ts       健康投影（--doctor 与 system/health 同一计算源）
 ├── agent/adapter/claude.ts claude-agent-sdk 封装：事件归一化 + 权限握手 + resume + 回答通道 + 思考事件
 └── transport/
     ├── protocol.ts         ★ RPC 方法清单 + 事件清单（见下）
     └── websocket.ts        WS 桥 :5289（RPC + 事件广播 + 优雅关闭）
 ```
 
-**WS 协议**（`transport/protocol.ts`，14 个 RPC + 4 类事件）：
+**WS 协议**（`transport/protocol.ts`，35 个 RPC + 6 类事件）：
 
 | RPC | 方法 | 说明 |
 |-----|------|------|
@@ -97,8 +142,34 @@ engine/
 | `knowledge/graph` `knowledge/gap` | 知识层 | 技能/岗位图谱 + 差距分析 |
 | `companies/list` `persons/list` `pool/graph` | 视图数据 | 公司/人/信息池图谱 |
 | `agent/start` `agent/answer` `agent/cancel` `agent/permission` | Agent | 任务启停 + 提问回答 + 权限决策回传 |
+| `resumes/list|get|clone|transition|diff|export` | 简历版本 | M3.5 版本系统（状态机 + 导出） |
+| `proposals/list|accept|reject` | AI 建议层 | M3.5.6 提案闭环（checksum 强校验 + 决策反馈） |
+| `portfolio/*` | Portfolio | M4-1：项目/提案列表、transition、accept/reject |
+| `interviews/*` | Interview | M4-2：QA/提案列表、transition、accept/reject |
+| `ai/context` | AI Read Model | CareerContext 全资产投影 |
+| `jobs/*` `evidence/list` `claims/list|coverage|select` | 事实层 | 建档 + 事实/表达候选 |
 
-事件：`data.decisions.changed` / `data.pool.changed`（变更信号，客户端重拉快照）、`error.engine`、`agent.event`（Agent 流式事件，见 §4）。
+事件：`data.decisions.changed` / `data.pool.changed` / `data.jobs.changed` / `data.evidence.changed` / `data.claims.changed` / `data.resumes.changed` / `data.proposals.changed` / `data.portfolio.changed` / `data.interviews.changed`（变更信号，客户端重拉快照）、`error.engine`、`agent.event`（Agent 流式事件，见 §4）。
+
+## 2.5 Architecture Evolution（M3/M4 演进）
+
+### Phase 1：Decision Intelligence（M1/M2）
+
+JD → Decision → Career Mapping——决策分析为主（方向/城市/公司/JD 分析闭环）。
+
+### Phase 2：Artifact Evolution（M3/M4）
+
+Fact Layer → Proposal → Human Decision → Artifact Version
+
+三个 Artifact 不是三个功能模块，而是**同一个治理范式的三次实例化**：
+
+| 治理原则 | 含义 |
+|----------|------|
+| Fact Preservation | 事实层不可被 AI 修改——非法行为在 schema/parser/apply 中不存在（非运行时拦截） |
+| Controlled Evolution | AI 只能经 Proposal 通道，用户确认后引擎确定性应用（append-only，永不覆盖） |
+| Projection | 引擎确定性聚合（CareerContext/PortfolioContext/InterviewContext），不成为事实存储 |
+
+当前 Artifact：**Resume**（职业经历演化）/ **Portfolio**（项目事实演化）/ **Interview**（经验表达演化）；Cover Letter（M4-3）为下一环。
 
 ## 3. 前端架构
 
@@ -190,7 +261,8 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 
 | 层 | 手段 | 入口 |
 |----|------|------|
-| 引擎 | node:test + 真实 CLI smoke | `npm test`、`npm run smoke:bridge/handlers/question`、`tests/agent-bridge-check.mjs`（WS 全链路）、`tests/thinking-adapter-smoke.mjs`（思考事件） |
+| 引擎 | node:test + 真实 CLI smoke | `npm test`（290 用例，2026-08-05）、`npm run smoke:bridge/handlers/question`、`tests/agent-bridge-check.mjs`（WS 全链路）、`tests/thinking-adapter-smoke.mjs`（思考事件） |
+| Benchmark | engine/benchmark 确定性审计 + dataset/cases 10 例 | runner.caseXXX / report 测试（无 AI Judge、无总分）；`dataset/tools/generate-report.mjs` 出报告 |
 | 前端 | tsc --noEmit | `npm run typecheck` |
 | 端到端 | Playwright（MCP）驱动真实浏览器 + 真实 CLI | 手工驱动；进/出页面白屏回归、Agent 流式/提问/权限/思考验证 |
 | 数据 | `--scan-decisions` 验收入口 | 一次性扫描 → 控制台 IR + Validation |
@@ -198,6 +270,9 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 ## 8. 落地状态与路线
 
 **已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动 → 健康投影（契约 v1 + --doctor + RPC）→ 简历改写（指令式 Revision Request，审计闭环）→ 简历 PDF 导出（Edge headless，零依赖）→ 文档权威链 + ADR 登记。
+→ **M3 表达链路（M3-0 → M3.5.8）**：Claim/Evidence 双入口 → 表达候选选择 → Resume Assembly → Proposal Layer（AI 只能写提案）→ 决策反馈投影 → 架构总索引（三层模型 + 七条不变量）
+→ **M3-3 Artifact Evolution Benchmark v0.1**：10 case 数据集 → Runner 确定性审计 → Report Projection（无总分/无 ranking/无 AI Judge）
+→ **M4 Artifact Evolution**：Admission Contract（C1-C6 准入 + System Invariants）→ Portfolio（项目事实治理：P-01~P-07、immutable published、draft(v+1)）→ Interview（三层问答资产：I-01~I-08、draft→reviewed→ready）→ 各 Runtime Validation 5 case（引擎测试 290/290 全绿）
 
 **未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map、Evidence 原子模型 / Workflow Contract / Career Graph 推理层（后三者 ADR-003/004/005 登记 defer，触发条件未到）。
 
