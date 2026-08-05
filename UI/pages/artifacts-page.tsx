@@ -16,6 +16,7 @@ import type { SvgIconProps } from '@mui/material/SvgIcon'
 import type { ArtifactSummary, ArtifactType } from '../types'
 import { useAppStore } from '../store/app-store'
 import { ProposalCenter } from '../components/proposal-center'
+import { EvolutionTimeline } from '../components/evolution-timeline'
 import { alpha, COLORS } from '../data/constants'
 
 interface ArtifactMeta {
@@ -46,6 +47,7 @@ const STATE_COLOR: Record<string, string> = {
 const VIEWS = [
   { key: 'assets', label: 'Assets 概览' },
   { key: 'proposals', label: '提案中心' },
+  { key: 'evolution', label: '演化时间线' },
 ] as const
 
 function relativeTime(iso: string): string {
@@ -226,7 +228,9 @@ export function ArtifactsPage() {
         ))}
       </Box>
 
-      {artifactsView === 'proposals' ? <ProposalCenter /> : <AssetsSection />}
+      {artifactsView === 'proposals' && <ProposalCenter />}
+      {artifactsView === 'evolution' && <EvolutionTimeline />}
+      {artifactsView === 'assets' && <AssetsSection />}
     </Box>
   )
 }

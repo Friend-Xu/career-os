@@ -34,6 +34,7 @@ import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfo
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
+import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
@@ -207,8 +208,10 @@ interface AppState {
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
   /** 简历中心视图（M3.5.5：三空间——Draft Workspace / Resume Studio / Resume Assets） */
   resumesView: 'workspace' | 'studio' | 'assets';
-  /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心——v0.3 信息架构四区按 slice 落地） */
-  artifactsView: 'assets' | 'proposals';
+  /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心 / Evolution 演化时间线——v0.3 信息架构四区按 slice 落地） */
+  artifactsView: 'assets' | 'proposals' | 'evolution';
+  /** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 引擎实时派生（已确定性排序，UI 不重排） */
+  timelineEvents: ArtifactTimelineEvent[];
   /** 当前选中的简历版本（M3.5.5：共享 Artifact——Studio/Agent/导出跳转定位；由侧栏/页面/Agent 共同读写） */
   selectedResumeId: string | null;
   /** 当前选中的草稿（预留：Agent 定位编辑区；M3.5.5 暂不深度使用） */
@@ -246,7 +249,7 @@ interface AppState {
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
   setCompaniesView: (view: 'profile' | 'map') => void;
   /** 简历中心三空间切换（M3.5.5） */
-  setArtifactsView: (view: 'assets' | 'proposals') => void;
+  setArtifactsView: (view: 'assets' | 'proposals' | 'evolution') => void;
   /** 简历中心视图（M3.5.5：三空间） */
   setResumesView: (view: 'workspace' | 'studio' | 'assets') => void;
   /** 选中简历版本（M3.5.5：切到 studio 并定位——Agent/Deep Link/导出跳转共用） */
@@ -413,6 +416,7 @@ export const useAppStore = create<AppState>()(
       companiesView: 'profile',
       resumesView: 'workspace',
       artifactsView: 'assets',
+      timelineEvents: [],
       selectedResumeId: null,
       selectedDraftId: null,
       pendingPermission: null,
@@ -1496,6 +1500,17 @@ async function pullArtifactSummaries(): Promise<void> {
   }
 }
 
+/** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 拉取（引擎已确定性排序，UI 不重排） */
+async function pullArtifactTimeline(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listArtifactTimeline()
+    useAppStore.setState({ timelineEvents: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** Portfolio（M4-1）：projects + proposals 全量拉取；portfolioChanged 事件驱动重拉 */
 async function pullPortfolio(): Promise<void> {
   if (!engine) return
@@ -1664,6 +1679,7 @@ export function connectEngine(): void {
       void pullCareerContext()
       void pullProposals()
       void pullArtifactSummaries()
+      void pullArtifactTimeline()
       void pullPortfolio()
       void pullInterview()
       void pullCoverLetter()
@@ -1694,20 +1710,29 @@ export function connectEngine(): void {
     void pullCareerContext() // 版本变化影响 Context 投影
   })
   engine.on(EVENTS.proposalsChanged, () => void pullProposals())
-  // M4-5.1/5.2：Artifact 域任一变更 → 数据 + 类级 Summary 重拉（UI projection 是派生数据，不缓存局部）
-  engine.on(EVENTS.resumesChanged, () => void pullArtifactSummaries())
-  engine.on(EVENTS.proposalsChanged, () => void pullArtifactSummaries())
+  // M4-5.1/5.2/5.3：Artifact 域任一变更 → 数据 + 类级 Summary + Timeline 重拉（UI projection 是派生数据，不缓存局部）
+  engine.on(EVENTS.resumesChanged, () => {
+    void pullArtifactSummaries()
+    void pullArtifactTimeline()
+  })
+  engine.on(EVENTS.proposalsChanged, () => {
+    void pullArtifactSummaries()
+    void pullArtifactTimeline()
+  })
   engine.on(EVENTS.portfolioChanged, () => {
     void pullPortfolio()
     void pullArtifactSummaries()
+    void pullArtifactTimeline()
   })
   engine.on(EVENTS.interviewChanged, () => {
     void pullInterview()
     void pullArtifactSummaries()
+    void pullArtifactTimeline()
   })
   engine.on(EVENTS.coverLetterChanged, () => {
     void pullCoverLetter()
     void pullArtifactSummaries()
+    void pullArtifactTimeline()
   })
   engine.on(EVENTS.companiesChanged, () => {
     void pullCompanies()

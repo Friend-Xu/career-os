@@ -149,6 +149,8 @@ export const METHODS = {
   settingsModels: 'settings/models',
   /** 四 Artifact 类级 Summary（M4-5.1 UI projection endpoint：Engine Context → ArtifactSummary[] → Cards；UI 不读文件，内部四 adapter Concrete First） */
   listArtifactSummaries: 'artifacts/summaries',
+  /** 四 Artifact 演化 Timeline（M4-5.3 UI projection：Engine Events → Timeline Adapter → ArtifactTimelineEvent[]；确定性排序 at→order→id；Proposal 是 source 非事件） */
+  listArtifactTimeline: 'artifacts/timeline',
 } as const
 
 export const EVENTS = {

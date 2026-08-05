@@ -28,6 +28,7 @@ import type {
 } from '../../engine/ir/schema.ts';
 import type { ResumeDocument, ResumeBullet, ResumeSection } from '../../engine/ir/resume.ts';
 import type { ArtifactSummary, ArtifactType } from '../../engine/ir/artifact-summary.ts';
+import type { ArtifactTimelineEvent, ArtifactTimelineEventType } from '../../engine/ir/artifact-timeline.ts';
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts';
 
 export type { Person };
@@ -52,6 +53,8 @@ export type { ResumeBullet };
 export type { ResumeSection };
 export type { ArtifactSummary };
 export type { ArtifactType };
+export type { ArtifactTimelineEvent };
+export type { ArtifactTimelineEventType };
 
 /**
  * UI 会话扩展（引擎契约字段之外，仅 UI 会话渲染用）：

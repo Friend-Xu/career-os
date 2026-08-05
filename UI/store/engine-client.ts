@@ -31,6 +31,7 @@ import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
+import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
@@ -369,6 +370,11 @@ export class EngineClient {
   /** 四 Artifact 类级 Summary（M4-5.1：Engine Context → ArtifactSummary[] → Cards；UI 不读文件） */
   listArtifactSummaries(): Promise<ArtifactSummary[]> {
     return this.rpc<ArtifactSummary[]>(METHODS.listArtifactSummaries)
+  }
+
+  /** 四 Artifact 演化 Timeline（M4-5.3：Engine Events → Timeline Adapter → ArtifactTimelineEvent[]；引擎已确定性排序，UI 不重排） */
+  listArtifactTimeline(): Promise<ArtifactTimelineEvent[]> {
+    return this.rpc<ArtifactTimelineEvent[]>(METHODS.listArtifactTimeline)
   }
 
   // ─── M4 Artifact 数据（M4-5.2 Proposal Center：四类 proposal 读取 + accept/reject 走原 watcher）──
