@@ -119,6 +119,30 @@ export type Session = Omit<EngineSession, 'messages'> & { messages: ChatMessage[
 
 export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped';
 
+/**
+ * M4-5.2：Proposal Center 的 UI View Model（Diff 统一的是 Presentation Contract，
+ * 不统一 Artifact Semantics——四 adapter Concrete First 投影，生命周期只存在于 UI）。
+ * 禁止扩展成事实模型：beforeFact/afterFact/confidence/ownershipDelta 永不出现。
+ */
+export interface DiffChange {
+  before: string
+  after: string
+  /** AI 解释（proposal change 的 reason——展示给评审人，非事实模型字段） */
+  reason?: string
+}
+
+export interface ArtifactDiffViewModel {
+  artifactType: ArtifactType
+  proposalId: string
+  /** adapter 生成的展示标题（源 Artifact 定位） */
+  title: string
+  changes: DiffChange[]
+  /** 展示性定位锚点（各 adapter 语义：claimId / factId / statementId / unitId） */
+  anchors?: string[]
+  canAccept: boolean
+  canReject: boolean
+}
+
 export type MainWidthMode = 'narrow' | 'wide' | 'fullscreen';
 
 export type NavPageId =

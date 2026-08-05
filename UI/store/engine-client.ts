@@ -25,6 +25,9 @@ import type {
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { PortfolioProject, PortfolioProposal, PortfolioStatus } from '../../engine/ir/portfolio.ts'
+import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engine/ir/interview.ts'
+import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../engine/ir/cover-letter.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
@@ -366,6 +369,68 @@ export class EngineClient {
   /** 四 Artifact 类级 Summary（M4-5.1：Engine Context → ArtifactSummary[] → Cards；UI 不读文件） */
   listArtifactSummaries(): Promise<ArtifactSummary[]> {
     return this.rpc<ArtifactSummary[]>(METHODS.listArtifactSummaries)
+  }
+
+  // ─── M4 Artifact 数据（M4-5.2 Proposal Center：四类 proposal 读取 + accept/reject 走原 watcher）──
+
+  listPortfolioProjects(): Promise<PortfolioProject[]> {
+    return this.rpc<PortfolioProject[]>(METHODS.listPortfolioProjects)
+  }
+
+  listPortfolioProposals(): Promise<PortfolioProposal[]> {
+    return this.rpc<PortfolioProposal[]>(METHODS.listPortfolioProposals)
+  }
+
+  transitionPortfolio(id: string, targetStatus: PortfolioStatus): Promise<PortfolioProject> {
+    return this.rpc<PortfolioProject>(METHODS.transitionPortfolio, { id, targetStatus })
+  }
+
+  acceptPortfolioProposal(id: string, reason?: string): Promise<PortfolioProject> {
+    return this.rpc<PortfolioProject>(METHODS.acceptPortfolioProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  rejectPortfolioProposal(id: string, reason?: string): Promise<PortfolioProposal> {
+    return this.rpc<PortfolioProposal>(METHODS.rejectPortfolioProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  listInterviewQas(): Promise<InterviewQa[]> {
+    return this.rpc<InterviewQa[]>(METHODS.listInterviewQas)
+  }
+
+  listInterviewProposals(): Promise<InterviewProposal[]> {
+    return this.rpc<InterviewProposal[]>(METHODS.listInterviewProposals)
+  }
+
+  transitionInterview(id: string, targetStatus: InterviewStatus): Promise<InterviewQa> {
+    return this.rpc<InterviewQa>(METHODS.transitionInterview, { id, targetStatus })
+  }
+
+  acceptInterviewProposal(id: string, reason?: string): Promise<InterviewQa> {
+    return this.rpc<InterviewQa>(METHODS.acceptInterviewProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  rejectInterviewProposal(id: string, reason?: string): Promise<InterviewProposal> {
+    return this.rpc<InterviewProposal>(METHODS.rejectInterviewProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  listCoverLetters(): Promise<CoverLetter[]> {
+    return this.rpc<CoverLetter[]>(METHODS.listCoverLetters)
+  }
+
+  listCoverLetterProposals(): Promise<CoverLetterProposal[]> {
+    return this.rpc<CoverLetterProposal[]>(METHODS.listCoverLetterProposals)
+  }
+
+  transitionCoverLetter(id: string, targetStatus: CoverLetterStatus): Promise<CoverLetter> {
+    return this.rpc<CoverLetter>(METHODS.transitionCoverLetter, { id, targetStatus })
+  }
+
+  acceptCoverLetterProposal(id: string, reason?: string): Promise<CoverLetter> {
+    return this.rpc<CoverLetter>(METHODS.acceptCoverLetterProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  rejectCoverLetterProposal(id: string, reason?: string): Promise<CoverLetterProposal> {
+    return this.rpc<CoverLetterProposal>(METHODS.rejectCoverLetterProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
   }
 
   /** 删除岗位（删 jobs/{id}.md，引擎 watcher 广播后 UI 自动重拉） */

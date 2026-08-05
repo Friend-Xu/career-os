@@ -30,6 +30,9 @@ import {
 } from '../data/mock-data'
 import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
+import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
+import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
@@ -166,6 +169,18 @@ interface AppState {
   proposals: ResumeProposal[];
   /** 四 Artifact 类级 Summary（M4-5.1）：artifacts/summaries 引擎实时派生（UI projection——Assets 视图数据源） */
   artifactSummaries: ArtifactSummary[];
+  /** Portfolio 项目（M4-1）：portfolio/projects/ 引擎实时派生 */
+  portfolioProjects: PortfolioProject[];
+  /** Portfolio 提案（M4-1）：portfolio/proposals/ 引擎实时派生（Proposal Center 数据源） */
+  portfolioProposals: PortfolioProposal[];
+  /** Interview QA（M4-2）：interviews/ 引擎实时派生 */
+  interviewQas: InterviewQa[];
+  /** Interview 提案（M4-2）：interviews/proposals/ 引擎实时派生 */
+  interviewProposals: InterviewProposal[];
+  /** Cover Letter（M4-3）：cover-letters/ 引擎实时派生 */
+  coverLetters: CoverLetter[];
+  /** Cover Letter 提案（M4-3）：cover-letters/proposals/ 引擎实时派生 */
+  coverLetterProposals: CoverLetterProposal[];
   /** AI Read Model（M3.5.4）：CareerContext 投影——Studio provenance/validation 数据源（引擎实时派生） */
   careerContext: CareerContext | null;
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
@@ -192,6 +207,8 @@ interface AppState {
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
   /** 简历中心视图（M3.5.5：三空间——Draft Workspace / Resume Studio / Resume Assets） */
   resumesView: 'workspace' | 'studio' | 'assets';
+  /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心——v0.3 信息架构四区按 slice 落地） */
+  artifactsView: 'assets' | 'proposals';
   /** 当前选中的简历版本（M3.5.5：共享 Artifact——Studio/Agent/导出跳转定位；由侧栏/页面/Agent 共同读写） */
   selectedResumeId: string | null;
   /** 当前选中的草稿（预留：Agent 定位编辑区；M3.5.5 暂不深度使用） */
@@ -229,6 +246,8 @@ interface AppState {
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
   setCompaniesView: (view: 'profile' | 'map') => void;
   /** 简历中心三空间切换（M3.5.5） */
+  setArtifactsView: (view: 'assets' | 'proposals') => void;
+  /** 简历中心视图（M3.5.5：三空间） */
   setResumesView: (view: 'workspace' | 'studio' | 'assets') => void;
   /** 选中简历版本（M3.5.5：切到 studio 并定位——Agent/Deep Link/导出跳转共用） */
   selectResume: (id: string) => void;
@@ -302,7 +321,20 @@ interface AppState {
   /** 接受提案（M3.5.6：引擎确定性应用 → 新版本；成功即产生 v4；reason 可选——M3.5.7 决策反馈） */
   acceptProposal: (id: string, reason?: string) => Promise<ResumeDocument>;
   /** 拒绝提案（M3.5.6：pending → rejected，可选原因；单向不 reopen） */
-  rejectProposal: (id: string, reason?: string) => Promise<ResumeProposal>;  /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
+  rejectProposal: (id: string, reason?: string) => Promise<ResumeProposal>;
+  /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
+  acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
+  /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
+  rejectPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProposal>;
+  /** 接受 Interview 提案（M4-2：I-01~I-08 校验 → AnswerStatement.text 改写 + status=draft） */
+  acceptInterviewProposal: (id: string, reason?: string) => Promise<InterviewQa>;
+  /** 拒绝 Interview 提案（M4-2：pending → rejected，单向不 reopen） */
+  rejectInterviewProposal: (id: string, reason?: string) => Promise<InterviewProposal>;
+  /** 接受 Cover Letter 提案（M4-3：CL-01~CL-08 校验 → NarrativeUnit.text 适配 + status=draft） */
+  acceptCoverLetterProposal: (id: string, reason?: string) => Promise<CoverLetter>;
+  /** 拒绝 Cover Letter 提案（M4-3：pending → rejected，单向不 reopen） */
+  rejectCoverLetterProposal: (id: string, reason?: string) => Promise<CoverLetterProposal>;
+  /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
   deleteJob: (id: string) => Promise<void>;
   /** 删除公司档案（引擎删 companies/{id}.md → companiesChanged 自动重拉；删除当前选中则清空） */
   deleteCompany: (id: string) => Promise<void>;
@@ -352,6 +384,12 @@ export const useAppStore = create<AppState>()(
       proposals: [],
       /** 四 Artifact 类级 Summary（M4-5.1）：引擎实时派生（offline 为空数组——页面诚实空态） */
       artifactSummaries: [],
+      portfolioProjects: [],
+      portfolioProposals: [],
+      interviewQas: [],
+      interviewProposals: [],
+      coverLetters: [],
+      coverLetterProposals: [],
       /** AI Read Model（M3.5.4）：CareerContext 投影（引擎实时派生；offline 为 null） */
       careerContext: null,
       health: null,
@@ -374,6 +412,7 @@ export const useAppStore = create<AppState>()(
       workbenchView: 'dashboard',
       companiesView: 'profile',
       resumesView: 'workspace',
+      artifactsView: 'assets',
       selectedResumeId: null,
       selectedDraftId: null,
       pendingPermission: null,
@@ -814,6 +853,54 @@ export const useAppStore = create<AppState>()(
     return p
   },
 
+  /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */
+  acceptPortfolioProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const project = await engine.acceptPortfolioProposal(id, reason)
+    void pullPortfolio()
+    return project
+  },
+
+  /** 拒绝 Portfolio 提案（M4-1：pending → rejected，审计保留） */
+  rejectPortfolioProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const p = await engine.rejectPortfolioProposal(id, reason)
+    void pullPortfolio()
+    return p
+  },
+
+  /** 接受 Interview 提案（M4-2：引擎校验 + AnswerStatement.text 改写 + status=draft） */
+  acceptInterviewProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const qa = await engine.acceptInterviewProposal(id, reason)
+    void pullInterview()
+    return qa
+  },
+
+  /** 拒绝 Interview 提案（M4-2：pending → rejected，审计保留） */
+  rejectInterviewProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const p = await engine.rejectInterviewProposal(id, reason)
+    void pullInterview()
+    return p
+  },
+
+  /** 接受 Cover Letter 提案（M4-3：引擎校验 + NarrativeUnit.text 适配 + status=draft） */
+  acceptCoverLetterProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const letter = await engine.acceptCoverLetterProposal(id, reason)
+    void pullCoverLetter()
+    return letter
+  },
+
+  /** 拒绝 Cover Letter 提案（M4-3：pending → rejected，审计保留） */
+  rejectCoverLetterProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const p = await engine.rejectCoverLetterProposal(id, reason)
+    void pullCoverLetter()
+    return p
+  },
+
   deleteJob: async (id) => {
     if (!engine) throw new Error('引擎未连接')
     await engine.deleteJob(id)
@@ -887,6 +974,7 @@ export const useAppStore = create<AppState>()(
   setCompaniesView: (view) => set({ companiesView: view }),
   /** 简历中心三空间切换（M3.5.5） */
   setResumesView: (view) => set({ resumesView: view }),
+  setArtifactsView: (view) => set({ artifactsView: view }),
   /** 选中简历版本（M3.5.5：切到 studio 视图并定位） */
   selectResume: (id) => set({ selectedResumeId: id, resumesView: 'studio' }),
 
@@ -1408,6 +1496,39 @@ async function pullArtifactSummaries(): Promise<void> {
   }
 }
 
+/** Portfolio（M4-1）：projects + proposals 全量拉取；portfolioChanged 事件驱动重拉 */
+async function pullPortfolio(): Promise<void> {
+  if (!engine) return
+  try {
+    const [projects, proposals] = await Promise.all([engine.listPortfolioProjects(), engine.listPortfolioProposals()])
+    useAppStore.setState({ portfolioProjects: projects, portfolioProposals: proposals })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** Interview（M4-2）：QA + proposals 全量拉取；interviewChanged 事件驱动重拉 */
+async function pullInterview(): Promise<void> {
+  if (!engine) return
+  try {
+    const [qas, proposals] = await Promise.all([engine.listInterviewQas(), engine.listInterviewProposals()])
+    useAppStore.setState({ interviewQas: qas, interviewProposals: proposals })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** Cover Letter（M4-3）：letters + proposals 全量拉取；coverLetterChanged 事件驱动重拉 */
+async function pullCoverLetter(): Promise<void> {
+  if (!engine) return
+  try {
+    const [letters, proposals] = await Promise.all([engine.listCoverLetters(), engine.listCoverLetterProposals()])
+    useAppStore.setState({ coverLetters: letters, coverLetterProposals: proposals })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** AI Read Model（M3.5.4）：ai/context 拉取——Studio provenance/validation 数据源；资产变更时重拉 */
 async function pullCareerContext(): Promise<void> {
   if (!engine) return
@@ -1543,6 +1664,9 @@ export function connectEngine(): void {
       void pullCareerContext()
       void pullProposals()
       void pullArtifactSummaries()
+      void pullPortfolio()
+      void pullInterview()
+      void pullCoverLetter()
       void useAppStore.getState().loadAgentSettings()
       void useAppStore.getState().loadAvailableModels()
     }
@@ -1570,12 +1694,21 @@ export function connectEngine(): void {
     void pullCareerContext() // 版本变化影响 Context 投影
   })
   engine.on(EVENTS.proposalsChanged, () => void pullProposals())
-  // M4-5.1：四 Artifact 域任一变更 → 类级 Summary 重拉（UI projection 是派生数据，不缓存局部）
+  // M4-5.1/5.2：Artifact 域任一变更 → 数据 + 类级 Summary 重拉（UI projection 是派生数据，不缓存局部）
   engine.on(EVENTS.resumesChanged, () => void pullArtifactSummaries())
   engine.on(EVENTS.proposalsChanged, () => void pullArtifactSummaries())
-  engine.on(EVENTS.portfolioChanged, () => void pullArtifactSummaries())
-  engine.on(EVENTS.interviewChanged, () => void pullArtifactSummaries())
-  engine.on(EVENTS.coverLetterChanged, () => void pullArtifactSummaries())
+  engine.on(EVENTS.portfolioChanged, () => {
+    void pullPortfolio()
+    void pullArtifactSummaries()
+  })
+  engine.on(EVENTS.interviewChanged, () => {
+    void pullInterview()
+    void pullArtifactSummaries()
+  })
+  engine.on(EVENTS.coverLetterChanged, () => {
+    void pullCoverLetter()
+    void pullArtifactSummaries()
+  })
   engine.on(EVENTS.companiesChanged, () => {
     void pullCompanies()
     void pullGraph()

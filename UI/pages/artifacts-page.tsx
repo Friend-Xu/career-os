@@ -1,7 +1,7 @@
 /**
- * Artifact Studio —— Assets 视图（M4-5.1，契约 M4-5-ARTIFACT-STUDIO-UI-v0.3）。
- * 治理概览：四 Artifact 的 Evolution State + items / pending / references / updated。
- * 原则：UI = Projection Consumer（Engine Context → ArtifactSummary[] → Cards）——
+ * Artifact Studio（M4-5，契约 M4-5-ARTIFACT-STUDIO-UI-v0.3）。
+ * 信息架构四区按 slice 落地：M4-5.1 assets（Assets 概览）→ M4-5.2 proposals（提案中心）。
+ * 原则：UI = Projection Consumer（Engine Context → UI View Model → Components）——
  *       只读，无编辑/删除/创建/状态修改按钮（§5 Interaction Boundary）；
  *       不显示 version（Evolution State 抽象）；summary 不含 Fact Layer（契约守卫）。
  */
@@ -15,6 +15,7 @@ import type { ComponentType } from 'react'
 import type { SvgIconProps } from '@mui/material/SvgIcon'
 import type { ArtifactSummary, ArtifactType } from '../types'
 import { useAppStore } from '../store/app-store'
+import { ProposalCenter } from '../components/proposal-center'
 import { alpha, COLORS } from '../data/constants'
 
 interface ArtifactMeta {
@@ -41,6 +42,11 @@ const STATE_COLOR: Record<string, string> = {
   published: COLORS.riskLow,
   ready: COLORS.riskLow,
 }
+
+const VIEWS = [
+  { key: 'assets', label: 'Assets 概览' },
+  { key: 'proposals', label: '提案中心' },
+] as const
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -71,15 +77,15 @@ function SummaryRow({ label, value }: { label: string; value: number }) {
   )
 }
 
-export function ArtifactsPage() {
+/** M4-5.1 Assets 概览（Engine Context → ArtifactSummary[] → Cards） */
+function AssetsSection() {
   const summaries = useAppStore((s) => s.artifactSummaries)
   const engineStatus = useAppStore((s) => s.engineStatus)
 
   if (summaries.length === 0) {
     return (
-      <Box sx={{ p: 3, maxWidth: 1080 }}>
-        <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Artifact Studio</Typography>
-        <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mt: 1 }}>
+      <Box sx={{ mt: 2 }}>
+        <Typography sx={{ fontSize: 13, color: COLORS.textSecondary }}>
           {engineStatus === 'connected'
             ? '暂无 Artifact 数据'
             : engineStatus === 'connecting'
@@ -93,12 +99,7 @@ export function ArtifactsPage() {
   const pendingTotal = summaries.reduce((n, s) => n + s.counts.pendingProposals, 0)
 
   return (
-    <Box sx={{ p: 3, maxWidth: 1080 }}>
-      <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Artifact Studio</Typography>
-      <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mt: 0.5 }}>
-        Assets —— 四 Artifact 治理概览（Engine Context → ArtifactSummary[] → Cards，只读投影）
-      </Typography>
-
+    <Box>
       {pendingTotal > 0 && (
         <Box
           sx={{
@@ -186,6 +187,46 @@ export function ArtifactsPage() {
           )
         })}
       </Grid>
+    </Box>
+  )
+}
+
+export function ArtifactsPage() {
+  const artifactsView = useAppStore((s) => s.artifactsView)
+  const setArtifactsView = useAppStore((s) => s.setArtifactsView)
+
+  return (
+    <Box sx={{ p: 3, maxWidth: 1080 }}>
+      <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Artifact Studio</Typography>
+      <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mt: 0.5 }}>
+        四 Artifact 治理（Engine Context → UI View Model → Cards；只读投影）
+      </Typography>
+
+      <Box sx={{ display: 'flex', gap: 0.5, mt: 2 }}>
+        {VIEWS.map((v) => (
+          <Box
+            key={v.key}
+            component="button"
+            onClick={() => setArtifactsView(v.key)}
+            sx={{
+              px: 1.5,
+              py: 0.75,
+              borderRadius: 2,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+              border: 'none',
+              bgcolor: artifactsView === v.key ? alpha(COLORS.accent, 0.12) : COLORS.bgHover,
+              color: artifactsView === v.key ? COLORS.accent : COLORS.textSecondary,
+              '&:hover': { bgcolor: artifactsView === v.key ? alpha(COLORS.accent, 0.12) : COLORS.bgHover },
+            }}
+          >
+            {v.label}
+          </Box>
+        ))}
+      </Box>
+
+      {artifactsView === 'proposals' ? <ProposalCenter /> : <AssetsSection />}
     </Box>
   )
 }
