@@ -15,6 +15,7 @@ import { RESUME_SPEC, watchResumes } from './storage/resume-watcher.ts'
 import { registerPendingProposals, watchProposals } from './storage/proposal-watcher.ts'
 import { registerPendingPortfolioProjects, registerPendingPortfolioProposals, watchPortfolio } from './storage/portfolio-watcher.ts'
 import { registerPendingInterviewQas, registerPendingInterviewProposals, watchInterviews } from './storage/interview-watcher.ts'
+import { registerPendingCoverLetters, registerPendingCoverLetterProposals, watchCoverLetters } from './storage/cover-letter-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -64,6 +65,11 @@ async function main(args: string[]): Promise<void> {
     if (qasRegistered > 0) logger.info(`Interview QA 登记：${qasRegistered} 个问答文件分配系统 ID（qa_YYYYMMDD_NNNNN）`)
     const ipRegistered = registerPendingInterviewProposals(ws)
     if (ipRegistered > 0) logger.info(`Interview 提案登记：${ipRegistered} 个提案文件分配系统 ID（ip_YYYYMMDD_NNNNN）`)
+    // ─── Cover Letter 补登（M4-3）：用户写入的求职信 + AI 提案（幂等；无叙述单元/非法提案不登记）
+    const clRegistered = registerPendingCoverLetters(ws)
+    if (clRegistered > 0) logger.info(`Cover Letter 登记：${clRegistered} 个求职信文件分配系统 ID（cl_YYYYMMDD_NNNNN）`)
+    const clpRegistered = registerPendingCoverLetterProposals(ws)
+    if (clpRegistered > 0) logger.info(`Cover Letter 提案登记：${clpRegistered} 个提案文件分配系统 ID（clp_YYYYMMDD_NNNNN）`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)
@@ -175,6 +181,11 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.interviewChanged })
         logger.info('interviews/ 变更：已广播（interviews/list 按需重扫）')
       })
+      // cover-letters/ 变更只发信号（M4-3：求职信 + 提案——文件登记 + RPC 状态流转/transition 都触发）
+      watchCoverLetters(ws, () => {
+        broadcast({ event: EVENTS.coverLetterChanged })
+        logger.info('cover-letters/ 变更：已广播（cover-letters/list 按需重扫）')
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
@@ -184,6 +195,7 @@ async function main(args: string[]): Promise<void> {
       logger.info('proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('portfolio/ 监听已启用（watcher.enabled=true）')
       logger.info('interviews/ 监听已启用（watcher.enabled=true）')
+      logger.info('cover-letters/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }

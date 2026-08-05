@@ -127,6 +127,16 @@ export const METHODS = {
   acceptInterviewProposal: 'interviews/proposals/accept',
   /** 拒绝 Interview 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
   rejectInterviewProposal: 'interviews/proposals/reject',
+  /** 全量 Cover Letter（cover-letters/ 扫描；M4-3 第一个 Projection Artifact——NarrativeUnit 引用源 Artifact Fact Layer） */
+  listCoverLetters: 'cover-letters/list',
+  /** 全量 Cover Letter 提案（cover-letters/proposals/ 扫描 + 校验标记；M4-3 Intent Layer） */
+  listCoverLetterProposals: 'cover-letters/proposals/list',
+  /** Cover Letter 状态转移（params: { id, targetStatus } → 单向状态机校验 + 演化记录追加；ready 不可直接回退，修改必须走提案） */
+  transitionCoverLetter: 'cover-letters/transition',
+  /** 接受 Cover Letter 提案（params: { id, reason? } → CL-01~CL-07 校验 → NarrativeUnit.text 改写 + status=draft + transitions 追加；永不覆盖历史） */
+  acceptCoverLetterProposal: 'cover-letters/proposals/accept',
+  /** 拒绝 Cover Letter 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  rejectCoverLetterProposal: 'cover-letters/proposals/reject',
   /** AI Read Model（params 可选 { jobId } → CareerContext：全资产投影——AI 不直接读数据库结构；M3.5.4） */
   aiContext: 'ai/context',
   /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
@@ -156,6 +166,8 @@ export const EVENTS = {
   portfolioChanged: 'data.portfolio.changed',
   /** interviews/ 目录变更后推送（不含数据，客户端用 interviews/list 拉快照；M4-2） */
   interviewChanged: 'data.interviews.changed',
+  /** cover-letters/ 目录变更后推送（不含数据，客户端用 cover-letters/list 拉快照；M4-3） */
+  coverLetterChanged: 'data.cover-letters.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
   poolChanged: 'data.pool.changed',

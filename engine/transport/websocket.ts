@@ -52,6 +52,14 @@ import {
   transitionInterviewQa,
 } from '../storage/interview-watcher.ts'
 import type { InterviewStatus } from '../ir/interview.ts'
+import {
+  acceptCoverLetterProposal,
+  rejectCoverLetterProposal,
+  scanCoverLetterProposals,
+  scanCoverLetters,
+  transitionCoverLetter,
+} from '../storage/cover-letter-watcher.ts'
+import type { CoverLetterStatus } from '../ir/cover-letter.ts'
 import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
@@ -785,6 +793,38 @@ export async function startServer(opts: {
       const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
       const updated = rejectInterviewProposal(workspace, jobIdParams(params), reason)
       broadcast({ event: EVENTS.interviewChanged })
+      return updated
+    },
+    [METHODS.listCoverLetters]: () => scanCoverLetters(workspace).map((c) => ({
+      ...c.record,
+      ...(c.issues.length > 0 ? { issues: c.issues } : {}),
+    })),
+    [METHODS.listCoverLetterProposals]: () => scanCoverLetterProposals(workspace).map((p) => ({
+      ...p.record,
+      ...(p.issues.length > 0 ? { issues: p.issues } : {}),
+    })),
+    [METHODS.transitionCoverLetter]: (params) => {
+      const p = params as Record<string, unknown>
+      const target = p?.targetStatus
+      if (typeof target !== 'string' || !['draft', 'reviewed', 'ready'].includes(target)) {
+        throw new Error('params.targetStatus 缺失/非法（draft/reviewed/ready）')
+      }
+      const updated = transitionCoverLetter(workspace, jobIdParams(params), target as CoverLetterStatus)
+      broadcast({ event: EVENTS.coverLetterChanged })
+      return updated
+    },
+    [METHODS.acceptCoverLetterProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const { coverLetter } = acceptCoverLetterProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.coverLetterChanged })
+      return coverLetter
+    },
+    [METHODS.rejectCoverLetterProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const updated = rejectCoverLetterProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.coverLetterChanged })
       return updated
     },
     [METHODS.aiContext]: (params) => {

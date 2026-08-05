@@ -12,13 +12,13 @@ function tempWorkspace(): string {
 test('initWorkspace：创建目录树 + INDEX.md + protocol.json', () => {
   const root = tempWorkspace()
   const ws = initWorkspace(root)
-  for (const sub of ['profiles', 'decisions', 'decision-contexts', 'companies', 'metadata', 'portfolio', 'portfolio/projects', 'portfolio/proposals', 'interviews', 'interviews/proposals']) {
+  for (const sub of ['profiles', 'decisions', 'decision-contexts', 'companies', 'metadata', 'portfolio', 'portfolio/projects', 'portfolio/proposals', 'interviews', 'interviews/proposals', 'cover-letters', 'cover-letters/proposals']) {
     assert.ok(existsSync(join(root, sub)), `${sub} 应存在`)
   }
   assert.ok(existsSync(ws.paths.indexFile))
   const protocol = JSON.parse(readFileSync(ws.paths.protocolFile, 'utf8'))
   assert.equal(protocol.protocol, 'career-os')
-  assert.equal(protocol.version, '2.6')
+  assert.equal(protocol.version, '2.7')
   assert.ok(typeof protocol.created === 'string')
   rmSync(root, { recursive: true, force: true })
 })

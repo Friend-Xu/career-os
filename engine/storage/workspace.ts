@@ -39,6 +39,8 @@ export interface WorkspacePaths {
   portfolioProposals: string
   interviews: string
   interviewProposals: string
+  coverLetters: string
+  coverLetterProposals: string
   knowledge: string
   metadata: string
   indexFile: string
@@ -75,6 +77,8 @@ export function buildPaths(root: string): WorkspacePaths {
     portfolioProposals: join(root, 'portfolio', 'proposals'),
     interviews: join(root, 'interviews'),
     interviewProposals: join(root, 'interviews', 'proposals'),
+    coverLetters: join(root, 'cover-letters'),
+    coverLetterProposals: join(root, 'cover-letters', 'proposals'),
     knowledge: join(root, 'knowledge'),
     metadata: join(root, 'metadata'),
     indexFile: join(root, 'INDEX.md'),
@@ -121,6 +125,8 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.portfolioProposals, { recursive: true })
     mkdirSync(paths.interviews, { recursive: true })
     mkdirSync(paths.interviewProposals, { recursive: true })
+    mkdirSync(paths.coverLetters, { recursive: true })
+    mkdirSync(paths.coverLetterProposals, { recursive: true })
     mkdirSync(paths.knowledge, { recursive: true })
     mkdirSync(paths.metadata, { recursive: true })
   } catch {
