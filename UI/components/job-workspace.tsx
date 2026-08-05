@@ -163,6 +163,8 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const fetchJobCoverage = useAppStore((s) => s.fetchJobCoverage)
   const evidenceCoverage = useAppStore((s) => s.evidenceCoverage)
   const evidenceItems = useAppStore((s) => s.evidence)
+  const fetchClaimCoverage = useAppStore((s) => s.fetchClaimCoverage)
+  const claimCoverage = useAppStore((s) => s.claimCoverage)
   const updateApplicationStatus = useAppStore((s) => s.updateApplicationStatus)
   const setPage = useAppStore((s) => s.setPage)
   const push = useToastStore((s) => s.push)
@@ -185,6 +187,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       .catch(() => {})
       .finally(() => setGapLoading(false))
     fetchJobCoverage(job.id)
+    fetchClaimCoverage(job.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId])
 
@@ -401,6 +404,9 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
           if (!coverage || coverage.length === 0) return null
           const titleOf = (id: string): string => evidenceItems.find((e) => e.id === id)?.event.title ?? id
           const allMissing = coverage.every((rc) => rc.expectations.every((e) => e.status === 'missing'))
+          // Claim 表达候选（M3-1 第三段）：按 responsibility.statement 匹配 claimCoverage 行（引擎派生，只含可消费 Claims）
+          const claimRows = claimCoverage[job.id] ?? []
+          const claimsOf = (statement: string) => claimRows.find((r) => r.responsibility === statement)?.claims ?? []
           return (
             <Section title="该岗位证据覆盖">
               {allMissing ? (
@@ -415,41 +421,73 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
               ) : (
                 <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(RISK_COLOR.medium, 0.25)}`, bgcolor: alpha(RISK_COLOR.medium, 0.04) }}>
                   <Stack spacing={1.5}>
-                    {coverage.map((rc) => (
-                      <Box key={rc.responsibilityId}>
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 0.5 }}>{rc.statement}</Typography>
-                        <Stack spacing={0.25}>
-                          {rc.expectations.map((e, i) => {
-                            const s = COVERAGE_STYLE[e.status]
-                            return (
-                              <Stack key={i} direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
-                                <Typography sx={{ fontSize: 12, color: s.color, fontFamily: COLORS.mono, lineHeight: '20px', width: 12 }}>
-                                  {s.icon}
-                                </Typography>
-                                <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, flex: 1 }}>
-                                  {DIMENSION_NAME.get(e.dimension) ?? e.dimension}
-                                  {e.status === 'covered' && e.matchedItems.length > 0 && (
-                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
-                                      {' — '}已覆盖：{e.matchedItems.map(titleOf).join('、')}
+                    {coverage.map((rc) => {
+                      const claims = claimsOf(rc.statement)
+                      return (
+                        <Box key={rc.responsibilityId}>
+                          <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 0.5 }}>{rc.statement}</Typography>
+                          <Stack spacing={0.25}>
+                            {rc.expectations.map((e, i) => {
+                              const s = COVERAGE_STYLE[e.status]
+                              return (
+                                <Stack key={i} direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
+                                  <Typography sx={{ fontSize: 12, color: s.color, fontFamily: COLORS.mono, lineHeight: '20px', width: 12 }}>
+                                    {s.icon}
+                                  </Typography>
+                                  <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, flex: 1 }}>
+                                    {DIMENSION_NAME.get(e.dimension) ?? e.dimension}
+                                    {e.status === 'covered' && e.matchedItems.length > 0 && (
+                                      <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                        {' — '}已覆盖：{e.matchedItems.map(titleOf).join('、')}
+                                      </Typography>
+                                    )}
+                                    {e.status === 'partial' && (
+                                      <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                        {' — '}有相关经历，缺该维度证明
+                                      </Typography>
+                                    )}
+                                    {e.status === 'missing' && (
+                                      <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
+                                        {' — '}无相关经历
+                                      </Typography>
+                                    )}
+                                  </Typography>
+                                </Stack>
+                              )
+                            })}
+                          </Stack>
+                          {claims.length > 0 && (
+                            <Box sx={{ mt: 0.5, pl: 2.75 }}>
+                              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.25 }}>表达候选（可消费 Claim）</Typography>
+                              <Stack spacing={0.25}>
+                                {claims.map((c) => (
+                                  <Stack key={c.id} direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
+                                    <Typography sx={{ fontSize: 12, color: COLORS.accent, fontFamily: COLORS.mono, lineHeight: '20px', width: 12 }}>
+                                      ◆
                                     </Typography>
-                                  )}
-                                  {e.status === 'partial' && (
-                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
-                                      {' — '}有相关经历，缺该维度证明
+                                    <Typography sx={{ fontSize: 12.5, color: COLORS.text, flex: 1, lineHeight: '20px' }}>
+                                      {c.statement}
+                                      <Typography
+                                        component="span"
+                                        sx={{
+                                          fontSize: 10.5,
+                                          fontWeight: 600,
+                                          color: c.claimType === 'fact' ? RISK_COLOR.low : RISK_COLOR.medium,
+                                          ml: 0.75,
+                                          verticalAlign: 'middle',
+                                        }}
+                                      >
+                                        {c.claimType === 'fact' ? '事实' : '归纳'}
+                                      </Typography>
                                     </Typography>
-                                  )}
-                                  {e.status === 'missing' && (
-                                    <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
-                                      {' — '}无相关经历
-                                    </Typography>
-                                  )}
-                                </Typography>
+                                  </Stack>
+                                ))}
                               </Stack>
-                            )
-                          })}
-                        </Stack>
-                      </Box>
-                    ))}
+                            </Box>
+                          )}
+                        </Box>
+                      )
+                    })}
                     <Box>
                       <Button size="small" variant="outlined" startIcon={<PsychologyIcon sx={{ fontSize: 14 }} />} onClick={collectEvidence} sx={{ fontSize: 12 }}>
                         整理相关经历

@@ -83,6 +83,32 @@ export const METHODS = {
   jobCoverage: 'jobs/coverage',
   /** 全量证据条目（evidence/ 目录扫描 + 校验标记；M2） */
   listEvidence: 'evidence/list',
+  /** 全量 Claim（claims/ 目录扫描 + 校验标记 + usable：canUseClaim 派生——Claim 没有可信度只有可消费性；M3-0） */
+  listClaims: 'claims/list',
+  /** 岗位上下文 Claim Coverage（params: { id: jobId } → ClaimCoverageRow[]：responsibility → 关联 trusted evidence → 可消费 Claims；M3-0） */
+  claimCoverage: 'claims/coverage',
+  /** 表达候选选择（params: { id: jobId } → ResponsibilityCandidates[]：ExpressionCandidate + SelectionReason + 可解释 priority；M3-1 Step 4，Resume 消费端输入） */
+  claimSelect: 'claims/select',
+  /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
+  listResumes: 'resumes/list',
+  /** 单个简历版本（params: { id } → ResumeDocument） */
+  getResume: 'resumes/get',
+  /** 克隆版本（params: { id } → 新 draft，lineage.parent + createdBy=user；不复制 status/operations） */
+  cloneResume: 'resumes/clone',
+  /** 状态转移（params: { id, targetStatus } → 状态机校验 + operations 审计；exported 仅 export 链） */
+  transitionResume: 'resumes/transition',
+  /** 版本对比（params: { a, b } → ResumeDiff：identity 对比含 claimId/expectationId，不丢 provenance） */
+  diffResumes: 'resumes/diff',
+  /** 导出简历版本（params: { id } → exportResumePdf + ExportRecord 持久化 + status=exported + operation 审计） */
+  exportResume: 'resumes/export',
+  /** 全量提案（proposals/ 扫描 + 校验标记；M3.5.6 AI 建议层） */
+  listProposals: 'proposals/list',
+  /** 接受提案（params: { id, reason? } → checksum 校验 → 确定性应用 → 新版本（lineage.parent + ai_revision + apply_proposal 审计）；成功即产生新版本，永不覆盖源；reason 可选写回 accept_reason——M3.5.7 决策反馈） */
+  acceptProposal: 'proposals/accept',
+  /** 拒绝提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  rejectProposal: 'proposals/reject',
+  /** AI Read Model（params 可选 { jobId } → CareerContext：全资产投影——AI 不直接读数据库结构；M3.5.4） */
+  aiContext: 'ai/context',
   /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
   deleteCompany: 'companies/delete',
   /** 读取 Agent 设置（params: 无 → { model, apiKey, permissionMode, allowedTools, maxTurns }，来自 config.json） */
@@ -100,6 +126,12 @@ export const EVENTS = {
   jobsChanged: 'data.jobs.changed',
   /** evidence/ 目录变更后推送（不含数据，客户端用 evidence/list 拉快照；M2） */
   evidenceChanged: 'data.evidence.changed',
+  /** claims/ 目录变更后推送（不含数据，客户端用 claims/list 拉快照；M3-0） */
+  claimsChanged: 'data.claims.changed',
+  /** resumes/ 目录变更后推送（不含数据，客户端用 resumes/list 拉快照；M3.5） */
+  resumesChanged: 'data.resumes.changed',
+  /** proposals/ 目录变更后推送（不含数据，客户端用 proposals/list 拉快照；M3.5.6） */
+  proposalsChanged: 'data.proposals.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
   poolChanged: 'data.pool.changed',

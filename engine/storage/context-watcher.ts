@@ -218,7 +218,7 @@ export function parseContextMarkdown(md: string, sourceFile: string): ParsedCont
     }
   }
 
-  const validated = finalize(record as DecisionContext, checks)
+  const validated = finalize(record as unknown as DecisionContext, checks)
   const parsed: ParsedContext = { sourceFile, record: validated.value, sections }
   if (validated.validation) parsed.validation = validated.validation
   if (rejected.decisions) parsed.rejectedDecisions = rejected.decisions

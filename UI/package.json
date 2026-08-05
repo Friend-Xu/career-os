@@ -29,6 +29,7 @@
   "devDependencies": {
     "@amap/amap-jsapi-types": "^0.0.15",
     "@types/d3-force": "^3.0.10",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",

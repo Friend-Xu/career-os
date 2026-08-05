@@ -10,6 +10,9 @@ import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { registerDecisionIdentity } from './storage/decision-registry.ts'
 import { registerArtifacts } from './storage/artifact-registry.ts'
 import { EVIDENCE_SPEC, watchEvidence } from './storage/evidence-watcher.ts'
+import { CLAIM_SPEC, watchClaims } from './storage/claim-watcher.ts'
+import { RESUME_SPEC, watchResumes } from './storage/resume-watcher.ts'
+import { registerPendingProposals, watchProposals } from './storage/proposal-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -40,6 +43,15 @@ async function main(args: string[]): Promise<void> {
     // ─── 证据资产登记（M2）：同上，evidence/ 独立前缀与计数
     const evidenceRegistered = registerArtifacts(ws, EVIDENCE_SPEC).registered
     if (evidenceRegistered > 0) logger.info(`证据登记：${evidenceRegistered} 个证据文件分配系统 ID（evidence_YYYYMMDD_NNNNN）`)
+    // ─── Claim 登记（M3-0）：同上，claims/ 独立前缀与计数（表达 IR 层）
+    const claimsRegistered = registerArtifacts(ws, CLAIM_SPEC).registered
+    if (claimsRegistered > 0) logger.info(`Claim 登记：${claimsRegistered} 个声明文件分配系统 ID（claim_YYYYMMDD_NNNNN）`)
+    // ─── 简历版本登记（M3.5）：同上，resumes/documents/ 独立前缀与计数（版本系统 IR）
+    const resumesRegistered = registerArtifacts(ws, RESUME_SPEC).registered
+    if (resumesRegistered > 0) logger.info(`简历登记：${resumesRegistered} 个版本文件分配系统 ID（resume_YYYYMMDD_NNNNN）`)
+    // ─── 提案补登（M3.5.6）：引擎离线期间 AI 写入的提案（invalid 不登记，AI 修正后 watcher 重试）
+    const proposalsRegistered = registerPendingProposals(ws)
+    if (proposalsRegistered > 0) logger.info(`提案登记：${proposalsRegistered} 个提案文件分配系统 ID（proposal_YYYYMMDD_NNNNN）`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)
@@ -126,10 +138,28 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.evidenceChanged })
         logger.info(`evidence/ 变更：重扫 ${parsed.length} 条并广播`)
       })
+      // claims/ 变更只发信号（M3-0：表达 IR 是独立资产，UI 收到 claimsChanged 重拉 claims/list）
+      watchClaims(ws, (parsed) => {
+        broadcast({ event: EVENTS.claimsChanged })
+        logger.info(`claims/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
+      // resumes/ 变更只发信号（M3.5：版本系统——drafts/ 组装登记 + documents/ 变更都触发）
+      watchResumes(ws, (parsed) => {
+        broadcast({ event: EVENTS.resumesChanged })
+        logger.info(`resumes/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
+      // proposals/ 变更只发信号（M3.5.6：AI 建议层——AI 写文件登记 + RPC 状态流转都触发）
+      watchProposals(ws, (parsed) => {
+        broadcast({ event: EVENTS.proposalsChanged })
+        logger.info(`proposals/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
       logger.info('evidence/ 监听已启用（watcher.enabled=true）')
+      logger.info('claims/ 监听已启用（watcher.enabled=true）')
+      logger.info('resumes/ 监听已启用（watcher.enabled=true）')
+      logger.info('proposals/ 监听已启用（watcher.enabled=true）')
     } else {
       logger.info('decisions/ 监听已禁用（watcher.enabled=false）')
     }

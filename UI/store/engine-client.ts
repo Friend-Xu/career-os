@@ -23,6 +23,10 @@ import type {
   Validation,
 } from '../../engine/ir/schema.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
+import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
+import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
+import type { CareerContext } from '../../engine/ir/context.ts'
 import { EVENTS, METHODS } from '../../engine/transport/protocol.ts'
 
 export type EngineStatus = 'connecting' | 'connected' | 'offline'
@@ -296,6 +300,66 @@ export class EngineClient {
   /** 全量证据条目（M2：evidence/ 目录扫描 + 校验标记） */
   listEvidence(): Promise<EvidenceItem[]> {
     return this.rpc<EvidenceItem[]>(METHODS.listEvidence)
+  }
+
+  /** 全量 Claim（M3-0：claims/ 目录扫描 + usable——可消费性由引擎派生，UI 不自行过滤） */
+  listClaims(): Promise<(CareerClaim & { usable: boolean })[]> {
+    return this.rpc<(CareerClaim & { usable: boolean })[]>(METHODS.listClaims)
+  }
+
+  /** 岗位上下文 Claim Coverage（M3-0：responsibility → 关联 trusted evidence → 可消费 Claims） */
+  claimCoverage(jobId: string): Promise<ClaimCoverageRow[]> {
+    return this.rpc<ClaimCoverageRow[]>(METHODS.claimCoverage, { id: jobId })
+  }
+
+  /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */
+  listResumes(): Promise<ResumeDocument[]> {
+    return this.rpc<ResumeDocument[]>(METHODS.listResumes)
+  }
+
+  /** 单个简历版本（M3.5） */
+  getResume(id: string): Promise<ResumeDocument> {
+    return this.rpc<ResumeDocument>(METHODS.getResume, { id })
+  }
+
+  /** 克隆版本（M3.5：新 draft，lineage.parent + createdBy=user） */
+  cloneResume(id: string): Promise<ResumeDocument> {
+    return this.rpc<ResumeDocument>(METHODS.cloneResume, { id })
+  }
+
+  /** 状态转移（M3.5：状态机校验 + operations 审计；exported 仅 export 链） */
+  transitionResume(id: string, targetStatus: ResumeStatus): Promise<ResumeDocument> {
+    return this.rpc<ResumeDocument>(METHODS.transitionResume, { id, targetStatus })
+  }
+
+  /** 版本对比（M3.5：identity diff——claimId 变化 = removed+added，不丢 provenance） */
+  diffResumes(a: string, b: string): Promise<ResumeDiff> {
+    return this.rpc<ResumeDiff>(METHODS.diffResumes, { a, b })
+  }
+
+  /** 导出简历版本（M3.5：exportResumePdf + ExportRecord + status=exported；与旧 HTML 导出 exportResume 区分） */
+  exportResumeVersion(id: string): Promise<{ result: { pdf: string; fileName: string }; record: ResumeExportRecord }> {
+    return this.rpc<{ result: { pdf: string; fileName: string }; record: ResumeExportRecord }>(METHODS.exportResume, { id })
+  }
+
+  /** 全量提案（M3.5.6：proposals/ 扫描 + 校验标记——AI 建议层） */
+  listProposals(): Promise<ResumeProposal[]> {
+    return this.rpc<ResumeProposal[]>(METHODS.listProposals)
+  }
+
+  /** 接受提案（M3.5.6：checksum 强校验 → 确定性应用 → 新版本；成功即产生 v4，永不覆盖源；reason 可选——M3.5.7 决策反馈） */
+  acceptProposal(id: string, reason?: string): Promise<ResumeDocument> {
+    return this.rpc<ResumeDocument>(METHODS.acceptProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  /** 拒绝提案（M3.5.6：pending → rejected；可选原因，审计保留） */
+  rejectProposal(id: string, reason?: string): Promise<ResumeProposal> {
+    return this.rpc<ResumeProposal>(METHODS.rejectProposal, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  /** AI Read Model（M3.5.4：全资产投影——Studio provenance/validation 数据源） */
+  aiContext(jobId?: string): Promise<CareerContext> {
+    return this.rpc<CareerContext>(METHODS.aiContext, jobId ? { jobId } : {})
   }
 
   /** 删除岗位（删 jobs/{id}.md，引擎 watcher 广播后 UI 自动重拉） */

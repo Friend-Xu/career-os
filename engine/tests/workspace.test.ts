@@ -18,7 +18,7 @@ test('initWorkspace：创建目录树 + INDEX.md + protocol.json', () => {
   assert.ok(existsSync(ws.paths.indexFile))
   const protocol = JSON.parse(readFileSync(ws.paths.protocolFile, 'utf8'))
   assert.equal(protocol.protocol, 'career-os')
-  assert.equal(protocol.version, '2.3')
+  assert.equal(protocol.version, '2.4')
   assert.ok(typeof protocol.created === 'string')
   rmSync(root, { recursive: true, force: true })
 })

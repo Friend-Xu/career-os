@@ -6,7 +6,7 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.3' as const
+export const ProtocolVersion = '2.4' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'
@@ -228,6 +228,45 @@ export interface EvidenceItem {
   verification?: EvidenceVerification // trusted 时写入
   confidence?: Confidence // AI 结构化置信度（raw 未结构化时无）
   status: EvidenceStatus
+}
+
+// ─── V2.4：CareerClaim（M3：表达 IR 层——"我可以安全表达什么"，从 trusted Evidence 派生）──
+
+/** Claim 认识类型：fact（可逐字映射证据原文）/ interpretation（归纳/评价/抽象提升，不能逐字映射） */
+export type ClaimType = 'fact' | 'interpretation'
+
+/** Claim 生成来源（provenance，不代表可信——可信从证据继承，verification = policy） */
+export type ClaimSource = 'user_written' | 'agent_generated'
+
+/** provenance 引用粒度：最低 EvidenceItem，不引用自由文本片段；consumedParts 是消费范围声明 */
+export interface ClaimProvenance {
+  evidenceId: string
+  consumedParts?: {
+    contribution?: boolean
+    dimensions?: string[] // EvidenceDimensionRegistry id
+  }
+}
+
+/**
+ * 表达 IR（M3-0 冻结）：Claim 没有可信度，只有可消费性——canUseClaim 从证据推导，
+ * 无 status/verification 字段（不产生双重审核体系）。created_at 是表达资产生成时间，
+ * 非事件时间（事件时间在 Evidence.event.period）。
+ */
+export interface CareerClaim {
+  id: string // claim_{YYYYMMDD}_{NNNNN}，引擎登记生成（artifact-registry）
+  created_at: string // ISO 时间戳（表达资产生成时间）
+  source: ClaimSource
+  statement: string // 可声明的表达
+  claimType: ClaimType
+  provenance: ClaimProvenance[] // ≥1：Claim 不脱离证据（canUseClaim 空数组恒 false）
+}
+
+/** 岗位上下文 Claim Coverage 视图（M3-1 Step 3 UI 第三段数据；引擎派生，不落盘） */
+export interface ClaimCoverageRow {
+  responsibility: string // JobResponsibility.statement
+  evidenceStatus: 'covered' | 'partial' | 'missing' // evidence 层三态（复用 Coverage 引擎）
+  matchedItems: string[] // 关联 evidence item id
+  claims: { id: string; statement: string; claimType: ClaimType }[] // 引用 matchedItems 的可消费 Claims
 }
 
 /** 公司档案：companies/{name}.md */

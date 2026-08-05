@@ -9,7 +9,7 @@
  * - 事件推送：构造时注入 emit(taskId, ev) 回调（websocket 广播 agent.event）。
  */
 import { createAgent, type AgentHandle, type AgentEvent } from '../agent/adapter/claude.ts'
-import type { AgentError, AgentRuntimeEvent } from '../ir/schema.ts'
+import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
 
 export type { AgentRuntimeEvent }

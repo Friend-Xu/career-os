@@ -6,8 +6,10 @@
   "description": "Career OS 本地引擎（纯 Node 服务，零依赖，Node 24 原生 TS type-stripping）",
   "scripts": {
     "engine": "node main.ts",
+    "typecheck": "tsc --noEmit",
     "test": "node --test --test-isolation=none \"tests/*.test.ts\"",
     "smoke:bridge": "node tests/bridge-smoke.mjs",
+    "smoke:proposal": "node tests/proposal-e2e.mjs",
     "smoke:handlers": "node tests/handlers-smoke.mjs",
     "smoke:question": "node tests/adapter-question-smoke.mjs"
   },
@@ -21,5 +23,9 @@
     "better-sqlite3": "^13.0.2",
     "chokidar": "^5.0.0",
     "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3"
   }
 }

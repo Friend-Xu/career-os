@@ -106,7 +106,7 @@ export function validateDecisionRecord(input: unknown, opts: { requireProfile?: 
   if (typeof value.salaryFeasible !== 'boolean') {
     checks.push(illegal('salaryFeasible', value.salaryFeasible, 'true/false'))
   }
-  return finalize(value as DecisionRecord, checks)
+  return finalize(value as unknown as DecisionRecord, checks)
 }
 
 export function validatePerson(input: unknown): Validated<Person> {
@@ -123,7 +123,7 @@ export function validatePerson(input: unknown): Validated<Person> {
   if (value.targetRoles !== undefined && (!Array.isArray(value.targetRoles) || value.targetRoles.some((t) => typeof t !== 'string'))) {
     checks.push(illegal('targetRoles', value.targetRoles, 'string[]'))
   }
-  return finalize(value as Person, checks)
+  return finalize(value as unknown as Person, checks)
 }
 
 export function validateCompanyRecord(input: unknown): Validated<CompanyRecord> {
@@ -138,7 +138,7 @@ export function validateCompanyRecord(input: unknown): Validated<CompanyRecord> 
   if (!Array.isArray(value.tags) || value.tags.some((t) => typeof t !== 'string')) {
     checks.push(illegal('tags', value.tags, 'string[]'))
   }
-  return finalize(value as CompanyRecord, checks)
+  return finalize(value as unknown as CompanyRecord, checks)
 }
 
 export function validateProfileSummary(input: unknown): Validated<ProfileSummary> {
@@ -154,7 +154,7 @@ export function validateProfileSummary(input: unknown): Validated<ProfileSummary
       checks.push(illegal(field, value[field], 'string[]'))
     }
   }
-  return finalize(value as ProfileSummary, checks)
+  return finalize(value as unknown as ProfileSummary, checks)
 }
 
 const POOL_NODE_TYPES = ['person', 'decision', 'direction', 'city', 'company'] as const
@@ -170,7 +170,7 @@ export function validatePoolNode(input: unknown): Validated<PoolNode> {
   }
   if (value.riskLevel !== undefined) checkEnum(checks, 'riskLevel', value.riskLevel, RISK_LEVELS)
   if (value.matchScore !== undefined) checkPercent(checks, 'matchScore', value.matchScore)
-  return finalize(value as PoolNode, checks)
+  return finalize(value as unknown as PoolNode, checks)
 }
 
 export function validatePoolEdge(input: unknown): Validated<PoolEdge> {
@@ -180,7 +180,7 @@ export function validatePoolEdge(input: unknown): Validated<PoolEdge> {
     checkString(checks, field, value[field])
   }
   checkEnum(checks, 'strength', value.strength, EDGE_STRENGTHS)
-  return finalize(value as PoolEdge, checks)
+  return finalize(value as unknown as PoolEdge, checks)
 }
 
 const APPLICATION_STATUSES = ['已评估', '已投递', '已联系', '已回复', '面试中', '已录取', '已拒绝'] as const
@@ -199,7 +199,7 @@ export function validateApplication(input: unknown): Validated<Application> {
   }
   checkEnum(checks, 'status', value.status, APPLICATION_STATUSES)
   checkEnum(checks, 'urgency', value.urgency, URGENCIES)
-  return finalize(value as Application, checks)
+  return finalize(value as unknown as Application, checks)
 }
 
 export function validateSession(input: unknown): Validated<Session> {
@@ -211,7 +211,7 @@ export function validateSession(input: unknown): Validated<Session> {
   if (typeof value.personId !== 'number') checks.push(missing('personId', value.personId))
   if (typeof value.archived !== 'boolean') checks.push(illegal('archived', value.archived, 'true/false'))
   if (!Array.isArray(value.messages)) checks.push(illegal('messages', value.messages, 'ChatMessage[]'))
-  return finalize(value as Session, checks)
+  return finalize(value as unknown as Session, checks)
 }
 
 /** 版本分派入口：按 record.protocolVersion 选择解析规则（协议升级只动这里） */
@@ -226,7 +226,7 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
     case '2.0':
       return validateDecisionRecord(value)
     default:
-      return finalize(value as DecisionRecord, [
+      return finalize(value as unknown as DecisionRecord, [
         { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3）`, severity: 'error' },
       ])
   }

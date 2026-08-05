@@ -21,7 +21,9 @@
  * 推进事件：computeChain 为纯函数，调用方保存旧链、新增决策后重算，
  * 用 stageProgressed(prev, next) diff currentStage 判定是否推进（toast 文案用）。
  */
-import type { DecisionChain, DecisionRecord, PersonStage, StageId, StageStatus, Validation } from '../ir/schema.ts'
+import type { DecisionChain, DecisionRecord, PersonStage, StageId, Validation } from '../ir/schema.ts'
+
+export type { StageId }
 
 export const STAGE_ORDER: readonly StageId[] = [
   '方向探索',

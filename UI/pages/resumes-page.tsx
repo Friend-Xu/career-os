@@ -17,6 +17,8 @@ import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
 import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
+import { ResumeStudio } from '../components/resume-studio'
+import { ResumeAssets } from '../components/resume-assets'
 
 /** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
 const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
@@ -73,6 +75,7 @@ export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
+  const resumesView = useAppStore((s) => s.resumesView)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const engineStatus = useAppStore((s) => s.engineStatus)
@@ -347,7 +350,21 @@ export function ResumesPage() {
 
       {/* 版本切换在侧栏「版本」——此处不重复提供入口 */}
 
-      {!resume ? (
+      {/* M3.5.5 Resume Studio：Artifact Evolution Graph + Human Approval Console（无 Sentence 编辑器） */}
+      {resumesView === 'studio' && (
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+          <ResumeStudio />
+        </Box>
+      )}
+
+      {/* M3.5.5 Resume Assets：AI Read Projection Viewer（CareerContext 只读投影） */}
+      {resumesView === 'assets' && (
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+          <ResumeAssets />
+        </Box>
+      )}
+
+      {resumesView === 'workspace' && !resume ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
           <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
             <Typography sx={{ fontSize: 14, fontWeight: 600 }}>「{person.name}」暂无简历</Typography>

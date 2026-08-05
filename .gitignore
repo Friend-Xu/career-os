@@ -5,6 +5,9 @@ node_modules/
 workspace/
 logs/
 
+# Test fixtures（浏览器 E2E 演示数据，隔离目录不入库）
+.test-fixtures/
+
 # Engine config（本地运行配置，不入库）
 career-os.config.json
 

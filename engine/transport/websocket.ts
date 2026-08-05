@@ -27,8 +27,16 @@ import { scanProfiles } from '../storage/projection.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
+import { scanClaims } from '../storage/claim-watcher.ts'
+import { scanResumes, transitionResumeStatusFile, cloneResumeFile, diffResumes, markResumeExported } from '../storage/resume-watcher.ts'
+import { indexEvidence, canUseClaim } from '../storage/claim-policy.ts'
+import { computeClaimCoverage } from '../runtime/claim-coverage.ts'
+import { selectExpressionCandidates } from '../runtime/claim-selector.ts'
+import { exportResumePdf, serializeExportRecord } from '../export/resume-export.ts'
+import { buildCareerContext } from '../context/career-context.ts'
 import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
-import { deleteCompanyFile, readCompanyFile } from '../storage/projection.ts'
+import { acceptProposalFile, rejectProposalFile, scanProposals } from '../storage/proposal-watcher.ts'
+import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
@@ -170,7 +178,7 @@ function extractJdParams(v: unknown): { jdText: string } {
 export function computeJobMatch(workspace: Workspace, jobId: string, person: string): GapResult {
   const job = scanJobs(workspace).find((j) => j.record.id === jobId)
   if (!job) throw new Error(`岗位不存在：${jobId}`)
-  const { skills, roles } = scanKnowledge(workspace)
+  const { skills } = scanKnowledge(workspace)
   const role = {
     id: job.record.id,
     name: job.record.title,
@@ -501,7 +509,7 @@ export async function startServer(opts: {
     [METHODS.contexts]: () => listContexts(workspace, store),
     [METHODS.knowledgeGraph]: () => scanKnowledge(workspace),
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
-    [METHODS.health]: () => generateHealthReport(workspace, store),
+    [METHODS.health]: () => generateHealthReport(workspace, store as ProjectionStore),
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => {
       const p = agentStartParams(params)
@@ -610,6 +618,100 @@ export async function startServer(opts: {
       ...e.record,
       ...(e.validation ? { validation: e.validation } : {}),
     })),
+    [METHODS.listClaims]: () => {
+      const evidenceById = indexEvidence(scanEvidence(workspace).map((e) => e.record))
+      return scanClaims(workspace).map((c) => ({
+        ...c.record,
+        usable: canUseClaim(c.record, evidenceById),
+        ...(c.validation ? { validation: c.validation } : {}),
+      }))
+    },
+    [METHODS.claimCoverage]: (params) => {
+      const id = jobIdParams(params)
+      const job = scanJobs(workspace).find((j) => j.record.id === id)
+      if (!job) throw new Error(`岗位不存在：${id}`)
+      return computeClaimCoverage(job.record, scanEvidence(workspace).map((e) => e.record), scanClaims(workspace).map((c) => c.record))
+    },
+    [METHODS.claimSelect]: (params) => {
+      const id = jobIdParams(params)
+      const job = scanJobs(workspace).find((j) => j.record.id === id)
+      if (!job) throw new Error(`岗位不存在：${id}`)
+      return selectExpressionCandidates(job.record, scanEvidence(workspace).map((e) => e.record), scanClaims(workspace).map((c) => c.record))
+    },
+    [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
+      ...r.record,
+      ...(r.validation ? { validation: r.validation } : {}),
+    })),
+    [METHODS.getResume]: (params) => {
+      const id = jobIdParams(params)
+      const r = scanResumes(workspace).find((x) => x.record.id === id)
+      if (!r) throw new Error(`简历版本不存在：${id}`)
+      return r.record
+    },
+    [METHODS.cloneResume]: (params) => {
+      const id = jobIdParams(params)
+      const r = scanResumes(workspace).find((x) => x.record.id === id)
+      if (!r) throw new Error(`简历版本不存在：${id}`)
+      const clone = cloneResumeFile(workspace, r.record)
+      broadcast({ event: EVENTS.resumesChanged })
+      return clone
+    },
+    [METHODS.transitionResume]: (params) => {
+      const p = params as Record<string, unknown>
+      const id = jobIdParams(params)
+      const target = p?.targetStatus
+      if (typeof target !== 'string' || !['draft', 'review', 'exported', 'archived'].includes(target)) {
+        throw new Error('params.targetStatus 缺失/非法（draft/review/exported/archived）')
+      }
+      const file = scanResumes(workspace).find((x) => x.record.id === id)?.sourceFile
+      if (!file) throw new Error(`简历版本不存在：${id}`)
+      const next = transitionResumeStatusFile(workspace, file, target as 'draft' | 'review' | 'exported' | 'archived', 'user')
+      broadcast({ event: EVENTS.resumesChanged })
+      return next
+    },
+    [METHODS.diffResumes]: (params) => {
+      const p = params as Record<string, unknown>
+      const a = typeof p?.a === 'string' ? p.a : ''
+      const b = typeof p?.b === 'string' ? p.b : ''
+      const ra = scanResumes(workspace).find((x) => x.record.id === a)?.record
+      const rb = scanResumes(workspace).find((x) => x.record.id === b)?.record
+      if (!ra || !rb) throw new Error('params.a/params.b 简历版本不存在')
+      return diffResumes(ra, rb)
+    },
+    [METHODS.exportResume]: async (params) => {
+      const id = jobIdParams(params)
+      const r = scanResumes(workspace).find((x) => x.record.id === id)
+      if (!r) throw new Error(`简历版本不存在：${id}`)
+      const { result, record } = await exportResumePdf(r.record) // 失败抛错——不产生 exported 状态
+      workspace.write(`resumes/exports/${record.id}.md`, serializeExportRecord(record))
+      markResumeExported(workspace, r.sourceFile) // 绑定 ExportRecord 后系统流转 exported
+      broadcast({ event: EVENTS.resumesChanged })
+      return { result, record }
+    },
+    [METHODS.listProposals]: () => scanProposals(workspace).map((p) => ({
+      ...p.record,
+      ...(p.validation ? { validation: p.validation } : {}),
+    })),
+    [METHODS.acceptProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const { document } = acceptProposalFile(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.resumesChanged })
+      broadcast({ event: EVENTS.proposalsChanged })
+      return document
+    },
+    [METHODS.rejectProposal]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const updated = rejectProposalFile(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.proposalsChanged })
+      return updated
+    },
+    [METHODS.aiContext]: (params) => {
+      const p = params as Record<string, unknown> | undefined
+      const jobId = typeof p?.jobId === 'string' ? p.jobId : undefined
+      return buildCareerContext(workspace, jobId ? { jobId } : {})
+    },
     [METHODS.deleteCompany]: (params) => {
       deleteCompanyFile(workspace, jobIdParams(params))
       broadcast({ event: EVENTS.companiesChanged })

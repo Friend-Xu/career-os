@@ -199,7 +199,7 @@ export function parseCompanyMarkdown(md: string, sourceFile: string): Validated<
   for (const field of COMPANY_REQUIRED) {
     if (record[field] === undefined) checks.push({ path: field, reason: '缺失（摘要表未填或为 -）', severity: 'error' })
   }
-  return finalize(record as CompanyRecord, checks)
+  return finalize(record as unknown as CompanyRecord, checks)
 }
 
 // ─── md 最小扫描（profiles 目标方向表；公司走 parseCompanyMarkdown）─────────
@@ -248,7 +248,7 @@ export function scanProfiles(workspace: Workspace): ProfileScan[] {
 const SCHEMA_VERSION = 3
 
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
-  const { dbPath, workspace, logger } = opts
+  const { dbPath, workspace } = opts
   mkdirSync(dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
@@ -344,7 +344,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
   }
 
   function rowToDecision(row: DecisionRow): DecisionView {
-    const record: DecisionRecord = {
+    const record: Partial<DecisionRecord> & { validation?: Validation } = {
       id: row.id, title: row.title, skill: row.skill, riskLevel: row.risk_level as RiskLevel,
       keyRisk: row.key_risk ?? '', status: row.status ?? '', summary: row.summary,
       createdAt: row.created_at, protocolVersion: row.protocol_version,
@@ -365,7 +365,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
       }
       record.validation = validation
     }
-    return record
+    return record as DecisionView
   }
 
   interface PersonRow {
@@ -409,7 +409,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     listPersons() {
       const rows = db.prepare('SELECT * FROM persons_projection ORDER BY id').all() as unknown as PersonRow[]
       return rows.map((row): Person => {
-        const person: Person = {
+        const person: Partial<Person> = {
           id: row.id, name: row.name, color: row.color, emoji: row.emoji,
           archived: row.archived === 1, profilePath: row.profile_path, targetRoles: [],
         }
@@ -424,7 +424,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
             if (skills.length > 0) person.skills = skills
           } catch { /* 忽略 */ }
         }
-        return person
+        return person as Person
       })
     },
     graph() {

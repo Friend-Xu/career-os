@@ -28,7 +28,10 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
+import type { CareerContext } from '../../engine/ir/context.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import {
   EVENTS,
@@ -152,6 +155,16 @@ interface AppState {
   evidence: EvidenceItem[];
   /** 岗位证据覆盖缓存（M2：jobId → ResponsibilityCoverage[]，按岗位拉取） */
   evidenceCoverage: Record<string, ResponsibilityCoverage[]>;
+  /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable——可消费性引擎推导） */
+  claims: (CareerClaim & { usable: boolean })[];
+  /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
+  claimCoverage: Record<string, ClaimCoverageRow[]>;
+  /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
+  resumeVersions: ResumeDocument[];
+  /** 提案（M3.5.6）：proposals/ 引擎实时派生（AI 建议层——Human Approval Console 数据源） */
+  proposals: ResumeProposal[];
+  /** AI Read Model（M3.5.4）：CareerContext 投影——Studio provenance/validation 数据源（引擎实时派生） */
+  careerContext: CareerContext | null;
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
   health: HealthReport | null;
   companies: CompanyView[];
@@ -174,6 +187,12 @@ interface AppState {
   selectedCompanyId: string | null;
   /** 工作台子视图（驾驶舱内部导航：Dashboard/方向/城市/决策记录） */
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
+  /** 简历中心视图（M3.5.5：三空间——Draft Workspace / Resume Studio / Resume Assets） */
+  resumesView: 'workspace' | 'studio' | 'assets';
+  /** 当前选中的简历版本（M3.5.5：共享 Artifact——Studio/Agent/导出跳转定位；由侧栏/页面/Agent 共同读写） */
+  selectedResumeId: string | null;
+  /** 当前选中的草稿（预留：Agent 定位编辑区；M3.5.5 暂不深度使用） */
+  selectedDraftId: string | null;
   /** 公司空间子视图（档案：卡片+尽调正文 / 地图：散点定位） */
   companiesView: 'profile' | 'map';
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
@@ -206,6 +225,10 @@ interface AppState {
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
   setCompaniesView: (view: 'profile' | 'map') => void;
+  /** 简历中心三空间切换（M3.5.5） */
+  setResumesView: (view: 'workspace' | 'studio' | 'assets') => void;
+  /** 选中简历版本（M3.5.5：切到 studio 并定位——Agent/Deep Link/导出跳转共用） */
+  selectResume: (id: string) => void;
   createSession: (title?: string) => void;
   /** 停止当前会话运行中的 Agent 任务（agent/cancel RPC + 占位消息标记「已停止」） */
   cancelCurrentTask: () => void;
@@ -263,7 +286,20 @@ interface AppState {
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
   /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态；结果缓存 evidenceCoverage[jobId]） */
   fetchJobCoverage: (jobId: string) => Promise<void>;
-  /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
+  /** 岗位 Claim 表达候选（M3-1：responsibility → 关联 trusted evidence → 可消费 Claims；缓存 claimCoverage[jobId]） */
+  fetchClaimCoverage: (jobId: string) => Promise<void>;
+  /** 克隆简历版本（M3.5：新 draft + lineage.parent + createdBy=user） */
+  cloneResume: (id: string) => Promise<ResumeDocument>;
+  /** 状态转移（M3.5：状态机校验 + operations 审计；exported 仅 export 链） */
+  transitionResume: (id: string, targetStatus: ResumeStatus) => Promise<ResumeDocument>;
+  /** 导出简历版本（M3.5：exportResumePdf + ExportRecord + status=exported；与旧 HTML 导出 exportResume 区分） */
+  exportResumeVersion: (id: string) => Promise<{ result: { pdf: string; fileName: string }; record: ResumeExportRecord }>;
+  /** 版本对比（M3.5：identity diff） */
+  diffResumes: (a: string, b: string) => Promise<ResumeDiff>;
+  /** 接受提案（M3.5.6：引擎确定性应用 → 新版本；成功即产生 v4；reason 可选——M3.5.7 决策反馈） */
+  acceptProposal: (id: string, reason?: string) => Promise<ResumeDocument>;
+  /** 拒绝提案（M3.5.6：pending → rejected，可选原因；单向不 reopen） */
+  rejectProposal: (id: string, reason?: string) => Promise<ResumeProposal>;  /** 删除岗位（引擎删 jobs/{id}.md → jobsChanged 自动重拉；删除当前选中则清空） */
   deleteJob: (id: string) => Promise<void>;
   /** 删除公司档案（引擎删 companies/{id}.md → companiesChanged 自动重拉；删除当前选中则清空） */
   deleteCompany: (id: string) => Promise<void>;
@@ -304,6 +340,15 @@ export const useAppStore = create<AppState>()(
       evidence: [],
       /** 岗位证据覆盖缓存（jobId → ResponsibilityCoverage[]；M2 层3 三态） */
       evidenceCoverage: {},
+      /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable） */
+      claims: [],
+      /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
+      claimCoverage: {},
+      /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
+      resumeVersions: [],
+      proposals: [],
+      /** AI Read Model（M3.5.4）：CareerContext 投影（引擎实时派生；offline 为 null） */
+      careerContext: null,
       health: null,
       companies: COMPANIES,
       persons: PERSONS,
@@ -323,6 +368,9 @@ export const useAppStore = create<AppState>()(
       selectedCompanyId: null,
       workbenchView: 'dashboard',
       companiesView: 'profile',
+      resumesView: 'workspace',
+      selectedResumeId: null,
+      selectedDraftId: null,
       pendingPermission: null,
       approvedTools: {},
       rewrite: { status: 'idle', text: '' },
@@ -709,6 +757,58 @@ export const useAppStore = create<AppState>()(
     }
   },
 
+  fetchClaimCoverage: async (jobId) => {
+    if (!engine) return
+    try {
+      const coverage = await engine.claimCoverage(jobId)
+      set((state) => ({ claimCoverage: { ...state.claimCoverage, [jobId]: coverage } }))
+    } catch {
+      // offline：保持现有缓存
+    }
+  },
+
+  /** 克隆简历版本（M3.5：新 draft + lineage.parent；watcher 广播后重拉） */
+  cloneResume: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.cloneResume(id)
+  },
+
+  /** 状态转移（M3.5：状态机校验；exported 仅 export 链） */
+  transitionResume: async (id, targetStatus) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.transitionResume(id, targetStatus)
+  },
+
+  /** 导出简历版本（M3.5：ExportRecord 绑定 + status=exported） */
+  exportResumeVersion: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.exportResumeVersion(id)
+  },
+
+  /** 版本对比（M3.5：identity diff——claimId 变化 = removed+added，不丢 provenance） */
+  diffResumes: async (a, b) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.diffResumes(a, b)
+  },
+
+  /** 接受提案（M3.5.6：checksum 强校验 → 确定性应用 → v4；引擎广播后重拉视图） */
+  acceptProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const doc = await engine.acceptProposal(id, reason)
+    void pullProposals()
+    void pullResumes()
+    void pullCareerContext()
+    return doc
+  },
+
+  /** 拒绝提案（M3.5.6：pending → rejected，审计保留；重新建议 = AI 写新提案） */
+  rejectProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const p = await engine.rejectProposal(id, reason)
+    void pullProposals()
+    return p
+  },
+
   deleteJob: async (id) => {
     if (!engine) throw new Error('引擎未连接')
     await engine.deleteJob(id)
@@ -780,6 +880,10 @@ export const useAppStore = create<AppState>()(
   setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
   setWorkbenchView: (view) => set({ workbenchView: view }),
   setCompaniesView: (view) => set({ companiesView: view }),
+  /** 简历中心三空间切换（M3.5.5） */
+  setResumesView: (view) => set({ resumesView: view }),
+  /** 选中简历版本（M3.5.5：切到 studio 视图并定位） */
+  selectResume: (id) => set({ selectedResumeId: id, resumesView: 'studio' }),
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId
@@ -1255,6 +1359,50 @@ async function pullEvidence(): Promise<void> {
   }
 }
 
+/** Claim 资产（M3-0）：claims/list 全量拉取（含 usable——可消费性引擎派生）；claimsChanged 事件驱动重拉 */
+async function pullClaims(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listClaims()
+    useAppStore.setState({ claims: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 简历版本（M3.5）：resumes/list 全量拉取；resumesChanged 事件驱动重拉 */
+async function pullResumes(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listResumes()
+    useAppStore.setState({ resumeVersions: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 提案（M3.5.6）：proposals/list 全量拉取；proposalsChanged 事件驱动重拉 */
+async function pullProposals(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listProposals()
+    useAppStore.setState({ proposals: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** AI Read Model（M3.5.4）：ai/context 拉取——Studio provenance/validation 数据源；资产变更时重拉 */
+async function pullCareerContext(): Promise<void> {
+  if (!engine) return
+  try {
+    const ctx = await engine.aiContext()
+    useAppStore.setState({ careerContext: ctx })
+  } catch {
+    // offline：保持 null（Studio 显示诚实空态）
+  }
+}
+
 /** 决策聚合视图（V1.5）：引擎实时派生（contexts/list），offline/未建 context 时保持空数组 */
 async function pullContexts(): Promise<void> {
   if (!engine) return
@@ -1374,6 +1522,10 @@ export function connectEngine(): void {
       void pullHealth()
       void pullJobs()
       void pullEvidence()
+      void pullClaims()
+      void pullResumes()
+      void pullCareerContext()
+      void pullProposals()
       void useAppStore.getState().loadAgentSettings()
       void useAppStore.getState().loadAvailableModels()
     }
@@ -1391,6 +1543,16 @@ export function connectEngine(): void {
     // 覆盖缓存失效：证据变更后按已缓存岗位重算（缓存键清空，下次打开岗位时重拉）
     useAppStore.setState({ evidenceCoverage: {} })
   })
+  engine.on(EVENTS.claimsChanged, () => {
+    void pullClaims()
+    // Claim 表达候选缓存失效：Claim 变更后清空，下次打开岗位时重拉
+    useAppStore.setState({ claimCoverage: {} })
+  })
+  engine.on(EVENTS.resumesChanged, () => {
+    void pullResumes()
+    void pullCareerContext() // 版本变化影响 Context 投影
+  })
+  engine.on(EVENTS.proposalsChanged, () => void pullProposals())
   engine.on(EVENTS.companiesChanged, () => {
     void pullCompanies()
     void pullGraph()

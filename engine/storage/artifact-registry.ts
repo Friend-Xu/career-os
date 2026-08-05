@@ -33,7 +33,7 @@ export function splitFrontmatter(md: string): { meta: Record<string, string>; bo
 
 /** 系统 ID 生成：{prefix}{YYYYMMDD}_{NNNNN}（当日已有计数 +1，跨日归零；单进程个人工具无需锁） */
 export function nextArtifactId(ws: Workspace, spec: ArtifactSpec, now: Date): string {
-  const day = now.toISOString().slice(0, 10).replaceAll('-', '')
+  const day = now.toISOString().slice(0, 10).replace(/-/g, '')
   const n = ws.listMarkdown(spec.dir).filter((f) => f.startsWith(`${spec.idPrefix}${day}_`)).length
   return `${spec.idPrefix}${day}_${String(n + 1).padStart(5, '0')}`
 }

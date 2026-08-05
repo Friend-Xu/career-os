@@ -23,7 +23,10 @@ import type {
   ToolCallStatus,
   GapResult,
   EvidenceItem,
+  CareerClaim,
+  ClaimCoverageRow,
 } from '../../engine/ir/schema.ts';
+import type { ResumeDocument, ResumeBullet, ResumeSection } from '../../engine/ir/resume.ts';
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts';
 
 export type { Person };
@@ -41,6 +44,11 @@ export type { AgentError };
 export type { AgentRuntimeEvent };
 export type { EvidenceItem };
 export type { ResponsibilityCoverage };
+export type { CareerClaim };
+export type { ClaimCoverageRow };
+export type { ResumeDocument };
+export type { ResumeBullet };
+export type { ResumeSection };
 
 /**
  * UI 会话扩展（引擎契约字段之外，仅 UI 会话渲染用）：

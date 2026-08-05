@@ -8,9 +8,9 @@
  *   自动为同公司建档占位公司档案——三模块联动：JD 建档 → 公司空间占位 + 投递空间占位）
  * - watchJobs：监听 jobs/ 目录（add/change/unlink → 全量重扫 → 广播 data.jobs.changed）
  */
-import type { JobRecord, JobResponsibility, Validation } from '../ir/schema.ts'
+import type { EvidenceDimension, JobRecord, JobResponsibility, Validation } from '../ir/schema.ts'
 import { EVIDENCE_PATTERNS_V0 } from '../ir/schema.ts'
-import { finalize, validateByProtocol, type Validated } from '../ir/validator.ts'
+import { finalize, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 
@@ -52,7 +52,7 @@ function parseJobIntelligence(md: string): JobResponsibility[] {
     const dims = patterns.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
     const questionList = questions.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
     const evidenceExpectations = dims.flatMap((dim, j) => {
-      const patternId = idByDimension.get(dim)
+      const patternId = idByDimension.get(dim as EvidenceDimension)
       return patternId ? [{ patternId, questions: questionList[j] ? [questionList[j]] : [] }] : []
     })
     return [{
@@ -138,7 +138,7 @@ export function parseJobMarkdown(md: string, sourceFile: string): Validated<JobR
       checks.push({ path: `responsibilities.${r.id}`, reason: '证据追问疑似逗号连接多个问句（规范：分号 `；` 分隔）', severity: 'warn' })
     }
   }
-  return finalize(record as JobRecord, checks)
+  return finalize(record as unknown as JobRecord, checks)
 }
 
 export interface ParsedJob {

@@ -20,6 +20,7 @@ import type {
   SDKAssistantMessageError,
   SDKMessage,
   SDKResultError,
+  SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
@@ -161,10 +162,11 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
   let signalResolve: (() => void) | null = null
 
   // AskUserQuestion 回答通道：持续打开的输入流，answer() 推入待发队列
-  const answers: unknown[] = []
-  const inputStream = (async function* () {
+  const answers: SDKUserMessage[] = []
+  const inputStream: AsyncIterable<SDKUserMessage> = (async function* () {
     for (;;) {
-      if (answers.length > 0) yield answers.shift()
+      const a = answers.shift()
+      if (a !== undefined) yield a
       await new Promise((r) => setTimeout(r, 50))
     }
   })()
@@ -193,7 +195,8 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     ...(opts.baseUrl !== undefined && opts.baseUrl !== '' ? { baseURL: opts.baseUrl } : {}),
     // 管道模式实测 AskUserQuestion 会立即跳过（tool_use_result 已含 "did not answer"）：
     // 显式给 10 分钟等待窗口，回答（前端点击）才来得及送达
-    askUserQuestionTimeout: '10m',
+    // （SDK 类型：该字段属 Settings，经 Options.settings 传入）
+    settings: { askUserQuestionTimeout: '10m' },
     permissionMode: opts.permissionMode === undefined ? undefined : SDK_PERMISSION_MODE[opts.permissionMode],
     allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
     abortController: opts.abortController,

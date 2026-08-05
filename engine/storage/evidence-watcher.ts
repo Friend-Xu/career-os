@@ -32,13 +32,6 @@ function deriveTitle(md: string, sourceFile: string): string {
   return h1 ? h1[1].trim() : sourceFile.replace(/\.md$/, '')
 }
 
-function deriveCreatedAt(file: string): string {
-  const legacy = file.match(/^(\d{4}-\d{2}-\d{2})/)?.[1]
-  if (legacy) return legacy
-  const sys = file.match(/^evidence_(\d{4})(\d{2})(\d{2})_/)
-  return sys ? `${sys[1]}-${sys[2]}-${sys[3]}` : ''
-}
-
 /** `## 事件` 段首段文本（context 背景；可缺省） */
 function deriveContext(md: string): string | undefined {
   const parts = md.split(/##\s*事件/, 2)

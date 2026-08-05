@@ -6,7 +6,7 @@
  * - 每 expectation 输出三态：covered / partial / missing + reason（内部保留，UI 只显示三态）
  * - weak_relation 预留（语义匹配引入时启用）；MVP 二值判定只产出 no_evidence / missing_dimension
  */
-import type { EvidenceItem, JobRecord, JobResponsibility } from '../ir/schema.ts'
+import type { EvidenceItem, JobRecord } from '../ir/schema.ts'
 import { EVIDENCE_PATTERNS_V0 } from '../ir/schema.ts'
 
 export type CoverageStatus = 'covered' | 'partial' | 'missing'

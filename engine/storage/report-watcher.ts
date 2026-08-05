@@ -8,7 +8,7 @@
  * 缺失值填 `-`（属常态）；risk_level 四档中文（低/中/中高/高）；city_score X/10。
  */
 import type { Confidence, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
-import { validateByProtocol, type FieldCheck, type Validated, finalize } from '../ir/validator.ts'
+import { validateByProtocol, type Validated, finalize } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 import { registerDecisionIdentity, splitFrontmatter } from './decision-registry.ts'

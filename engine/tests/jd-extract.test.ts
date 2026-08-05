@@ -30,5 +30,5 @@ test('parseJdJson：requirements 过滤非字符串与空串', () => {
 
 test('parseJdJson：非 JSON 抛错', () => {
   assert.throws(() => parseJdJson('没有 JSON 的回复文本'), /未提取到 JSON 对象/)
-  assert.throws(() => parseJdJson('{"company": 无引号}', /JSON/))
+  assert.throws(() => parseJdJson('{"company": 无引号}'), /JSON/)
 })
