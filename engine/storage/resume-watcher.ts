@@ -32,7 +32,7 @@ export const RESUME_SPEC: ArtifactSpec = {
 }
 
 const STATUSES: ResumeStatus[] = ['draft', 'review', 'exported', 'archived']
-const SECTION_TYPES = ['summary', 'experience', 'projects', 'skills', 'education']
+const SECTION_TYPES = ['summary', 'experience', 'projects', 'skills', 'education', 'profile', 'target_intent']
 const DERIVATIONS: ResumeLineage['derivationType'][] = ['jd_generate', 'clone', 'user_edit', 'ai_revision']
 const ACTORS: ResumeOperation['actor'][] = ['ai', 'user', 'system']
 const ACTIONS: ResumeOperation['action'][] = ['create', 'clone', 'submit_review', 'export', 'archive', 'attempt_change_status', 'apply_proposal']
@@ -60,9 +60,10 @@ function parseSections(md: string): { sections: ResumeSection[]; issues: { path:
     }
     const content = line.match(/^\s*[-*]\s*(.+)$/)
     if (!content || !current) continue
-    // bullet 行：- {sentence}（claim: {claimId}；expectation: {eid}）；asset 行：- {name}（asset）
+    // bullet 行：- {sentence}（claim: {claimId}；expectation: {eid}）；asset 行：- {name}（asset）；identity 行：- {label} | {body}（identity）（M5.2 G6）
     const bulletOpen = content[1].indexOf('（claim: ')
     const asset = content[1].match(/^(.*?)（asset）$/)
+    const identity = content[1].match(/^(.*?)（identity）$/)
     if (bulletOpen >= 0) {
       const sentence = content[1].slice(0, bulletOpen).trim()
       const inner = content[1].slice(bulletOpen + '（claim: '.length).replace(/）$/, '')
@@ -75,6 +76,10 @@ function parseSections(md: string): { sections: ResumeSection[]; issues: { path:
       })
     } else if (asset) {
       ;(current.assetRefs ??= []).push(asset[1].trim())
+    } else if (identity) {
+      const raw = identity[1].trim()
+      const sep = raw.indexOf('|')
+      ;(current.identity ??= []).push(sep > 0 ? { label: raw.slice(0, sep).trim(), body: raw.slice(sep + 1).trim() } : { body: raw })
     } else {
       issues.push({ path: `section:${current.title}`, reason: `无法解析行：${content[1].slice(0, 40)}…`, severity: 'warn' })
     }
@@ -125,6 +130,7 @@ export function serializeResumeDocument(d: ResumeDocument): string {
   const rows = [
     `| status | ${d.status} |`,
     `| person | ${d.person} |`,
+    ...(d.targetId ? [`| target_id | ${d.targetId} |`] : []),
     ...(d.targetJobId ? [`| target_job_id | ${d.targetJobId} |`] : []),
     `| template_id | ${d.templateId} |`,
     `| template_version | ${d.templateVersion} |`,
@@ -134,8 +140,9 @@ export function serializeResumeDocument(d: ResumeDocument): string {
   ].join('\n')
   const sections = d.sections.map((s) => {
     const bullets = s.bullets.map((b) => `- ${b.sentence}（claim: ${b.claimId}${b.metadata?.expectationId ? `；expectation: ${b.metadata.expectationId}` : ''}）`).join('\n')
+    const identity = (s.identity ?? []).map((e) => `- ${e.label ? `${e.label} | ${e.body ?? ''}` : (e.body ?? '')}（identity）`).join('\n')
     const assets = (s.assetRefs ?? []).map((a) => `- ${a}（asset）`).join('\n')
-    return `### ${s.type} | ${s.title}\n\n${[bullets, assets].filter(Boolean).join('\n')}`
+    return `### ${s.type} | ${s.title}\n\n${[bullets, identity, assets].filter(Boolean).join('\n')}`
   }).join('\n\n')
   const ops = (d.operations ?? [])
     .map((o) => `- ${o.id} | ${o.actor} | ${o.action} | ${o.at}${o.note ? ` | note: ${o.note}` : ''}${o.rejected ? ' | rejected:true' : ''}`)
@@ -192,6 +199,7 @@ export function parseResumeMarkdown(md: string, sourceFile: string): Validated<R
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     status: STATUSES.includes(status) ? status : 'draft',
     person: fields.person ?? '',
+    ...(fields.target_id ? { targetId: fields.target_id } : {}),
     ...(fields.target_job_id ? { targetJobId: fields.target_job_id } : {}),
     templateId: fields.template_id ?? '',
     templateVersion: fields.template_version ?? '',
@@ -252,7 +260,7 @@ export function watchResumes(ws: Workspace, onChanged: (parsed: ParsedResume[]) 
     if (!p.endsWith('.md')) return
     // Windows：chokidar 路径为反斜杠，统一转正斜杠再判断/取文件名
     const norm = p.replace(/\\/g, '/')
-    if (norm.includes(`${ws.paths.resumes}/drafts`)) {
+    if (norm.includes('/drafts/')) {
       const name = norm.split('/').pop() ?? norm
       if (assembleDraftFile(ws, name)) rescan()
       return

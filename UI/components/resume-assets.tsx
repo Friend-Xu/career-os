@@ -51,7 +51,10 @@ export function ResumeAssets() {
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无 Evidence——通过主动沉淀或 JD 驱动收集</Typography>
         ) : (
           <Stack spacing={1}>
-            {evidenceItems.map((e) => (
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+              Active · {evidenceItems.filter((e) => e.lifecycle !== 'legacy').length}
+            </Typography>
+            {evidenceItems.filter((e) => e.lifecycle !== 'legacy').map((e) => (
               <Box key={e.id} sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                   <Typography sx={{ fontSize: 12.5, color: COLORS.text, flex: 1, minWidth: 0 }} noWrap>
@@ -62,6 +65,28 @@ export function ResumeAssets() {
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>{e.contribution}</Typography>
               </Box>
             ))}
+            {(() => {
+              const legacy = evidenceItems.filter((e) => e.lifecycle === 'legacy')
+              if (legacy.length === 0) return null
+              return (
+                <>
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 1 }}>
+                    Historical（legacy·开发期/历史，不进新表达）· {legacy.length}
+                  </Typography>
+                  {legacy.map((e) => (
+                    <Box key={e.id} sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: alpha(COLORS.textMuted, 0.04) }}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                        <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, flex: 1, minWidth: 0 }} noWrap>
+                          {e.event.title}
+                        </Typography>
+                        <Chip size="small" label="legacy" sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.textMuted, 0.1), color: COLORS.textMuted }} />
+                      </Stack>
+                      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, opacity: 0.8 }}>{e.contribution}</Typography>
+                    </Box>
+                  ))}
+                </>
+              )
+            })()}
           </Stack>
         )}
       </Box>

@@ -7,7 +7,7 @@
  * 摘要表协议（SKILL.md）：`## 分析摘要` 两列表格（字段|值），字段 snake_case；
  * 缺失值填 `-`（属常态）；risk_level 四档中文（低/中/中高/高）；city_score X/10。
  */
-import type { Confidence, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
+import type { Confidence, DecisionInputs, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
 import { validateByProtocol, type Validated, finalize } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
@@ -30,6 +30,7 @@ const FIELD_MAP: Record<string, keyof DecisionRecord> = {
   status: 'status',
   protocol_version: 'protocolVersion',
   profile: 'profile',
+  person_id: 'personId',
 }
 
 const RISK_MAP: Record<string, RiskLevel> = { 低: 'low', 中: 'medium', 中高: 'high', 高: 'high' }
@@ -104,6 +105,48 @@ export function parseSummaryTable(md: string): Record<string, string> | null {
 
 /** 单个决策 md → IR（摘要表缺失 → invalid；版本分派校验）。
  *  引擎登记（M1.6）后文件头有 frontmatter（id/created_at 系统生成），解析优先取其值，fallback 文件名。 */
+/**
+ * `## 输入引用` 段落 → DecisionInputs（Contract v1 inputs——对象引用带版本语义）。
+ * 列表项 `- 类型: id@meta`：evidence→snapshot / skill→version / constraint、knowledge 仅 id；
+ * 4 类前缀之外跳过；无任何条目 → undefined（存量决策无 inputs 段）。
+ */
+function parseInputRefs(md: string): DecisionInputs | undefined {
+  const section = md.match(/## 输入引用([\s\S]*?)(?=\n## |$)/)?.[1]
+  if (!section) return undefined
+  const inputs: DecisionInputs = { evidenceRefs: [], skillRefs: [], constraintRefs: [], knowledgeRefs: [] }
+  for (const line of section.split('\n')) {
+    const item = line.trim().replace(/^[-*]\s*/, '')
+    if (!item) continue
+    const sep = item.indexOf(':')
+    if (sep === -1) continue
+    const type = item.slice(0, sep).trim()
+    const rest = item.slice(sep + 1).trim()
+    const [id, meta] = rest.split('@')
+    if (!id) continue
+    switch (type) {
+      case 'evidence':
+      case 'evidence_refs':
+        inputs.evidenceRefs.push({ id: id.trim(), ...(meta ? { snapshot: meta.trim() } : {}) })
+        break
+      case 'skill':
+      case 'skill_refs':
+        inputs.skillRefs.push({ id: id.trim(), ...(meta ? { version: meta.trim() } : {}) })
+        break
+      case 'constraint':
+      case 'constraint_refs':
+        inputs.constraintRefs.push({ id: id.trim() })
+        break
+      case 'knowledge':
+      case 'knowledge_refs':
+        inputs.knowledgeRefs.push({ id: id.trim() })
+        break
+    }
+  }
+  const hasAny = inputs.evidenceRefs.length > 0 || inputs.skillRefs.length > 0 ||
+    inputs.constraintRefs.length > 0 || inputs.knowledgeRefs.length > 0
+  return hasAny ? inputs : undefined
+}
+
 export function parseDecisionMarkdown(md: string, sourceFile: string): Validated<DecisionRecord> {
   const { meta, body } = splitFrontmatter(md)
   const fields = parseSummaryTable(body)
@@ -119,6 +162,8 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
     createdAt: meta.created_at ?? deriveCreatedAt(sourceFile),
     summary: deriveSummary(body) || deriveTitle(body, sourceFile),
   }
+  const inputs = parseInputRefs(body)
+  if (inputs) record.inputs = inputs
   for (const [tableField, irField] of Object.entries(FIELD_MAP)) {
     const raw = fields[tableField]
     if (raw === undefined || raw === '-' || raw === '') continue

@@ -2,22 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { DecisionRecord } from '../ir/schema.ts'
 import {
+  DECISION_TYPE_ORDER,
   DecisionRuntime,
-  stageOfSkill,
-  stageProgressed,
-  STAGE_ORDER,
-  type StageId,
+  decisionTypeOf,
+  type DecisionType,
 } from '../runtime/decision-runtime.ts'
-
-const ALL_STAGES: readonly StageId[] = ['方向探索', '转行评估', '城市评估', '公司筛选', 'JD分析', '简历定制']
-const CANONICAL_SKILLS = [
-  'career-path',
-  'career-transition',
-  'city-advisor',
-  'company-screener',
-  'jd-analysis',
-  'resume-writing',
-]
 
 function record(partial: Pick<DecisionRecord, 'id' | 'skill' | 'createdAt'> & Partial<DecisionRecord>): DecisionRecord {
   return {
@@ -54,177 +43,126 @@ function degradedRecord(partial: Pick<DecisionRecord, 'id' | 'skill' | 'createdA
 
 const runtime = new DecisionRuntime()
 
-test('空决策：6 阶段全 pending、方向探索 current、progressedAt 空', () => {
-  const chain = runtime.computeChain([], '我')
-  assert.deepEqual(chain.stages.map((s) => s.status), ['current', 'pending', 'pending', 'pending', 'pending', 'pending'])
-  assert.equal(chain.currentStage, '方向探索')
-  assert.equal(chain.progressedAt, '')
-  assert.equal(chain.person, '我')
+test('空决策：groups 为空（无任何类型输出）', () => {
+  const history = runtime.computeHistory([], '我')
+  assert.deepEqual(history.groups, [])
+  assert.equal(history.person, '我')
 })
 
-test('方向探索决策：方向探索 completed、转行评估 current', () => {
-  const chain = runtime.computeChain(
+test('方向探索决策：direction 组（label/decisionIds/updatedAt）', () => {
+  const history = runtime.computeHistory(
     [record({ id: 'd-1', skill: 'career-path', createdAt: '2026-08-01' })],
     '我',
   )
-  assert.deepEqual(chain.stages.map((s) => s.status), ['completed', 'current', 'pending', 'pending', 'pending', 'pending'])
-  assert.equal(chain.currentStage, '转行评估')
-  assert.equal(chain.progressedAt, '2026-08-01')
+  assert.equal(history.groups.length, 1)
+  const g = history.groups[0]!
+  assert.equal(g.type, 'direction')
+  assert.equal(g.label, '方向探索')
+  assert.deepEqual(g.decisionIds, ['d-1'])
+  assert.equal(g.updatedAt, '2026-08-01')
 })
 
-test('顺序写入 6 阶段决策：全部 completed、终态 currentStage 停在简历定制', () => {
-  const decisions = CANONICAL_SKILLS.map((skill, i) =>
-    record({ id: `d-${i}`, skill, createdAt: `2026-08-0${i + 1}` }),
+test('多种类型决策：按固定顺序输出已有类型，无决策类型不输出', () => {
+  const decisions = [
+    record({ id: 'd-1', skill: 'jd-analysis', createdAt: '2026-08-01' }),
+    record({ id: 'd-2', skill: 'city-advisor', createdAt: '2026-08-02' }),
+    record({ id: 'd-3', skill: 'career-path', createdAt: '2026-08-03' }),
+  ]
+  const history = runtime.computeHistory(decisions, '我')
+  assert.deepEqual(
+    history.groups.map((g) => g.type),
+    ['direction', 'city', 'jd'],
   )
-  const chain = runtime.computeChain(decisions, '我')
-  assert.deepEqual(chain.stages.map((s) => s.status), ALL_STAGES.map(() => 'completed'))
-  assert.equal(chain.currentStage, '简历定制')
-  assert.equal(chain.progressedAt, '2026-08-06')
-})
-
-test('跳阶段（先写城市评估）：城市评估 backfill completed，链不推进（方向探索仍 current）', () => {
-  const chain = runtime.computeChain(
-    [record({ id: 'd-1', skill: 'city-advisor', createdAt: '2026-08-01' })],
-    '我',
+  // 固定顺序 = DECISION_TYPE_ORDER 过滤
+  assert.deepEqual(
+    history.groups.map((g) => g.type),
+    DECISION_TYPE_ORDER.filter((t) => t !== 'company' && t !== 'resume'),
   )
-  assert.deepEqual(chain.stages.map((s) => s.status), ['current', 'pending', 'completed', 'pending', 'pending', 'pending'])
-  assert.equal(chain.currentStage, '方向探索')
 })
 
-test('跳阶段后的线性推进：补齐方向/转行后 current 依次越过已 backfill 阶段', () => {
-  const chain = runtime.computeChain(
+test('同类型多条决策：decisionIds 收集 + updatedAt 取最近', () => {
+  const history = runtime.computeHistory(
     [
-      record({ id: 'd-1', skill: 'city-advisor', createdAt: '2026-08-01' }),
-      record({ id: 'd-2', skill: 'career-path', createdAt: '2026-08-02' }),
-      record({ id: 'd-3', skill: 'career-transition', createdAt: '2026-08-03' }),
+      record({ id: 'd-1', skill: 'career-path', createdAt: '2026-08-01' }),
+      record({ id: 'd-2', skill: 'direction-explore', createdAt: '2026-08-02' }),
     ],
     '我',
   )
-  assert.deepEqual(chain.stages.map((s) => s.status), ['completed', 'completed', 'completed', 'current', 'pending', 'pending'])
-  assert.equal(chain.currentStage, '公司筛选')
-  assert.equal(chain.progressedAt, '2026-08-03')
-})
-
-test('多阶段决策混合（方向 + 城市，原型变体 skill）：链正确 + 参数挂当前阶段', () => {
-  const chain = runtime.computeChain(
-    [
-      record({ id: 'd-1', skill: 'direction-explore', direction: '机器人', city: '深圳', createdAt: '2026-08-01' }),
-      record({ id: 'd-2', skill: 'city-eval', direction: '机器人', city: '苏州', createdAt: '2026-08-02' }),
-    ],
-    '我',
-  )
-  assert.deepEqual(chain.stages.map((s) => s.status), ['completed', 'current', 'completed', 'pending', 'pending', 'pending'])
-  assert.equal(chain.currentStage, '转行评估')
-  const current = chain.stages.find((s) => s.stage === chain.currentStage)!
-  assert.equal(current.direction, '机器人')
-  assert.equal(current.city, '苏州')
-  assert.equal(chain.progressedAt, '2026-08-02')
+  const g = history.groups[0]!
+  assert.deepEqual(g.decisionIds, ['d-1', 'd-2'])
+  assert.equal(g.updatedAt, '2026-08-02')
 })
 
 test('direction/city 随最新决策更新：非空值合并，部分更新不覆盖', () => {
-  const chain = runtime.computeChain(
+  const history = runtime.computeHistory(
     [
       record({ id: 'd-1', skill: 'career-path', direction: '机器人', city: '深圳', createdAt: '2026-08-01' }),
-      record({ id: 'd-2', skill: 'career-transition', direction: '机器人研发', createdAt: '2026-08-02' }),
+      record({ id: 'd-2', skill: 'direction-explore', direction: '机器人研发', createdAt: '2026-08-02' }),
     ],
     '我',
   )
-  const current = chain.stages.find((s) => s.stage === chain.currentStage)!
-  assert.equal(chain.currentStage, '城市评估')
-  assert.equal(current.direction, '机器人研发') // 最新决策更新 direction
-  assert.equal(current.city, '深圳') // 最新决策无 city，保留前值
+  const g = history.groups[0]!
+  assert.equal(g.direction, '机器人研发') // 最新决策更新 direction
+  assert.equal(g.city, '深圳') // 最新决策无 city，保留前值
 })
 
-test('invalid 决策不推进链：全 pending、progressedAt 空；不影响同链合法决策', () => {
-  const onlyInvalid = runtime.computeChain(
+test('invalid 决策不进入历史；不影响同类型合法决策', () => {
+  const onlyInvalid = runtime.computeHistory(
     [invalidRecord({ id: 'd-bad', skill: 'career-path', createdAt: '2026-08-01' })],
     '我',
   )
-  assert.deepEqual(onlyInvalid.stages.map((s) => s.status), ['current', 'pending', 'pending', 'pending', 'pending', 'pending'])
-  assert.equal(onlyInvalid.progressedAt, '')
+  assert.deepEqual(onlyInvalid.groups, [])
 
-  const mixed = runtime.computeChain(
+  const mixed = runtime.computeHistory(
     [
       invalidRecord({ id: 'd-bad', skill: 'career-path', createdAt: '2026-08-01' }),
       record({ id: 'd-ok', skill: 'career-path', createdAt: '2026-08-02' }),
     ],
     '我',
   )
-  assert.deepEqual(mixed.stages.map((s) => s.status), ['completed', 'current', 'pending', 'pending', 'pending', 'pending'])
-  assert.equal(mixed.progressedAt, '2026-08-02')
+  assert.deepEqual(mixed.groups[0]!.decisionIds, ['d-ok'])
+  assert.equal(mixed.groups[0]!.updatedAt, '2026-08-02')
 })
 
-test('degraded 决策参与推进（仅 invalid 排除）', () => {
-  const chain = runtime.computeChain(
+test('degraded 决策参与历史（仅 invalid 排除）', () => {
+  const history = runtime.computeHistory(
     [degradedRecord({ id: 'd-1', skill: 'career-path', createdAt: '2026-08-01' })],
     '我',
   )
-  assert.deepEqual(chain.stages.map((s) => s.status), ['completed', 'current', 'pending', 'pending', 'pending', 'pending'])
+  assert.deepEqual(history.groups[0]!.decisionIds, ['d-1'])
 })
 
-test('按人隔离：两人各自链互不影响', () => {
+test('按人隔离：两人各自历史互不影响', () => {
   const decisions = [
     record({ id: 'd-1', skill: 'career-path', profile: '我', createdAt: '2026-08-01' }),
     record({ id: 'd-2', skill: 'city-advisor', profile: '家人 A', createdAt: '2026-08-02' }),
   ]
-  const a = runtime.computeChain(decisions, '我')
-  const b = runtime.computeChain(decisions, '家人 A')
-  assert.deepEqual(a.stages.map((s) => s.status), ['completed', 'current', 'pending', 'pending', 'pending', 'pending'])
-  assert.deepEqual(b.stages.map((s) => s.status), ['current', 'pending', 'completed', 'pending', 'pending', 'pending'])
-  assert.equal(a.currentStage, '转行评估')
-  assert.equal(b.currentStage, '方向探索')
+  const a = runtime.computeHistory(decisions, '我')
+  const b = runtime.computeHistory(decisions, '家人 A')
+  assert.deepEqual(a.groups.map((g) => g.type), ['direction'])
+  assert.deepEqual(b.groups.map((g) => g.type), ['city'])
 })
 
-test('stageOfSkill：规范名精确映射', () => {
-  const expected: [string, StageId][] = [
-    ['career-path', '方向探索'],
-    ['career-transition', '转行评估'],
-    ['city-advisor', '城市评估'],
-    ['company-screener', '公司筛选'],
-    ['jd-analysis', 'JD分析'],
-    ['resume-writing', '简历定制'],
+test('decisionTypeOf：规范名精确映射（career-transition 并入 direction）', () => {
+  const expected: [string, DecisionType][] = [
+    ['career-path', 'direction'],
+    ['career-transition', 'direction'],
+    ['city-advisor', 'city'],
+    ['company-screener', 'company'],
+    ['jd-analysis', 'jd'],
+    ['resume-writing', 'resume'],
   ]
-  for (const [skill, stage] of expected) assert.equal(stageOfSkill(skill), stage)
+  for (const [skill, type] of expected) assert.equal(decisionTypeOf(skill), type)
 })
 
-test('stageOfSkill：原型变体关键词推断 + 未命中归入方向探索', () => {
-  assert.equal(stageOfSkill('direction-explore'), '方向探索')
-  assert.equal(stageOfSkill('transfer-eval'), '转行评估')
-  assert.equal(stageOfSkill('city-eval'), '城市评估')
-  assert.equal(stageOfSkill('city-compare'), '城市评估')
-  assert.equal(stageOfSkill('resume'), '简历定制')
-  assert.equal(stageOfSkill('城市对比'), '城市评估')
-  assert.equal(stageOfSkill('unknown-skill'), '方向探索')
-  assert.equal(stageOfSkill(undefined), '方向探索')
-  assert.equal(stageOfSkill(''), '方向探索')
-})
-
-test('stageProgressed：currentStage 变化 → 推进事件；不变 → 不推进', () => {
-  const prev = runtime.computeChain([], '我')
-  const next = runtime.computeChain(
-    [record({ id: 'd-1', skill: 'career-path', createdAt: '2026-08-01' })],
-    '我',
-  )
-  assert.deepEqual(stageProgressed(prev, next), { progressed: true, from: '方向探索', to: '转行评估' })
-
-  // 同阶段再写一条：链不推进
-  const again = runtime.computeChain(
-    [
-      record({ id: 'd-1', skill: 'career-path', createdAt: '2026-08-01' }),
-      record({ id: 'd-2', skill: 'career-path', createdAt: '2026-08-02' }),
-    ],
-    '我',
-  )
-  assert.deepEqual(stageProgressed(next, again), { progressed: false, from: null, to: null })
-})
-
-test('决策链阶段数恒为 6，顺序固定', () => {
-  const chain = runtime.computeChain(
-    [record({ id: 'd-1', skill: 'city-eval', createdAt: '2026-08-01' })],
-    '我',
-  )
-  assert.deepEqual(
-    chain.stages.map((s) => s.stage),
-    [...STAGE_ORDER],
-  )
+test('decisionTypeOf：原型变体关键词推断 + 未命中归入 direction', () => {
+  assert.equal(decisionTypeOf('direction-explore'), 'direction')
+  assert.equal(decisionTypeOf('transfer-eval'), 'direction')
+  assert.equal(decisionTypeOf('city-eval'), 'city')
+  assert.equal(decisionTypeOf('city-compare'), 'city')
+  assert.equal(decisionTypeOf('resume'), 'resume')
+  assert.equal(decisionTypeOf('城市对比'), 'city')
+  assert.equal(decisionTypeOf('unknown-skill'), 'direction')
+  assert.equal(decisionTypeOf(undefined), 'direction')
+  assert.equal(decisionTypeOf(''), 'direction')
 })

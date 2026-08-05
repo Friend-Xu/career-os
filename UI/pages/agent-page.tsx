@@ -24,13 +24,16 @@ import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { ModelSelect } from '../components/model-select'
+import { MarkdownView } from '../components/markdown-view'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord, QuestionCard } from '../types'
 
 function ContextCapsule() {
   const person = useAppStore((s) => s.currentPerson())
-  const personStages = useAppStore((s) => s.personStages[person.id])
-  const current = (personStages ?? []).find((s) => s.status === 'current')
+  const decisions = useAppStore((s) => s.decisions)
+
+  // ADR-008：探索记录（决策链语义降级）——该人决策总数，非阶段推进
+  const exploreCount = decisions.filter((d) => d.profile === person.name).length
 
   return (
     <Stack
@@ -53,7 +56,7 @@ function ContextCapsule() {
       />
       <Chip
         size="small"
-        label={`阶段: ${current?.label ?? '—'}`}
+        label={`探索记录 ${exploreCount}`}
         sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }}
       />
       <Chip
@@ -382,9 +385,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               }`,
             }}
           >
-            <Typography sx={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-              {msg.content}
-            </Typography>
+            {msg.role === 'user' ? (
+              <Typography sx={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                {msg.content}
+              </Typography>
+            ) : (
+              <MarkdownView content={msg.content} />
+            )}
             {msg.reportCard && <ReportCard record={msg.reportCard} />}
           </Box>
         )}

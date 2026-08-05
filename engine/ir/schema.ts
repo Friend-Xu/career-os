@@ -28,10 +28,11 @@ export interface ToolCallInfo {
   status: ToolCallStatus
 }
 
-/** 人（角色 = 人，不是岗位）：profiles/{name}.md */
+/** 人（角色 = 人，不是岗位）：profiles/{name}.md（旧）→ persons/{person_id}/（M6.5 新真相源） */
 export interface Person {
   id: number
-  name: string // 对应 profiles/{name}.md
+  name: string // 展示名（对应 persons/{person_id}/manifest.md name 或 profiles/{name}.md）
+  personId?: string // M6.5：引擎 person 稳定标识（person_001）——owner 协议引用键
   color: string
   emoji: string
   matchScore: number
@@ -42,27 +43,67 @@ export interface Person {
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
 }
 
-/** 决策链状态机（V1）：6 阶段线性链投影视图（decision-runtime 派生，不落盘） */
-export type StageId = '方向探索' | '转行评估' | '城市评估' | '公司筛选' | 'JD分析' | '简历定制'
-export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped'
-export interface PersonStage {
-  stage: StageId
-  status: StageStatus
-  direction?: string
-  city?: string
-  /** 该阶段全部合法决策 id（computeChain 收集；UI 阶段点击 → 该阶段决策列表） */
-  decisionIds?: string[]
+// ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
+
+/**
+ * Person 快照（persons/{person_id}/ 投影）：manifest + snapshot/*.md + events/ 计数。
+ * 当前状态投影（非可编辑真相源）——来源可包括 Change Events、用户确认输入、
+ * 迁移后的历史资产。Snapshot 是事实层；UI 展示 Person 由引擎从快照映射。
+ */
+export interface PersonSnapshot {
+  personId: string // person_001（manifest id）
+  name: string // 展示名（manifest name）
+  status: string // active / archived（manifest status）
+  manifestPath: string // persons/{person_id}/manifest.md
+  identity?: {
+    education?: string
+    graduationYear?: string
+    location?: string
+    currentStatus?: string
+    yearsExperience?: string
+  }
+  careerProfile?: {
+    currentRole?: string
+    targetRoles?: string[]
+    excludedRoles?: string[]
+  }
+  preference?: {
+    salaryRange?: string
+    city?: string
+  }
+  /** M6.6.5：confirmed 技能（snapshot/skill_inventory.md 派生；inferred/learned 不进） */
+  skills?: PersonSkill[]
+  /** skill_inventory 版本（frontmatter status: vX；Decision inputs.skillRefs.version） */
+  skillInventoryVersion?: string
+  eventCount: number // events/*.md 计数（Change Events 轻协议）
 }
-export interface DecisionChain {
+
+/** 决策类型标签（ADR-008 语义降级：不是链上阶段，是 Decision Intelligence 分析类型） */
+export type DecisionType = 'direction' | 'city' | 'company' | 'jd' | 'resume'
+/** 决策历史分组（决策记录按类型聚合；computeHistory 纯投影，不落盘） */
+export interface DecisionHistoryGroup {
+  type: DecisionType
+  /** 中文展示名（方向探索/城市评估/公司筛选/JD分析/简历定制） */
+  label: string
+  /** 该类型全部合法决策 id（computeHistory 收集；UI 类型点击 → 该类型决策列表） */
+  decisionIds: string[]
+  /** 最新合法决策的 direction（非空值合并，部分更新不覆盖） */
+  direction?: string
+  /** 最新合法决策的 city（非空值合并） */
+  city?: string
+  /** 最近一条合法决策的 createdAt（无合法决策不输出该组） */
+  updatedAt: string
+}
+export interface DecisionHistory {
   person: string // 决策记录归属人（profile）
-  stages: PersonStage[] // 6 阶段线性链
-  currentStage: StageId
-  progressedAt: string // 最近一次推进时间
+  groups: DecisionHistoryGroup[] // 仅含已有决策的类型，按类型固定顺序
 }
 
 // ─── V1.5：决策问题绑定与聚合（4.3 定稿；context 文件真相源，聚合运行时组装不落盘）──
+// ─── M6.6.3：Decision Status 对齐 Contract v1（Record 生命周期 4 值）——
+//      legacy 值（evaluating/decided/reviewing）经 normalizeDecisionStatus 归一化，原始记录不修改 ──
 
-export type ContextStatus = 'exploring' | 'evaluating' | 'decided' | 'reviewing'
+export type DecisionStatus = 'exploring' | 'accepted' | 'rejected' | 'revisiting'
 
 /** 问题绑定（轻量文件 `decision-contexts/{问题}.md`，skill/用户维护，引擎只读解析） */
 export interface DecisionContext {
@@ -70,24 +111,84 @@ export interface DecisionContext {
   person: string
   question: string
   relatedDecisions: string[] // decisions/ 下文件名（不含扩展名）
-  status: ContextStatus
+  status: DecisionStatus
   createdAt: string
+}
+
+/** 候选（Contract v1 options[].status 保留——Record 状态不替代候选状态） */
+export interface DecisionOption {
+  name: string
+  status: 'candidate' | 'selected' | 'rejected'
+  support: string[]
+  gap: string[]
+  risk: string[]
+  reasons?: string[]
+}
+
+/** 分析过程记录（Contract v1 analysis）——confidence 数值/解释分离，不强制模块量化 */
+export interface DecisionAnalysis {
+  method: string
+  confidence?: { level: Confidence; score?: number }
+}
+
+/** 人的裁决（Contract v1 user_decision：分析 ≠ 选择；commitment 为 M7 Ledger 预留） */
+export interface UserDecision {
+  selected: string | null
+  rejected: string[]
+  deferred: string[]
+  commitment?: 'tentative' | 'confirmed' | 'abandoned'
 }
 
 /** 聚合视图（引擎运行时组装：Record + Context 派生，不落盘、引擎不自己打分） */
 export interface DecisionAggregate {
   context: DecisionContext
   records: DecisionRecord[] // 一个问题的多个方向决策（Options 展开形态）
-  options: { name: string; status: 'candidate' | 'selected' | 'rejected'; reasons?: string[] }[]
+  options: DecisionOption[]
   factors: { name: string; description: string }[] // 只记概念，不评分
   evidence: { type: string; content: string; source?: string }[]
-  conclusion?: { selected: string; confidence: number }
+  analysis?: DecisionAnalysis // Contract: analysis
+  unknowns: string[] // Contract: unknowns——系统主动声明不知道什么（不确定性容器）
+  conclusion?: { selected: string; confidence: number } // legacy 形态（与 userDecision.selected 同源，UI 兼容保留）
   risks: { description: string; mitigation?: string }[]
+  userDecision?: UserDecision // Contract: user_decision（从 options/conclusion 派生）
   /** 复盘记录（`## 复盘` 段落，作者写入；存在时聚合视图展示"已复盘"派生状态） */
   review?: { conclusion: string; date: string }
 }
 
-/** 决策记录（14 字段摘要表；profile = 人名，v2.1） */
+/** 决策输入引用（Contract v1 inputs——对象引用带版本语义，不裸 ID；历史解释不依赖当前最新状态） */
+export interface DecisionInputRef {
+  id: string
+  /** evidence 引用时的生命周期（active/legacy/archived） */
+  snapshot?: string
+  /** skill_inventory 引用版本（v1/v2…） */
+  version?: string
+}
+export interface DecisionInputs {
+  evidenceRefs: DecisionInputRef[]
+  skillRefs: DecisionInputRef[]
+  constraintRefs: DecisionInputRef[]
+  knowledgeRefs: DecisionInputRef[]
+}
+
+// ─── M6.6.5：JD Intelligence 结果（Contract v1 对齐形态——options/unknowns/inputs；不产生 user_decision）──
+
+export interface JDIntelligenceOption {
+  candidate: string
+  status: 'candidate'
+  support: string[]
+  gap: string[]
+  risk: string[]
+}
+export interface JDIntelligenceResult {
+  type: 'jd'
+  question: string
+  options: JDIntelligenceOption[]
+  analysis: { method: string }
+  unknowns: string[]
+  inputs: DecisionInputs
+}
+
+/** 决策记录（14 字段摘要表；profile = 人名，v2.1；M6.6.4 增加 personId/inputs——Person Aggregate 引用非快照） */
 export interface DecisionRecord {
   id: string
   title: string
@@ -105,6 +206,10 @@ export interface DecisionRecord {
   summary: string
   createdAt: string
   protocolVersion: string
+  /** ADR-013 单身份源（存量无 person_id 时按 profile 人名映射） */
+  personId?: string
+  /** Contract v1 inputs：本次分析引用的 Person Aggregate 资产（`## 输入引用` 段落） */
+  inputs?: DecisionInputs
 }
 
 // ─── V2.1：Evidence Pattern Registry v0（工程族岗位证据词表；引擎单方定义，扩展走 Registry 条目）──
@@ -216,6 +321,10 @@ export const EVIDENCE_DIMENSIONS_V0: readonly EvidenceDimensionDefinition[] = [
 /** 个人证据条目（Event 为根；role/contribution 分离——岗位责任与个人贡献语义不同） */
 export interface EvidenceItem {
   id: string // evidence_{YYYYMMDD}_{NNNNN}，引擎登记生成（artifact-registry）
+  owner?: string // M6.5：归属 person_id（persons/{person_id}/，ADR-009 Owner Protocol）
+  lifecycle?: 'active' | 'legacy' | 'archived' // ADR-011：legacy=开发期提取/构造（不参与新表达）
+  origin?: string // dev_era_extraction / resume_import / self_report / development_fixture
+  type?: 'professional_experience' | 'independent_project' | 'learning_record' // M6.5 经历分类
   event: {
     title: string // 事件名："减速机壳体结构设计项目"
     context?: string // 背景（可选）
@@ -254,6 +363,8 @@ export interface ClaimProvenance {
  */
 export interface CareerClaim {
   id: string // claim_{YYYYMMDD}_{NNNNN}，引擎登记生成（artifact-registry）
+  owner?: string // M6.5：归属 person_id（persons/{person_id}/，ADR-009 Owner Protocol）
+  lifecycle?: 'active' | 'legacy' | 'archived' // ADR-011：legacy=开发期表达（基于 legacy evidence）
   created_at: string // ISO 时间戳（表达资产生成时间）
   source: ClaimSource
   statement: string // 可声明的表达
@@ -302,10 +413,12 @@ export interface Role {
   skills: { name: string; essential: boolean; source: string }[]
 }
 
-/** 画像技能声明（profiles/{名字}.md `## 技能` 段落，Open Badges Assertion 简化：{技能, 熟练度}） */
+/** 画像技能声明（profiles/{名字}.md `## 技能` 段落 legacy；M6.6.5 起 Person.skills 由 skill_inventory.md 派生） */
 export interface PersonSkill {
   name: string
   level: number // 1-5（SFIA 式行为锚点）
+  /** skill_inventory 的 skill_id（M6.6.5：Decision inputs.skillRefs 的 provenance 键） */
+  skillId?: string
 }
 
 /** 差距分析（纯派生视图：目标 Role 技能矩阵 vs 画像技能声明；引擎不自己打分，只做清单） */

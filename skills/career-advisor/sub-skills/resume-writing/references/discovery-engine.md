@@ -230,10 +230,11 @@ frontier 为空 = "系统有足够信息能独立写出简历的所有部分，�
 
 ```
 查找顺序：
-  1. workspace/career-advisor/profiles/{用户名}.md         ← 已有基本信息/技能画像/目标方向
-  2. workspace/career-advisor/decisions/*.md               ← 已有决策（避免重复问）
-  3. 用户上传的简历文件内容                                 ← 已有简历的字段
-  4. workspace/career-advisor/INDEX.md                     ← 当前状态
+  1. workspace/career-advisor/persons/{person_id}/snapshot/   ← 身份/经历/技能/偏好（identity/experience_inventory/skill_inventory/preference_constraints）
+  2. workspace/career-advisor/evidence/*.md                   ← active Evidence（owner=person，lifecycle≠legacy）——经历事实源
+  3. workspace/career-advisor/decisions/*.md               ← 已有决策（避免重复问）
+  4. 用户上传的简历文件内容                                 ← 已有简历的字段
+  5. workspace/career-advisor/INDEX.md                     ← 当前状态
 
 如果 profile.md 不存在 → 问用户（一次性收集）：
   - 当前岗位 / 工作年限

@@ -99,6 +99,12 @@ export function parseEvidenceMarkdown(md: string, sourceFile: string): Validated
 
   const record: EvidenceItem = {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
+    ...(meta.owner ? { owner: meta.owner } : {}), // M6.5：归属 person_id（frontmatter owner）
+    ...(meta.lifecycle && ['active', 'legacy', 'archived'].includes(meta.lifecycle)
+      ? { lifecycle: meta.lifecycle as 'active' | 'legacy' | 'archived' } : {}), // ADR-011
+    ...(meta.origin ? { origin: meta.origin } : {}), // ADR-011：来源定性
+    ...(meta.type && ['professional_experience', 'independent_project', 'learning_record'].includes(meta.type)
+      ? { type: meta.type as 'professional_experience' | 'independent_project' | 'learning_record' } : {}), // M6.5 经历分类
     event: {
       title: fields.event ?? deriveTitle(body, sourceFile),
       ...(fields.period ? { period: fields.period } : {}),

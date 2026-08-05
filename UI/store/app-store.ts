@@ -28,7 +28,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionChain, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
@@ -947,31 +947,10 @@ export const useAppStore = create<AppState>()(
   },
 
   addDecision: (record) => {
-    // 引擎 connected：决策真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉），
-    // 本地只保留内存写入（演示模式不写引擎），不本地推进阶段——避免与引擎派生打架。
-    // 引擎 offline：演示模式本地推进（当前 stage 完成 → 下一 pending 置 current）。
-    const { currentPersonId, personStages, engineStatus } = get()
-    const stages = personStages[currentPersonId]
-    let nextStages = stages
-    if (engineStatus !== 'connected' && stages) {
-      const idx = stages.findIndex((s) => s.status === 'current')
-      nextStages = stages.map((s, i) => {
-        if (idx >= 0 && i === idx) {
-          return {
-            ...s,
-            status: 'completed' as const,
-            completedAt: new Date().toISOString().slice(0, 10),
-          }
-        }
-        if (idx >= 0 && i === idx + 1 && s.status === 'pending') {
-          return { ...s, status: 'current' as const }
-        }
-        return s
-      })
-    }
+    // ADR-008：决策链语义降级——决策写入不推进阶段（决策是分析记录，非流程步骤）。
+    // 引擎 connected：真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉）。
     set((state) => ({
       decisions: [record, ...state.decisions],
-      personStages: { ...personStages, [currentPersonId]: nextStages },
     }))
   },
 
@@ -1607,39 +1586,30 @@ async function pullHealth(): Promise<void> {
   }
 }
 
-/** 引擎决策链 6 阶段中文名 → UI DecisionStage.id */
-const STAGE_ID_BY_NAME: Record<DecisionChain['stages'][number]['stage'], string> = {
-  方向探索: 'direction',
-  转行评估: 'transfer',
-  城市评估: 'city',
-  公司筛选: 'company',
-  JD分析: 'jd',
-  简历定制: 'resume',
-}
-
-/** 引擎链投影 → UI 阶段（label 直接用引擎中文名；direction/city 挂在当前阶段） */
-function chainToPersonStages(chain: DecisionChain): DecisionStage[] {
-  return chain.stages.map((s) => ({
-    id: STAGE_ID_BY_NAME[s.stage],
-    label: s.stage,
-    status: s.status,
-    ...(s.direction !== undefined ? { direction: s.direction } : {}),
-    ...(s.city !== undefined ? { city: s.city } : {}),
-    ...(s.decisionIds !== undefined ? { decisionIds: s.decisionIds } : {}),
+/** 引擎决策历史分组 → UI DecisionStage（status 语义：该类型是否有合法决策） */
+function historyToPersonStages(history: DecisionHistory): DecisionStage[] {
+  return history.groups.map((g) => ({
+    id: g.type,
+    label: g.label,
+    status: g.decisionIds.length > 0 ? 'completed' : 'pending',
+    ...(g.direction !== undefined ? { direction: g.direction } : {}),
+    ...(g.city !== undefined ? { city: g.city } : {}),
+    ...(g.decisionIds.length > 0 ? { decisionIds: g.decisionIds } : {}),
+    ...(g.updatedAt ? { completedAt: g.updatedAt } : {}),
   }))
 }
 
-async function pullChains(): Promise<void> {
+async function pullHistories(): Promise<void> {
   if (!engine) return
   try {
-    const chains = await engine.listChains()
+    const histories = await engine.listHistories()
     const persons = useAppStore.getState().persons
     const next: Record<number, DecisionStage[]> = {}
-    for (const chain of chains) {
-      const person = persons.find((p) => p.name === chain.person)
-      if (person) next[person.id] = chainToPersonStages(chain)
+    for (const history of histories) {
+      const person = persons.find((p) => p.name === history.person)
+      if (person) next[person.id] = historyToPersonStages(history)
     }
-    // 引擎是真相源：整体替换（引擎未建档的人无链 → 消费方按空链处理）
+    // 引擎是真相源：整体替换（引擎未建档的人无历史 → 消费方按空处理）
     useAppStore.setState({ personStages: next })
   } catch {
     // offline：保持现有数据
@@ -1651,6 +1621,17 @@ async function pullCompanies(): Promise<void> {
   try {
     const list = await engine.listCompanies()
     useAppStore.setState({ companies: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** M6.5：真实主体接入——persons/list 扫描覆盖 mock；空列表保留现状（currentPerson 无空态兜底） */
+async function pullPersons(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listPersons()
+    if (list.length > 0) useAppStore.setState({ persons: list })
   } catch {
     // offline：保持现有数据
   }
@@ -1684,7 +1665,8 @@ export function connectEngine(): void {
     }
     if (s === 'connected') {
       void pullDecisions()
-      void pullChains()
+      void pullPersons()
+      void pullHistories()
       void pullCompanies()
       void pullGraph()
       void pullContexts()
@@ -1707,7 +1689,7 @@ export function connectEngine(): void {
   })
   engine.on(EVENTS.decisionsChanged, () => {
     void pullDecisions()
-    void pullChains()
+    void pullHistories()
     void pullCompanies()
     void pullGraph()
     void pullContexts()

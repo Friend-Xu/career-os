@@ -72,6 +72,19 @@ export function alpha(color: string, opacity: number): string {
 export const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
 
 /**
+ * ADR-008：决策类型 → 视图名（决策链语义降级——决策不是链上阶段，是分析类型）。
+ * 与引擎 decisionTypeOf 映射同源（direction→方向探索 等），UI 展示用。
+ */
+export const SKILL_VIEW_LABEL: Record<string, string> = {
+  'career-path': '方向探索',
+  'career-transition': '转行评估',
+  'city-advisor': '城市评估',
+  'company-screener': '公司筛选',
+  'jd-analysis': 'JD分析',
+  'resume-writing': '简历定制',
+}
+
+/**
  * Agent API 服务商预设（设置页 Base URL 一键填入）。
  * 只收录确认支持 Anthropic 兼容端点的服务商（DeepSeek 官方文档明示 /anthropic 端点；
  * 其余网关大多仅 OpenAI 兼容，不列以免误导）。

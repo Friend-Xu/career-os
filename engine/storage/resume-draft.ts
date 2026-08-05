@@ -25,6 +25,7 @@ import { canUseClaim, indexEvidence } from './claim-policy.ts'
 // ─── 1. Draft Parser（md → manifest）──
 
 const SECTION_TYPES: ResumeSectionType[] = ['summary', 'experience', 'projects', 'skills', 'education']
+const IDENTITY_TYPES = ['profile', 'education', 'experience', 'target_intent'] as const
 const OVERRIDE_SOURCES = ['user', 'ai', 'proposal'] as const // proposal = 用户已确认的 AI 建议（Proposal Layer 应用链）
 
 /** `## Claims` 段：`- {claimId}（section: x；expectation: y；sentence_override: "..."；override_source: user）` */
@@ -69,6 +70,36 @@ function parseSkills(md: string): string[] {
   return out
 }
 
+/** `## 身份信息` 段（M5.2 G6）：`### {type} | {title}` 小节 + `- {label} | {body}` 行（无 | 则整行为 body） */
+function parseIdentitySections(md: string): ResumeDraftManifest['identitySections'] {
+  const parts = md.split(/##\s*身份信息/, 2)
+  if (parts.length < 2) return undefined
+  const section = parts[1].split(/\n##\s+/)[0]
+  const out: NonNullable<ResumeDraftManifest['identitySections']> = []
+  let current: (typeof out)[number] | null = null
+  for (const line of section.split('\n')) {
+    const head = line.match(/^###\s*(\w+)\s*\|\s*(.+)$/)
+    if (head) {
+      const t = head[1] as (typeof IDENTITY_TYPES)[number]
+      if (IDENTITY_TYPES.includes(t)) {
+        current = { type: t, title: head[2].trim(), entries: [] }
+        out.push(current)
+        continue
+      }
+      current = null
+      continue
+    }
+    const item = line.match(/^\s*[-*]\s*(.+)$/)
+    if (current && item) {
+      const content = item[1].trim()
+      if (!content || content === '-') continue
+      const sep = content.indexOf('|')
+      current.entries.push(sep > 0 ? { label: content.slice(0, sep).trim(), body: content.slice(sep + 1).trim() } : { body: content })
+    }
+  }
+  return out.filter((s) => s.entries.length > 0)
+}
+
 export function parseDraftManifest(md: string, sourceFile: string): Validated<ResumeDraftManifest> {
   const { meta, body } = splitFrontmatter(md)
   const fields = parseSummaryTable(body)
@@ -87,17 +118,20 @@ export function parseDraftManifest(md: string, sourceFile: string): Validated<Re
   const { claims, issues } = parseClaims(body)
   for (const i of issues) checks.push({ path: i.target, reason: `${i.code}: ${i.message}`, severity: 'warn' })
   const skills = parseSkills(body)
+  const identitySections = parseIdentitySections(body)
 
   const record: ResumeDraftManifest = {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     type: 'resume_draft',
     ...(fields.person ? { person: fields.person } : {}),
+    ...(fields.target_id ? { targetId: fields.target_id } : {}),
     ...(fields.target_job_id ? { targetJobId: fields.target_job_id } : {}),
     templateId: fields.template_id ?? '',
     ...(fields.template_version ? { templateVersion: fields.template_version } : {}),
     ...(fields.parent_resume_id ? { parentResumeId: fields.parent_resume_id } : {}),
     claims,
     skills,
+    ...(identitySections ? { identitySections } : {}),
   }
   return finalize(record, checks)
 }
@@ -168,7 +202,22 @@ export function assembleResumeFromDraft(input: AssembleInput): AssembleResult {
     })
   }
 
-  const sectionList = [...sections.values()]
+  // M5.2 G6：身份段（非 claim 内容——profile/education/experience/target_intent，Assembly 只投影不校验 claim）
+  // M6.3：identity body 尾缀（identity）防重复——AI 误写（draft 行自带标记）时剥离 + warning，防身份污染
+  const identityList: ResumeSection[] = (manifest.identitySections ?? []).map((s) => ({
+    type: s.type,
+    title: s.title,
+    bullets: [],
+    identity: s.entries.map((e) => {
+      if (e.body?.endsWith('（identity）')) {
+        issues.push({ code: 'IDENTITY_MARKER_IN_BODY', message: '身份条目 body 含（identity）尾缀（draft 误写）——已剥离', target: `identity:${s.type}` })
+        return { ...e, body: e.body.slice(0, -'（identity）'.length).trimEnd() }
+      }
+      return e
+    }),
+  }))
+
+  const sectionList = [...identityList, ...sections.values()]
   if (manifest.skills.length > 0) {
     skillSection.assetRefs = [...manifest.skills]
     sectionList.push(skillSection)
@@ -183,6 +232,7 @@ export function assembleResumeFromDraft(input: AssembleInput): AssembleResult {
     id: manifest.id,
     status: 'draft',
     person: manifest.person ?? '',
+    ...(manifest.targetId ? { targetId: manifest.targetId } : {}),
     ...(manifest.targetJobId ? { targetJobId: manifest.targetJobId } : {}),
     templateId: manifest.templateId,
     templateVersion: manifest.templateVersion ?? '1.0',
@@ -204,6 +254,8 @@ const SECTION_TITLES: Record<ResumeSectionType, string> = {
   projects: '项目经历',
   skills: '技能',
   education: '教育背景',
+  profile: '职业画像',
+  target_intent: '目标意向',
 }
 
 function sectionTitle(type: ResumeSectionType): string {

@@ -220,23 +220,23 @@ const evt = await waitEvent('data.decisions.changed')
 console.log('事件 →', evt.event)
 
 const list2 = await rpc('decisions/list')
-const rec = list2.find((d) => d.id === '2026-08-01-转行分析')
-if (!rec) fail('decisions/list 未返回新写入的决策')
+if (list2.length !== 1) fail(`decisions/list 应返回 1 条（M1.6 系统 ID 登记后旧文件名不保留）：${JSON.stringify(list2)}`)
+const rec = list2[0]
+const recId = rec.id
+if (!/^decision_\d{8}_\d{5}$/.test(recId)) fail(`决策系统 ID 登记异常：${recId}`)
 if (rec.validation) fail(`合法决策不应带 validation：${JSON.stringify(rec.validation)}`)
 if (rec.directionMatch !== 75 || rec.cityScore !== 82) fail(`投影字段异常：${JSON.stringify(rec)}`)
 console.log('decisions/list → 新记录：', JSON.stringify({ id: rec.id, title: rec.title, direction: rec.direction, city: rec.city, directionMatch: rec.directionMatch, cityScore: rec.cityScore, riskLevel: rec.riskLevel }))
 
-// ─── decisions/chain：按人分组派生决策链 ─────────────────────────────────
-const chain1 = await rpc('decisions/chain')
-console.log('decisions/chain →', JSON.stringify(chain1))
-if (chain1.length !== 1 || chain1[0].person !== '李明') fail('chain 应返回 1 条（李明）')
-// 线性链语义：单条 career-transition 只 backfill 转行评估 completed，current 停在链首方向探索
-if (chain1[0].currentStage !== '方向探索') fail(`chain currentStage 异常：${chain1[0].currentStage}`)
-if (chain1[0].progressedAt !== '2026-08-01') fail(`chain progressedAt 异常：${chain1[0].progressedAt}`)
-if (chain1[0].stages.length !== 6) fail('chain 应为 6 阶段')
-const stage1 = chain1[0].stages.find((s) => s.stage === '转行评估')
-if (!stage1 || stage1.status !== 'completed') fail('转行评估应 backfill completed')
-console.log('decisions/chain → 李明：转行评估 completed、方向探索 current（进度 2026-08-01）')
+// ─── decision/history：按人分组派生决策历史（按类型分组，无推进语义）────────
+const hist1 = await rpc('decision/history')
+console.log('decision/history →', JSON.stringify(hist1))
+if (hist1.length !== 1 || hist1[0].person !== '李明') fail('history 应返回 1 条（李明）')
+// 类型标签语义：career-transition 并入 direction 组
+const dirGroup = hist1[0].groups.find((g) => g.type === 'direction')
+if (!dirGroup || dirGroup.decisionIds.length !== 1) fail('direction 组应含 1 条决策')
+if (!/^\d{4}-\d{2}-\d{2}$/.test(dirGroup.updatedAt)) fail(`direction 组 updatedAt 异常：${dirGroup.updatedAt}`)
+console.log(`decision/history → 李明：direction 组 1 条（${dirGroup.updatedAt}）`)
 
 // ─── companies/list：完整 CompanyRecord + 无 validation（摘要表齐全）────
 const companies1 = await rpc('companies/list')
@@ -254,25 +254,28 @@ for (const n of graph2.nodes) byType[n.type] = (byType[n.type] ?? 0) + 1
 const edgeRels = {}
 for (const e of graph2.edges) edgeRels[e.relation] = (edgeRels[e.relation] ?? 0) + 1
 console.log('pool/graph →', graph2.nodes.length, '节点', JSON.stringify(byType), '/', graph2.edges.length, '边', JSON.stringify(edgeRels))
-for (const want of ['person:李明', 'decision:2026-08-01-转行分析', 'direction:机器人结构设计', 'city:苏州', 'company:苏舟智机器人']) {
+for (const want of ['person:李明', `decision:${recId}`, 'direction:机器人结构设计', 'city:苏州', 'company:苏舟智机器人']) {
   if (!graph2.nodes.some((n) => n.id === want)) fail(`图谱缺节点 ${want}`)
 }
 const companyNode = graph2.nodes.find((n) => n.id === 'company:苏舟智机器人')
 if (companyNode.matchScore !== 75 || companyNode.riskLevel !== 'medium') fail(`company 节点 score/risk 异常：${JSON.stringify(companyNode)}`)
 const dirNode = graph2.nodes.find((n) => n.id === 'direction:机器人结构设计')
 if (dirNode.matchScore !== 75) fail(`direction 节点 matchScore 异常：${JSON.stringify(dirNode)}`)
-if (!graph2.edges.some((e) => e.source === 'decision:2026-08-01-转行分析' && e.target === 'city:苏州' && e.strength === 'high')) fail('city 边 strength 应为 high（cityScore=82）')
-if (!graph2.edges.some((e) => e.source === 'decision:2026-08-01-转行分析' && e.target === 'direction:机器人结构设计' && e.strength === 'medium')) fail('direction 边 strength 应为 medium（directionMatch=75）')
+if (!graph2.edges.some((e) => e.source === `decision:${recId}` && e.target === 'city:苏州' && e.strength === 'high')) fail('city 边 strength 应为 high（cityScore=82）')
+if (!graph2.edges.some((e) => e.source === `decision:${recId}` && e.target === 'direction:机器人结构设计' && e.strength === 'medium')) fail('direction 边 strength 应为 medium（directionMatch=75）')
 
 // ─── 写入 invalid 决策（v2.1 缺 profile）→ 列表带标记、图谱跳过 ─────────
 writeFileSync(join(wsDir, 'decisions', '2026-08-02-缺画像分析.md'), decisionMd.replace('| profile | 李明 |\n', '').replace('李明 — ', ''), 'utf8')
 await waitEvent('data.decisions.changed')
+await new Promise((r) => setTimeout(r, 400)) // 一次写入触发 add→重命名→unlink→add 多次广播，等扫描稳定
 const list3 = await rpc('decisions/list')
-const bad = list3.find((d) => d.id === '2026-08-02-缺画像分析')
+const bad = list3.find((d) => d.validation?.status === 'invalid')
+const badId = bad?.id ?? ''
 if (!bad) fail('invalid 决策未出现在列表（契约：decisions/list 返回全部含 validation）')
+if (!/^decision_\d{8}_\d{5}$/.test(badId)) fail(`invalid 决策系统 ID 异常：${badId}`)
 if (bad.validation?.status !== 'invalid') fail(`invalid 决策应带 validation.status=invalid：${JSON.stringify(bad.validation)}`)
 const graph3 = await rpc('pool/graph')
-if (graph3.nodes.some((n) => n.id === 'decision:2026-08-02-缺画像分析')) fail('invalid 决策不应出现在图谱')
+if (graph3.nodes.some((n) => n.id === `decision:${badId}`)) fail('invalid 决策不应出现在图谱')
 console.log('invalid 决策 → list 带 invalid 标记，图谱已排除')
 
 // ─── 写入 invalid 公司（无摘要表）→ 列表带标记、图谱跳过；chain 不受影响 ──
@@ -283,9 +286,9 @@ if (!badCompany) fail('companies/list 应返回全部公司（含 invalid）')
 if (badCompany.validation?.status !== 'invalid') fail(`无摘要表公司应带 invalid 标记：${JSON.stringify(badCompany.validation)}`)
 const graph4 = await rpc('pool/graph')
 if (graph4.nodes.some((n) => n.id === 'company:无摘要公司')) fail('invalid 公司不应出现在图谱')
-const chain2 = await rpc('decisions/chain')
-if (chain2.length !== 1) fail('invalid 决策不应产生新链')
-console.log('invalid 公司 → list 带 invalid 标记，图谱已排除；chain 仍 1 条')
+const hist2 = await rpc('decision/history')
+if (hist2.length !== 1) fail('invalid 决策不应产生新历史')
+console.log('invalid 公司 → list 带 invalid 标记，图谱已排除；history 仍 1 条')
 
 // ─── 直接查 SQLite 投影验证 ────────────────────────────────────────────
 db = new Database(join(tmp, 'career.db'))
@@ -296,7 +299,7 @@ console.log('timeline_projection →', tl.length, '行：', JSON.stringify(tl))
 console.log('decisions_projection validation_status →', JSON.stringify(vs))
 console.log('persons_projection →', JSON.stringify(persons))
 if (tl.length !== 2) fail('timeline 应有 2 行')
-if (vs.find((v) => v.id === '2026-08-02-缺画像分析')?.validation_status !== 'invalid') fail('投影未记录 invalid 标记')
+if (vs.find((v) => v.id === badId)?.validation_status !== 'invalid') fail('投影未记录 invalid 标记')
 if (persons.length !== 1 || JSON.parse(persons[0].target_roles).length !== 1) fail('persons_projection 扫描异常')
 
 // ─── 收尾 ─────────────────────────────────────────────────────────────

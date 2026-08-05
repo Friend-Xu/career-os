@@ -49,7 +49,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 ### 4. 偏好变更检测
 
 ```
-读 profiles/{用户}.md 的关键字段（目标方向、目标城市、薪资底线）
+读 persons/{person_id}/snapshot/ 的关键字段（identity.md 身份 / preference_constraints.md 偏好约束 / career_profile.md 目标方向）
 对比 INDEX.md 中该用户的"最后已知偏好"列
 → 一致 → 跳过
 → 不一致 → 扫描 decisions/ 引用旧值的记录 → 输出级联影响清单 → 询问是否重跑
@@ -103,7 +103,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 1. 写 `workspace/career-advisor/decisions/{YYYY-MM-DD}-{主题}.md`
    - 文件开头必须包含 `## 分析摘要` 表格（14 字段）
 2. 更新 `workspace/career-advisor/INDEX.md` 对应行
-3. 如需更新用户画像 → 写 `workspace/career-advisor/profiles/{用户名}.md`
+3. 如需更新用户画像 → 走采集协议（persons/{person_id}/intake/：Candidate → 用户确认 → 写入 snapshot/），不直接写 profiles/
 
 ### 摘要字段
 

@@ -179,7 +179,9 @@ export function ResumesSidebar() {
             </Box>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
               <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Evidence（事实资产）</Typography>
-              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>{useAppStore.getState().evidence.length} 条</Typography>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                Active {useAppStore.getState().evidence.filter((e) => e.lifecycle !== 'legacy').length} 条 · Historical {useAppStore.getState().evidence.filter((e) => e.lifecycle === 'legacy').length} 条
+              </Typography>
             </Box>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
               <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Exports（导出历史）</Typography>

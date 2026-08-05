@@ -94,3 +94,14 @@ test('evidence spec：同主题两次写入 → 两次登记不同 ID（不覆�
   assert.deepEqual(ws.listMarkdown('evidence').sort(), ['evidence_20260805_00001.md', 'evidence_20260805_00002.md'])
   rmSync(root, { recursive: true, force: true })
 })
+
+test('M5.2 G7：删除空洞后 ID 按最大序号 +1（不复用不覆盖）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-art-'))
+  const ws = initWorkspace(root)
+  const now = new Date('2026-08-05T10:00:00Z')
+  ws.write('evidence/evidence_20260805_00001.md', EVIDENCE_MD)
+  ws.write('evidence/evidence_20260805_00003.md', EVIDENCE_MD) // 00002 被删（空洞）
+  // 旧语义（数量+1=2）会复用 00002 并覆盖；新语义（最大序号+1）返回 00004
+  assert.equal(nextArtifactId(ws, EVIDENCE_SPEC, now), 'evidence_20260805_00004')
+  rmSync(root, { recursive: true, force: true })
+})

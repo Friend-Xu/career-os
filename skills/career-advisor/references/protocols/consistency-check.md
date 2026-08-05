@@ -25,7 +25,7 @@ career-transition 的 salary_feasible=false 但 city-advisor 推荐了高成本�
 未覆盖 → 标注"上游风险未在下游体现"
 
 ### 6. 硬约束冲突
-子流程的推荐是否违反 profiles/ 中的硬约束？
+子流程的推荐是否违反 persons/{person_id}/snapshot/preference_constraints.md 中的硬约束（Constraint）？
 冲突 → 标注，置信度降为"低"
 
 ## 降级规则

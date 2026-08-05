@@ -16,6 +16,7 @@ import { scanJobs } from '../storage/job-watcher.ts'
 import { canUseClaim, indexEvidence } from '../storage/claim-policy.ts'
 import { buildProposalFeedback } from '../storage/proposal-watcher.ts'
 import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
+import { scanPersons } from '../storage/person-watcher.ts'
 
 export interface CareerContextOptions {
   jobId?: string // 场景上下文（派生流程预置时带）
@@ -23,11 +24,13 @@ export interface CareerContextOptions {
 
 /** 纯函数投影：扫描全部资产注册表 → 组装 CareerContext（不调 AI、无副作用） */
 export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {}, now: Date = new Date()): CareerContext {
-  const evidence = scanEvidence(ws).map((p) => p.record)
+  // ADR-011/013：legacy（开发期提取/构造）不进 Agent 输入——只消费 active 事实
+  const evidence = scanEvidence(ws).map((p) => p.record).filter((e) => e.lifecycle !== 'legacy')
   const evidenceById = indexEvidence(evidence)
-  const claims = scanClaims(ws).map((p) => p.record)
+  const claims = scanClaims(ws).map((p) => p.record).filter((c) => c.lifecycle !== 'legacy')
   const resumes = scanResumes(ws).map((p) => p.record)
   const jobs = scanJobs(ws).map((p) => p.record)
+  const persons = scanPersons(ws)
 
   const usedByResume = new Map<string, string[]>()
   for (const r of resumes) {
@@ -81,6 +84,21 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
     generatedAt: now.toISOString(),
     workspace: { id: ws.paths.root },
     ...(currentJob ? { currentJob } : {}),
+    persons: persons.map((p) => ({
+      personId: p.personId,
+      name: p.name,
+      ...(p.identity ? { identity: p.identity } : {}),
+      experiences: evidence
+        .filter((e) => e.owner === p.personId && e.type)
+        .map((e) => ({
+          evidenceId: e.id,
+          type: e.type!,
+          title: e.event.title,
+          ...(e.event.period ? { period: e.event.period } : {}),
+          ...(e.role ? { role: e.role } : {}),
+          ...(e.contribution ? { contribution: e.contribution } : {}),
+        })),
+    })),
     claims: claims.map((c) => ({
       id: c.id,
       type: c.claimType,

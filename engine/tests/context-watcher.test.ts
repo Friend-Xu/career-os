@@ -50,18 +50,18 @@ test('解析合法 context：字段映射 + status 中文映射 + related_decisi
   assert.equal(p.record.id, '未来三年职业方向选择')
   assert.equal(p.record.person, '我')
   assert.equal(p.record.question, '未来三年职业方向选择')
-  assert.equal(p.record.status, 'evaluating') // 评估中 → evaluating
+  assert.equal(p.record.status, 'exploring') // 评估中（legacy evaluating）→ exploring 归一化
   assert.deepEqual(p.record.relatedDecisions, ['2026-07-20-方向探索', '2026-07-22-转行分析'])
   assert.equal(p.record.createdAt, '2026-07-20')
 })
 
-test('status 英文原值透传；question 表内缺失回退 H1', () => {
+test('status 英文 legacy 值归一化；question 表内缺失回退 H1', () => {
   const md = contextMd
     .replace('| status | 评估中 |', '| status | decided |')
     .replace('| question | 未来三年职业方向选择 |', '| question | - |')
   const p = parseContextMarkdown(md, '未来三年职业方向选择.md')
   assert.equal(p.validation, undefined)
-  assert.equal(p.record.status, 'decided')
+  assert.equal(p.record.status, 'accepted') // decided → accepted 归一化
   assert.equal(p.record.question, '未来三年职业方向选择') // 回退 H1
 })
 

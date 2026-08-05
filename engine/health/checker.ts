@@ -11,7 +11,7 @@ import type { HealthDimension, HealthIssue, HealthReport } from './types.ts'
 /** workspace 域：目录树 + protocol.json + INDEX.md 完整性 */
 function workspaceDimension(ws: Workspace): HealthDimension {
   const checks: { ok: boolean; message: string; severity: 'error' | 'warn' }[] = [
-    { ok: ws.exists('profiles'), message: '缺 profiles/ 目录', severity: 'error' },
+    { ok: ws.exists('persons'), message: '缺 persons/ 目录（M6.5 Person Intelligence 真相源）', severity: 'error' },
     { ok: ws.exists('decisions'), message: '缺 decisions/ 目录', severity: 'error' },
     { ok: ws.exists('companies'), message: '缺 companies/ 目录', severity: 'warn' },
     { ok: ws.exists('knowledge'), message: '缺 knowledge/ 目录', severity: 'warn' },

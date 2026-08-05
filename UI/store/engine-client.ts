@@ -9,10 +9,11 @@ import type {
   AgentRuntimeEvent,
   CompanyRecord,
   DecisionAggregate,
-  DecisionChain,
+  DecisionHistory,
   DecisionRecord,
   EvidenceItem,
   GapResult,
+  JDIntelligenceResult,
   HealthReport,
   JobRecord,
   Person,
@@ -261,8 +262,8 @@ export class EngineClient {
     return this.rpc<{ id: string; updatedFields: string[] }>(METHODS.updateDecision, { id, fields })
   }
 
-  listChains(): Promise<DecisionChain[]> {
-    return this.rpc<DecisionChain[]>(METHODS.chain)
+  listHistories(): Promise<DecisionHistory[]> {
+    return this.rpc<DecisionHistory[]>(METHODS.decisionHistory)
   }
 
   /** 新建岗位（M1 只有 create；返回 JobRecord） */
@@ -470,6 +471,11 @@ export class EngineClient {
 
   knowledgeGap(params: { person: string; roleId: string }): Promise<GapResult> {
     return this.rpc<GapResult>(METHODS.knowledgeGap, params)
+  }
+
+  /** JD 分析（M6.6.5 Contract 样板）：JD + Person Aggregate → options/unknowns/inputs */
+  jdAnalyze(params: { jobId: string; personId: string }): Promise<JDIntelligenceResult> {
+    return this.rpc<JDIntelligenceResult>(METHODS.jdAnalyze, params)
   }
 
   listCompanies(): Promise<(CompanyRecord & { validation?: Validation })[]> {

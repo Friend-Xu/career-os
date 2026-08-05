@@ -15,7 +15,7 @@ import {
 import { computeGap, missingAction, transferableAction } from '../runtime/gap-calculator.ts'
 import { buildGraph } from '../storage/graph-builder.ts'
 import { initWorkspace } from '../storage/workspace.ts'
-import { scanProfiles } from '../storage/projection.ts'
+import { scanPersons } from '../storage/person-watcher.ts'
 import { computeKnowledgeGap } from '../transport/websocket.ts'
 
 const skillsMd = `# 技能词表
@@ -319,27 +319,60 @@ test('graph：role/skill 节点 + company→role 雇佣 / role→skill 需求（
   assert.ok(!graph.nodes.some((n) => n.id === 'skill:未入表技能'), '词表外技能不产生节点')
 })
 
-test('scanProfiles 带技能声明；computeKnowledgeGap 端到端（workspace → GapResult）', () => {
+test('scanPersons 技能派生（skill_inventory）；computeKnowledgeGap 端到端（Person Aggregate → GapResult）', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-gap-'))
   const ws = initWorkspace(root)
   try {
     ws.write('knowledge/skills.md', skillsMd)
     ws.write('knowledge/roles.md', rolesMd)
-    ws.write('profiles/我.md', personMd)
-    ws.write('profiles/无技能.md', '# 无技能\n\n## 基本信息\n\n- 教育: 本科')
+    const manifestMd = `---
+id: person_001
+name: 我
+status: active
+created_at: 2026-08-06
+---
 
-    const profiles = scanProfiles(ws)
-    assert.deepEqual(profiles.find((p) => p.name === '我')!.skills, [
-      { name: '机械设计', level: 4 },
-      { name: '减速器设计', level: 2 },
-      { name: 'CAE 仿真', level: 3 },
+# Person 001 — 我
+`
+    const skillInvMd = `---
+id: person_001
+status: v2
+---
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill_count | 3 |
+| status | v2 resolved |
+
+## A. Mechanical Engineering
+
+| skill_id | 技能 | level | evidence_refs | usage_context | confidence |
+|----------|------|-------|---------------|---------------|------------|
+| skill_a | 机械设计 | applied-professional | 简历 | 结构设计 | high |
+| skill_b | 减速器设计 | applied-basic | 简历 | 传动选型 | high |
+| skill_c | CAE 仿真 | applied-intermediate | 简历 | 仿真分析 | high |
+`
+    ws.write('persons/person_001/manifest.md', manifestMd)
+    ws.write('persons/person_001/snapshot/current/skill_inventory.md', skillInvMd)
+
+    const persons = scanPersons(ws)
+    assert.equal(persons.find((p) => p.name === '我')!.skillInventoryVersion, 'v2')
+    assert.deepEqual(persons.find((p) => p.name === '我')!.skills, [
+      { skillId: 'skill_a', name: '机械设计', level: 4 },
+      { skillId: 'skill_b', name: '减速器设计', level: 2 },
+      { skillId: 'skill_c', name: 'CAE 仿真', level: 3 },
     ])
-    assert.deepEqual(profiles.find((p) => p.name === '无技能')!.skills, []) // 无段落 → 空数组
 
     const gap = computeKnowledgeGap(ws, { person: '我', roleId: '机器人结构工程师-澜山自动化' })
     assert.deepEqual(gap.satisfied, [{ name: '机械设计', level: 4 }])
     assert.deepEqual(gap.transferable, [{ name: '减速器设计', level: 2 }])
     assert.deepEqual(gap.missing, []) // CAE 仿真不在岗位需求矩阵中，不产出
+
+    // 未建档的人（无 persons/ 条目）→ 空技能，全部缺口（旧 profiles 不再消费）
+    const unknown = computeKnowledgeGap(ws, { person: '无技能', roleId: '机器人结构工程师-澜山自动化' })
+    assert.deepEqual(unknown.missing.map((m) => m.name), ['机械设计', '减速器设计'])
 
     assert.throws(() => computeKnowledgeGap(ws, { person: '我', roleId: '不存在' }), /角色不存在/)
   } finally {

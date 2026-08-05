@@ -23,15 +23,15 @@ import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { DecisionAggregate, DecisionRecord } from '../../engine/ir/schema.ts'
 
-/** 四态配色复用现有语义色：探索中蓝（决策色）/ 评估中黄（riskMedium）/ 已决定绿（riskLow）/ 复盘中紫（人色） */
+/** 四态配色复用现有语义色（Contract v1：Record 生命周期 4 值） */
 const STATUS_META: Record<
   DecisionAggregate['context']['status'],
   { label: string; color: string }
 > = {
   exploring: { label: '探索中', color: '#59C2FF' },
-  evaluating: { label: '评估中', color: RISK_COLOR.medium },
-  decided: { label: '已决定', color: RISK_COLOR.low },
-  reviewing: { label: '复盘中', color: '#9081E4' },
+  accepted: { label: '已接受', color: RISK_COLOR.low },
+  rejected: { label: '已否定', color: RISK_COLOR.high },
+  revisiting: { label: '重新评估', color: '#9081E4' },
 }
 
 /** 选项状态：候选蓝 / 已选绿 / 已排除红（reasons 明示排除原因） */

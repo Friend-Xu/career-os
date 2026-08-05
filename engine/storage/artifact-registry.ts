@@ -31,11 +31,17 @@ export function splitFrontmatter(md: string): { meta: Record<string, string>; bo
   return { meta, body: md.slice(m[0].length) }
 }
 
-/** 系统 ID 生成：{prefix}{YYYYMMDD}_{NNNNN}（当日已有计数 +1，跨日归零；单进程个人工具无需锁） */
+/** 系统 ID 生成：{prefix}{YYYYMMDD}_{NNNNN}（当日最大序号 +1——按序号非数量，防删除空洞导致 ID 复用覆盖旧文件；跨日归零；单进程个人工具无需锁） */
 export function nextArtifactId(ws: Workspace, spec: ArtifactSpec, now: Date): string {
   const day = now.toISOString().slice(0, 10).replace(/-/g, '')
-  const n = ws.listMarkdown(spec.dir).filter((f) => f.startsWith(`${spec.idPrefix}${day}_`)).length
-  return `${spec.idPrefix}${day}_${String(n + 1).padStart(5, '0')}`
+  const prefix = `${spec.idPrefix}${day}_`
+  let max = 0
+  for (const f of ws.listMarkdown(spec.dir)) {
+    if (!f.startsWith(prefix)) continue
+    const n = parseInt(f.slice(prefix.length, -3), 10)
+    if (!Number.isNaN(n) && n > max) max = n
+  }
+  return `${spec.idPrefix}${day}_${String(max + 1).padStart(5, '0')}`
 }
 
 /** 扫描 spec.dir 未登记文件 → 分配系统 ID → 重命名 + 注入 frontmatter（返回登记数） */

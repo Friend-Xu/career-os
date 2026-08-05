@@ -17,19 +17,22 @@
  *   ## 结论     → 首项 `- 选项（置信度：高/中/低）`（无置信度 → 中性 0.5；作者声明值，引擎不自己打分）
  *   ## 风险     → 列表项 `- 描述`，可选后缀 `（缓解：xxx）`
  */
-import type { ContextStatus, DecisionContext, Validation } from '../ir/schema.ts'
+import type { DecisionContext, DecisionStatus, Validation } from '../ir/schema.ts'
+import { normalizeDecisionStatus } from '../ir/decision-status.ts'
 import { finalize, type FieldCheck } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { parseSummaryTable } from './report-watcher.ts'
 import { watch } from 'chokidar'
 
-const STATUS_MAP: Record<string, ContextStatus> = {
+/** 中文状态 → DecisionStatus（Contract v1 4 值；legacy 评估中=exploring 归一化） */
+const STATUS_MAP: Record<string, DecisionStatus> = {
   探索中: 'exploring',
-  评估中: 'evaluating',
-  已决定: 'decided',
-  复盘中: 'reviewing',
+  评估中: 'exploring', // legacy evaluating → exploring（分析中 = 尚未裁决）
+  已决定: 'accepted',
+  复盘中: 'revisiting',
 }
-const STATUS_VALUES: readonly string[] = ['exploring', 'evaluating', 'decided', 'reviewing']
+const STATUS_VALUES: readonly string[] = ['exploring', 'accepted', 'rejected', 'revisiting']
+const LEGACY_STATUS_VALUES: readonly string[] = ['evaluating', 'decided', 'reviewing']
 
 /** 必填字段（question 始终可派生不检查）：缺失 → invalid（error） */
 const CONTEXT_REQUIRED: readonly (keyof DecisionContext)[] = ['person', 'status', 'relatedDecisions', 'createdAt']
@@ -44,6 +47,10 @@ export interface ContextSections {
   conclusion?: { selected: string; confidence: number }
   risks: { description: string; mitigation?: string }[]
   review?: { conclusion: string; date: string }
+  /** `## 分析方法` 首项（Contract analysis.method；缺失 → undefined） */
+  analysisMethod?: string
+  /** `## 未知` 列表（Contract unknowns——系统主动声明不知道什么；缺失 → 空数组） */
+  unknowns: string[]
 }
 
 /** 解析产物：record + 校验标记 + 排除项（可选）+ 正文段落 */
@@ -61,8 +68,12 @@ export function splitList(v: string): string[] {
   return v.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
 }
 
-function parseStatus(v: string): ContextStatus | undefined {
-  return STATUS_MAP[v] ?? (STATUS_VALUES.includes(v) ? (v as ContextStatus) : undefined)
+function parseStatus(v: string): DecisionStatus | undefined {
+  const mapped = STATUS_MAP[v]
+  if (mapped) return mapped
+  if (STATUS_VALUES.includes(v)) return v as DecisionStatus
+  if (LEGACY_STATUS_VALUES.includes(v)) return normalizeDecisionStatus(v)
+  return undefined
 }
 
 function deriveQuestion(md: string, fallback: string): string {
@@ -154,9 +165,12 @@ function parseSections(md: string): ContextSections {
     factors: parseFactors(md),
     evidence: parseEvidence(md),
     risks: parseRisks(md),
+    unknowns: listItems(sectionLines(md, '未知')),
   }
   const review = parseReview(md)
   if (review) sections.review = review
+  const method = listItems(sectionLines(md, '分析方法'))[0]
+  if (method) sections.analysisMethod = method
   return sections
 }
 

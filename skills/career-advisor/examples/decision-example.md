@@ -25,7 +25,7 @@
 
 ## 技能画像
 
-详见 `workspace/career-advisor/profiles/李明.md`
+详见 `workspace/career-advisor/persons/{person_id}/snapshot/`（identity / career_profile / skill_inventory）
 
 ## 差距矩阵
 

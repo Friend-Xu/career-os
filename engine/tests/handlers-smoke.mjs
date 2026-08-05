@@ -187,9 +187,9 @@ try {
   const rescan = await rpc(client, METHODS.rescan)
   check('decisions/rescan', rescan.result?.count === 2, JSON.stringify(rescan))
 
-  const chain = await rpc(client, METHODS.chain)
-  check('decisions/chain 1 人', chain.result?.length === 1, `len=${chain.result?.length}`)
-  check('decisions/chain 阶段推进', chain.result?.[0]?.stages?.find((s) => s.stage === '方向探索')?.status === 'completed', JSON.stringify(chain.result?.[0]?.stages))
+  const history = await rpc(client, METHODS.decisionHistory)
+  check('decision/history 1 人', history.result?.length === 1, `len=${history.result?.length}`)
+  check('decision/history direction 组', history.result?.[0]?.groups?.find((g) => g.type === 'direction')?.decisionIds?.length === 1, JSON.stringify(history.result?.[0]?.groups))
 
   const contexts = await rpc(client, METHODS.contexts)
   check('contexts/list 1 聚合', contexts.result?.length === 1, `len=${contexts.result?.length}`)

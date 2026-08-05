@@ -232,10 +232,10 @@ D 有简历：
 
 ```
 子流程结束：
-  → 写 workspace/career-advisor/profiles/{用户名}-resume.md（简历全文）
+  → 写 resumes/drafts/（Draft Manifest——M3 简历版本协议，不直接写 profiles/）
   → 写 workspace/career-advisor/decisions/{YYYY-MM-DD}-简历撰写.md（含14字段摘要表）
   → 更新 workspace/career-advisor/INDEX.md
-  → 个人总结 + 技能关键词回写 profile.md
+  → 个人总结 + 技能关键词回写 persons/{person_id}/snapshot/skill_inventory.md（走采集协议）
 ```
 
 ---

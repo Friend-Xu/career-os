@@ -19,6 +19,7 @@ import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
+import { MarkdownView } from '../markdown-view'
 import type { DecisionRecord } from '../../types'
 
 export function AgentPanel() {
@@ -162,20 +163,30 @@ export function AgentPanel() {
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
                   {msg.role === 'user' ? '你' : 'Agent'}
                 </Typography>
-                <Typography
-                  sx={{
-                    fontSize: 13,
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.5,
-                    color: COLORS.text,
-                  }}
-                >
-                  {msg.isThinking && msg.content === ''
-                    ? '思考中…'
-                    : msg.content.length > 180
-                      ? `${msg.content.slice(0, 180)}…`
-                      : msg.content}
-                </Typography>
+                {msg.role === 'user' ? (
+                  <Typography
+                    sx={{
+                      fontSize: 13,
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.5,
+                      color: COLORS.text,
+                    }}
+                  >
+                    {msg.content}
+                  </Typography>
+                ) : msg.isThinking && msg.content === '' ? (
+                  <Typography sx={{ fontSize: 13, lineHeight: 1.5, color: COLORS.text }}>
+                    思考中…
+                  </Typography>
+                ) : (
+                  <MarkdownView
+                    content={
+                      msg.content.length > 180
+                        ? `${msg.content.slice(0, 180)}…`
+                        : msg.content
+                    }
+                  />
+                )}
               </Box>
             ))}
           </Stack>
@@ -297,14 +308,7 @@ export function AgentPanel() {
             }
             addDecision(record)
             setDraft('')
-            const stages = useAppStore.getState().personStages[person.id]
-            const current = stages?.find((s) => s.status === 'current')
-            push(
-              'success',
-              current
-                ? `决策已写入「${record.title}」· 时间线已更新 · 决策链推进至「${current.label}」`
-                : `决策已写入「${record.title}」· 时间线已更新`,
-            )
+            push('success', `决策已写入「${record.title}」· 时间线已更新`)
           }}
         >
           写入决策记录

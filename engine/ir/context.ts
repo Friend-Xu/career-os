@@ -50,6 +50,30 @@ export interface CareerContext {
     exportedAt: string
   }[]
 
+  // ─── M6.5：Person Intelligence（ADR-009/013——Agent 身份与经历上下文）──
+
+  /** Person 快照（persons/ 扫描）+ active Evidence 经历分类（M6.5：Professional/Independent/Learning） */
+  persons: {
+    personId: string
+    name: string
+    identity?: {
+      education?: string
+      graduationYear?: string
+      location?: string
+      currentStatus?: string
+      yearsExperience?: string
+    }
+    /** active evidence（owner=person，有 type 分类）——经历全集消费视图 */
+    experiences: {
+      evidenceId: string
+      type: 'professional_experience' | 'independent_project' | 'learning_record'
+      title: string
+      period?: string
+      role?: string
+      contribution?: string
+    }[]
+  }[]
+
   // ─── M3.5.7：Proposal Feedback Projection（决策反馈——Evolution Evidence）──
 
   /** 决策历史（已决策提案，decidedAt 降序；pending 不入历史） */

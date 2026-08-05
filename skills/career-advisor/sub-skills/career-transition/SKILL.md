@@ -34,7 +34,7 @@ career-path (职业方向层)       →  "我该做什么方向？"
         │ 写 directions/
         ▼
 career-transition (转行分析层) →  "怎么从现在的位置走到想去的位置？"
-        │ 读 directions/  写 profiles/ + decisions/
+        │ 读 directions/ + persons/{person_id}/snapshot/  写 decisions/
         ▼
 city-advisor (城市选择层)      →  "我该去哪个城市？"
         │ 写 cities/ + decisions/
@@ -46,7 +46,7 @@ company-research (评估层)       →  "这家公司值不值得去？"
         │ 写 companies/ + decisions/
         ▼
 jd-analysis (岗位层)           →  "这个岗位适合我吗？"
-        │ 读 profiles/ + companies/  写 decisions/
+        │ 读 persons/{person_id}/snapshot/ + companies/  写 decisions/
         ▼
 你决策                        →  "出结论" → 汇总层从 decisions/ 综合
 ```
@@ -443,7 +443,7 @@ career-transition/
 
 **输出到信息池**（遵循主 SKILL.md 的输出标准）：
 - `workspace/career-advisor/decisions/{日期}-转行可行性分析.md` — 含 `## 分析摘要` 表格 + 完整报告
-- `workspace/career-advisor/profiles/{用户名}.md` — 用户画像（创建或更新）
+- `workspace/career-advisor/persons/{person_id}/snapshot/` — 画像更新走采集协议（intake/ Candidate → 用户确认），不直接写
 - `workspace/career-advisor/INDEX.md` — 更新决策记录和用户画像表
 
 **项目协议**：

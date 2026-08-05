@@ -6,7 +6,13 @@
  * - Skills 章节不由 Assembly 创建内容：assetRefs 引用现有资产，Assembly 不编造技能
  */
 export type ResumeStatus = 'draft' | 'review' | 'exported' | 'archived'
-export type ResumeSectionType = 'summary' | 'experience' | 'projects' | 'skills' | 'education'
+export type ResumeSectionType = 'summary' | 'experience' | 'projects' | 'skills' | 'education' | 'profile' | 'target_intent'
+
+/** 身份信息条目（M5.2 G6：非 claim 内容——profile/education/experience/target_intent 段的身份事实，Assembly 不校验 claim 锚定） */
+export interface ResumeIdentityEntry {
+  label?: string // 条目标签（如"东华大学 | 机械工程"或公司名）
+  body?: string // 描述（如职责摘要/定位语）
+}
 
 /** bullet 溯源元数据（v0.2 冻结 #1）：选择理由锚点——目标岗位要求 X → 选 Claim Y */
 export interface ResumeBulletMeta {
@@ -22,12 +28,13 @@ export interface ResumeBullet {
   metadata?: ResumeBulletMeta
 }
 
-/** 章节：bullets 为 Claim 驱动内容；assetRefs 为资产引用（Skills 专用——Assembly 不创建技能内容） */
+/** 章节：bullets 为 Claim 驱动内容；assetRefs 为资产引用（Skills 专用——Assembly 不创建技能内容）；identity 为身份信息（M5.2 G6，非 claim 通道） */
 export interface ResumeSection {
   type: ResumeSectionType
   title: string
   bullets: ResumeBullet[]
   assetRefs?: string[] // 资产引用（技能名/资产 id），来源现有资产
+  identity?: ResumeIdentityEntry[] // 身份段条目（profile/education/experience/target_intent 专用——不与 claim 混合）
 }
 
 /** 一份简历的完整 IR（draft → review → exported → archived 生命周期；status 即 lifecycleStatus，M3-2 冻结名） */
@@ -35,7 +42,8 @@ export interface ResumeDocument {
   id: string // 简历版本 id（对齐 UI resumes 版本）
   status: ResumeStatus
   person: string
-  targetJobId?: string // 目标岗位（ExpressionSentence 集合的上下文）
+  targetId?: string // M6.3：目标机会实体引用（target_xxx）——Target 是 M6 职业机会实体
+  targetJobId?: string // 原始 JD 标识（source_jd_id，M6.3 起降级为输入来源资产，不再直接依赖 jobs/）
   templateId: string // 模板版本化（v0.2 冻结 #5）：换模板可重渲染，PDF 可复现
   templateVersion: string
   sections: ResumeSection[]
@@ -91,13 +99,15 @@ export interface ResumeDraftManifest {
   id: string // 暂存文件名（无 .md）
   type: 'resume_draft'
   person?: string // 归属人（AI 草稿缺省 ''；Proposal 应用链继承源版本——防组装版本 person 缺失标 invalid）
-  targetJobId?: string
+  targetId?: string // M6.3：目标机会实体（target_xxx）
+  targetJobId?: string // 原始 JD 标识（历史；新 manifest 优先 targetId）
   templateId: string
   templateVersion?: string // 缺省 '1.0'
   parentResumeId?: string // clone 派生时
   derivationType?: 'jd_generate' | 'clone' | 'user_edit' | 'ai_revision' // 缺省：parent ? clone : jd_generate（Proposal 应用链显式 ai_revision）
   claims: DraftClaimRef[]
   skills: string[] // asset 引用
+  identitySections?: { type: 'profile' | 'education' | 'experience' | 'target_intent'; title: string; entries: ResumeIdentityEntry[] }[] // M5.2 G6：身份信息（非 claim，用户身份事实）
 }
 
 // ─── M3-2.3：Export（契约 RESUME-EXPORT-M3-v0.1）──

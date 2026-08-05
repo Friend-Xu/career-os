@@ -19,6 +19,9 @@ export function renderResumeMarkdown(document: ResumeDocument): string {
     for (const b of section.bullets) {
       lines.push(`- ${b.sentence} <!-- claimId:${b.claimId} -->`)
     }
+    for (const e of section.identity ?? []) {
+      lines.push(`- ${e.label ? `${e.label}: ${e.body ?? ''}` : (e.body ?? '')}`)
+    }
     for (const ref of section.assetRefs ?? []) {
       lines.push(`- ${ref}`)
     }

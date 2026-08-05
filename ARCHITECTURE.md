@@ -1,6 +1,6 @@
 # Career OS 架构与现状总览
 
-> 2026-08-05 | 反映当前实现状态（M4 Artifact Evolution 完成），非愿景
+> 2026-08-06 | 反映当前实现状态（M6 Target Intelligence + M6.5 User Foundation 方向），非愿景
 
 ## 0. 一句话概括
 
@@ -19,7 +19,7 @@ flowchart LR
         IR["ir/schema.ts 契约源"]
         PROJ["storage/projection.ts<br/>better-sqlite3 投影"]
         WATCH["report-watcher / context-watcher<br/>knowledge-watcher"]
-        RUNTIME["runtime/ 决策链 + Agent 运行时 + 差距分析"]
+        RUNTIME["runtime/ 决策历史投影 + Agent 运行时 + 差距分析"]
         AGENT["agent/adapter/claude.ts<br/>claude-agent-sdk 封装"]
     end
 
@@ -32,7 +32,7 @@ flowchart LR
     end
 
     subgraph 数据["workspace/career-advisor/（markdown 真相源）"]
-        MD["profiles/ + decisions/ + companies/ + decision-contexts/<br/>knowledge/ + jobs/ + evidence/ + claims/ +<br/>resumes/ + proposals/ + portfolio/ + interviews/"]
+        MD["profiles/ + decisions/ + companies/ + decision-contexts/<br/>knowledge/ + jobs/(M6 迁入 targets/) + evidence/ + claims/ +<br/>resumes/ + proposals/ + portfolio/ + interviews/ +<br/>targets/（M6 机会资产：公司×岗位）+ persons/（M6.5 主体资产：person_001）"]
     end
 
     SK -->|读取| DIR
@@ -67,6 +67,8 @@ Career OS 不是"决策分析系统"或"简历工具"的单一职责，而是**�
         ↓
 Decision Layer（分析、映射、验证、决策）
         ↓
+Target Intelligence（M6：目标环境模型——Company Identity → Target 机会资产 → Context → Compatibility）
+        ↓
 Evidence Mapping（evidence/claims 事实层）
         ↓
 Artifact Layer（可验证职业资产演化）
@@ -76,7 +78,9 @@ Artifact Layer（可验证职业资产演化）
 
 | 层 | 职责 | 资产 |
 |----|------|------|
-| Decision Layer | JD 分析、公司尽调、方向评估、差距分析、推荐 | decisions/ companies/ jobs/ knowledge/ |
+| Decision Layer | JD 分析、公司尽调、方向评估、差距分析、推荐 | decisions/ companies/ jobs/(→targets/) knowledge/ |
+| Target Intelligence（M6） | 目标环境模型：谁在招 / 岗位要什么 / 我怎么证明（Compatibility） | companies/company_001/（实体资产）targets/target_001/（机会资产） |
+| User Intelligence（M6.5 冻结：Person Intelligence Bootstrap） | 用户主体模型：我是谁 / 我做过什么 / 技能边界 / 偏好限制——Snapshot + Events + Owner Protocol | persons/person_001/（snapshot/identity、career_profile、skill_inventory、preference_constraints + events/ + experience/） |
 | Evidence Mapping | 事实层——分析结论落为可消费事实，Artifact Fact 锚定于此 | claims/ evidence/ |
 | Artifact Layer | 同一治理范式（Fact Preservation + Controlled Evolution + Projection）的独立实例 | resumes/ portfolio/ interviews/ |
 
@@ -117,7 +121,7 @@ engine/
 │                           provenance-check/report（确定性审计，无 AI Judge、无总分、无 ranking）
 ├── context/career-context.ts AI Read Model（CareerContext 投影——AI 不直接读 IR）
 ├── runtime/
-│   ├── decision-runtime.ts 决策链状态机（6 阶段，computeChain 纯投影）
+│   ├── decision-runtime.ts 决策历史投影（按类型分组，无推进语义）
 │   ├── decision-aggregate.ts 聚合视图（contexts/list，只聚合不评分）
 │   ├── gap-calculator.ts   差距分析（满足≥3/可迁移 1-2/缺失，不打分）
 │   ├── claim-coverage.ts / claim-selector.ts  表达候选选择（M3-0/M3-1，可解释 priority）
@@ -137,7 +141,7 @@ engine/
 | RPC | 方法 | 说明 |
 |-----|------|------|
 | `system/init` | 握手 | 协议/版本/工作区路径 |
-| `decisions/list` `decisions/rescan` `decisions/chain` | 决策 | 全量 IR（含 validation）→ 重扫 → 决策链投影 |
+| `decisions/list` `decisions/rescan` `decision/history` | 决策 | 全量 IR（含 validation）→ 重扫 → 决策历史投影（按类型分组） |
 | `contexts/list` | 聚合 | 决策上下文按需组装 |
 | `knowledge/graph` `knowledge/gap` | 知识层 | 技能/岗位图谱 + 差距分析 |
 | `companies/list` `persons/list` `pool/graph` | 视图数据 | 公司/人/信息池图谱 |
@@ -170,6 +174,25 @@ Fact Layer → Proposal → Human Decision → Artifact Version
 | Projection | 引擎确定性聚合（CareerContext/PortfolioContext/InterviewContext），不成为事实存储 |
 
 当前 Artifact：**Resume**（职业经历演化）/ **Portfolio**（项目事实演化）/ **Interview**（经验表达演化）；Cover Letter（M4-3）为下一环。
+
+## 2.6 决策链六阶段体系建设现状（2026-08-06 盘点）
+
+决策链 = 方向探索 → 转行评估 → 城市评估 → 公司筛选 → JD分析 → 简历定制。**前 3 阶段（JD 之前）长期未建设**——只有技能层协议与决策文本记录，无资产体系/引擎解析/真实 UI；后 3 阶段为 M1-M4 完整体系。
+
+| 阶段 | skill 映射 | 技能层协议 | workspace 资产 | 引擎支持 | UI |
+|------|-----------|-----------|---------------|---------|-----|
+| 方向探索 | career-path | ✅ 8 方向画像卡 + path-scoring-model | ✅ profiles/我.md 目标方向 + 方向决策记录（机器人 82%/CAE 78%/流体 74%） | ⚠️ 仅决策记录解析进链（无 profile watcher） | ⚠️ 工作台方向视图（mock 数据） |
+| 转行评估 | career-transition | ✅ transition-model/gap-analysis/motivation-check | ✅ 决策记录（转行评估） | ⚠️ 同上 | 决策链阶段展示 |
+| 城市评估 | city-advisor | ✅ city-scoring-model/advisor-template | ❌ **cities/ 空目录**（无任何城市资产落盘） | ❌ 无 | ⚠️ 工作台城市热力图（mock 数据） |
+| 公司筛选 | company-screener | ✅ | ✅ companies/ 旧扁平档案 + company_001（M6 实体资产，identity locked） | ✅ companies/list（旧格式解析；company_001 未解析） | ✅ 公司页（接引擎） |
+| JD分析 | jd-analysis | ✅ | ✅ **jobs/ 已清空** → targets/target_001/（M6：target/jd/requirement_matrix/company/product/industry_context + compatibility） | ❌ **targets/ 无 watcher**——M6 资产引擎侧断链，UI jobs 页失去真实数据源 | jobs 页（接引擎旧 jobs/ 解析） |
+| 简历定制 | resume-writing | ✅ CareerContentStandard | ✅ resumes/ + evidence/(3) + claims/(9) + proposals/ + portfolio/ + interviews/ | ✅ 全链路（M3/M4 + resume target_id 契约） | ✅ 简历中心 + Artifact Studio |
+
+**结论**：
+1. **M6.5 Person Intelligence 是前 3 阶段的地基**——方向探索/转行评估/城市评估的输入正是"我是谁/我做过什么/我的边界"；决策链已降级为决策历史视图（ADR-008），四模块是分析视图非流程步骤（ADR-010）
+2. **M6 遗留架构缺口**：targets/ 资产无引擎 watcher（M6 是协议 + 文档资产 + 消费产物层）；Resume 已按 target_id 契约升级但引擎无 target 实体
+3. **Person 真相源断裂**：profiles/ 无引擎解析，UI Person 为 mock 种子（含指向不存在文件的家人A），INDEX.md 用户画像表空行——M6.5 以 persons/person_001/ Snapshot + Owner Protocol 修复（ADR-009）
+4. **cities/ 与方向资产缺口**：城市评估零落盘；方向画像卡是技能层知识，未与决策/User 数据打通
 
 ## 3. 前端架构
 
@@ -274,6 +297,8 @@ StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
 → **M3-3 Artifact Evolution Benchmark v0.1**：10 case 数据集 → Runner 确定性审计 → Report Projection（无总分/无 ranking/无 AI Judge）
 → **M4 Artifact Evolution**：Admission Contract（C1-C6 准入 + System Invariants）→ Portfolio（项目事实治理：P-01~P-07、immutable published、draft(v+1)）→ Interview（三层问答资产：I-01~I-08、draft→reviewed→ready）→ Cover Letter（第一个 Projection Artifact：NarrativeUnit 引用源 Fact Layer，adapt only）→ Artifact Reference Protocol（宪法层：Owner + Target Fact Locator + Relation，resolveLocator 只答存在性，无 registry）→ 各 Runtime Validation（引擎测试 351/351 全绿）
 → **M4-5 Artifact Studio（Governance UI）**：四 slice——Assets 概览（ArtifactSummary 类级投影：Engine Context → Cards，无 version）→ Proposal Center（统一评审 Workflow，Diff 只统一 Presentation Contract；领域层四 adapter Concrete First，Accept/Reject 走原 watcher）→ Evolution Timeline（ArtifactTimelineEvent 确定性投影：at → append order → id，Proposal 是 source 非事件）→ Fact Traceability（Cover Letter 表达单元 → sourceRefs → Resolved Fact 只读定位，断链显式无 fallback）。治理闭环：**Decision → Evidence → Artifact Evolution → Controlled Composition → Reference Protocol → Governance UI**
+→ **M6 Target Intelligence Layer（2026-08-06）**：协议层（M6-PLAN v0.4 冻结：Identity 实体资产 vs Target 机会资产、状态机、Ready Check 能力矩阵、research_scope、Compatibility Analysis 非推荐系统）+ 新拓尼克迁移试点（company_001 identity locked + target_001 全 context ready + compatibility v2 五段式）+ 三投影升级（Interview 8 题 A/B/C + AnswerMode；Resume v7 定位升级 + target_id 契约入引擎；Decision 事实→影响→用户决策点）——**协议与文档资产完成，引擎 targets/ watcher 未建（见 §2.6 缺口 2）**
+→ **M6.5 Person Intelligence Bootstrap（2026-08-06 协议冻结）**：从"User Foundation 文件建设"升级为**主体模型建设**——语义校准（Semantic Alignment）：Career OS 原本已有 Decision Intelligence 碎片被 UI workflow 误解释成 pipeline（ADR-010），与 Artifact Evolution 的发现同构。冻结：Phase 0 Person Identity（Snapshot Projection + Change Events + Owner Protocol 回挂 3 Evidence + 9 Claims）→ Phase 1 Experience Foundation（Experience Index，三层分离，M4 Portfolio 待激活）→ Phase 2 Skill Intelligence（Evidence 聚合 + 锚点，反向生成）→ Phase 3 Constraint Foundation（Preference/Constraint 分离）。决策链降级为决策历史视图（ADR-008）；schema 演进（Evidence owner + epistemic_status confirmed/inferred/reconstructed，ADR-009）。不做：Agent 自动化 / Evidence 扩张 / Career Ledger（M7）/ Career Graph（M8）。
 
 **未施工（勿提前）**：V3 愿景——Person Model 五维、决策发现、Career Map、Evidence 原子模型 / Workflow Contract / Career Graph 推理层（后三者 ADR-003/004/005 登记 defer，触发条件未到）。
 

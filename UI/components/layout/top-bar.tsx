@@ -14,7 +14,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt'
 import { useMemo, useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { alpha, COLORS, LAYOUT } from '../../data/constants'
+import { alpha, COLORS, LAYOUT, SKILL_VIEW_LABEL } from '../../data/constants'
 import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
@@ -23,17 +23,28 @@ export function TopBar() {
   const setPerson = useAppStore((s) => s.setPerson)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const setPersonCreateDialogOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
-  const personStages = useAppStore((s) => s.personStages[currentPerson.id])
   const decisions = useAppStore((s) => s.decisions)
   const engineStatus = useAppStore((s) => s.engineStatus)
   const setPage = useAppStore((s) => s.setPage)
   const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
   const [anchor, setAnchor] = useState<null | HTMLElement>(null)
 
-  const stages = personStages ?? []
-  const completed = stages.filter((s) => s.status === 'completed').length
-  const total = stages.length
-  const currentStage = stages.find((s) => s.status === 'current')
+  // ADR-008：探索记录（决策链语义降级）——按决策类型计数，非阶段推进
+  const exploration = useMemo(() => {
+    const mine = decisions.filter((d) => d.profile === currentPerson.name)
+    const counts = new Map<string, number>()
+    for (const d of mine) {
+      const type = SKILL_VIEW_LABEL[d.skill] ?? d.skill
+      counts.set(type, (counts.get(type) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])
+  }, [decisions, currentPerson.name])
+
+  const explorationLabel = useMemo(() => {
+    const shown = exploration.slice(0, 2).map(([k, v]) => `${k}×${v}`).join(' ')
+    if (!shown) return '探索记录：暂无'
+    return `探索记录：${shown}${exploration.length > 2 ? ` 等 ${exploration.length} 类` : ''}`
+  }, [exploration])
 
   // 当前方向 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）
   const currentDirection = useMemo(() => {
@@ -158,16 +169,7 @@ export function TopBar() {
         label={
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <Typography component="span" sx={{ fontSize: 12, fontWeight: 500 }}>
-              {currentStage?.label ?? '未开始'}
-            </Typography>
-            <Typography component="span" sx={{ fontSize: 12, color: COLORS.textMuted }}>
-              ·
-            </Typography>
-            <Typography
-              component="span"
-              sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.accent }}
-            >
-              {completed}/{total}
+              {explorationLabel}
             </Typography>
           </Stack>
         }

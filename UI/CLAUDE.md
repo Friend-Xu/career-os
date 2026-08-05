@@ -37,7 +37,7 @@ AppShell 组装：top-bar（人选择/当前方向胶囊/决策链胶囊） · i
 
 - **会话延续（轻→深）**：agent-panel 与 agent-page 共享 `currentSessionId`，是同一会话——面板发起的对话，切到 Agent 页可见完整历史；面板「展开到全屏」续同一会话。会话消息写入 `sessions[currentSessionId].messages`。
 - **真实 Agent 流**：`sendAgentMessage` 引擎在线 → `agent/start`（task = 用户消息，Agent 在 workspace 根自读信息池；带 `sdkSessionId` resume 续接会话）→ 占位消息 + 事件流（`agentTasks` Map 按 taskId 路由：text_delta 累积 / toolChips 流转 / question_request 提问卡片 / permission_request 复用 `requestPermission` 弹窗决策回传 / done / error 错误卡）；离线 → mock 回复降级。**AskUserQuestion 注意**：CLI 管道模式提问后立即跳过（tool_use_result 已含 "did not answer"），回答走下一轮文本送达——用户点击时任务通常已结束，`answerQuestion` 用 resume 续接原会话发送回答（engine-client 的 `agent.event` 帧 taskId 在顶层，已合并进 data 才能路由）。
-- **决策链推进**：`addDecision` 写入时自动把当前 stage 置 completed、下一 pending 置 current；写入后从 `personStages` 读 current 拼 toast（"决策链推进至 X"）。顶栏「当前方向」胶囊 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）。
+- **决策记录与探索记录（ADR-008 语义降级）**：决策写入不推进阶段（`addDecision` 只写 decisions；引擎 connected 写 md → 事件 → pullChains 重拉）。顶栏胶囊 = 探索记录（按决策类型计数，`SKILL_VIEW_LABEL` 映射），非"当前阶段 X/Y"。顶栏「当前方向」胶囊 = 当前人最新决策的 direction（纯展示非切换器）。
 - **按人过滤（模型 B：角色 = 人）**：视图数据按 `currentPerson()` 过滤（decisions 按 `profile === person.name`、applications 按 `personId`、简历按 `personId`）；切换人 → 全部视图/主题色/决策链跟随。岗位无独立实体：画像 targetRoles（有名目）+ 决策 direction（有评估）+ 投递 position（有记录）。
 - **预置上下文**：`startAnalysis(prompt)` 设置 agentDraft + pendingPrompt → AI 面板聚焦 + 「已预置上下文」胶囊。所有"唤起 AI"的按钮都走这个入口（Next Action / 时间线重新评估 / 尽调 / JD 派生…）。
 - **划词 AI 改写**（resumes-page）：MUI 的 onSelect 不透传到 textarea 且 select 不冒泡 → 必须用 `inputRef` + 原生 `addEventListener('select')`；textarea 选区的 `getBoundingClientRect()` 返回 0×0 → 回退元素 rect。选中即显浮动 ✨ 按钮（非模态，`document mousedown` 关闭）。

@@ -81,6 +81,9 @@ export function parseClaimMarkdown(md: string, sourceFile: string): Validated<Ca
 
   const record: CareerClaim = {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
+    ...(meta.owner ? { owner: meta.owner } : {}), // M6.5：归属 person_id（frontmatter owner）
+    ...(meta.lifecycle && ['active', 'legacy', 'archived'].includes(meta.lifecycle)
+      ? { lifecycle: meta.lifecycle as 'active' | 'legacy' | 'archived' } : {}), // ADR-011
     created_at: fields.captured_at ?? meta.created_at ?? deriveCreatedAt(sourceFile) ?? '',
     source: CLAIM_SOURCES.includes(source) ? source : 'user_written',
     statement: fields.statement ?? deriveTitle(body, sourceFile),

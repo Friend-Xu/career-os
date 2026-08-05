@@ -31,6 +31,7 @@ import type { Logger } from '../logger.ts'
 import { parsePercent, parseRisk, parseSummaryTable, scanDecisions, type ParsedDecision } from './report-watcher.ts'
 import { buildGraph } from './graph-builder.ts'
 import { scanKnowledge, extractPersonSkills } from './knowledge-watcher.ts'
+import { scanPersons } from './person-watcher.ts'
 import { ProtocolVersion } from '../ir/schema.ts'
 
 const SCHEMA = `
@@ -407,6 +408,22 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
       return scanCompanies()
     },
     listPersons() {
+      // M6.5：persons/ 主体资产优先（person-watcher 扫描）；未建立 → 投影表降级（profiles/ 旧扫描）
+      const snapshots = scanPersons(workspace)
+      if (snapshots.length > 0) {
+        return snapshots.map((s, i): Person => ({
+          id: i + 1,
+          personId: s.personId,
+          name: s.name,
+          color: '#4f6ef2',
+          emoji: '👤',
+          matchScore: 0,
+          riskLevel: 'medium',
+          archived: s.status === 'archived',
+          profilePath: s.manifestPath,
+          targetRoles: s.careerProfile?.targetRoles ?? [],
+        }))
+      }
       const rows = db.prepare('SELECT * FROM persons_projection ORDER BY id').all() as unknown as PersonRow[]
       return rows.map((row): Person => {
         const person: Partial<Person> = {
@@ -429,10 +446,12 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     },
     graph() {
       const knowledge = scanKnowledge(workspace)
+      // M6.5：person 节点来自 persons/ 主体资产；未建立 → profiles/ 旧扫描降级
+      const personNames = scanPersons(workspace).map((p) => p.name)
       return buildGraph({
         decisions: lastParsed,
         companies: scanCompanies(),
-        profileNames: scanProfiles(workspace).map((p) => p.name),
+        profileNames: personNames.length > 0 ? personNames : scanProfiles(workspace).map((p) => p.name),
         skills: knowledge.skills,
         roles: knowledge.roles,
       })
