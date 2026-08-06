@@ -12,6 +12,7 @@
     "@mui/material": "9.2.0",
     "d3-force": "^3.0.0",
     "dayjs": "1.11.21",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.29.1",

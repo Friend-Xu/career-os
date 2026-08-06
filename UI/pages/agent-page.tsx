@@ -3,6 +3,10 @@ import {
   Button,
   Chip,
   Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Menu,
   MenuItem,
@@ -569,6 +573,8 @@ export function AgentPage() {
 
   /** Initialization Shell：当前人初始化中 → 全屏初始化空间（左对话 + 右理解草稿） */
   const initMode = person.initStatus === 'pending'
+  const completeInitialization = useAppStore((s) => s.completeInitialization)
+  const [completeOpen, setCompleteOpen] = useState(false)
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
@@ -617,6 +623,14 @@ export function AgentPage() {
               {person.sourceMode === 'resume' ? '简历通道' : '访谈通道'} · 正在了解你的经历
             </Typography>
           </Box>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() => setCompleteOpen(true)}
+            sx={{ flexShrink: 0, ml: 1.5, fontSize: 12.5 }}
+          >
+            进入职业档案
+          </Button>
         </Stack>
       ) : (
         <Stack
@@ -640,6 +654,35 @@ export function AgentPage() {
       )}
 
       {!initMode && <ContextCapsule />}
+
+      {/* 完成初始化确认：用户声明基础信息达到可用状态（非封闭，之后可随时补充/重置） */}
+      <Dialog open={completeOpen} onClose={() => setCompleteOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 600 }}>
+          将「{person.name}」的职业档案标记为可用？
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.7 }}>
+            基础信息已建立后即可正常使用档案视图（决策 / 投递 / 简历中心）。
+            档案不是封闭的——之后仍可随时补充或重置初始化。
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button size="small" color="inherit" onClick={() => setCompleteOpen(false)} sx={{ fontSize: 12.5 }}>
+            稍后再说
+          </Button>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() => {
+              setCompleteOpen(false)
+              void completeInitialization(person.id)
+            }}
+            sx={{ fontSize: 12.5 }}
+          >
+            进入职业档案
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <Box sx={{ flex: 1, overflow: 'auto', px: 3, py: 2.5 }} aria-live="polite">

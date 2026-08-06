@@ -63,6 +63,16 @@ export const METHODS = {
   listCandidates: 'person/candidates/list',
   /** 候选裁决（切片 2.3：params { personId, candidateId, action, modifiedContent? } → { candidateId, action, status }；更新 candidates.md + 写 resolution 事件） */
   resolveCandidate: 'person/candidates/resolve',
+  /** 重置初始化（Person 生命周期 v0.1：params { personId } → { personId }；清 intake/extraction/events/snapshot，manifest 保留，init_state 重置 in_progress） */
+  resetPerson: 'person/reset',
+  /** 完成初始化（用户声明基础信息达到可用状态，非封闭：params { personId } → { personId, initState: 'completed' }；manifest init_state → completed） */
+  completePersonInit: 'person/session/complete',
+  /** 物理删除 Person（dev/测试清理：params { personId } → { personId }；persons/{id}/ 整目录移除，不可恢复） */
+  deletePerson: 'person/delete',
+  /** PDF 提取（Document Ingestion：params { pdfBase64 } → ExtractionResult { status, method, text, error? }；文本层 → 渲染+视觉，失败建模为状态不抛错） */
+  resumeExtract: 'resume/extract',
+  /** 简历 Artifact 落盘（params { personId, fileName?, text? | pdfBase64?, extraction? } → { artifactId, format }；documents/resumes/resume-00X + meta + extraction md，编号递增不覆盖） */
+  saveResumeOriginal: 'person/session/resume',
   /** 快照版本存档（M7.1：写入 current 前调用，params { personId, reason, trigger?, sourceRefs? } → SnapshotVersionManifest | null；增量 append-only） */
   snapshotArchive: 'snapshot/archive',
   /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */

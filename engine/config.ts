@@ -62,6 +62,18 @@ export interface EngineConfig {
     /** 高德 JS API 安全密钥（2021-12 后申请的 key 必须；明文方式 _AMapSecurityConfig，同存 config.json 保护） */
     securityJsCode?: string
   }
+  /** 文档智能（Document Runtime：PDF 简历提取等）——与 agent 平行，不共享 Provider 语义 */
+  document: {
+    /** 视觉模型连接（图片型 PDF 提取；未配置 → 仅文本型 PDF 可用） */
+    vision?: {
+      /** 视觉服务商（当前仅 zhipu，OpenAI 兼容 /chat/completions） */
+      provider: 'zhipu'
+      /** 视觉模型（默认 glm-4.6v-flash 免费） */
+      model?: string
+      /** 视觉 API key（与 agent.apiKey 同保护：career-os.config.json gitignored） */
+      apiKey?: string
+    }
+  }
 }
 
 export class ConfigError extends Error {
@@ -96,6 +108,7 @@ export function defaultConfig(): EngineConfig {
     },
     watcher: { enabled: true },
     map: { provider: 'amap' },
+    document: { vision: { provider: 'zhipu', model: 'glm-4.6v-flash' } },
   }
 }
 
@@ -237,6 +250,35 @@ function assertMap(v: unknown, source: ConfigSource): { provider: string; apiKey
   }
 }
 
+/** document 段校验（config.json 边界：直接编辑也可）；vision 可选，缺失字段回退默认 */
+function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider: 'zhipu'; model?: string; apiKey?: string } } {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    throw new ConfigError('document', v, '对象 { vision? }', source)
+  }
+  const d = v as Record<string, unknown>
+  if (d.vision === undefined) return {}
+  if (typeof d.vision !== 'object' || d.vision === null || Array.isArray(d.vision)) {
+    throw new ConfigError('document.vision', d.vision, '对象 { provider?, model?, apiKey? }', source)
+  }
+  const v2 = d.vision as Record<string, unknown>
+  if (v2.provider !== undefined && v2.provider !== 'zhipu') {
+    throw new ConfigError('document.vision.provider', v2.provider, "'zhipu'", source)
+  }
+  if (v2.model !== undefined && typeof v2.model !== 'string') {
+    throw new ConfigError('document.vision.model', v2.model, '字符串', source)
+  }
+  if (v2.apiKey !== undefined && typeof v2.apiKey !== 'string') {
+    throw new ConfigError('document.vision.apiKey', v2.apiKey, '字符串', source)
+  }
+  return {
+    vision: {
+      provider: 'zhipu',
+      ...(v2.model ? { model: v2.model } : {}),
+      ...(v2.apiKey ? { apiKey: v2.apiKey } : {}),
+    },
+  }
+}
+
 // ─── 来源解析 ─────────────────────────────────────────────────────────────
 
 export interface CliArgs {
@@ -322,6 +364,10 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
     if (file.map) {
       config.map = assertMap(file.map, 'config.json')
     }
+    if (file.document) {
+      const doc = assertDocument(file.document, 'config.json')
+      config.document = { vision: { provider: 'zhipu', ...config.document.vision, ...(doc.vision ?? {}) } }
+    }
   } else {
     writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n')
   }
@@ -363,5 +409,6 @@ export function describeConfig(config: EngineConfig): string[] {
     `paths.logs = ${config.paths.logs}（应用日志 + Agent 轨迹）`,
     `paths.db = ${config.paths.db}（SQLite Projection，第 4 步引入）`,
     `watcher.enabled = ${config.watcher.enabled}（decisions/ 监听，第 3 步引入）`,
+    `document.vision = ${config.document.vision?.model ?? '未配置'}${config.document.vision?.apiKey ? '（已配置 key）' : '（未配置 key：图片型 PDF 提取不可用）'}`,
   ]
 }

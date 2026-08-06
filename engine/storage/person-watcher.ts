@@ -10,7 +10,8 @@
  * 真相源由对话式采集/用户维护，引擎只读解析不写。降级惯例同 evidence-watcher：
  * 摘要表缺失 → 字段缺省（空对象），不 invalid——Person 是导航资产，缺字段不阻塞。
  */
-import { readdirSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { PersonSkill, PersonSnapshot } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
@@ -21,6 +22,10 @@ export interface PersonManifest {
   name: string
   status: string
   createdAt?: string
+  /** 初始化状态（生命周期摘要：in_progress=首次采集未完成；completed=已进入正常使用；缺失=旧档案） */
+  initState?: 'in_progress' | 'completed'
+  /** 初始化通道（manifest source_mode；刷新后恢复通道语义） */
+  sourceMode?: 'resume' | 'interview'
 }
 
 const STATUSES = ['active', 'archived'] as const
@@ -60,6 +65,7 @@ export function createPersonSession(ws: Workspace, params: { name: string; sourc
     `| name | ${name} |`,
     '| status | active |',
     `| source_mode | ${sourceMode} |`,
+    '| init_state | in_progress |',
     '| init_session | session-001 |',
     `| created_at | ${today} |`,
     '',
@@ -67,6 +73,26 @@ export function createPersonSession(ws: Workspace, params: { name: string; sourc
   ws.write(`persons/${personId}/manifest.md`, manifest)
   ws.write(`persons/${personId}/intake/session-001.md`, sessionTemplate(personId, sourceMode))
   return { personId, sessionId: 'session-001' }
+}
+
+/** 重置初始化（Person 生命周期 v0.1）：清 intake/extraction/events/snapshot/documents，重建空 session；manifest（id/name/created_at）保留 */
+export function resetPerson(ws: Workspace, personId: string): { personId: string } {
+  if (!/^person_\d{3}$/.test(personId)) throw new Error(`非法 personId: ${personId}`)
+  for (const sub of ['intake', 'extraction', 'events', 'snapshot', 'documents']) {
+    rmSync(join(ws.paths.persons, personId, sub), { recursive: true, force: true })
+  }
+  const manifest = ws.exists(`persons/${personId}/manifest.md`) ? ws.read(`persons/${personId}/manifest.md`) : ''
+  const sourceMode: 'resume' | 'interview' = /^\| source_mode \| resume \|/m.test(manifest) ? 'resume' : 'interview'
+  setManifestInitState(ws, personId, 'in_progress')
+  ws.write(`persons/${personId}/intake/session-001.md`, sessionTemplate(personId, sourceMode))
+  return { personId }
+}
+
+/** 物理删除 Person 资产（dev/测试清理：persons/{person_id}/ 整目录移除，不可恢复；目录不存在 → 幂等成功） */
+export function deletePerson(ws: Workspace, personId: string): { personId: string } {
+  if (!/^person_\d{3}$/.test(personId)) throw new Error(`非法 personId: ${personId}`)
+  rmSync(join(ws.paths.persons, personId), { recursive: true, force: true })
+  return { personId }
 }
 
 function sessionTemplate(personId: string, sourceMode: 'resume' | 'interview'): string {
@@ -236,7 +262,37 @@ export function parsePersonManifest(md: string): PersonManifest | undefined {
   const status = meta.status?.trim() || fields?.status?.trim() || 'active'
   if (!id || !name) return undefined
   if (!(STATUSES as readonly string[]).includes(status)) return undefined
-  return { id, name, status, createdAt: meta.created_at?.trim() }
+  const rawInit = meta.init_state?.trim() || fields?.init_state?.trim()
+  const initState = rawInit === 'in_progress' || rawInit === 'completed' ? rawInit : undefined
+  const rawMode = meta.source_mode?.trim() || fields?.source_mode?.trim()
+  const sourceMode = rawMode === 'resume' || rawMode === 'interview' ? rawMode : undefined
+  return {
+    id,
+    name,
+    status,
+    createdAt: meta.created_at?.trim(),
+    ...(initState ? { initState } : {}),
+    ...(sourceMode ? { sourceMode } : {}),
+  }
+}
+
+/** manifest 摘要表 init_state 行更新（缺失行插入——旧档案无该字段）；非法 personId 抛错 */
+function setManifestInitState(ws: Workspace, personId: string, state: 'in_progress' | 'completed'): void {
+  if (!/^person_\d{3}$/.test(personId)) throw new Error(`非法 personId: ${personId}`)
+  const path = `persons/${personId}/manifest.md`
+  if (!ws.exists(path)) throw new Error(`manifest 不存在：${personId}`)
+  const md = ws.read(path)
+  const line = `| init_state | ${state} |`
+  const next = /^\| init_state \| .+ \|$/m.test(md)
+    ? md.replace(/^\| init_state \| .+ \|$/m, line)
+    : md.replace(/^(\|------\|-----(\|------)*\|)$/m, `$1\n${line}`)
+  ws.write(path, next)
+}
+
+/** 完成初始化（用户声明基础信息达到可用状态，非封闭）：manifest init_state → completed */
+export function completePersonInit(ws: Workspace, personId: string): { personId: string; initState: 'completed' } {
+  setManifestInitState(ws, personId, 'completed')
+  return { personId, initState: 'completed' }
 }
 
 /** snapshot/current/*.md 摘要表 → 字段映射（缺表 → 空对象；值域非法字段丢弃） */
@@ -329,6 +385,8 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
       personId: manifest.id,
       name: manifest.name,
       status: manifest.status,
+      initState: manifest.initState,
+      sourceMode: manifest.sourceMode,
       manifestPath,
       eventCount: 0,
     }

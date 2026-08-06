@@ -53,7 +53,7 @@ export interface Workspace {
   /** 相对 root 读文件；不存在抛 WorkspaceError（调用方先用 exists 判断） */
   read(relPath: string): string
   /** 相对 root 写文件（自动创建父目录） */
-  write(relPath: string, content: string): void
+  write(relPath: string, content: string | Uint8Array): void
   exists(relPath: string): boolean
   /** 相对 root 删除文件（不存在抛 WorkspaceError） */
   delete(relPath: string): void
@@ -157,7 +157,8 @@ export function initWorkspace(root: string): Workspace {
     write(relPath, content) {
       const full = join(root, relPath)
       mkdirSync(dirname(full), { recursive: true })
-      writeFileSync(full, content, 'utf8')
+      // 不传 encoding：string 默认 utf8；Uint8Array（如简历 PDF）原样写入
+      writeFileSync(full, content)
     },
     exists(relPath) {
       return existsSync(join(root, relPath))

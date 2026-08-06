@@ -27,6 +27,7 @@ import type {
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { ExtractionResult } from '../../engine/runtime/document/pdf-import.ts'
 import type { PortfolioProject, PortfolioProposal, PortfolioStatus } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../engine/ir/cover-letter.ts'
@@ -517,6 +518,38 @@ export class EngineClient {
     return this.rpc<{ candidateId: string; action: string; status: string }>(METHODS.resolveCandidate, params)
   }
 
+  /** 重置初始化（Person 生命周期 v0.1：清 intake/extraction/events/snapshot，manifest 保留） */
+  resetPerson(personId: string): Promise<{ personId: string }> {
+    return this.rpc<{ personId: string }>(METHODS.resetPerson, { personId })
+  }
+
+  /** 完成初始化（用户声明基础信息达到可用状态，非封闭）：manifest init_state → completed */
+  completePersonInit(personId: string): Promise<{ personId: string; initState: 'completed' }> {
+    return this.rpc<{ personId: string; initState: 'completed' }>(METHODS.completePersonInit, { personId })
+  }
+
+  /** 物理删除 Person（dev/测试清理：persons/{id}/ 整目录移除，不可恢复） */
+  deletePerson(personId: string): Promise<{ personId: string }> {
+    return this.rpc<{ personId: string }>(METHODS.deletePerson, { personId })
+  }
+
+  /** PDF 提取（Document Ingestion：pdfBase64 → 本地文本层；pages → 逐页视觉；失败建模为状态不抛错）
+   *  视觉通道逐页调用免费模型延迟高且带限流重试（3 次 × 每页约 15s + 退避），超时放宽到 180s */
+  resumeExtract(params: { pdfBase64?: string; pages?: string[] }, timeoutMs = 180_000): Promise<ExtractionResult> {
+    return this.rpc<ExtractionResult>(METHODS.resumeExtract, params, timeoutMs)
+  }
+
+  /** 简历 Artifact 落盘（documents/resumes/resume-00X + meta + extraction md，编号递增不覆盖） */
+  saveResumeOriginal(params: {
+    personId: string
+    fileName?: string
+    text?: string
+    pdfBase64?: string
+    extraction?: { method: 'text' | 'vision'; model?: string }
+  }): Promise<{ artifactId: string; format: 'text' | 'pdf' }> {
+    return this.rpc<{ artifactId: string; format: 'text' | 'pdf' }>(METHODS.saveResumeOriginal, params)
+  }
+
   poolGraph(): Promise<GraphResult> {
     return this.rpc<GraphResult>(METHODS.poolGraph)
   }
@@ -558,6 +591,7 @@ export class EngineClient {
     allowedTools?: string[]
     maxTurns?: number
     map?: MapSettings
+    document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
   }> {
     return this.rpc(METHODS.settingsGet)
   }
@@ -570,6 +604,7 @@ export class EngineClient {
     enabled?: boolean
     providers?: AgentProviderView[]
     map?: { apiKey?: string; securityJsCode?: string }
+    document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
   }): Promise<unknown> {
     return this.rpc(METHODS.settingsUpdate, patch)
   }

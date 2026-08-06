@@ -423,6 +423,8 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
           archived: s.status === 'archived',
           profilePath: s.manifestPath,
           targetRoles: s.careerProfile?.targetRoles ?? [],
+          ...(s.initState ? { initStatus: s.initState === 'in_progress' ? 'pending' : 'active' as const } : {}),
+          ...(s.sourceMode ? { sourceMode: s.sourceMode } : {}),
         }))
       }
       const rows = db.prepare('SELECT * FROM persons_projection ORDER BY id').all() as unknown as PersonRow[]

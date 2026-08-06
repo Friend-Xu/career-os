@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, createPersonSession, listCandidates, parsePersonManifest, parseSnapshotTable, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 
 const manifestMd = `---
 id: person_001
@@ -200,6 +201,153 @@ test('resolveCandidate：确认/拒绝/修改更新状态 + 写 resolution 事�
     assert.equal(listCandidates(ws, 'person_002')[0]!.status, 'rejected')
     // 不存在 → null
     assert.equal(resolveCandidate(ws, { personId: 'person_002', candidateId: 'c-999', action: 'confirmed' }), null)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('resetPerson：清子资产重建空 session，manifest 保留；source_mode 回读', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'resume' })
+    appendCandidates(ws, { personId, candidates: [{ category: 'skill', content: 'Creo', source: 'user_reported' }] })
+    appendSessionTurn(ws, { personId, role: 'user', content: '我有三年非标经验' })
+    resetPerson(ws, personId)
+    // manifest 保留（id/name/source_mode 回读）
+    assert.ok(ws.exists(`persons/${personId}/manifest.md`))
+    assert.ok(ws.read(`persons/${personId}/manifest.md`).includes('| source_mode | resume |'))
+    // 候选清空
+    assert.deepEqual(listCandidates(ws, personId), [])
+    // session 重建为空模板（对话轮次消失）
+    assert.ok(ws.exists(`persons/${personId}/intake/session-001.md`))
+    assert.ok(!ws.read(`persons/${personId}/intake/session-001.md`).includes('非标经验'))
+    // events 目录移除
+    assert.equal(ws.exists(`persons/${personId}/events`), false)
+    assert.throws(() => resetPerson(ws, '../evil'), /非法 personId/)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('deletePerson：整目录物理移除 + 幂等；scanPersons 同步降级', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    assert.equal(scanPersons(ws).length, 1)
+    assert.deepEqual(deletePerson(ws, personId), { personId })
+    assert.equal(ws.exists(`persons/${personId}/manifest.md`), false)
+    assert.equal(scanPersons(ws).length, 0)
+    // 幂等：重复删除不抛错
+    assert.deepEqual(deletePerson(ws, personId), { personId })
+    assert.throws(() => deletePerson(ws, '../evil'), /非法 personId/)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('createResumeArtifact：编号递增落盘 pdf/meta/extraction + reset 清理 documents', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'resume' })
+    // 第一次：text artifact
+    const r1 = createResumeArtifact(ws, {
+      personId,
+      fileName: 'my-resume.txt',
+      text: '机械结构工程师，5 年非标自动化经验。',
+      extraction: { method: 'text' },
+    })
+    assert.equal(r1.artifactId, 'resume-001')
+    assert.equal(r1.format, 'text')
+    const meta1 = ws.read(`persons/${personId}/documents/resumes/resume-001.meta.md`)
+    assert.ok(meta1.includes('artifactId: resume-001'))
+    assert.ok(meta1.includes('source: uploaded_pdf'))
+    assert.ok(meta1.includes('filename: my-resume.txt'))
+    assert.ok(meta1.includes('method: text'))
+    const ext1 = ws.read(`persons/${personId}/documents/resumes/extraction/resume-001.md`)
+    assert.ok(ext1.includes('机械结构工程师'))
+    // 第二次：pdf artifact（编号递增，不覆盖）
+    const pdfBuf = Buffer.from('%PDF-1.4\n%%EOF')
+    const r2 = createResumeArtifact(ws, {
+      personId,
+      fileName: 'resume.pdf',
+      pdfBase64: pdfBuf.toString('base64'),
+      text: '视觉提取的结果文本',
+      extraction: { method: 'vision', model: 'glm-4.6v-flash' },
+    })
+    assert.equal(r2.artifactId, 'resume-002')
+    assert.equal(r2.format, 'pdf')
+    assert.ok(ws.exists(`persons/${personId}/documents/resumes/resume-002.pdf`))
+    assert.deepEqual(Buffer.from(ws.read(`persons/${personId}/documents/resumes/resume-002.pdf`)), pdfBuf)
+    const meta2 = ws.read(`persons/${personId}/documents/resumes/resume-002.meta.md`)
+    assert.ok(meta2.includes('method: vision'))
+    assert.ok(meta2.includes('model: glm-4.6v-flash'))
+    // pdf 场景同时落盘提取文本（Agent 只读 extraction md，不读 pdf）
+    assert.ok(ws.read(`persons/${personId}/documents/resumes/extraction/resume-002.md`).includes('视觉提取的结果文本'))
+    // 第一次 artifact 未被覆盖
+    assert.ok(ws.exists(`persons/${personId}/documents/resumes/extraction/resume-001.md`))
+    // 校验：text/pdfBase64 都缺 → 抛错；非法 personId → 抛错
+    assert.throws(() => createResumeArtifact(ws, { personId, text: '  ' }), /text 或 pdfBase64/)
+    assert.throws(() => createResumeArtifact(ws, { personId: '../evil', text: 'x' }), /非法 personId/)
+    // reset 清理 documents
+    resetPerson(ws, personId)
+    assert.equal(ws.exists(`persons/${personId}/documents/resumes/resume-001.meta.md`), false)
+    // reset 后重新创建 → 编号回到 001
+    const r3 = createResumeArtifact(ws, { personId, text: '重置后新简历' })
+    assert.equal(r3.artifactId, 'resume-001')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('init_state：创建写入 in_progress；completePersonInit 写 completed；scanPersons 回读', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    const manifest = ws.read(`persons/${personId}/manifest.md`)
+    assert.ok(manifest.includes('| init_state | in_progress |'))
+    // parsePersonManifest 回读
+    const parsed = parsePersonManifest(manifest)
+    assert.equal(parsed?.initState, 'in_progress')
+    // scanPersons 投影
+    assert.equal(scanPersons(ws)[0]!.initState, 'in_progress')
+    // 完成
+    assert.deepEqual(completePersonInit(ws, personId), { personId, initState: 'completed' })
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
+    assert.equal(scanPersons(ws)[0]!.initState, 'completed')
+    assert.throws(() => completePersonInit(ws, '../evil'), /非法 personId/)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('resetPerson：init_state 重置回 in_progress', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'resume' })
+    completePersonInit(ws, personId)
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
+    resetPerson(ws, personId)
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('init_state：旧档案（无字段）→ undefined；completePersonInit 插入行', () => {
+  const dir = makeWorkspace({ 'persons/person_001/manifest.md': manifestMd })
+  const ws = initWorkspace(dir)
+  try {
+    assert.equal(parsePersonManifest(ws.read('persons/person_001/manifest.md'))?.initState, undefined)
+    completePersonInit(ws, 'person_001')
+    const md = ws.read('persons/person_001/manifest.md')
+    assert.ok(md.includes('| init_state | completed |'))
+    assert.equal(parsePersonManifest(md)?.initState, 'completed')
+    assert.equal(scanPersons(ws)[0]!.initState, 'completed')
   } finally {
     cleanup(dir)
   }

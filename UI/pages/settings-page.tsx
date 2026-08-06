@@ -30,6 +30,7 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, PROVIDER_PRESETS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { AgentProviderView } from '../store/engine-client'
+import type { Person } from '../types'
 import { ThemeToggle } from '../components/layout/theme-toggle'
 
 export function SettingsPage() {
@@ -37,6 +38,8 @@ export function SettingsPage() {
   const setPerson = useAppStore((s) => s.setPerson)
   const setPersonCreateDialogOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
   const archivePerson = useAppStore((s) => s.archivePerson)
+  const resetInitialization = useAppStore((s) => s.resetInitialization)
+  const deletePerson = useAppStore((s) => s.deletePerson)
   const providers = useAppStore((s) => s.agentSettings.providers)
   const saveAgentSettings = useAppStore((s) => s.saveAgentSettings)
   const push = useToastStore((s) => s.push)
@@ -44,6 +47,26 @@ export function SettingsPage() {
   const themeMode = mode === 'light' || mode === 'dark' ? mode : 'dark'
   const persons = useAppStore((s) => s.persons).filter((p) => !p.archived)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
+  const documentVision = useAppStore((s) => s.agentSettings.documentVision)
+  const [docKey, setDocKey] = useState(documentVision.apiKey)
+  const [docModel, setDocModel] = useState(documentVision.model)
+  useEffect(() => {
+    setDocKey(documentVision.apiKey)
+    setDocModel(documentVision.model)
+  }, [documentVision])
+
+  /** Document Extraction 视觉模型保存（config.json document.vision） */
+  const saveDocumentVision = async () => {
+    try {
+      await saveAgentSettings({
+        documentVision: { model: docModel.trim() || 'glm-4.6v-flash', apiKey: docKey.trim() },
+      })
+      push('success', docKey.trim() ? 'Document Extraction 已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
+    } catch (err) {
+      push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 
   /** 合并更新某服务商（不存在则新建），即时写回引擎 */
   const updateProvider = async (id: string, patch: Partial<AgentProviderView>) => {
@@ -158,9 +181,30 @@ export function SettingsPage() {
                     <Button size="small" onClick={() => setPerson(person.id)} sx={{ fontSize: 12 }}>
                       切换
                     </Button>
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => resetInitialization(person.id)}
+                      sx={{ fontSize: 12, color: COLORS.textMuted }}
+                    >
+                      重置初始化
+                    </Button>
+                    <Button size="small" color="error" onClick={() => setDeleteTarget(person)} sx={{ fontSize: 12 }}>
+                      删除
+                    </Button>
                   </Stack>
                 ) : (
-                  <Typography sx={{ fontSize: 12, color: COLORS.accent, px: 1 }}>当前</Typography>
+                  <Stack direction="row" spacing={0.5}>
+                    <Typography sx={{ fontSize: 12, color: COLORS.accent, px: 1 }}>当前</Typography>
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => resetInitialization(person.id)}
+                      sx={{ fontSize: 12, color: COLORS.textMuted }}
+                    >
+                      重置初始化
+                    </Button>
+                  </Stack>
                 )}
               </Stack>
             ))}
@@ -174,6 +218,39 @@ export function SettingsPage() {
               创建新人
             </Button>
           </Stack>
+
+          <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+            <DialogTitle>删除「{deleteTarget?.name}」？</DialogTitle>
+            <DialogContent>
+              <Typography sx={{ fontSize: 13, mb: 1 }}>将永久移除该档案的全部资产：</Typography>
+              <Box component="ul" sx={{ m: 0, pl: 2.5, fontSize: 13, color: COLORS.textMuted }}>
+                <li>档案 manifest</li>
+                <li>初始化对话记录（intake/）</li>
+                <li>候选数据（extraction/）</li>
+                <li>决议事件（events/）</li>
+              </Box>
+              <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 1.5 }}>
+                此操作不可恢复。关联的决策 / 公司 / 投递记录保留（不属于 Person 生命周期）。
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button size="small" onClick={() => setDeleteTarget(null)}>
+                取消
+              </Button>
+              <Button
+                size="small"
+                color="error"
+                variant="contained"
+                onClick={() => {
+                  const target = deleteTarget
+                  setDeleteTarget(null)
+                  if (target) void deletePerson(target.id)
+                }}
+              >
+                删除
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Section>
 
         <Divider sx={{ my: 3 }} />
@@ -231,6 +308,48 @@ export function SettingsPage() {
               </Box>
               <Switch defaultChecked size="small" />
             </Stack>
+          </Stack>
+        </Section>
+
+        <Divider sx={{ my: 3 }} />
+
+        {/* Document Extraction：PDF 简历视觉提取（config.json document.vision，与 LLM key 同保护） */}
+        <Section title="Document Extraction">
+          <Stack spacing={1.5}>
+            <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
+              PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由免费视觉模型（glm-4.6v-flash）逐页识别。
+            </Typography>
+            <Box sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bgElevated }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>视觉模型</Typography>
+                <Chip
+                  size="small"
+                  label={docKey.trim() ? `✓ 已连接 ${docModel.trim() || 'glm-4.6v-flash'}` : '⚠ 未配置'}
+                  sx={{ height: 20, fontSize: 11 }}
+                  color={docKey.trim() ? 'success' : 'default'}
+                />
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  size="small"
+                  type="password"
+                  placeholder="API Key（智谱开放平台，glm-4.6v-flash 免费）"
+                  value={docKey}
+                  onChange={(e) => setDocKey(e.target.value)}
+                  sx={{ flex: 1, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
+                />
+                <TextField
+                  size="small"
+                  placeholder="模型"
+                  value={docModel}
+                  onChange={(e) => setDocModel(e.target.value)}
+                  sx={{ width: 150, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
+                />
+                <Button size="small" variant="contained" onClick={() => void saveDocumentVision()} sx={{ fontSize: 12.5 }}>
+                  保存
+                </Button>
+              </Stack>
+            </Box>
           </Stack>
         </Section>
 

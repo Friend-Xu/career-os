@@ -57,6 +57,10 @@ export interface PersonSnapshot {
   personId: string // person_001（manifest id）
   name: string // 展示名（manifest name）
   status: string // active / archived（manifest status）
+  /** 初始化状态：in_progress=首次采集未完成；completed=已进入正常使用；缺失=旧档案 */
+  initState?: 'in_progress' | 'completed'
+  /** 初始化通道（manifest source_mode；刷新后恢复通道语义） */
+  sourceMode?: 'resume' | 'interview'
   manifestPath: string // persons/{person_id}/manifest.md
   identity?: {
     education?: string

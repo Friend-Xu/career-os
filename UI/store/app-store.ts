@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useToastStore } from './toast-store'
 import type {
   Application,
   ApplicationStatus,
@@ -142,7 +143,7 @@ interface AppState {
   /** 当前运行中的 Agent 任务（sessionId 归属；无任务为 null，不持久化）——停止按钮的驱动源 */
   activeTask: { taskId: string; sessionId: string } | null;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
-  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings };
+  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string } };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   applications: Application[];
@@ -239,6 +240,12 @@ interface AppState {
   /** 回填引擎 person_id（person/session/create 成功后的稳定标识，owner 协议引用键） */
   setPersonPersonId: (id: number, personId: string) => void;
   archivePerson: (personId: number) => void;
+  /** 重置初始化（生命周期 v0.1）：引擎清 intake/extraction/events/snapshot + 本地 init 状态回退 pending；manifest/身份保留 */
+  resetInitialization: (personId: number) => Promise<void>;
+  /** 完成初始化（用户声明基础信息达到可用状态，非封闭）：manifest init_state → completed + 本地 initStatus → active */
+  completeInitialization: (personId: number) => Promise<void>;
+  /** 物理删除 Person（dev/测试清理）：引擎 persons/{id}/ 整目录移除 + 本地状态清理；引擎离线拒绝（避免本地删了被 persons/list 复活） */
+  deletePerson: (personId: number) => Promise<void>;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setJdAddOpen: (open: boolean) => void;
@@ -296,6 +303,8 @@ interface AppState {
     enabled?: boolean
     providers?: AgentProviderView[]
     map?: { apiKey?: string; securityJsCode?: string }
+    /** Document Extraction 视觉模型（PDF 图片型提取；写 config.json document.vision） */
+    documentVision?: { model?: string; apiKey?: string }
   }) => Promise<void>;
   /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings */
   setAgentModel: (model: string) => void;
@@ -395,7 +404,7 @@ export const useAppStore = create<AppState>()(
       sessions: SESSIONS,
       currentSessionId: 's-current',
       activeTask: null,
-      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' } },
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' } },
       availableModels: { source: 'cli', models: [] },
       applications: APPLICATIONS,
       deletedAppJobIds: [],
@@ -547,6 +556,76 @@ export const useAppStore = create<AppState>()(
     }))
   },
 
+  /** 重置初始化（生命周期 v0.1）：引擎清子资产 + 本地 init 状态回退 pending；manifest/身份保留 */
+  resetInitialization: async (personId) => {
+    const { persons, currentPersonId } = get()
+    const target = persons.find((p) => p.id === personId)
+    if (!target?.personId) {
+      useToastStore.getState().push('warning', '该档案未落盘引擎，无需重置')
+      return
+    }
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：重置需连接引擎')
+      return
+    }
+    try {
+      await engine.resetPerson(target.personId)
+      set((state) => ({
+        persons: state.persons.map((p) => (p.id === personId ? { ...p, initStatus: 'pending' } : p)),
+        ...(currentPersonId === personId ? { initSessionState: 'welcome', initCandidates: [] } : {}),
+      }))
+      useToastStore.getState().push('success', `已重置「${target.name}」的初始化，可重新采集`)
+    } catch (err) {
+      useToastStore.getState().push('warning', `重置失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 完成初始化（用户声明基础信息达到可用状态，非封闭）：manifest init_state → completed；Banner/初始化空间随之消失 */
+  completeInitialization: async (personId) => {
+    const { persons } = get()
+    const target = persons.find((p) => p.id === personId)
+    if (!target?.personId) {
+      useToastStore.getState().push('warning', '该档案未落盘引擎，无需完成')
+      return
+    }
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：完成初始化需连接引擎')
+      return
+    }
+    try {
+      await engine.completePersonInit(target.personId)
+      set((state) => ({
+        persons: state.persons.map((p) => (p.id === personId ? { ...p, initStatus: 'active' } : p)),
+      }))
+      useToastStore.getState().push('success', `「${target.name}」已进入正常使用——基础档案已建立，后续可随时补充`)
+    } catch (err) {
+      useToastStore.getState().push('warning', `完成失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 物理删除 Person（dev/测试清理）：引擎整目录移除 + 本地状态清理；引擎离线拒绝（本地删除会被 persons/list 复活） */
+  deletePerson: async (personId) => {
+    const { persons, currentPersonId } = get()
+    const target = persons.find((p) => p.id === personId)
+    if (!target) return
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：无法删除（本地删除会在下次同步复活）')
+      return
+    }
+    try {
+      if (target.personId) await engine.deletePerson(target.personId)
+      const remaining = persons.filter((p) => p.id !== personId)
+      set({
+        persons: remaining,
+        currentPersonId: currentPersonId === personId ? remaining[0]?.id ?? currentPersonId : currentPersonId,
+        ...(currentPersonId === personId ? { initSessionState: 'welcome', initCandidates: [] } : {}),
+      })
+      useToastStore.getState().push('success', `已删除「${target.name}」及其全部资产`)
+    } catch (err) {
+      useToastStore.getState().push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
   toggleAgentPanel: () => {
     const { agentPanelOpen, mainWidthMode, currentPage } = get()
     if (currentPage === 'agent' || currentPage === 'resumes') return
@@ -638,7 +717,9 @@ export const useAppStore = create<AppState>()(
       '开场白（直接说出，不要分析）："你好，我会帮你建立一份职业档案。这里记录的不只是简历，而是你做过什么、积累了什么能力，以及未来想探索什么方向。这些信息以后会成为职业分析的基础。我们先从你的经历开始。"',
       '上下文隔离（必须遵守）：当前初始化对象是「' + personName + '」，一个全新的 Person——没有历史档案。workspace 中 persons/person_001/（"我"）是另一个人的档案，禁止读取或引用其内容；不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。',
       resumeChannel
-        ? '采集：先读取 resumes/documents/ 中的简历资产提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
+        ? personId
+          ? `采集：先读取 persons/${personId}/documents/resumes/extraction/ 目录中最新编号（resume-00X 中编号最大）的 resume-*.md 文件——这是用户上传简历的提取结果，从中提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；若该目录为空，先引导用户粘贴简历文本。再补问简历外的项目与非正式经历。`
+          : '采集：先引导用户提供简历（粘贴文本），提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
         : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
       '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
       '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。',
@@ -783,6 +864,10 @@ export const useAppStore = create<AppState>()(
           enabled: s.enabled !== false,
           providers: s.providers ?? [],
           map: s.map ?? { provider: 'amap' },
+          documentVision: {
+            model: s.document?.vision?.model ?? 'glm-4.6v-flash',
+            apiKey: s.document?.vision?.apiKey ?? '',
+          },
         },
       })
     } catch {
@@ -802,7 +887,17 @@ export const useAppStore = create<AppState>()(
 
   saveAgentSettings: async (patch) => {
     if (!engine) throw new Error('引擎未连接')
-    await engine.updateAgentSettings(patch)
+    await engine.updateAgentSettings({
+      model: patch.model,
+      apiKey: patch.apiKey,
+      baseUrl: patch.baseUrl,
+      enabled: patch.enabled,
+      providers: patch.providers,
+      map: patch.map,
+      ...(patch.documentVision !== undefined
+        ? { document: { vision: { provider: 'zhipu' as const, ...patch.documentVision } } }
+        : {}),
+    })
     set((s) => ({
       agentSettings: {
         model: patch.model !== undefined ? patch.model : s.agentSettings.model,
@@ -811,6 +906,10 @@ export const useAppStore = create<AppState>()(
         enabled: patch.enabled !== undefined ? patch.enabled : s.agentSettings.enabled,
         providers: patch.providers !== undefined ? patch.providers : s.agentSettings.providers,
         map: patch.map !== undefined ? { ...s.agentSettings.map, ...patch.map } : s.agentSettings.map,
+        documentVision:
+          patch.documentVision !== undefined
+            ? { ...s.agentSettings.documentVision, ...patch.documentVision }
+            : s.agentSettings.documentVision,
       },
     }))
   },

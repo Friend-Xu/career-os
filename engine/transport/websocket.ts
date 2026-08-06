@@ -24,7 +24,10 @@ import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { appendCandidates, appendSessionTurn, createPersonSession, listCandidates, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, resetPerson, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { createResumeArtifact } from '../storage/pdf-artifact.ts'
+import { extractLocalText, extractVisionPages } from '../runtime/document/pdf-import.ts'
+import { ZhipuVisionProvider } from '../runtime/document/vision-provider.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
@@ -317,6 +320,52 @@ function personIdParams(v: unknown): string {
   return (v as Record<string, unknown>).personId as string
 }
 
+/** resume/extract 入参校验（RPC 边界：pdfBase64 或 pages 至少其一） */
+function extractResumeParams(v: unknown): { pdfBase64?: string; pages?: string[] } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { pdfBase64 } 或 { pages }')
+  const p = v as Record<string, unknown>
+  const pdfBase64 = typeof p.pdfBase64 === 'string' ? p.pdfBase64 : undefined
+  const pages = Array.isArray(p.pages)
+    ? (p.pages as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : undefined
+  if (!pdfBase64 && (!pages || pages.length === 0)) throw new Error('需要 params.pdfBase64 或 params.pages（非空）')
+  return { ...(pdfBase64 ? { pdfBase64 } : {}), ...(pages && pages.length > 0 ? { pages } : {}) }
+}
+
+/** person/session/resume 入参校验（RPC 边界：personId + text|pdfBase64 fail fast；extraction 可选） */
+function saveResumeOriginalParams(v: unknown): {
+  personId: string
+  fileName?: string
+  text?: string
+  pdfBase64?: string
+  extraction?: { method: 'text' | 'vision'; model?: string }
+} {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { personId, text | pdfBase64 }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string') throw new Error('params.personId 缺失')
+  const text = typeof p.text === 'string' ? p.text : undefined
+  const pdfBase64 = typeof p.pdfBase64 === 'string' ? p.pdfBase64 : undefined
+  if ((!text || !text.trim()) && !pdfBase64) throw new Error('需要 params.text 或 params.pdfBase64（其一非空）')
+  let extraction: { method: 'text' | 'vision'; model?: string } | undefined
+  if (p.extraction !== undefined) {
+    const e = p.extraction as Record<string, unknown>
+    if (typeof e !== 'object' || e === null || !['text', 'vision'].includes(e.method as string)) {
+      throw new Error('params.extraction 应为 { method: text|vision }')
+    }
+    extraction = {
+      method: e.method as 'text' | 'vision',
+      ...(typeof e.model === 'string' && e.model ? { model: e.model as string } : {}),
+    }
+  }
+  return {
+    personId: p.personId,
+    fileName: typeof p.fileName === 'string' && p.fileName ? p.fileName : undefined,
+    text,
+    pdfBase64,
+    extraction,
+  }
+}
+
 /** ledger/candidates 入参校验（RPC 边界：版本对 + personId） */
 function ledgerVersionsParams(v: unknown): { personId: string; fromId: string; toId: string } {
   if (typeof v !== 'object' || v === null) throw new Error('ledger/* 需要 params { personId, fromId, toId }')
@@ -575,6 +624,7 @@ function settingsUpdateParams(v: unknown): {
   allowedTools?: string[]
   maxTurns?: number
   map?: { apiKey?: string; securityJsCode?: string }
+  document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
 } {
   if (typeof v !== 'object' || v === null) throw new Error('settings/update 需要 params 对象')
   const p = v as Record<string, unknown>
@@ -641,6 +691,28 @@ function settingsUpdateParams(v: unknown): {
     out.map = {
       ...(m.apiKey !== undefined ? { apiKey: m.apiKey as string } : {}),
       ...(m.securityJsCode !== undefined ? { securityJsCode: m.securityJsCode as string } : {}),
+    }
+  }
+  if (p.document !== undefined) {
+    if (typeof p.document !== 'object' || p.document === null || Array.isArray(p.document)) {
+      throw new Error('params.document 应为对象 { vision? }')
+    }
+    const d = p.document as Record<string, unknown>
+    if (d.vision !== undefined) {
+      if (typeof d.vision !== 'object' || d.vision === null || Array.isArray(d.vision)) {
+        throw new Error('params.document.vision 应为对象 { provider?, model?, apiKey? }')
+      }
+      const v = d.vision as Record<string, unknown>
+      if (v.provider !== undefined && v.provider !== 'zhipu') throw new Error('params.document.vision.provider 当前仅支持 zhipu')
+      if (v.model !== undefined && typeof v.model !== 'string') throw new Error('params.document.vision.model 应为字符串')
+      if (v.apiKey !== undefined && typeof v.apiKey !== 'string') throw new Error('params.document.vision.apiKey 应为字符串')
+      out.document = {
+        vision: {
+          ...(v.provider !== undefined ? { provider: v.provider as 'zhipu' } : {}),
+          ...(v.model !== undefined ? { model: v.model as string } : {}),
+          ...(v.apiKey !== undefined ? { apiKey: v.apiKey as string } : {}),
+        },
+      }
     }
   }
   return out
@@ -795,6 +867,33 @@ export async function startServer(opts: {
     [METHODS.appendCandidates]: (params) => appendCandidates(workspace, appendCandidatesParams(params)),
     [METHODS.listCandidates]: (params) => listCandidates(workspace, personIdParams(params)),
     [METHODS.resolveCandidate]: (params) => resolveCandidate(workspace, resolveCandidateParams(params)),
+    [METHODS.resetPerson]: (params) => resetPerson(workspace, personIdParams(params)),
+    [METHODS.completePersonInit]: (params) => completePersonInit(workspace, personIdParams(params)),
+    [METHODS.deletePerson]: (params) => deletePerson(workspace, personIdParams(params)),
+    [METHODS.resumeExtract]: (params) => {
+      const p = extractResumeParams(params)
+      // 双通道：pdfBase64 → 本地文本层（免费离线）；pages → 逐页视觉（UI 已渲染多页图）
+      if (p.pages) {
+        const vision = config.document.vision?.apiKey
+          ? new ZhipuVisionProvider({
+              apiKey: config.document.vision.apiKey,
+              model: config.document.vision.model ?? 'glm-4.6v-flash',
+            })
+          : null
+        if (!vision) {
+          return { status: 'failed', method: 'vision', text: '', error: '视觉模型未配置（设置 → Document Extraction）' }
+        }
+        return extractVisionPages(p.pages, vision)
+      }
+      return extractLocalText(Buffer.from(p.pdfBase64 ?? '', 'base64'))
+    },
+    [METHODS.saveResumeOriginal]: (params) => {
+      const p = saveResumeOriginalParams(params)
+      if (p.extraction?.method === 'vision' && !p.extraction.model) {
+        p.extraction = { ...p.extraction, model: config.document.vision?.model ?? 'glm-4.6v-flash' }
+      }
+      return createResumeArtifact(workspace, p)
+    },
     [METHODS.snapshotArchive]: (params) => {
       const p = snapshotArchiveParams(params)
       return archiveCurrentSnapshot(workspace, p.personId, p)
@@ -863,6 +962,7 @@ export async function startServer(opts: {
       allowedTools: config.agent.allowedTools,
       maxTurns: config.agent.maxTurns,
       map: config.map,
+      document: config.document,
     }),
     [METHODS.settingsUpdate]: (params) => {
       const patch = settingsUpdateParams(params)
@@ -876,10 +976,14 @@ export async function startServer(opts: {
       if (patch.allowedTools !== undefined) config.agent.allowedTools = patch.allowedTools
       if (patch.maxTurns !== undefined) config.agent.maxTurns = patch.maxTurns
       if (patch.map !== undefined) config.map = { provider: config.map.provider, ...patch.map }
+      if (patch.document !== undefined) {
+        config.document = { vision: { provider: 'zhipu', ...config.document.vision, ...patch.document.vision } }
+        if (!config.document.vision?.apiKey) delete config.document.vision?.apiKey
+      }
       // 写回 config.json（保持其他字段不动；空串 → 删除该字段）
       const full = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, 'utf8')) as Record<string, unknown>
       const agent = (full.agent ?? {}) as Record<string, unknown>
-      const { map: mapPatch, ...agentPatch } = patch
+      const { map: mapPatch, document: documentPatch, ...agentPatch } = patch
       for (const [k, v] of Object.entries(agentPatch)) {
         if (v === '') delete agent[k]
         else agent[k] = v
@@ -893,6 +997,17 @@ export async function startServer(opts: {
         if (mapPatch.securityJsCode === '') delete map.securityJsCode
         else map.securityJsCode = mapPatch.securityJsCode
         full.map = map
+      }
+      // document 段独立写回（vision 子段：空 apiKey → 删除）
+      if (documentPatch?.vision) {
+        const doc = (full.document ?? {}) as Record<string, unknown>
+        const vision = (doc.vision ?? { provider: 'zhipu' }) as Record<string, unknown>
+        for (const [k, v] of Object.entries(documentPatch.vision)) {
+          if (v === '') delete vision[k]
+          else vision[k] = v
+        }
+        doc.vision = vision
+        full.document = doc
       }
       writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(full, null, 2) + '\n', 'utf8')
       return { ok: true }

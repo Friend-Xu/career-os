@@ -1,0 +1,28 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 5289
+  },
+  "agent": {
+    "permissionMode": "acceptEdits",
+    "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob"],
+    "apiKey": "",
+    "baseUrl": "",
+    "enabled": false
+  },
+  "document": {
+    "vision": {
+      "provider": "zhipu",
+      "model": "glm-4.6v-flash",
+      "apiKey": ""
+    }
+  },
+  "watcher": {
+    "enabled": true
+  },
+  "map": {
+    "provider": "amap",
+    "apiKey": "",
+    "securityJsCode": ""
+  }
+}
