@@ -1,10 +1,13 @@
+---
+person_id: {person_id}
+---
+
 # {标题}
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| person_id | {person_id} |
 | skill | {子流程名称} |
 | direction | - |
 | direction_match | - |
@@ -18,9 +21,9 @@
 | status | complete |
 | protocol_version | 2.0 |
 
-> **person_id 是系统注入字段（ADR-013 单身份源）**：不允许 Agent 自行生成或猜测。
-> 取值来源 = 当前 Person 上下文的 `personId`（persons/{person_id}/manifest.md 的 id，如 person_003）。
-> 缺失 person_id 的决策将无法归属到 Person，视图层不展示。
+> **person_id 是系统身份字段（frontmatter，ADR-013/014）**：不是自由填写内容。
+> 取值来源 = 任务上下文注入的「当前分析对象」（如 person_003），从上下文**复制**到此处，禁止自行编造、禁止填「我」、禁止留空。
+> 引擎登记时会校验：缺失或不属于已登记 Person → 决策标 invalid（信息池「⚠ 待人工处理」可见），视图不展示。
 
 ---
 

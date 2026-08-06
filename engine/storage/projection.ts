@@ -111,7 +111,7 @@ export type DecisionView = DecisionRecord & { validation?: Validation }
 
 export interface ProjectionStore {
   init(): { protocol: string; version: string; workspace: string; serverTime: string }
-  syncFromDecisions(parsed: ParsedDecision[]): void
+  syncFromDecisions(parsed: ParsedDecision[]): ParsedDecision[]
   listDecisions(): DecisionView[]
   rescan(): { count: number }
   listCompanies(): CompanyView[]
@@ -382,9 +382,38 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
 
   // ─── 服务 ───────────────────────────────────────────────────────────
 
-  function syncFromDecisions(parsed: ParsedDecision[]): void {
+  /**
+   * ADR-014 身份校验：person_id 缺失或不属于已登记 Person → invalid（身份错误是数据污染，不降级）。
+   * Agent 从任务上下文传递归属（frontmatter），引擎校验防编造/留空——错误在信息池「待人工处理」可见。
+   */
+  function assertDecisionIdentity(parsed: ParsedDecision[]): ParsedDecision[] {
+    const validIds = new Set(scanPersons(workspace).map((p) => p.personId))
+    const tag = (p: ParsedDecision, reason: string): ParsedDecision => {
+      const issue: ValidationIssue = { path: p.sourceFile, reason, severity: 'error' }
+      const base = p.validation
+      return {
+        ...p,
+        validation: base
+          ? { status: 'invalid', issues: [...base.issues, issue] }
+          : { status: 'invalid', issues: [issue] },
+      }
+    }
+    return parsed.map((p) => {
+      const pid = p.record.personId
+      if (!pid) return tag(p, 'person_id 缺失（ADR-014 身份字段：Agent 从任务上下文传递，不得留空）')
+      if (!validIds.has(pid)) {
+        const legal = [...validIds].join('/') || '无'
+        return tag(p, `person_id=${pid} 不属于已登记 Person（合法：${legal}）`)
+      }
+      return p
+    })
+  }
+
+  function syncFromDecisions(parsed: ParsedDecision[]): ParsedDecision[] {
+    const checked = assertDecisionIdentity(parsed)
     lastParsed = parsed
-    rebuild(parsed)
+    rebuild(checked)
+    return checked
   }
 
   return {

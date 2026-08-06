@@ -145,7 +145,10 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
   }
   const inputs = parseInputRefs(body)
   if (inputs) record.inputs = inputs
+  // ADR-014：person_id 是系统身份字段——frontmatter（新协议，权威）优先，摘要表（存量 v2.1）兜底
+  if (meta.person_id) record.personId = meta.person_id
   for (const [tableField, irField] of Object.entries(FIELD_MAP)) {
+    if (irField === 'personId' && record.personId !== undefined) continue
     const raw = fields[tableField]
     if (raw === undefined || raw === '-' || raw === '') continue
     switch (irField) {

@@ -148,7 +148,7 @@ interface AppState {
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
-  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string } };
+  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string }; permissionMode: string };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   applications: Application[];
@@ -313,6 +313,8 @@ interface AppState {
     map?: { apiKey?: string; securityJsCode?: string }
     /** Document Extraction 视觉模型（PDF 图片型提取；写 config.json document.vision） */
     documentVision?: { model?: string; apiKey?: string }
+    /** 工具授权模式：bypassPermissions = 自动授权所有工具；ask = 逐个询问 */
+    permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
   }) => Promise<void>;
   /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings */
   setAgentModel: (model: string) => void;
@@ -414,7 +416,7 @@ export const useAppStore = create<AppState>()(
       initSessionId: null,
       sessionTasks: {},
       now: Date.now(),
-      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' } },
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
       applications: APPLICATIONS,
       deletedAppJobIds: [],
@@ -915,6 +917,7 @@ export const useAppStore = create<AppState>()(
             model: s.document?.vision?.model ?? 'glm-4.6v-flash',
             apiKey: s.document?.vision?.apiKey ?? '',
           },
+          permissionMode: s.permissionMode ?? 'bypassPermissions',
         },
       })
     } catch {
@@ -941,6 +944,7 @@ export const useAppStore = create<AppState>()(
       enabled: patch.enabled,
       providers: patch.providers,
       map: patch.map,
+      permissionMode: patch.permissionMode,
       ...(patch.documentVision !== undefined
         ? { document: { vision: { provider: 'zhipu' as const, ...patch.documentVision } } }
         : {}),
@@ -957,6 +961,8 @@ export const useAppStore = create<AppState>()(
           patch.documentVision !== undefined
             ? { ...s.agentSettings.documentVision, ...patch.documentVision }
             : s.agentSettings.documentVision,
+        permissionMode:
+          patch.permissionMode !== undefined ? patch.permissionMode : s.agentSettings.permissionMode,
       },
     }))
   },
@@ -1272,8 +1278,9 @@ export const useAppStore = create<AppState>()(
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId
-    // 会话内已批量放行 → 不弹窗，直接放行并反馈
-    if (get().approvedTools[sessionId]?.includes(toolName)) {
+    // 会话内已批量放行（'*' 通配 = 本次会话全部工具）或已放行该工具 → 不弹窗，直接放行并反馈
+    const approved = get().approvedTools[sessionId]
+    if (approved?.includes('*') || approved?.includes(toolName)) {
       appendSystemMessage(sessionId, `已自动放行工具「${toolName}」（会话内已授权）`)
       return Promise.resolve(true)
     }
@@ -1312,10 +1319,11 @@ export const useAppStore = create<AppState>()(
     const pending = get().pendingPermission
     if (!pending) return
     const { approvedTools } = get()
+    // '*' 通配：本次会话内后续所有工具请求自动放行（不再逐个弹窗）
     set({
       approvedTools: {
         ...approvedTools,
-        [pending.sessionId]: [...(approvedTools[pending.sessionId] ?? []), pending.toolName],
+        [pending.sessionId]: [...(approvedTools[pending.sessionId] ?? []), '*'],
       },
     })
     get().approvePermission()
@@ -1660,6 +1668,9 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
   try {
     const { taskId } = await engine.startAgent({
       task: content,
+      ...(useAppStore.getState().currentPerson().personId
+        ? { personId: useAppStore.getState().currentPerson().personId }
+        : {}),
       ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
       ...(useAppStore.getState().agentSettings.model
         ? { model: useAppStore.getState().agentSettings.model }

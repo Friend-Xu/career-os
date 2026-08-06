@@ -99,7 +99,7 @@ export function defaultConfig(): EngineConfig {
   const workspace = resolve(REPO_ROOT, 'workspace', 'career-advisor')
   return {
     server: { host: '127.0.0.1', port: 5289 },
-    agent: { permissionMode: 'acceptEdits', allowedTools: [...DEFAULT_ALLOWED_TOOLS] },
+    agent: { permissionMode: 'bypassPermissions', allowedTools: [...DEFAULT_ALLOWED_TOOLS] },
     paths: {
       workspace,
       skills: resolve(REPO_ROOT, 'skills', 'career-advisor'),

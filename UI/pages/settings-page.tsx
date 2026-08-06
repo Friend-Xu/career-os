@@ -42,6 +42,7 @@ export function SettingsPage() {
   const deletePerson = useAppStore((s) => s.deletePerson)
   const providers = useAppStore((s) => s.agentSettings.providers)
   const saveAgentSettings = useAppStore((s) => s.saveAgentSettings)
+  const permissionMode = useAppStore((s) => s.agentSettings.permissionMode)
   const push = useToastStore((s) => s.push)
   const { mode, setMode } = useColorScheme()
   const themeMode = mode === 'light' || mode === 'dark' ? mode : 'dark'
@@ -103,6 +104,22 @@ export function SettingsPage() {
   }
 
   const customProviders = providers.filter((p) => !PROVIDER_PRESETS.some((pre) => pre.id === p.id))
+
+  /** 工具授权：bypassPermissions = 全部自动放行；其余（ask/acceptEdits）= 逐个确认 */
+  const autoApprove = permissionMode === 'bypassPermissions'
+  const modeLabel = {
+    bypassPermissions: 'bypassPermissions —— 所有工具自动放行',
+    acceptEdits: 'acceptEdits —— 基础工具自动放行，其余逐个确认',
+    ask: 'ask —— 逐个确认',
+  }[permissionMode] ?? `unknown（${permissionMode}）`
+  const savePermissionMode = async (on: boolean) => {
+    try {
+      await saveAgentSettings({ permissionMode: on ? 'bypassPermissions' : 'ask' })
+      push('success', on ? '已开启自动授权（Agent 工具全部自动放行）' : '已关闭自动授权（工具调用需逐个确认）')
+    } catch (err) {
+      push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
@@ -308,6 +325,28 @@ export function SettingsPage() {
               </Box>
               <Switch defaultChecked size="small" />
             </Stack>
+          </Stack>
+        </Section>
+
+        <Divider sx={{ my: 3 }} />
+
+        {/* Agent 工具授权：工具调用权限模式（config.json agent.permissionMode；默认全部授权） */}
+        <Section title="Agent 工具授权">
+          <Stack spacing={1.5}>
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontSize: 13 }}>自动授权所有工具</Typography>
+                <Typography sx={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 440, lineHeight: 1.6 }}>
+                  开启后 Agent 调用工具（搜索 / 读文件 / 写文件 / 执行命令）不再逐个询问，方向探索等长任务更流畅。
+                  关闭后每个工具调用需在弹窗中确认。
+                </Typography>
+              </Box>
+              <Switch size="small" checked={autoApprove} onChange={(e) => void savePermissionMode(e.target.checked)} />
+            </Stack>
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+              当前模式：{modeLabel}
+              （写操作影响工作区文件，开启即表示信任 Agent 在 workspace 内自主读写）
+            </Typography>
           </Stack>
         </Section>
 

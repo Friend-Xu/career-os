@@ -570,6 +570,8 @@ export class EngineClient {
     task: string
     context?: string
     resumeSessionId?: string
+    /** 当前分析对象（person_003）——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
+    personId?: string
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     allowedTools?: string[]
     maxTurns?: number
@@ -603,6 +605,7 @@ export class EngineClient {
     baseUrl?: string
     enabled?: boolean
     providers?: AgentProviderView[]
+    permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     map?: { apiKey?: string; securityJsCode?: string }
     document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
   }): Promise<unknown> {

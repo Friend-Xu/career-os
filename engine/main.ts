@@ -8,6 +8,7 @@ import { initWorkspace, WorkspaceError } from './storage/workspace.ts'
 import { createLogger } from './logger.ts'
 import { scanDecisions, watchDecisions } from './storage/report-watcher.ts'
 import { registerDecisionIdentity } from './storage/decision-registry.ts'
+import { writeIndexDecisionSections } from './storage/index-writer.ts'
 import { registerArtifacts } from './storage/artifact-registry.ts'
 import { EVIDENCE_SPEC, watchEvidence } from './storage/evidence-watcher.ts'
 import { CLAIM_SPEC, watchClaims } from './storage/claim-watcher.ts'
@@ -99,7 +100,9 @@ async function main(args: string[]): Promise<void> {
     // ─── 投影层（SQLite，markdown 真相源的查询投影）──────────────────────
     const projection = createProjection({ dbPath: config.paths.db, workspace: ws, logger })
     const initial = scanDecisions(ws)
-    projection.syncFromDecisions(initial)
+    const checkedInitial = projection.syncFromDecisions(initial)
+    // INDEX 决策段落对齐（引擎接管投影；存量 Agent 手写段落被规范重写）
+    writeIndexDecisionSections(ws, checkedInitial)
     logger.info(`投影就绪：decisions ${initial.length} 条（db ${config.paths.db}）`)
 
     // ─── 健康检查（--doctor）：契约 v1 四维度投影，CLI 一次性输出（与 system/health RPC 同一计算源）
@@ -143,7 +146,9 @@ async function main(args: string[]): Promise<void> {
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
     if (config.watcher.enabled) {
       watchDecisions(ws, (parsed) => {
-        projection.syncFromDecisions(parsed)
+        // 身份校验 + 投影；校验后数据驱动 INDEX 决策段落（ADR-014：INDEX 是投影，Agent 不得手写）
+        const checked = projection.syncFromDecisions(parsed)
+        writeIndexDecisionSections(ws, checked)
         broadcast({ event: EVENTS.decisionsChanged })
         broadcast({ event: EVENTS.poolChanged })
         logger.info(`decisions/ 变更：重扫 ${parsed.length} 条并广播`)

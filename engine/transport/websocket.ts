@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDIntelligenceResult, PersonSkill } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
@@ -569,6 +569,12 @@ function agentStartParams(v: unknown): AgentStartParams {
   const p = v as Record<string, unknown>
   if (typeof p.task !== 'string' || p.task.length === 0) throw new Error('params.task 缺失（任务指令）')
   const out: AgentStartParams = { task: p.task }
+  if (p.personId !== undefined) {
+    if (typeof p.personId !== 'string' || p.personId.length === 0) {
+      throw new Error('params.personId 应为非空字符串（person_003）')
+    }
+    out.personId = p.personId
+  }
   if (p.context !== undefined) {
     if (typeof p.context !== 'string') throw new Error('params.context 应为字符串')
     out.context = p.context
@@ -803,20 +809,25 @@ function permissionParams(v: unknown): { taskId: string; requestId: string; allo
  * 引擎 spawn 的 CLI 进程未设置该变量 → Agent 会把已初始化工作区误判为"首次使用"，
  * 此处用真实文件状态直接覆盖该检查。
  */
-function buildSkillIdentity(skillsDir: string, workspaceRoot: string): string {
+function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: { name: string; personId: string }): string {
   const indexExists = existsSync(join(workspaceRoot, 'INDEX.md'))
   const initState = indexExists
     ? `当前工作区已初始化（${join(workspaceRoot, 'INDEX.md')} 存在），直接跳过 SKILL.md 中的"首次运行检查"步骤。`
     : `当前工作区尚未初始化（缺 ${join(workspaceRoot, 'INDEX.md')}），按 SKILL.md 的"首次运行检查"执行初始化。`
+  // 当前分析对象（系统事实，非委托身份责任）：Agent 的决策产物必须继承此 person_id（ADR-014）
+  const personState = person
+    ? `当前分析对象：${person.name}（${person.personId}）。你产出的所有决策记录（decisions/*.md）frontmatter 的 person_id 必须等于 ${person.personId}，不得使用其他名字或留空。`
+    : ''
   try {
     const skill = readFileSync(join(skillsDir, 'SKILL.md'), 'utf8')
     return [
       '你是 Career OS 的职业决策助手（技能：career-advisor）。',
+      personState,
       `你的完整协议与工作流程定义在技能文件 ${join(skillsDir, 'SKILL.md')}（本任务工作目录下可访问），开始处理任务前请先阅读它。`,
       initState,
       '技能概述（节选）：',
       skill.slice(0, 1500),
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   } catch {
     return `你是 Career OS 的职业决策助手，请依据工作区中的 profiles/、decisions/ 等数据为用户提供职业决策建议。${initState}`
   }
@@ -935,8 +946,16 @@ export async function startServer(opts: {
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => {
       const p = agentStartParams(params)
-      // 技能身份注入：人设 + 协议引导拼在任务前（不注入会因缺上下文导致身份漂移）
-      const identity = buildSkillIdentity(config.paths.skills, workspace.paths.root)
+      // 当前分析对象（系统事实）：personId → person 快照（name）；注入任务上下文供 Agent 传递归属（ADR-014）
+      const person = p.personId
+        ? (store.listPersons() as Person[]).find((x) => x.personId === p.personId)
+        : undefined
+      // 技能身份注入：人设 + 当前分析对象 + 协议引导拼在任务前（不注入会因缺上下文导致身份漂移）
+      const identity = buildSkillIdentity(
+        config.paths.skills,
+        workspace.paths.root,
+        person ? { name: person.name, personId: person.personId ?? p.personId! } : undefined,
+      )
       return {
         taskId: agentRuntime.start(
           { ...p, context: [identity, p.context].filter(Boolean).join('\n\n') },

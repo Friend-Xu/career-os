@@ -60,9 +60,9 @@ export function CitiesView() {
   const person = useAppStore((s) => s.currentPerson())
   const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
 
-  /** 城市聚合：按城市取最新评估（cityScore ?? directionMatch）为评分锚点 */
+  /** 城市聚合：仅城市评估决策（skill=city-advisor；方向探索的自报意向 city 不是评估结果）按城市取最新评估（cityScore ?? directionMatch）为评分锚点 */
   const cities = useMemo(() => {
-    const mine = decisions.filter((d) => belongsToPerson(d, person) && d.city)
+    const mine = decisions.filter((d) => belongsToPerson(d, person) && d.skill === 'city-advisor' && d.city)
     const map = new Map<string, DecisionView[]>()
     for (const d of mine) {
       const list = map.get(d.city!)
