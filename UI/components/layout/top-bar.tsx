@@ -100,7 +100,7 @@ export function TopBar() {
             Career OS
           </Typography>
           <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.2 }}>
-            本地版 v2.0
+            本地版 v1.0
           </Typography>
         </Box>
       </Stack>

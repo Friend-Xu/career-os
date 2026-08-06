@@ -8,7 +8,7 @@
 从方向探索到简历撰写，覆盖求职决策全链路。
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 
 [中文](README.md) | [English](README.en.md)
 
@@ -53,6 +53,13 @@
 <td><img src="docs/screenshots/06-resumes.png" alt="简历中心" width="100%"/><br/><sub>简历中心：划词 AI 改写 + 基于 JD 派生</sub></td>
 </tr>
 </table>
+
+### 工作台能力
+
+- **职业画像视图**——"系统如何理解你"的状态镜像：身份 + AI 叙事摘要 + 画像地图（中心人物 + 六维画像节点，节点状态 = 证据状态：实心已建立 / 空心呼吸待确认 / 虚线推断或未建立，不画关系线）+ 画像状态与内容（覆盖维度 / 证据计数 / 技能条 / 目标意向）。主体是 Person，不是 AI
+- **Attention 引导**——浮层卡片（事件跳转）+ 导航角标（持续状态）+ 页面空态（落点 Action）三件套，回答"下一步在哪里"，不打扰不常驻
+- **Agent 任务状态条**——工作台 Action 点击即启动任务（新会话 + 立即执行，任务标题即会话名），Agent 界面显示「任务名 · 正在分析 · 计时」持续不闪灭
+- **初始化生命周期**——简历 / 访谈双通道建档（AI 提取候选 → 用户确认 → 写入画像），完成前门控画像依赖行为，浏览与历史恒开放
 
 ## 快速开始
 
