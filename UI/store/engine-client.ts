@@ -507,6 +507,16 @@ export class EngineClient {
     return this.rpc<InitCandidate[]>(METHODS.listCandidates, { personId })
   }
 
+  /** 候选裁决（切片 2.3：更新 candidates.md 状态 + 写 resolution 事件） */
+  resolveCandidate(params: {
+    personId: string
+    candidateId: string
+    action: 'confirmed' | 'rejected' | 'modified'
+    modifiedContent?: string
+  }): Promise<{ candidateId: string; action: string; status: string }> {
+    return this.rpc<{ candidateId: string; action: string; status: string }>(METHODS.resolveCandidate, params)
+  }
+
   poolGraph(): Promise<GraphResult> {
     return this.rpc<GraphResult>(METHODS.poolGraph)
   }

@@ -405,10 +405,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
-/** 正在收集的信息（切片 2.2：extraction/candidates.md 投影——候选 ≠ 事实，不弹确认） */
+/** 正在收集的信息（切片 2.2/2.3：extraction/candidates.md 投影——候选裁决入口，确认动作 = resolution 事件） */
 function UnderstandingDraft() {
   const candidates = useAppStore((s) => s.initCandidates)
+  const resolve = useAppStore((s) => s.resolveInitCandidate)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const pending = candidates.filter((c) => c.status === 'pending')
+  const confirmed = candidates.filter((c) => c.status === 'confirmed')
   const groups = ['education', 'experience', 'skill', 'constraint', 'interest'] as const
   const labelMap: Record<string, string> = {
     education: '教育经历',
@@ -434,9 +437,9 @@ function UnderstandingDraft() {
         正在收集的信息
       </Typography>
       <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6, mb: 1.5 }}>
-        已发现 {pending.length} 条待确认 · 确认后才会写入档案
+        待确认 {pending.length} 条 · 已确认 {confirmed.length} 条
       </Typography>
-      {pending.length === 0 ? (
+      {pending.length === 0 && confirmed.length === 0 ? (
         <Box
           sx={{
             p: 1.5,
@@ -472,8 +475,69 @@ function UnderstandingDraft() {
                     {c.content}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.5 }}>
-                    来源：{sourceLabel(c.source)} · 状态：待确认
+                    来源：{sourceLabel(c.source)} · 待确认
                   </Typography>
+                  {editingId === c.id ? (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      autoFocus
+                      defaultValue={c.content}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                          void resolve(c.id, 'modified', (e.target as HTMLInputElement).value.trim())
+                          setEditingId(null)
+                        }
+                        if (e.key === 'Escape') setEditingId(null)
+                      }}
+                      sx={{ mt: 0.75, '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+                    />
+                  ) : (
+                    <Stack direction="row" spacing={0.5} sx={{ mt: 0.75 }}>
+                      <Button
+                        size="small"
+                        onClick={() => void resolve(c.id, 'confirmed')}
+                        sx={{
+                          minWidth: 0,
+                          px: 1,
+                          py: 0.25,
+                          fontSize: 11.5,
+                          color: COLORS.riskLow,
+                          border: `1px solid ${alpha(COLORS.riskLow, 0.35)}`,
+                        }}
+                      >
+                        确认
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => setEditingId(c.id)}
+                        sx={{
+                          minWidth: 0,
+                          px: 1,
+                          py: 0.25,
+                          fontSize: 11.5,
+                          color: COLORS.textSecondary,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                      >
+                        修改
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => void resolve(c.id, 'rejected')}
+                        sx={{
+                          minWidth: 0,
+                          px: 1,
+                          py: 0.25,
+                          fontSize: 11.5,
+                          color: COLORS.textMuted,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                      >
+                        拒绝
+                      </Button>
+                    </Stack>
+                  )}
                 </Box>
               ))}
             </Box>

@@ -265,6 +265,12 @@ interface AppState {
   setInitCandidates: (candidates: InitCandidate[]) => void;
   /** 从引擎重拉候选（刷新/重进入初始化空间后恢复右侧） */
   loadInitCandidates: (personId: string) => Promise<void>;
+  /** 候选裁决（切片 2.3）：确认/拒绝/修改 → candidates.md + resolution 事件 + 本地投影更新 */
+  resolveInitCandidate: (
+    candidateId: string,
+    action: 'confirmed' | 'rejected' | 'modified',
+    modifiedContent?: string,
+  ) => Promise<void>;
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
@@ -591,6 +597,29 @@ export const useAppStore = create<AppState>()(
       useAppStore.setState({ initCandidates: list })
     } catch {
       // offline/旧引擎：保持现有
+    }
+  },
+
+  resolveInitCandidate: async (candidateId, action, modifiedContent) => {
+    const pid = pendingInitPersonId()
+    if (!pid || !engine || useAppStore.getState().engineStatus !== 'connected') return
+    try {
+      const res = await engine.resolveCandidate({ personId: pid, candidateId, action, modifiedContent })
+      if (res) {
+        useAppStore.setState((s) => ({
+          initCandidates: s.initCandidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  status: res.status as InitCandidate['status'],
+                  content: action === 'modified' && modifiedContent ? modifiedContent : c.content,
+                }
+              : c,
+          ),
+        }))
+      }
+    } catch {
+      // 裁决失败保持现状（可重试）
     }
   },
 

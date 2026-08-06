@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, createPersonSession, listCandidates, parsePersonManifest, parseSnapshotTable, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, createPersonSession, listCandidates, parsePersonManifest, parseSnapshotTable, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
 
 const manifestMd = `---
 id: person_001
@@ -168,6 +168,38 @@ test('appendCandidates：追加批次 + id 递增 + 非法分类跳过；listCan
     assert.equal(all.length, 3)
     assert.equal(all[2]!.category, 'skill')
     assert.equal(all[2]!.content, 'Creo 建模')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('resolveCandidate：确认/拒绝/修改更新状态 + 写 resolution 事件', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { id: candidateId } = appendCandidates(ws, {
+      personId: 'person_002',
+      candidates: [{ category: 'education', content: '机械设计本科', source: 'user_reported' }],
+    })[0]!
+    // 确认
+    const r1 = resolveCandidate(ws, { personId: 'person_002', candidateId, action: 'confirmed' })
+    assert.equal(r1?.status, 'confirmed')
+    assert.equal(listCandidates(ws, 'person_002')[0]!.status, 'confirmed')
+    // 事件写入
+    const events = ws.listMarkdown('persons/person_002/events')
+    assert.equal(events.length, 1)
+    assert.ok(ws.read(`persons/person_002/events/${events[0]}`).includes('candidate_resolution'))
+    assert.ok(ws.read(`persons/person_002/events/${events[0]}`).includes(`candidate_id: ${candidateId}`))
+    // 修改
+    const r2 = resolveCandidate(ws, { personId: 'person_002', candidateId, action: 'modified', modifiedContent: '机械设计制造及其自动化本科' })
+    assert.equal(r2?.status, 'confirmed')
+    assert.equal(listCandidates(ws, 'person_002')[0]!.content, '机械设计制造及其自动化本科')
+    // 拒绝
+    const r3 = resolveCandidate(ws, { personId: 'person_002', candidateId, action: 'rejected' })
+    assert.equal(r3?.status, 'rejected')
+    assert.equal(listCandidates(ws, 'person_002')[0]!.status, 'rejected')
+    // 不存在 → null
+    assert.equal(resolveCandidate(ws, { personId: 'person_002', candidateId: 'c-999', action: 'confirmed' }), null)
   } finally {
     cleanup(dir)
   }

@@ -61,6 +61,8 @@ export const METHODS = {
   appendCandidates: 'person/session/candidates',
   /** 候选列表（params { personId } → InitCandidate[]；extraction/ 缺失 → 空） */
   listCandidates: 'person/candidates/list',
+  /** 候选裁决（切片 2.3：params { personId, candidateId, action, modifiedContent? } → { candidateId, action, status }；更新 candidates.md + 写 resolution 事件） */
+  resolveCandidate: 'person/candidates/resolve',
   /** 快照版本存档（M7.1：写入 current 前调用，params { personId, reason, trigger?, sourceRefs? } → SnapshotVersionManifest | null；增量 append-only） */
   snapshotArchive: 'snapshot/archive',
   /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */

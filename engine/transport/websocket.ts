@@ -24,7 +24,7 @@ import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { appendCandidates, appendSessionTurn, createPersonSession, listCandidates, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, createPersonSession, listCandidates, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
@@ -206,6 +206,20 @@ function appendCandidatesParams(params: unknown): { personId: string; candidates
     })
     .filter((c) => categories.includes(c.category) && c.content.trim() && sources.includes(c.source))
   return { personId, candidates }
+}
+
+/** person/candidates/resolve 入参校验（RPC 边界：action 白名单；modified 需内容） */
+function resolveCandidateParams(params: unknown): { personId: string; candidateId: string; action: 'confirmed' | 'rejected' | 'modified'; modifiedContent?: string } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  const candidateId = typeof p.candidateId === 'string' ? p.candidateId.trim() : ''
+  const action = p.action
+  if (!personId) throw new Error('personId 必填')
+  if (!candidateId) throw new Error('candidateId 必填')
+  if (action !== 'confirmed' && action !== 'rejected' && action !== 'modified') throw new Error('action 必须为 confirmed/rejected/modified')
+  const modifiedContent = typeof p.modifiedContent === 'string' ? p.modifiedContent.trim() : undefined
+  if (action === 'modified' && !modifiedContent) throw new Error('modified 需提供 modifiedContent')
+  return { personId, candidateId, action, modifiedContent }
 }
 
 /** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -780,6 +794,7 @@ export async function startServer(opts: {
     [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),
     [METHODS.appendCandidates]: (params) => appendCandidates(workspace, appendCandidatesParams(params)),
     [METHODS.listCandidates]: (params) => listCandidates(workspace, personIdParams(params)),
+    [METHODS.resolveCandidate]: (params) => resolveCandidate(workspace, resolveCandidateParams(params)),
     [METHODS.snapshotArchive]: (params) => {
       const p = snapshotArchiveParams(params)
       return archiveCurrentSnapshot(workspace, p.personId, p)

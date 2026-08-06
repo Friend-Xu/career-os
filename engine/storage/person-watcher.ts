@@ -161,6 +161,72 @@ export function listCandidates(ws: Workspace, personId: string): import('../ir/s
   return out
 }
 
+const RESOLUTION_ACTION_LABEL: Record<string, string> = { confirmed: '确认', rejected: '拒绝', modified: '修改' }
+
+/**
+ * 候选裁决（切片 2.3）：更新 candidates.md 状态 + 写 resolution 事件（审计：
+ * "为什么档案里有这个事实" → "因为用户在某次初始化会话中确认了这个候选"）。
+ * confirmed/modified → status confirmed；rejected → status rejected；modified 替换内容。
+ */
+export function resolveCandidate(
+  ws: Workspace,
+  params: { personId: string; candidateId: string; action: 'confirmed' | 'rejected' | 'modified'; modifiedContent?: string; timestamp?: string },
+): { candidateId: string; action: string; status: string } | null {
+  const { personId, candidateId, action } = params
+  const rel = `persons/${personId}/extraction/candidates.md`
+  if (!ws.exists(rel)) return null
+  const lines = ws.read(rel).split('\n')
+  let changed = false
+  let categoryLabel = ''
+  let content = ''
+  const next = lines.map((line) => {
+    const m = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|$/)
+    if (!m || m[1] !== candidateId) return line
+    changed = true
+    categoryLabel = m[3]!.trim()
+    content = m[4]!.trim()
+    if (action === 'rejected') return line.replace(/^(\| \S+ \| )\w+( \|)/, `$1rejected$2`)
+    const newContent = action === 'modified' && params.modifiedContent?.trim() ? params.modifiedContent.trim() : content
+    return `| ${m[1]} | confirmed | ${m[3]} | ${newContent.replace(/\|/g, '\\|')} | ${m[5]} |`
+  })
+  if (!changed) return null
+  ws.write(rel, next.join('\n'))
+
+  const ts = params.timestamp ?? new Date().toISOString()
+  const date = ts.slice(0, 10).replace(/-/g, '')
+  const eventsDir = `persons/${personId}/events`
+  let seq = 0
+  try {
+    seq = ws.listMarkdown(eventsDir).length
+  } catch {
+    /* events/ 未创建 → 0 */
+  }
+  const seqStr = String(seq + 1).padStart(6, '0')
+  const eventId = `pe_${date}_${seqStr}`
+  const actionLabel = RESOLUTION_ACTION_LABEL[action] ?? action
+  const evt = [
+    '---',
+    `id: ${eventId}`,
+    `time: ${ts}`,
+    'type: candidate_resolution',
+    'source: user_action',
+    '---',
+    '',
+    `# 事件：候选${actionLabel} ${candidateId}`,
+    '',
+    `- time: ${ts}`,
+    '- type: candidate_resolution',
+    `- description: 用户在初始化会话中${actionLabel}候选 ${candidateId}（${categoryLabel}｜${content}）`,
+    '- source: user_action',
+    `- candidate_id: ${candidateId}`,
+    `- action: ${action}`,
+    '- actor: user',
+    '',
+  ].join('\n')
+  ws.write(`persons/${personId}/events/event_${date}_${seqStr}_resolution.md`, evt)
+  return { candidateId, action, status: action === 'rejected' ? 'rejected' : 'confirmed' }
+}
+
 /** manifest.md → 根声明（frontmatter id/name/status 必填；缺任一 → undefined） */
 export function parsePersonManifest(md: string): PersonManifest | undefined {
   const { meta, body } = splitFrontmatter(md)
