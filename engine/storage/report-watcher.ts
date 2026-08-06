@@ -91,7 +91,7 @@ function deriveSummary(md: string): string {
  * 列表项 `- 类型: id@meta`：evidence→snapshot / skill→version / constraint、knowledge 仅 id；
  * 4 类前缀之外跳过；无任何条目 → undefined（存量决策无 inputs 段）。
  */
-function parseInputRefs(md: string): DecisionInputs | undefined {
+export function parseInputRefs(md: string): DecisionInputs | undefined {
   const section = md.match(/## 输入引用([\s\S]*?)(?=\n## |$)/)?.[1]
   if (!section) return undefined
   const inputs: DecisionInputs = { evidenceRefs: [], skillRefs: [], constraintRefs: [], knowledgeRefs: [] }

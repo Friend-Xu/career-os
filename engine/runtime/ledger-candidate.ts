@@ -69,10 +69,10 @@ export interface CandidateBuildInput {
   confirmation?: CandidateConfirmation
 }
 
-interface Unit { value: string; changeType: LedgerChangeType; file: string }
+export interface Unit { value: string; changeType: LedgerChangeType; file: string }
 
 /** 版本状态 → 变化单位表（按 Contract v1 提取范围：有解析结构的文件） */
-function extractUnits(files: Record<string, string>): Map<string, Unit> {
+export function extractUnits(files: Record<string, string>): Map<string, Unit> {
   const units = new Map<string, Unit>()
   const set = (unit: string, value: string, changeType: LedgerChangeType, file: string): void => {
     if (!unit || !value) return

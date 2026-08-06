@@ -30,6 +30,7 @@ import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candid
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
 import { projectDecision } from '../ir/decision-projection.ts'
 import { detectDecisionChange } from '../runtime/decision-change-detector.ts'
+import { whyChanged, replayDecision, whyChangedRecently } from '../runtime/evolution-query.ts'
 import { updateDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -301,6 +302,25 @@ function ledgerCommitParams(v: unknown): {
     attribution: { why: a.why, ...(sourceRefs ? { sourceRefs } : {}) },
     confirmation: { type: c.type as 'user_confirmation', ref: c.ref },
   }
+}
+
+/** evolution/why-changed 入参校验（RPC 边界：personId + unit） */
+function evolutionUnitParams(v: unknown): { personId: string; unit: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('evolution/why-changed 需要 params { personId, unit }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+  if (typeof p.unit !== 'string' || p.unit.length === 0) throw new Error('params.unit 缺失（变化单位）')
+  return { personId: p.personId, unit: p.unit }
+}
+
+/** evolution/recent 入参校验（days 可选，默认 30，上限 3650 防手误） */
+function evolutionRecentParams(v: unknown): { personId: string; days: number } {
+  if (typeof v !== 'object' || v === null) throw new Error('evolution/recent 需要 params { personId, days? }')
+  const p = v as Record<string, unknown>
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+  const days = p.days === undefined ? 30 : Number(p.days)
+  if (!Number.isFinite(days) || days <= 0 || days > 3650) throw new Error('params.days 非法（1-3650）')
+  return { personId: p.personId, days }
 }
 
 /** decision/commit 入参校验（RPC 边界：结构校验；why/防漂移不变量在引擎函数层） */
@@ -725,6 +745,15 @@ export async function startServer(opts: {
     [METHODS.decisionCommit]: (params) => {
       const p = decisionCommitParams(params)
       return commitDecisionLedgerEvent(workspace, p.personId, p)
+    },
+    [METHODS.evolutionWhyChanged]: (params) => {
+      const p = evolutionUnitParams(params)
+      return whyChanged(workspace, p.personId, p.unit)
+    },
+    [METHODS.evolutionReplay]: (params) => replayDecision(workspace, snapshotVersionsParams(params)),
+    [METHODS.evolutionRecent]: (params) => {
+      const p = evolutionRecentParams(params)
+      return whyChangedRecently(workspace, p.personId, p.days)
     },
     [METHODS.poolGraph]: () => store.graph(),
     [METHODS.decisionHistory]: () => computeHistories(store.listDecisions() as DecisionRecord[], runtime),

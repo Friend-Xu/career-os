@@ -169,6 +169,11 @@ id: ${EVIDENCE_ID}
 用户口述整理
 `
 
+/** 实际登记的提案 id（nextArtifactId 按当日日期生成——测试不硬编码日期） */
+function registeredId(ws: Workspace): string {
+  return ws.listMarkdown('proposals')[0]!.replace(/\.md$/, '')
+}
+
 function setupWorkspace(): Workspace {
   const root = mkdtempSync(join(tmpdir(), 'cos-proposal-'))
   const ws = initWorkspace(root)
@@ -311,13 +316,14 @@ test('reject：pending → rejected（可选原因）；非 pending 拒绝；rej
   const ws = setupWorkspace()
   ws.write('proposals/ai-1.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
-  const rejected = rejectProposalFile(ws, 'proposal_20260805_00001', '与当前版本不匹配', new Date('2026-08-05T13:00:00Z'))
+  const pid = registeredId(ws)
+  const rejected = rejectProposalFile(ws, pid, '与当前版本不匹配', new Date('2026-08-05T13:00:00Z'))
   assert.equal(rejected.status, 'rejected')
   assert.equal(rejected.rejectReason, '与当前版本不匹配')
   assert.equal(rejected.decidedAt, new Date('2026-08-05T13:00:00Z').toISOString())
   // 已 reject → 不能再次 accept/reject
-  assert.throws(() => acceptProposalFile(ws, 'proposal_20260805_00001'), ProposalTransitionError)
-  assert.throws(() => rejectProposalFile(ws, 'proposal_20260805_00001'), ProposalTransitionError)
+  assert.throws(() => acceptProposalFile(ws, pid), ProposalTransitionError)
+  assert.throws(() => rejectProposalFile(ws, pid), ProposalTransitionError)
   rmSync(ws.paths.root, { recursive: true, force: true })
 })
 
@@ -325,8 +331,9 @@ test('accept：非 pending 拒绝（accepted 后不能重复应用）', () => {
   const ws = setupWorkspace()
   ws.write('proposals/ai-1.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
-  acceptProposalFile(ws, 'proposal_20260805_00001', undefined, new Date('2026-08-05T12:00:00Z'))
-  assert.throws(() => acceptProposalFile(ws, 'proposal_20260805_00001'), ProposalTransitionError)
+  const pid = registeredId(ws)
+  acceptProposalFile(ws, pid, undefined, new Date('2026-08-05T12:00:00Z'))
+  assert.throws(() => acceptProposalFile(ws, pid), ProposalTransitionError)
   rmSync(ws.paths.root, { recursive: true, force: true })
 })
 
@@ -336,7 +343,8 @@ test('accept 全链：确定性应用 → 新版本（不覆盖源）——linea
   const ws = setupWorkspace()
   ws.write('proposals/ai-1.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
-  const { document, proposal: updated } = acceptProposalFile(ws, 'proposal_20260805_00001', undefined, new Date('2026-08-05T12:00:00Z'))
+  const pid = registeredId(ws)
+  const { document, proposal: updated } = acceptProposalFile(ws, pid, undefined, new Date('2026-08-05T12:00:00Z'))
   // 源版本未被覆盖
   const sources = scanResumes(ws).filter((r) => r.record.id === RESUME_ID)
   assert.equal(sources.length, 1)
@@ -359,12 +367,12 @@ test('accept 全链：确定性应用 → 新版本（不覆盖源）——linea
   const applyOp = v4.record.operations?.find((o) => o.action === 'apply_proposal')
   assert.ok(applyOp)
   assert.equal(applyOp.actor, 'system')
-  assert.equal(applyOp.note, 'proposal_20260805_00001')
+  assert.equal(applyOp.note, pid)
   // Proposal 回填
   assert.equal(updated.status, 'accepted')
   assert.equal(updated.resultResumeId, document.id)
   // 回读文件确认持久化
-  const onDisk = parseProposalMarkdown(ws.read('proposals/proposal_20260805_00001.md'), 'x.md').value
+  const onDisk = parseProposalMarkdown(ws.read(`proposals/${pid}.md`), 'x.md').value
   assert.equal(onDisk.status, 'accepted')
   assert.equal(onDisk.resultResumeId, document.id)
   rmSync(ws.paths.root, { recursive: true, force: true })
@@ -374,12 +382,13 @@ test('accept：checksum 不匹配（源内容已变化）→ 拒绝且状态不�
   const ws = setupWorkspace()
   ws.write('proposals/ai-1.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
+  const pid = registeredId(ws)
   // 源版本内容变化（append-only 纪律下模拟人工误改：替换 bullet 文本）
   const modified = resume()
   modified.sections[0].bullets[0].sentence = '被外部修改的句子'
   ws.write(`resumes/documents/${RESUME_ID}.md`, serializeResumeDocument(modified))
-  assert.throws(() => acceptProposalFile(ws, 'proposal_20260805_00001'), /checksum 不匹配/)
-  assert.equal(parseProposalMarkdown(ws.read('proposals/proposal_20260805_00001.md'), 'x.md').value.status, 'pending')
+  assert.throws(() => acceptProposalFile(ws, pid), /checksum 不匹配/)
+  assert.equal(parseProposalMarkdown(ws.read(`proposals/${pid}.md`), 'x.md').value.status, 'pending')
   rmSync(ws.paths.root, { recursive: true, force: true })
 })
 
@@ -439,11 +448,12 @@ test('accept reason：带 reason 写回 accept_reason（与 rejectReason 对称�
   ws.write('proposals/ai-2.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
   registerProposalFile(ws, 'ai-2.md')
-  acceptProposalFile(ws, 'proposal_20260805_00001', '表达更契合岗位语言', new Date('2026-08-05T12:00:00Z'))
-  acceptProposalFile(ws, 'proposal_20260805_00002', undefined, new Date('2026-08-05T13:00:00Z'))
-  const p1 = parseProposalMarkdown(ws.read('proposals/proposal_20260805_00001.md'), 'x.md').value
+  const pids = ws.listMarkdown('proposals').map((f) => f.replace(/\.md$/, '')).sort()
+  acceptProposalFile(ws, pids[0]!, '表达更契合岗位语言', new Date('2026-08-05T12:00:00Z'))
+  acceptProposalFile(ws, pids[1]!, undefined, new Date('2026-08-05T13:00:00Z'))
+  const p1 = parseProposalMarkdown(ws.read(`proposals/${pids[0]}.md`), 'x.md').value
   assert.equal(p1.acceptReason, '表达更契合岗位语言')
-  const p2 = parseProposalMarkdown(ws.read('proposals/proposal_20260805_00002.md'), 'x.md').value
+  const p2 = parseProposalMarkdown(ws.read(`proposals/${pids[1]}.md`), 'x.md').value
   assert.equal(p2.acceptReason, undefined)
   rmSync(ws.paths.root, { recursive: true, force: true })
 })
@@ -454,8 +464,9 @@ test('buildProposalFeedback：pending 不入历史；decidedAt 降序；stats/by
   ws.write('proposals/ai-2.md', proposalMd())
   registerProposalFile(ws, 'ai-1.md')
   registerProposalFile(ws, 'ai-2.md')
-  acceptProposalFile(ws, 'proposal_20260805_00001', '表达更契合岗位语言', new Date('2026-08-05T12:00:00Z'))
-  rejectProposalFile(ws, 'proposal_20260805_00002', '与当前方向不符', new Date('2026-08-05T13:00:00Z'))
+  const pids = ws.listMarkdown('proposals').map((f) => f.replace(/\.md$/, '')).sort()
+  acceptProposalFile(ws, pids[0]!, '表达更契合岗位语言', new Date('2026-08-05T12:00:00Z'))
+  rejectProposalFile(ws, pids[1]!, '与当前方向不符', new Date('2026-08-05T13:00:00Z'))
   const fb = buildProposalFeedback(ws)
   assert.equal(fb.proposalHistory.length, 2)
   assert.equal(fb.proposalHistory[0].action, 'rejected') // 降序：后决策的在前

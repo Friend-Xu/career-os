@@ -67,6 +67,12 @@ export const METHODS = {
   ledgerList: 'ledger/list',
   /** Decision 变化候选提交（M7.3：params { decisionId, changeUnit, changeType, before?, after, trigger, attribution, confirmation } → LedgerEventRecord；防漂移：after 须与决策文件当前投影一致） */
   decisionCommit: 'decision/commit',
+  /** 演化查询·为什么变化（M7.4：params { personId, unit } → EvolutionChange[]；纯读投影不写资产） */
+  evolutionWhyChanged: 'evolution/why-changed',
+  /** 演化查询·决策回放（M7.4：params { personId } → DecisionReplay[]：事件 + 当时输入 + 当时未知） */
+  evolutionReplay: 'evolution/replay',
+  /** 演化查询·近期变化（M7.4：params { personId, days? } → RecentEvolution：近 N 天事件 + 无变化单位） */
+  evolutionRecent: 'evolution/recent',
   /** 信息池图谱（PoolNode[] + PoolEdge[]，由 decisions/companies/profiles 派生） */
   poolGraph: 'pool/graph',
   /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */
