@@ -2,7 +2,7 @@
  * 工作台子视图 · 方向：方向是聚合维度——按 direction 聚合全部决策记录。
  * 概览 chips（决策数/最新匹配）+ 分组时间线；点击决策 → 编辑抽屉。
  */
-import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, Stack, Tooltip, Typography } from '@mui/material'
 import ErrorIcon from '@mui/icons-material/Error'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useMemo, useState } from 'react'
@@ -28,6 +28,7 @@ export function DirectionsView() {
   const decisions = useAppStore((s) => s.decisions)
   const contexts = useAppStore((s) => s.contexts)
   const person = useAppStore((s) => s.currentPerson())
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
   const [editing, setEditing] = useState<DecisionView | null>(null)
   const [filter, setFilter] = useState<string>('all')
 
@@ -105,10 +106,22 @@ export function DirectionsView() {
       {visible.length === 0 ? (
         <Box sx={{ py: 8, textAlign: 'center' }}>
           <Typography sx={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.7 }}>
-            「{person.name}」尚无决策记录
+            「{person.name}」尚未探索职业方向
             <br />
-            从 AI 面板发起首个分析后，方向将在这里聚合
+            基于你的经历、技能与目标，分析可能的发展路径
           </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() =>
+              startAnalysis(
+                `请基于「${person.name}」的职业档案，探索适合的发展方向：结合经历、技能与自报意向，给出 2-3 个候选方向及理由。`,
+              )
+            }
+            sx={{ mt: 2, fontSize: 12.5 }}
+          >
+            开始探索
+          </Button>
         </Box>
       ) : (
         visible.map(([name, list]) => {

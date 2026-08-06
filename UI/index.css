@@ -83,6 +83,36 @@ html.light {
   }
 }
 
+/* Attention 卡片：右侧滑入（从右缘进入，不遮挡顶部/主区） */
+@keyframes cos-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 导航角标推荐点：挂载时脉冲 2 次（仅元素挂载时执行一次） */
+@keyframes cos-attention-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(1.9);
+  }
+  40% {
+    transform: scale(1);
+  }
+  60% {
+    transform: scale(1.5);
+  }
+  80% {
+    transform: scale(1);
+  }
+}
+
 /* Export MVP（window.print）：只打印主区简历内容，隐藏应用壳与编辑控件 */
 @media print {
   body {

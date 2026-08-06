@@ -12,6 +12,8 @@ import type { ComponentType } from 'react'
 import type { SvgIconProps } from '@mui/material/SvgIcon'
 import type { NavPageId } from '../../types'
 import { useAppStore } from '../../store/app-store'
+import { deriveNavigationState } from '../../store/navigation-state'
+import type { NavAttention } from '../../store/navigation-state'
 import { COLORS, EASE, LAYOUT } from '../../data/constants'
 
 interface NavItem {
@@ -44,9 +46,60 @@ const SHORT_LABEL: Record<NavPageId, string> = {
   settings: '设置',
 }
 
+/** 导航角标：推荐（accent 呼吸 + 挂载脉冲）/ 等待（灰点）/ 完成（绿勾） */
+function NavBadge({ attention }: { attention: NavAttention }) {
+  if (attention.kind === 'completed') {
+    return (
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 7,
+          right: 7,
+          minWidth: 15,
+          height: 15,
+          px: 0.25,
+          borderRadius: '999px',
+          display: 'grid',
+          placeItems: 'center',
+          bgcolor: COLORS.riskLow,
+          color: '#fff',
+          fontSize: 9.5,
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        {attention.detail ?? '✓'}
+      </Box>
+    )
+  }
+  const pulse = attention.kind === 'recommended'
+  return (
+    <Box
+      sx={{
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        bgcolor: pulse ? COLORS.accent : COLORS.textMuted,
+        boxShadow: `0 0 0 2px ${COLORS.bg}`,
+        // 挂载时脉冲 2 次（CSS animation 只在元素挂载时执行一次）→ 回落为持续呼吸
+        animation: pulse
+          ? 'cos-attention-pulse 1.2s ease-out, cos-thinking-dot 2.4s ease-in-out infinite 1.2s'
+          : undefined,
+      }}
+    />
+  )
+}
+
 export function IconNav() {
   const currentPage = useAppStore((s) => s.currentPage)
   const setPage = useAppStore((s) => s.setPage)
+  const person = useAppStore((s) => s.currentPerson())
+  const decisions = useAppStore((s) => s.decisions)
+  const resumes = useAppStore((s) => s.resumes)
+  const nav = deriveNavigationState(person, decisions, resumes)
 
   return (
     <Box
@@ -67,8 +120,13 @@ export function IconNav() {
       {MAIN_NAV.map((item) => {
         const active = currentPage === item.id
         const Icon = item.icon
+        const attention = nav[item.id as keyof typeof nav]
         return (
-          <Tooltip key={item.id} title={`${item.label} ${item.shortcut}`} placement="right">
+          <Tooltip
+            key={item.id}
+            title={`${item.label} ${item.shortcut}${attention ? ` · ${attention.reason}` : ''}`}
+            placement="right"
+          >
             <Box
               component="button"
               onClick={() => setPage(item.id)}
@@ -107,6 +165,7 @@ export function IconNav() {
               }}
             >
               <Icon sx={{ fontSize: 22 }} />
+              {attention && <NavBadge attention={attention} />}
               <Box
                 component="span"
                 sx={{

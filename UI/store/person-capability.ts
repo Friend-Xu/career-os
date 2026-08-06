@@ -14,6 +14,7 @@ export interface PersonCapability {
 }
 
 export function derivePersonCapability(initStatus?: Person['initStatus']): PersonCapability {
-  const ready = initStatus === 'active'
+  // undefined = M6.5 前存量档案（无 init_state 字段）——默认可用，只有显式 in_progress 才门控
+  const ready = initStatus !== 'pending'
   return { canChat: ready, canDecisionWrite: ready, canResumeGenerate: ready }
 }

@@ -3,7 +3,7 @@
  * 数据 = 城市评估决策（city 字段非空的决策记录）按城市聚合派生；
  * 初始化后的城市推荐会落入该视图（同一数据源）。
  */
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../../data/constants'
@@ -57,6 +57,7 @@ function heatLabel(score: number): string {
 export function CitiesView() {
   const decisions = useAppStore((s) => s.decisions)
   const person = useAppStore((s) => s.currentPerson())
+  const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
 
   /** 城市聚合：按城市取最新评估（cityScore ?? directionMatch）为评分锚点 */
   const cities = useMemo(() => {
@@ -78,6 +79,34 @@ export function CitiesView() {
     })
     return agg.sort((a, b) => b.score - a.score)
   }, [decisions, person.name])
+
+  /** 方向是否已确定（最新决策的 direction 非空）——城市评估的前置条件 */
+  const hasDirection = (() => {
+    const mine = decisions.filter((d) => d.profile === person.name)
+    const latest = mine.length ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] : undefined
+    return Boolean(latest?.direction && latest.direction !== '方向待定')
+  })()
+
+  if (!hasDirection) {
+    return (
+      <Box sx={{ p: 2.5, maxWidth: 900, mx: 'auto', width: '100%' }}>
+        <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 0.25 }}>城市视图</Typography>
+        <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
+          城市评估热力图与推荐——基于城市评估决策派生
+        </Typography>
+        <Box sx={{ py: 8, textAlign: 'center' }}>
+          <Typography sx={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.7 }}>
+            等待职业方向确定
+            <br />
+            方向确定后，城市评估才有对比依据（如「机器人方向 · 深圳 vs 上海」）
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => setWorkbenchView('directions')} sx={{ mt: 2, fontSize: 12.5 }}>
+            先探索职业方向
+          </Button>
+        </Box>
+      </Box>
+    )
+  }
 
   if (cities.length === 0) {
     return (

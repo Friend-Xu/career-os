@@ -751,30 +751,35 @@ export function AgentPage() {
                 <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 3 }}>
                   Agent 会读取 profile / decision / company DB，输出建议并确认式写入决策记录
                 </Typography>
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  useFlexGap
-                  sx={{ justifyContent: 'center', flexWrap: 'wrap' }}
-                >
-                  {['分析转行可行性', '对比深圳 vs 上海', '生成目标企业列表', '评估 JD 匹配度'].map(
-                    (q) => (
-                      <Chip
-                        key={q}
-                        label={q}
-                        onClick={() => {
-                          setDraft(q)
-                          send(q)
-                        }}
-                        sx={{
-                          cursor: 'pointer',
-                          bgcolor: COLORS.bgHover,
-                          border: `1px solid ${COLORS.border}`,
-                          '&:hover': { borderColor: COLORS.accent, color: COLORS.accent },
-                        }}
-                      />
-                    ),
-                  )}
+                <Stack spacing={1} sx={{ alignItems: 'center' }}>
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, letterSpacing: '0.05em' }}>
+                    推荐开始
+                  </Typography>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    useFlexGap
+                    sx={{ justifyContent: 'center', flexWrap: 'wrap' }}
+                  >
+                    {['帮我探索职业方向', '分析我的竞争优势', '评估我的下一步选择'].map(
+                      (q) => (
+                        <Chip
+                          key={q}
+                          label={q}
+                          onClick={() => {
+                            setDraft(q)
+                            send(q)
+                          }}
+                          sx={{
+                            cursor: 'pointer',
+                            bgcolor: COLORS.bgHover,
+                            border: `1px solid ${COLORS.border}`,
+                            '&:hover': { borderColor: COLORS.accent, color: COLORS.accent },
+                          }}
+                        />
+                      ),
+                    )}
+                  </Stack>
                 </Stack>
               </Box>
             ) : (

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { useToastStore } from './toast-store'
+import { useAttentionStore } from './attention-store'
 import type {
   Application,
   ApplicationStatus,
@@ -603,7 +604,16 @@ export const useAppStore = create<AppState>()(
       set((state) => ({
         persons: state.persons.map((p) => (p.id === personId ? { ...p, initStatus: 'active' } : p)),
       }))
-      useToastStore.getState().push('success', `「${target.name}」已进入正常使用——基础档案已建立，后续可随时补充`)
+      // Attention：初始化完成 → 引导第一个推理任务（一次事件；方向角标由派生状态持续反映）
+      useAttentionStore.getState().addAttention({
+        id: 'init-complete',
+        level: 'success',
+        title: `「${target.name}」基础档案已建立`,
+        description: '可以开始探索适合你的职业方向',
+        target: { page: 'workbench', view: 'directions' },
+        source: 'system',
+      })
+      useToastStore.getState().push('success', `「${target.name}」职业档案已建立——可从工作台「探索职业方向」开始分析`)
     } catch (err) {
       useToastStore.getState().push('warning', `完成失败：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -1014,6 +1024,16 @@ export const useAppStore = create<AppState>()(
       ],
       activeResumeId: id,
     }))
+    // Attention：简历派生完成 → 引导查看（操作反馈由 toast 承担，此卡负责「去哪里看」）
+    useAttentionStore.getState().addAttention({
+      id: `resume-created-${id}`,
+      level: 'info',
+      title: `简历版本「${name}」已创建`,
+      description:
+        targetCompany && targetPosition ? `目标：${targetCompany} · ${targetPosition}` : targetCompany ? `目标：${targetCompany}` : undefined,
+      target: { page: 'resumes' },
+      source: 'system',
+    })
     return id
   },
 
@@ -2008,11 +2028,37 @@ async function pullGraph(): Promise<void> {
   }
 }
 
+// 引擎有效状态跟踪（connecting 不记录）：attention 只在 进入离线（含首屏）触发一次，
+// 重连循环 connecting/offline 反复不重复弹卡；恢复在线自动清除
+let lastEngineStatus: 'connected' | 'offline' | undefined
+
 export function connectEngine(): void {
   if (engine) return
   engine = createEngineClient()
   engine.on('status', (s) => {
-    useAppStore.setState({ engineStatus: s as EngineStatus })
+    const status = s as EngineStatus
+    useAppStore.setState({ engineStatus: status })
+    // Attention：进入离线（首次或从在线跌落）→ 重要提示；恢复后自动清除
+    if (status === 'connected') {
+      if (lastEngineStatus !== 'connected') {
+        if (useAttentionStore.getState().attention?.id === 'engine-offline') {
+          useAttentionStore.getState().dismissAttention()
+        }
+      }
+      lastEngineStatus = 'connected'
+    } else if (status === 'offline') {
+      if (lastEngineStatus !== 'offline') {
+        useAttentionStore.getState().addAttention({
+          id: 'engine-offline',
+          level: 'warning',
+          title: '引擎离线——分析功能暂不可用',
+          description: '离线期间可浏览数据；Agent 分析与写入需连接引擎。连接恢复后自动继续。',
+          target: { page: 'settings' },
+          source: 'system',
+        })
+      }
+      lastEngineStatus = 'offline'
+    }
     // R002：断线时进行中的改写任务 → transport_error（事件流不会再送达）
     if (s !== 'connected' && rewriteTaskId !== null) {
       rewriteTaskId = null
