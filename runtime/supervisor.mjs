@@ -109,7 +109,15 @@ function main() {
   const shutdown = createShutdown(state, { writeState: writeRuntimeState, removeState: removeRuntimeState })
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('SIGBREAK', () => shutdown('SIGBREAK'))
-  process.on('SIGHUP', () => shutdown('SIGHUP')) // Windows 点 X 关窗口
+  process.on('SIGHUP', () => shutdown('SIGHUP')) // Windows 点 X 关窗口（libuv 把 CTRL_CLOSE 映射为 SIGHUP）
+
+  // 控制台关闭兜底：部分宿主（Windows Terminal 变体等）只销毁 stdin 不送 CTRL_CLOSE——
+  // TTY 下 resume 使其收到 EOF 触发关闭。非 TTY（后台任务/重定向）跳过，避免启动即 EOF 误关。
+  if (process.stdin.isTTY) {
+    process.stdin.resume()
+    process.stdin.on('end', () => shutdown('console-closed'))
+    process.stdin.on('error', () => shutdown('console-closed'))
+  }
 
   for (const def of PROCESSES) {
     const child = spawnTracked(def)
