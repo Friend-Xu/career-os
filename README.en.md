@@ -60,13 +60,32 @@ Walked the full chain with career-advisor: transition feasibility (75% match, so
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node runtime/supervisor.mjs     # Windows: double-click StarWebTUI.bat (bundled portable node, no system Node needed)
+node runtime/supervisor.mjs     # Windows: double-click StartWebTUI.bat (bundled portable node, no system Node needed)
 ```
 Stop: `node runtime/stop-all.mjs` or double-click stop-all.bat · Diagnose: `node runtime/doctor.mjs`.
 
 Open **http://localhost:5288**: decision chains, info-pool graph, company due diligence and application boards, all visualized. The "Decision Agent" panel chats with a real LLM (reuses your local Claude CLI login — streaming replies, question cards, permission dialogs, thinking process).
 
 The `workspace/` directory is created automatically on first run. No setup required. Full workflow: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Runtime & Process Lifecycle (Runtime Safety Layer)
+
+The engine and frontend are supervised by `runtime/supervisor.mjs` — solving "processes left behind on close / can't start next time":
+
+| Action | Command |
+|--------|---------|
+| Start | `StartWebTUI.bat` (or `node runtime/supervisor.mjs`) |
+| Stop | `stop-all.bat` (or `node runtime/stop-all.mjs`) — closing the window directly leaves processes behind, use this entry |
+| Diagnose | `node runtime/doctor.mjs` — first step when the app won't open |
+
+Guarantees:
+
+- **Duplicate instance**: second start is refused with a clear message
+- **Crash recovery**: orphans from a previous crash (force-kill / blue screen / window close) are cleaned up on next start — only processes verified to belong to this project are touched
+- **Port conflict**: if :5288/:5289 is held by an external program, startup fails with an explicit error (port + PID + command line) — no silent port switching, no EADDRINUSE crash
+- **Unified shutdown**: Ctrl+C / Ctrl+Break / window close all trigger the same cleanup sequence; deletion of `runtime.json` marks a clean shutdown
+
+> Process ownership is decided by command-line verification (PID alive + belongs to this project). Ports are symptoms, never the basis for killing.
 
 **Option 2: Claude Code plugin (optional)**
 

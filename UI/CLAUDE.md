@@ -9,7 +9,7 @@ Career OS 本地工作台前端。Vite + React 19 + MUI 9 + zustand 5 + TypeScri
 ## 命令
 
 ```bash
-npm run dev        # Vite dev server（端口 5288；端口被占用时换端口）
+npm run dev        # Vite dev server（端口 5288，strictPort：被占时报错退出，不自动换端口）
 npm run typecheck  # tsc --noEmit（改代码后必跑）
 npm run build      # 生产构建
 npm run preview    # 预览构建产物

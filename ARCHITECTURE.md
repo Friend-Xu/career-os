@@ -31,6 +31,12 @@ flowchart LR
         PAGES["7 页面：工作台/Agent/信息池/公司/投递/简历/设置"]
     end
 
+    subgraph 运行时["runtime/ 运行时层（Runtime Safety Layer v1）"]
+        SUP["supervisor.mjs<br/>生命周期守护 + 端口预检 + 崩溃恢复"]
+        STORE2["state/runtime.json<br/>owner / 进程 PID / 端口（gitignored）"]
+        DOCTOR["doctor.mjs / stop-all.mjs"]
+    end
+
     subgraph 数据["workspace/career-advisor/（markdown 真相源）"]
         MD["profiles/ + decisions/ + companies/ + decision-contexts/<br/>knowledge/ + jobs/(M6 迁入 targets/) + evidence/ + claims/ +<br/>resumes/ + proposals/ + portfolio/ + interviews/ +<br/>targets/（M6 机会资产：公司×岗位）+ persons/（M6.5 主体资产：person_001）"]
     end
@@ -43,6 +49,10 @@ flowchart LR
     CLIENT --> STORE
     STORE --> SHELL
     SHELL --> PAGES
+    SUP -->|spawn + 树清理| WS
+    SUP -->|spawn + 树清理| SHELL
+    SUP --> STORE2
+    DOCTOR -.->|读取/清理| STORE2
     SHELL --> PANEL
     AGENT -->|spawn| CLI["本机 Claude CLI<br/>（复用登录态）"]
     WS --> RUNTIME --> AGENT
@@ -57,6 +67,7 @@ flowchart LR
 | 技能层 | `skills/career-advisor/` | 分析协议与知识源：意图路由、7 子流程、8 方向画像卡、14 字段摘要协议 | Claude Code 插件，`--plugin-dir .` 加载；产出 markdown 真相源 |
 | 引擎层 | `engine/` | markdown 真相源 → IR 契约 → SQLite 投影 → WS RPC/事件；Agent 对话通道；**Artifact 演化（Resume/Portfolio/Interview：Fact → Proposal → 用户决策 → 版本）** | Node 24 原生 TS（type-stripping，零构建、仅 erasable syntax）；**零依赖外部服务**（除 better-sqlite3/chokidar/ws/SDK） |
 | 前端层 | `UI/` | 工作台可视化 + AI 对话 | React 19 + Vite 5 + MUI + zustand 5；浅色瑞士风默认 |
+| 运行时层 | `runtime/` | 应用生命周期守护（横切启动层）：supervisor（recovery → 端口预检 → spawn → 统一关闭）+ stop-all + doctor | Node 24 原生 ESM，零依赖；runtime.json 原子写（gitignored）；可复用为 CodeNarrator / Translate-video-WebUI 共用运行时 |
 
 ## 1.5 系统定位：Decision → Evolution Pipeline
 
@@ -270,7 +281,7 @@ Career OS 分两个域，**系统可升级，个人资产永远独立**：
 ## 6. 部署与进程生命周期
 
 ```
-StarWebTUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1）
+StartWebTUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1）
   ├─ engine:  .local/node/node.exe main.ts   → WS :5289
   └─ ui:      .local/node/node.exe vite      → :5288（strictPort）
 ```
@@ -294,7 +305,7 @@ StarWebTUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1�
 
 ## 8. 落地状态与路线
 
-**已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动 → 健康投影（契约 v1 + --doctor + RPC）→ 简历改写（指令式 Revision Request，审计闭环）→ 简历 PDF 导出（Edge headless，零依赖）→ 文档权威链 + ADR 登记。
+**已完成**：引擎骨架（1）→ 决策解析（2）→ 桥接+投影（3）→ Agent 适配层（4）→ 决策链状态机（5）→ V1.5 上下文聚合 + 复盘闭环 → V2 知识层 + 差距分析 → Agent 通道（提问/权限/回答/resume）→ 思考过程（指示器 + 折叠块）→ 进程生命周期 + 一键启动 → 健康投影（契约 v1 + --doctor + RPC）→ 简历改写（指令式 Revision Request，审计闭环）→ 简历 PDF 导出（Edge headless，零依赖）→ 文档权威链 + ADR 登记 → **Runtime Safety Layer v1**（supervisor 生命周期 + runtime.json 所有权追踪 + 崩溃恢复 + 统一关闭 + 端口预检 + doctor 诊断）。
 → **M3 表达链路（M3-0 → M3.5.8）**：Claim/Evidence 双入口 → 表达候选选择 → Resume Assembly → Proposal Layer（AI 只能写提案）→ 决策反馈投影 → 架构总索引（三层模型 + 七条不变量）
 → **M3-3 Artifact Evolution Benchmark v0.1**：10 case 数据集 → Runner 确定性审计 → Report Projection（无总分/无 ranking/无 AI Judge）
 → **M4 Artifact Evolution**：Admission Contract（C1-C6 准入 + System Invariants）→ Portfolio（项目事实治理：P-01~P-07、immutable published、draft(v+1)）→ Interview（三层问答资产：I-01~I-08、draft→reviewed→ready）→ Cover Letter（第一个 Projection Artifact：NarrativeUnit 引用源 Fact Layer，adapt only）→ Artifact Reference Protocol（宪法层：Owner + Target Fact Locator + Relation，resolveLocator 只答存在性，无 registry）→ 各 Runtime Validation（引擎测试 351/351 全绿）

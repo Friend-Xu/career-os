@@ -61,7 +61,7 @@
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node runtime/supervisor.mjs     # Windows 也可双击 StarWebTUI.bat（内置便携 node，无需系统 Node）
+node runtime/supervisor.mjs     # Windows 也可双击 StartWebTUI.bat（内置便携 node，无需系统 Node）
 ```
 关闭：`node runtime/stop-all.mjs` 或双击 stop-all.bat；诊断：`node runtime/doctor.mjs`。
 
@@ -86,10 +86,29 @@ claude --plugin-dir .
 | 项 | 值 |
 |----|----|
 | UI | http://localhost:5288 |
-| 引擎 WS | ws://127.0.0.1:5289（占用时自动 +1 递增重试，最多 5 次；仅本机回环） |
+| 引擎 WS | ws://127.0.0.1:5289（仅本机回环；端口冲突由运行时层启动前拒绝，不自动漂移） |
 | 配置 | `career-os.config.json`（首次运行生成，来源优先级 CLI > env > 文件 > 默认） |
 | 日志 | `logs/engine.log`（10MB×3 轮转）+ `logs/traces/`（会话轨迹 jsonl） |
 | 数据 | `workspace/career-advisor/`（profiles/ decisions/ companies/，gitignored） |
+
+## 运行时与进程生命周期（Runtime Safety Layer）
+
+引擎与前端由 `runtime/supervisor.mjs` 统一守护——解决"关闭残留进程 / 下次启动失败"：
+
+| 操作 | 命令 |
+|------|------|
+| 启动 | `StartWebTUI.bat`（或 `node runtime/supervisor.mjs`） |
+| 停止 | `stop-all.bat`（或 `node runtime/stop-all.mjs`）——直接关窗口会残留进程，请用此入口 |
+| 诊断 | `node runtime/doctor.mjs`——软件打不开时的第一步排查 |
+
+行为保证：
+
+- **双实例**：重复启动被拒绝，提示已有实例在运行
+- **崩溃恢复**：上次异常残留（强杀/蓝屏/关窗口）由下次启动自动清理——仅清理确认属于本项目的进程，不误杀其他程序
+- **端口冲突**：5288/5289 被外部程序占用 → 启动前明确报错（端口 + 占用者 PID + 命令行），不静默换端口、不 EADDRINUSE 崩溃
+- **统一关闭**：Ctrl+C / Ctrl+Break / 关闭窗口均触发同一清理序列；`runtime.json` 删除 = 干净关闭标记
+
+> 进程所有权判定基于命令行归属验证（PID 存活 + 属于本项目才清理），端口只是症状、不作为杀进程依据。
 
 **数据协议**：决策/公司档案均为 markdown，摘要表（`## 分析摘要` 两列：字段 | 值）是解析源；缺必填字段或表格缺失 → 档案标 `invalid` 并出现在信息池「⚠ 待人工处理」列表（不崩、不进图谱），补全摘要表即恢复。
 
