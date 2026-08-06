@@ -56,6 +56,56 @@ function ModeSwitcher() {
   )
 }
 
+/** 初始化 Banner：Person 生命周期状态（initStatus=pending）——采集入口，非独立模块 */
+function InitializationBanner() {
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const person = useAppStore((s) => s.currentPerson())
+  if (person.initStatus !== 'pending') return null
+
+  const resumeChannel = person.sourceMode === 'resume'
+  const prompt = resumeChannel
+    ? `请继续为「${person.name}」初始化职业画像（简历通道）：读取 resumes/documents/ 中的简历资产，提取教育/经历/技能候选事实，逐一列出待确认项（标注来源：简历）——不要直接写入档案，等用户确认。`
+    : `请继续为「${person.name}」初始化职业画像（访谈通道）：渐进式提问（教育→经历→技能→约束）了解背景，提取候选事实并列出待确认项（标注来源：用户描述）——不要直接写入档案，等用户确认。`
+
+  return (
+    <Box
+      sx={{
+        px: 2,
+        py: 1.5,
+        mb: 2,
+        borderRadius: '10px',
+        border: `1.5px solid ${COLORS.accent}`,
+        bgcolor: alpha(COLORS.accent, 0.06),
+      }}
+    >
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent, letterSpacing: '0.06em', mb: 0.75 }}>
+            INITIALIZING · 「{person.name}」初始化中（{resumeChannel ? '简历通道' : '访谈通道'}）
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
+            AI 只提取候选事实，你确认后才会写入档案
+            {person.initialInterest && person.initialInterest.length > 0 && (
+              <>
+                {' '}
+                · 关注方向（自报意向）：{person.initialInterest.join('、')}
+              </>
+            )}
+          </Typography>
+        </Box>
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => startAnalysis(prompt)}
+          sx={{ flexShrink: 0, ml: 2, fontSize: 12.5 }}
+        >
+          继续采集 →
+        </Button>
+      </Stack>
+    </Box>
+  )
+}
+
 /** Today 视图：你现在需要关注什么——待处理（Next Action Resolver 规则派生）+ KPI 概览 */
 function TodaySection() {
   const setPage = useAppStore((s) => s.setPage)
@@ -489,6 +539,7 @@ export function WorkbenchPage() {
         </Stack>
 
         <Box sx={{ mb: 3 }}>
+          <InitializationBanner />
           <TodaySection />
         </Box>
 

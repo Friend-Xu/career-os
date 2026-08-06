@@ -13,16 +13,7 @@ import type {
   PoolHealth,
   ResumeVersion,
   Session,
-  TargetRoleRec,
 } from '../types'
-
-/** 创建人向导第 3 步：AI 推荐目标岗位（演示数据，诚实标注"演示推荐"）。 */
-export const TARGET_ROLE_RECS: TargetRoleRec[] = [
-  { id: 'tr-1', name: 'CAE 工程师', match: 82, reason: '机械结构 + 仿真背景契合，制造业需求稳定' },
-  { id: 'tr-2', name: '机械设计工程师', match: 78, reason: '专业对口，非标/自动化行业岗位多' },
-  { id: 'tr-3', name: '流体仿真工程师', match: 74, reason: '细分方向竞争小，风电/航空领域有缺口' },
-  { id: 'tr-4', name: '机器人结构工程师', match: 70, reason: '跨界机会，结合机器人行业增长' },
-]
 
 export const PERSONS: Person[] = [
   {

@@ -40,6 +40,9 @@ export interface Person {
   archived: boolean
   profilePath: string
   targetRoles?: string[] // 目标岗位列表（有名目；评估/投递另有挂载点）
+  sourceMode?: 'resume' | 'interview' // 初始化通道（M6.5 双通道：简历驱动/访谈驱动——用户意图，非文件状态）
+  initialInterest?: string[] // 创建时自报的关注方向（user_reported 意向，非方向决策；语义见 M6.5 initial_interest）
+  initStatus?: 'pending' | 'active' // 初始化生命周期状态（Banner 显隐；缺省 = active；session 内部多阶段在引擎资产层）
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
 }
 

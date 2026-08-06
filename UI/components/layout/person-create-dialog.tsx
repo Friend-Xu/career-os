@@ -12,16 +12,18 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import CheckIcon from '@mui/icons-material/Check'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
+import ChatIcon from '@mui/icons-material/Chat'
 import { useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { TARGET_ROLE_RECS } from '../../data/mock-data'
 import { alpha, COLORS, EASE } from '../../data/constants'
 
 const EMOJI_CHOICES = ['👤', '⚙️', '🎯', '💼', '🧬', '🏗️', '📊', '🔬', '🌐', '✈️']
 const COLOR_CHOICES = ['#6B5BD6', '#2E7CF6', '#0FA382', '#D9489B', '#B45309', '#4338CA']
-const STEP_LABELS = ['基本信息', '画像采集', '目标岗位']
+const STEP_LABELS = ['基本信息', '初始化方式']
+
+type SourceMode = 'resume' | 'interview'
 
 export function PersonCreateDialog() {
   const open = useAppStore((s) => s.personCreateDialogOpen)
@@ -33,7 +35,8 @@ export function PersonCreateDialog() {
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('👤')
   const [color, setColor] = useState(COLOR_CHOICES[0])
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [sourceMode, setSourceMode] = useState<SourceMode | null>(null)
+  const [interest, setInterest] = useState('')
 
   const close = () => {
     setOpen(false)
@@ -41,18 +44,17 @@ export function PersonCreateDialog() {
     setName('')
     setEmoji('👤')
     setColor(COLOR_CHOICES[0])
-    setSelectedRoles([])
-  }
-
-  const toggleRole = (roleName: string) => {
-    setSelectedRoles((prev) =>
-      prev.includes(roleName) ? prev.filter((r) => r !== roleName) : [...prev, roleName],
-    )
+    setSourceMode(null)
+    setInterest('')
   }
 
   const finish = () => {
     const personName = name.trim()
-    if (!personName) return
+    if (!personName || !sourceMode) return
+    const interests = interest
+      .split(/[,，、]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
     addPerson({
       name: personName,
       color,
@@ -61,18 +63,22 @@ export function PersonCreateDialog() {
       riskLevel: 'medium',
       archived: false,
       profilePath: `profiles/${personName}.md`,
-      targetRoles: selectedRoles,
+      sourceMode,
+      initialInterest: interests.length > 0 ? interests : undefined,
+      initStatus: 'pending',
     })
-    startAnalysis(
-      `请为新人「${personName}」创建职业画像：逐步了解我的教育背景、工作经历、技能栈与财务约束，输出画像文件。${
-        selectedRoles.length ? `目标岗位参考：${selectedRoles.join('、')}` : ''
-      }`,
-    )
+    // 预置采集上下文：通道 A 读简历资产提取候选；通道 B 访谈引导。AI 只产候选，不直接写档案。
+    const channelPrompt =
+      sourceMode === 'resume'
+        ? `请为新人「${personName}」初始化职业画像（简历通道）：读取 resumes/documents/ 中的简历资产，提取教育/经历/技能候选事实，逐一列出待确认项（标注来源：简历）——不要直接写入档案，等用户确认。`
+        : `请为新人「${personName}」初始化职业画像（访谈通道）：通过渐进式提问（教育→经历→技能→约束）了解背景，提取候选事实并列出待确认项（标注来源：用户描述）——不要直接写入档案，等用户确认。`
+    const interestHint = interests.length > 0 ? `当前关注方向（用户自报，非决策）：${interests.join('、')}。` : ''
+    startAnalysis(`${channelPrompt}${interestHint}`)
     push(
       'success',
       `已创建「${personName}」· ${
-        selectedRoles.length ? `目标岗位 ${selectedRoles.join(' / ')}` : '目标岗位暂未选择（可从方向探索开始）'
-      } · 画像采集已就绪`,
+        sourceMode === 'resume' ? '简历通道（读取现有简历提取候选）' : '访谈通道（对话采集）'
+      } · 采集已开始`,
     )
     close()
   }
@@ -186,7 +192,7 @@ export function PersonCreateDialog() {
               </Stack>
             </Box>
           </Stack>
-        ) : step === 1 ? (
+        ) : (
           <Stack spacing={1.5}>
             <Box
               sx={{
@@ -199,72 +205,42 @@ export function PersonCreateDialog() {
               <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.75 }}>
                 <AutoAwesomeIcon sx={{ fontSize: 14, color: COLORS.accent }} />
                 <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: COLORS.accent }}>
-                  下一步：采集「{name.trim() || '新朋友'}」画像
+                  初始化方式——数据进入系统的路径
                 </Typography>
               </Stack>
               <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-                创建后将唤起 AI 对话，用渐进式提问（教育 / 经历 / 技能 / 财务约束，每题带推荐答案）生成
-                职业画像。画像就绪后，决策链从「方向探索」开始。
-              </Typography>
-            </Box>
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: '8px',
-                bgcolor: COLORS.bgHover,
-                border: `1px solid ${COLORS.border}`,
-              }}
-            >
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                <Box
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '8px',
-                    bgcolor: alpha(color, 0.13),
-                    display: 'grid',
-                    placeItems: 'center',
-                    fontSize: 18,
-                  }}
-                >
-                  {emoji}
-                </Box>
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-                    {name.trim() || '未命名'}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12, color: COLORS.textMuted, fontFamily: COLORS.mono }}>
-                    profiles/{name.trim() || '…'}.md
-                  </Typography>
-                </Box>
-              </Stack>
-            </Box>
-          </Stack>
-        ) : (
-          <Stack spacing={1.5}>
-            <Box>
-              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.5 }}>
-                基于画像，AI 推荐了以下目标岗位
-                <Typography component="span" sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-                  {' '}
-                  · 演示推荐（阶段 3 接入真实分析）
-                </Typography>
+                创建后将在工作台进行采集：AI 只提取候选事实，你确认后才会写入档案。
               </Typography>
             </Box>
             <Stack spacing={1}>
-              {TARGET_ROLE_RECS.map((rec, i) => {
-                const active = selectedRoles.includes(rec.name)
+              {(
+                [
+                  {
+                    mode: 'resume' as SourceMode,
+                    icon: <UploadFileIcon sx={{ fontSize: 16 }} />,
+                    title: '我有简历',
+                    desc: '读取简历资产，提取经历/技能候选，你逐条确认',
+                  },
+                  {
+                    mode: 'interview' as SourceMode,
+                    icon: <ChatIcon sx={{ fontSize: 16 }} />,
+                    title: '我没有简历',
+                    desc: '通过对话访谈逐步了解教育、经历、技能与约束',
+                  },
+                ] as const
+              ).map(({ mode, icon, title, desc }) => {
+                const active = sourceMode === mode
                 return (
                   <Box
-                    key={rec.id}
-                    role="checkbox"
+                    key={mode}
+                    role="radio"
                     tabIndex={0}
                     aria-checked={active}
-                    onClick={() => toggleRole(rec.name)}
+                    onClick={() => setSourceMode(mode)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        toggleRole(rec.name)
+                        setSourceMode(mode)
                       }
                     }}
                     sx={{
@@ -273,9 +249,7 @@ export function PersonCreateDialog() {
                       cursor: 'pointer',
                       bgcolor: active ? COLORS.accentMuted : COLORS.bgHover,
                       border: `1.5px solid ${active ? COLORS.accent : COLORS.border}`,
-                      animation: `fade-in 0.3s ${EASE} ${i * 0.06}s both`,
-                      transition: `background-color 0.15s ${EASE}, border-color 0.15s ${EASE}, transform 0.1s ${EASE}`,
-                      '&:active': { transform: 'scale(0.98)' },
+                      transition: `background-color 0.15s ${EASE}, border-color 0.15s ${EASE}`,
                       '&:focus-visible': {
                         outline: `2px solid ${COLORS.accent}`,
                         outlineOffset: -1,
@@ -287,35 +261,36 @@ export function PersonCreateDialog() {
                         sx={{
                           width: 16,
                           height: 16,
-                          borderRadius: '4px',
-                          border: `1.5px solid ${
-                            active ? COLORS.accent : COLORS.borderStrong
-                          }`,
-                          bgcolor: active ? COLORS.accent : 'transparent',
+                          borderRadius: '50%',
+                          border: `1.5px solid ${active ? COLORS.accent : COLORS.borderStrong}`,
                           display: 'grid',
                           placeItems: 'center',
                           flexShrink: 0,
                           transition: `background-color 0.15s ${EASE}`,
                         }}
                       >
-                        {active && <CheckIcon sx={{ fontSize: 12, color: COLORS.onAccent }} />}
+                        {active && (
+                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.accent }} />
+                        )}
+                      </Box>
+                      <Box
+                        sx={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: '8px',
+                          display: 'grid',
+                          placeItems: 'center',
+                          color: COLORS.accent,
+                          bgcolor: alpha(COLORS.accent, 0.12),
+                          flexShrink: 0,
+                        }}
+                      >
+                        {icon}
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Stack
-                          direction="row"
-                          sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}
-                        >
-                          <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-                            {rec.name}
-                          </Typography>
-                          <Typography
-                            sx={{ fontSize: 12.5, fontFamily: COLORS.mono, color: COLORS.accent }}
-                          >
-                            {rec.match}%
-                          </Typography>
-                        </Stack>
+                        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{title}</Typography>
                         <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mt: 0.25 }}>
-                          {rec.reason}
+                          {desc}
                         </Typography>
                       </Box>
                     </Stack>
@@ -323,9 +298,23 @@ export function PersonCreateDialog() {
                 )
               })}
             </Stack>
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, textAlign: 'center' }}>
-              暂不选择 → 从方向探索开始，AI 会随分析补充推荐
-            </Typography>
+            <Box>
+              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.5 }}>
+                当前关注方向（可选）
+                <Typography component="span" sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                  {' '}
+                  — 你自报的意向，不是决策；AI 不会据此自动推荐
+                </Typography>
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="如：机械设计、AI 工程（逗号分隔多个）"
+                value={interest}
+                onChange={(e) => setInterest(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { fontSize: 13 } }}
+              />
+            </Box>
           </Stack>
         )}
       </DialogContent>
@@ -344,7 +333,7 @@ export function PersonCreateDialog() {
         <Button size="small" color="inherit" onClick={close} sx={{ fontSize: 12.5 }}>
           取消
         </Button>
-        {step < 2 ? (
+        {step < 1 ? (
           <Button
             size="small"
             variant="contained"
@@ -356,8 +345,14 @@ export function PersonCreateDialog() {
             下一步
           </Button>
         ) : (
-          <Button size="small" variant="contained" onClick={finish} sx={{ fontSize: 12.5 }}>
-            创建并开始画像采集
+          <Button
+            size="small"
+            variant="contained"
+            disabled={!name.trim() || !sourceMode}
+            onClick={finish}
+            sx={{ fontSize: 12.5 }}
+          >
+            创建并开始采集
           </Button>
         )}
       </DialogActions>

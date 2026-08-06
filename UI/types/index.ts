@@ -232,13 +232,6 @@ export interface NextAction {
   stageId: string;
 }
 
-export interface TargetRoleRec {
-  id: string;
-  name: string;
-  match: number;
-  reason: string;
-}
-
 export interface CommandItem {
   id: string;
   label: string;
