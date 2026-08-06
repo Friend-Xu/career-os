@@ -118,9 +118,11 @@ export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   error?: AgentError
   /** 思考中指示（引擎 thinking_start 后、thinking 文本或回复未达前；首条 text_delta/tool_start 熄灭） */
   isThinking?: boolean
+  /** 流式占位中（占位创建至 done/error/cancel 收尾；持久化恢复时据此识别断流消息） */
+  streaming?: boolean
 }
 
-/** UI 扩展 Session：messages 使用 UI ChatMessage（会话仅 UI 运行时，不落盘）；sdkSessionId = SDK 会话凭据（resume 用） */
+/** UI 扩展 Session：messages 使用 UI ChatMessage（会话持久化于本地，刷新可恢复）；sdkSessionId = SDK 会话凭据（resume 用） */
 export type Session = Omit<EngineSession, 'messages'> & { messages: ChatMessage[]; sdkSessionId?: string }
 
 export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped';

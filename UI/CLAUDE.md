@@ -28,7 +28,7 @@ AppShell 组装：top-bar（人选择/当前方向胶囊/决策链胶囊） · i
   + command-palette（⌘K 全局搜索） + person-create-dialog（创建人向导：基本信息→画像采集→目标岗位推荐）
 ```
 
-- **store/app-store.ts**：唯一全局状态。`persist` 的 `partialize` 白名单持久化人/决策/公司/投递/UI 偏好；`sessions` 故意不持久化。persist `version: 2`，模型 B 后旧 schema 直接重置。
+- **store/app-store.ts**：唯一全局状态。`persist` 的 `partialize` 白名单持久化人/决策/公司/投递/UI 偏好/会话（sessions+currentSessionId+initSessionId——刷新恢复协作现场，`sdkSessionId` 随会话保存，继续发送时 resume 续接；流式占位消息带 `streaming` 标记，恢复时断流收尾为「连接中断」；防抖 300ms 写 localStorage + beforeunload flush，text_delta 高频写不阻塞主线程）。persist `version: 2`，模型 B 后旧 schema 直接重置。`sessionTasks`/`agentTasks`（任务映射）是运行时态不持久化——刷新后引擎侧任务可能在后台完成并落盘产物，UI 重连不恢复任务映射。
 - **data/mock-data.ts**：全部演示数据唯一来源（人/决策/公司/投递/图谱节点/简历版本/目标岗位推荐）。新增演示数据在此，不散落页面内。
 - **data/constants.ts**：设计 token。`COLORS.*` 是 CSS 变量引用（index.css 定义 .light/.dark 两套）——**不能拼 hex alpha 后缀**，透明色一律用 `alpha(COLORS.x, 0.15)`；`RISK_COLOR.*` 是 solid hex，可拼后缀。`EASE` 统一缓动曲线。
 - **主题联动**：当前人的 `color` 由 app-shell 注入 `--cos-accent/--cos-accent-muted/--cos-on-accent`（luminance 判定文字深浅）——换人即换全局强调色（400ms 全站过渡，`.cos-theme-transition`）。浅色为默认（index.tsx `defaultMode="light"`）。

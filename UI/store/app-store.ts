@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { useToastStore } from './toast-store'
 import { useAttentionStore } from './attention-store'
 import type {
@@ -81,7 +81,7 @@ function freshPersonStages(): DecisionStage[] {
   return makePersonStages({ direction: 'current' })
 }
 
-// ─── 会话消息写入（权限/提问反馈进对话流；sessions 不持久化，不入 partialize）──
+// ─── 会话消息写入（权限/提问反馈进对话流；sessions 持久化（partialize 白名单），流式占位带 streaming 标记）──
 
 /** 权限决策挂起：requestPermission 返回的 promise 由审批动作 resolve（真实流接入后 await 此值） */
 let resolvePending: ((ok: boolean) => void) | null = null
@@ -229,7 +229,7 @@ interface AppState {
   companiesView: 'profile' | 'map';
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
   pendingPermission: PendingPermission | null;
-  /** 批量放行：sessionId → 本会话内已自动放行的工具名（sessions 不持久化，随会话消亡） */
+  /** 批量放行：sessionId → 本会话内已自动放行的工具名（随会话持久化，刷新不丢） */
   approvedTools: Record<string, string[]>;
   /** 简历 AI 改写任务（浮层状态机，不持久化；在线走真实 agent，离线由页面降级规则候选） */
   rewrite: RewriteState;
@@ -887,6 +887,7 @@ export const useAppStore = create<AppState>()(
       patchStreamingMessage(route.sessionId, route.messageId, (m) => ({
         ...m,
         isThinking: false,
+        streaming: false,
         content: m.content === '' ? '（已停止）' : `${m.content}\n\n（已停止）`,
       }))
       agentTasks.delete(task.taskId)
@@ -1441,6 +1442,9 @@ export const useAppStore = create<AppState>()(
     return engine.exportResume(html)
   },
     }),
+    // ─── 会话持久化（sessions/currentSessionId/initSessionId 进 partialize）─────────────
+    // 刷新恢复语义：sdkSessionId 随会话保存 → 继续发送时 agent/start resume 续接 CLI 上下文。
+    // streaming 占位消息（流式中断）恢复时收尾为「连接中断」——重连后引擎任务可能已在后台完成并落盘产物。
     {
       name: 'career-os',
       version: 2,
@@ -1450,12 +1454,17 @@ export const useAppStore = create<AppState>()(
       merge: (persisted, current) => {
         const p = persisted as Record<string, unknown>
         if (p && typeof p === 'object' && 'agentPanelOpen' in p) delete p.agentPanelOpen
-        return { ...current, ...(p as object) }
+        const merged = { ...current, ...(p as object) } as AppState
+        // 断流收尾幂等：localStorage 未写回时重复标记结果一致
+        return { ...merged, sessions: markInterruptedSessions(merged.sessions) }
       },
       partialize: (s) => ({
         currentPersonId: s.currentPersonId,
         currentPage: s.currentPage,
         mainWidthMode: s.mainWidthMode,
+        sessions: s.sessions,
+        currentSessionId: s.currentSessionId,
+        initSessionId: s.initSessionId,
         applications: s.applications,
         deletedAppJobIds: s.deletedAppJobIds,
         resumes: s.resumes,
@@ -1468,9 +1477,56 @@ export const useAppStore = create<AppState>()(
         companiesFilter: s.companiesFilter,
         applicationsFilter: s.applicationsFilter,
       }),
+      storage: createJSONStorage(() => createDebouncedLocalStorage()),
     },
   ),
 )
+
+/** 防抖持久化写：text_delta 流式高频 setState → 300ms 合并写 localStorage；beforeunload 同步 flush 收尾不丢 */
+function createDebouncedLocalStorage(): StateStorage {
+  const name = 'career-os'
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let pending: string | null = null
+  const flush = () => {
+    if (timer === undefined || pending === null) return
+    clearTimeout(timer)
+    timer = undefined
+    localStorage.setItem(name, pending)
+    pending = null
+  }
+  window.addEventListener('beforeunload', flush)
+  return {
+    getItem: (n) => localStorage.getItem(n),
+    setItem: (n, value) => {
+      pending = value
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(() => {
+        localStorage.setItem(n, pending!)
+        pending = null
+        timer = undefined
+      }, 300)
+    },
+    removeItem: (n) => localStorage.removeItem(n),
+  }
+}
+
+/** 刷新恢复：流式占位中（streaming: true）的消息已断流——收尾为「连接中断」，不再假装运行中 */
+function markInterruptedSessions(sessions: Session[]): Session[] {
+  return sessions.map((s) => ({
+    ...s,
+    messages: s.messages.map((m) => {
+      if (m.role === 'assistant' && m.streaming) {
+        return {
+          ...m,
+          streaming: false,
+          isThinking: false,
+          content: m.content === '' ? '（连接中断）' : `${m.content}\n\n（连接中断）`,
+        }
+      }
+      return m
+    }),
+  }))
+}
 
 // ─── 引擎接线（桥接联调）：连接 → 拉取真实数据 → 订阅变更信号 ─────────────
 // 事件是通知，状态是可拉的资源：data.decisions.changed 只作信号，数据经 RPC 拉取。
@@ -1482,7 +1538,7 @@ export function getEngine(): EngineClient | null {
   return engine
 }
 
-// ─── 真实 Agent 流（engine agent.event 消费；sessions 不持久化，任务映射随会话消亡）──
+// ─── 真实 Agent 流（engine agent.event 消费；sessions 已持久化，任务映射 sessionTasks 为运行时态随刷新清空）──
 
 /** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
 const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
@@ -1621,6 +1677,7 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
       role: 'assistant',
       content: '',
       isThinking: true, // 占位即亮指示器；thinking_stop / 首个 text_delta / tool_start 熄灭
+      streaming: true, // 流式占位标记：持久化恢复时识别断流消息并收尾
       timestamp: new Date().toISOString(),
     })
     agentTasks.set(taskId, { sessionId, messageId })
@@ -1765,7 +1822,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
           if (marks.length > 0) void persistCandidates(pid, marks)
         }
       }
-      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
       agentTasks.delete(taskId)
       useAppStore.setState((s) => {
         const next = { ...s.sessionTasks }
@@ -1775,7 +1832,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       break
     }
     case 'error':
-      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
+      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
       appendToSession(sessionId, {
         id: `msg-${Date.now()}`,
         role: 'assistant',
