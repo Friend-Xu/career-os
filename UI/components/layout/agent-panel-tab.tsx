@@ -8,7 +8,7 @@ import { COLORS, LAYOUT } from '../../data/constants'
  *  Agent 任务进行中显示状态点——AI 始终存在，只等呼出。 */
 export function AgentPanelTab() {
   const toggle = useAppStore((s) => s.toggleAgentPanel)
-  const busy = useAppStore((s) => s.activeTask) !== null
+  const busy = useAppStore((s) => Object.keys(s.sessionTasks).length > 0)
 
   return (
     <Tooltip title="呼出 AI 面板（⌘B）" placement="left">

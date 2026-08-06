@@ -1,10 +1,13 @@
 /**
- * Agent 空间侧栏：会话列表（切换 + 新建）。
+ * Agent 空间侧栏：会话列表（切换 + 新建）。每行显示会话运行状态（任务归属会话，
+ * 同会话单任务互斥、跨会话并行——状态点 + 阶段文案 + 运行时长）。
  */
 import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import dayjs from 'dayjs'
 import { useAppStore } from '../../../store/app-store'
+import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../../store/agent-phase'
+import type { StreamPhase } from '../../../store/agent-phase'
 import { alpha, COLORS } from '../../../data/constants'
 
 export function AgentSidebar() {
@@ -12,8 +15,20 @@ export function AgentSidebar() {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const createSession = useAppStore((s) => s.createSession)
+  const sessionTasks = useAppStore((s) => s.sessionTasks)
+  const now = useAppStore((s) => s.now)
   const person = useAppStore((s) => s.currentPerson())
   const list = sessions.filter((s) => s.personId === person.id && !s.archived)
+
+  /** 会话行当前阶段：任务运行中由最后一条消息推导（提问挂起 → 等待你的回答） */
+  const rowPhase = (s: (typeof list)[number]): StreamPhase | undefined => {
+    const task = sessionTasks[s.id]
+    if (!task) return undefined
+    const last = s.messages.at(-1)
+    if (last?.question && !last.question.answered) return 'waiting_input'
+    if (last) return deriveAgentPhase(last)
+    return 'running'
+  }
 
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>
@@ -64,6 +79,8 @@ export function AgentSidebar() {
         ) : (
           list.map((s) => {
             const active = s.id === currentSessionId
+            const phase = rowPhase(s)
+            const task = sessionTasks[s.id]
             return (
               <Stack
                 key={s.id}
@@ -89,9 +106,35 @@ export function AgentSidebar() {
                 >
                   {s.title}
                 </Typography>
-                <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
-                  {s.messages.length} 条 · {dayjs(s.updatedAt).format('MM-DD HH:mm')}
-                </Typography>
+                {phase !== undefined && task ? (
+                  <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mt: 0.25 }}>
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        bgcolor: phase === 'waiting_input' ? COLORS.riskMedium : COLORS.accent,
+                        animation:
+                          phase === 'waiting_input'
+                            ? undefined
+                            : 'cos-thinking-dot 1.2s ease-in-out infinite',
+                      }}
+                    />
+                    <Typography
+                      sx={{ fontSize: 11, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
+                      noWrap
+                    >
+                      {phase === 'waiting_input'
+                        ? '等待你的回答'
+                        : `${PHASE_META[phase]} ${formatElapsed(now - task.startedAt)}`}
+                    </Typography>
+                  </Stack>
+                ) : (
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                    {s.messages.length} 条 · {dayjs(s.updatedAt).format('MM-DD HH:mm')}
+                  </Typography>
+                )}
               </Stack>
             )
           })

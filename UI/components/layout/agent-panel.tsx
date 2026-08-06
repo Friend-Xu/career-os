@@ -14,7 +14,7 @@ import SendIcon from '@mui/icons-material/Send'
 import StopCircleIcon from '@mui/icons-material/StopCircle'
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../store/agent-phase'
@@ -36,7 +36,8 @@ export function AgentPanel() {
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
-  const activeTask = useAppStore((s) => s.activeTask)
+  const activeTask = useAppStore((s) => s.sessionTasks[currentSessionId])
+  const now = useAppStore((s) => s.now)
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -45,14 +46,7 @@ export function AgentPanel() {
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
-  const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
-  /** 任务运行中：每秒心跳驱动运行时长递增 */
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    if (!taskRunning) return
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [taskRunning])
+  const taskRunning = activeTask !== undefined
   /** 流式消息（任务运行时 = 会话最后一条 assistant 消息；提问挂起时是未答卡片） */
   const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
   const streamPhase: StreamPhase | undefined =

@@ -570,7 +570,7 @@ export function AgentPage() {
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
   const simulateQuestionRequest = useAppStore((s) => s.simulateQuestionRequest)
-  const activeTask = useAppStore((s) => s.activeTask)
+  const activeTask = useAppStore((s) => s.sessionTasks[currentSessionId])
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
   const agentSettings = useAppStore((s) => s.agentSettings)
   const setAgentModel = useAppStore((s) => s.setAgentModel)
@@ -583,14 +583,9 @@ export function AgentPage() {
   const [completeOpen, setCompleteOpen] = useState(false)
 
   const session = sessions.find((s) => s.id === currentSessionId)
-  const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
-  /** 任务运行中：每秒心跳驱动运行时长递增（占位消息的 stream prop 引用新 now 触发重渲染） */
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    if (!taskRunning) return
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [taskRunning])
+  const taskRunning = activeTask !== undefined
+  /** 心跳时间源（store 每秒 tick；消息内状态条/顶部状态条/会话列表共用） */
+  const now = useAppStore((s) => s.now)
   /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
   const providerModels = useAppStore((s) => s.agentSettings.providers)
     .filter((p) => p.enabled)
@@ -678,6 +673,36 @@ export function AgentPage() {
             </Button>
           </Stack>
         </Stack>
+      )}
+
+      {/* 顶部任务状态条：滚动时始终可见（消息内状态条随内容滚动）——只展示当前会话任务 */}
+      {stream && (
+        <Box
+          sx={{
+            px: 3,
+            py: 0.75,
+            borderBottom: `1px solid ${COLORS.border}`,
+            bgcolor: COLORS.bgElevated,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
+          <Box
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              bgcolor: COLORS.accent,
+              animation: 'cos-thinking-dot 1.2s ease-in-out infinite',
+            }}
+          />
+          <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}>
+            {stream.phase === 'waiting_input'
+              ? '等待你的回答'
+              : `${PHASE_META[stream.phase]} · ${formatElapsed(stream.now - stream.startedAt)}`}
+          </Typography>
+        </Box>
       )}
 
       {!initMode && <ContextCapsule />}

@@ -140,8 +140,10 @@ interface AppState {
   poolGraph: GraphResult | null;
   sessions: Session[];
   currentSessionId: string;
-  /** 当前运行中的 Agent 任务（sessionId 归属；无任务为 null，不持久化）——停止按钮与运行状态条的驱动源 */
-  activeTask: { taskId: string; sessionId: string; startedAt: number } | null;
+  /** 各会话运行中的 Agent 任务（归属 session：同会话单任务互斥，跨会话并行）——状态条/停止按钮的驱动源 */
+  sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number }>;
+  /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
+  now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
   agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string } };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
@@ -403,7 +405,8 @@ export const useAppStore = create<AppState>()(
       poolGraph: null,
       sessions: SESSIONS,
       currentSessionId: 's-current',
-      activeTask: null,
+      sessionTasks: {},
+      now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' } },
       availableModels: { source: 'cli', models: [] },
       applications: APPLICATIONS,
@@ -820,10 +823,13 @@ export const useAppStore = create<AppState>()(
   createSession: (title = '新会话') => {
     const id = `s-${Date.now()}`
     const now = new Date().toISOString()
+    // 归属当前展示的人（currentPerson().id 而非 currentPersonId：引擎拉取后 id 重排，
+    // 裸 currentPersonId 可能漂移导致新会话不进侧栏列表）
+    const personId = get().currentPerson().id
     const session: Session = {
       id,
       title,
-      personId: get().currentPersonId,
+      personId,
       createdAt: now,
       updatedAt: now,
       archived: false,
@@ -836,20 +842,25 @@ export const useAppStore = create<AppState>()(
   },
 
   cancelCurrentTask: () => {
-    const { activeTask } = get()
-    if (!activeTask) return
-    void engine?.cancelAgent(activeTask.taskId)
-    const task = agentTasks.get(activeTask.taskId)
-    if (task) {
+    const { currentSessionId, sessionTasks } = get()
+    const task = sessionTasks[currentSessionId]
+    if (!task) return
+    void engine?.cancelAgent(task.taskId)
+    const route = agentTasks.get(task.taskId)
+    if (route) {
       // 占位消息标记停止（内容为空 → 「已停止」；已有流式内容 → 追加停止标记）
-      patchStreamingMessage(task.sessionId, task.messageId, (m) => ({
+      patchStreamingMessage(route.sessionId, route.messageId, (m) => ({
         ...m,
         isThinking: false,
         content: m.content === '' ? '（已停止）' : `${m.content}\n\n（已停止）`,
       }))
-      agentTasks.delete(activeTask.taskId)
+      agentTasks.delete(task.taskId)
     }
-    set({ activeTask: null })
+    set((state) => {
+      const next = { ...state.sessionTasks }
+      delete next[currentSessionId]
+      return { sessionTasks: next }
+    })
   },
 
   loadAgentSettings: async () => {
@@ -1419,6 +1430,21 @@ export function getEngine(): EngineClient | null {
 /** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
 const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
 
+/** 任务心跳：有任一会话任务时每秒 tick store.now（状态条/会话列表共用时间源）；全空自动停 */
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+function ensureHeartbeat(): void {
+  if (heartbeatTimer !== null) return
+  heartbeatTimer = setInterval(() => {
+    const st = useAppStore.getState().sessionTasks
+    if (Object.keys(st).length === 0) {
+      clearInterval(heartbeatTimer!)
+      heartbeatTimer = null
+      return
+    }
+    useAppStore.setState({ now: Date.now() })
+  }, 1000)
+}
+
 /** 简历 AI 改写任务 id（非会话任务：事件路由到 rewrite 状态而非会话消息） */
 let rewriteTaskId: string | null = null
 
@@ -1513,6 +1539,11 @@ async function persistCandidates(personId: string, candidates: { category: strin
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
 async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string): Promise<void> {
   if (!engine) return
+  // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
+  if (useAppStore.getState().sessionTasks[sessionId]) {
+    useToastStore.getState().push('warning', '当前会话已有任务运行中，请等待完成或先停止')
+    return
+  }
   try {
     const { taskId } = await engine.startAgent({
       task: content,
@@ -1536,7 +1567,10 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
       timestamp: new Date().toISOString(),
     })
     agentTasks.set(taskId, { sessionId, messageId })
-    useAppStore.setState({ activeTask: { taskId, sessionId, startedAt: Date.now() } })
+    useAppStore.setState((s) => ({
+      sessionTasks: { ...s.sessionTasks, [sessionId]: { taskId, messageId, startedAt: Date.now() } },
+    }))
+    ensureHeartbeat()
   } catch (err) {
     appendToSession(sessionId, {
       id: `msg-${Date.now()}`,
@@ -1673,7 +1707,11 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       }
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       agentTasks.delete(taskId)
-      if (useAppStore.getState().activeTask?.taskId === taskId) useAppStore.setState({ activeTask: null })
+      useAppStore.setState((s) => {
+        const next = { ...s.sessionTasks }
+        if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
+        return { sessionTasks: next }
+      })
       break
     }
     case 'error':
@@ -1686,7 +1724,11 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         error: ev.error,
       })
       agentTasks.delete(taskId)
-      if (useAppStore.getState().activeTask?.taskId === taskId) useAppStore.setState({ activeTask: null })
+      useAppStore.setState((s) => {
+        const next = { ...s.sessionTasks }
+        if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
+        return { sessionTasks: next }
+      })
       break
   }
 }
