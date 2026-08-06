@@ -24,7 +24,7 @@ import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { scanPersons } from '../storage/person-watcher.ts'
+import { appendSessionTurn, createPersonSession, scanPersons } from '../storage/person-watcher.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
@@ -162,6 +162,29 @@ export function computeJdAnalysis(workspace: Workspace, params: { jobId: string;
   if (!person) throw new Error(`人不存在：${params.personId}`)
   const { skills } = scanKnowledge(workspace)
   return analyzeJob({ job: job.record, person, skills })
+}
+
+/** person/session/create 入参校验（RPC 边界：用户输入校验，fail fast） */
+function createPersonSessionParams(params: unknown): { name: string; sourceMode: 'resume' | 'interview' } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const name = typeof p.name === 'string' ? p.name.trim() : ''
+  const sourceMode = p.sourceMode
+  if (!name) throw new Error('name 必填')
+  if (sourceMode !== 'resume' && sourceMode !== 'interview') throw new Error('sourceMode 必须为 resume 或 interview')
+  return { name, sourceMode }
+}
+
+/** person/session/append 入参校验（RPC 边界） */
+function appendSessionTurnParams(params: unknown): { personId: string; role: 'user' | 'assistant'; content: string; timestamp?: string } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  const role = p.role
+  const content = typeof p.content === 'string' ? p.content.trim() : ''
+  if (!personId) throw new Error('personId 必填')
+  if (role !== 'user' && role !== 'assistant') throw new Error('role 必须为 user 或 assistant')
+  if (!content) throw new Error('content 必填')
+  const timestamp = typeof p.timestamp === 'string' ? p.timestamp : undefined
+  return { personId, role, content, timestamp }
 }
 
 /** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -724,6 +747,8 @@ export async function startServer(opts: {
     [METHODS.listCompanies]: () => store.listCompanies(),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
+    [METHODS.createPersonSession]: (params) => createPersonSession(workspace, createPersonSessionParams(params)),
+    [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),
     [METHODS.snapshotArchive]: (params) => {
       const p = snapshotArchiveParams(params)
       return archiveCurrentSnapshot(workspace, p.personId, p)

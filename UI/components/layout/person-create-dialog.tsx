@@ -15,7 +15,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import ChatIcon from '@mui/icons-material/Chat'
 import { useState } from 'react'
-import { useAppStore } from '../../store/app-store'
+import { getEngine, useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { alpha, COLORS, EASE } from '../../data/constants'
 
@@ -48,14 +48,14 @@ export function PersonCreateDialog() {
     setInterest('')
   }
 
-  const finish = () => {
+  const finish = async () => {
     const personName = name.trim()
     if (!personName || !sourceMode) return
     const interests = interest
       .split(/[,，、]/)
       .map((s) => s.trim())
       .filter(Boolean)
-    addPerson({
+    const newId = addPerson({
       name: personName,
       color,
       emoji,
@@ -67,13 +67,28 @@ export function PersonCreateDialog() {
       initialInterest: interests.length > 0 ? interests : undefined,
       initStatus: 'pending',
     })
+    // 引擎在线 → 落盘 persons/{id}/（manifest + intake/session-001.md）并回填 person_id；
+    // 离线 → 仅本地 Person（诚实：无资产落盘，连接后需重新初始化）
+    let personId: string | undefined
+    if (useAppStore.getState().engineStatus === 'connected') {
+      try {
+        const res = await getEngine()!.createPersonSession({
+          name: personName,
+          sourceMode,
+        })
+        personId = res.personId
+        useAppStore.getState().setPersonPersonId(newId, res.personId)
+      } catch {
+        personId = undefined
+      }
+    }
     // 初始化会话：Agent 主动开场（内部指令不外显），输入框保持干净
-    startInitializationSession({ personName, sourceMode, interests })
+    startInitializationSession({ personName, sourceMode, interests, personId })
     push(
       'success',
       `已创建「${personName}」· ${
         sourceMode === 'resume' ? '简历通道（读取现有简历提取候选）' : '访谈通道（对话采集）'
-      } · 初始化空间已开启`,
+      } · 初始化空间已开启${personId ? '' : '（引擎离线：未落盘，连接后需重新初始化）'}`,
     )
     close()
   }

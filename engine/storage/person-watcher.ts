@@ -4,6 +4,8 @@
  * - parseSnapshotTable：snapshot/*.md 的 `## 分析摘要` 表 → 字段映射（缺表 → 空对象）
  * - scanPersons：persons/ 子目录扫描 → PersonSnapshot[]（manifest 缺 id → 跳过；
  *   无 persons/ 目录 → 空数组，调用方降级 profiles 旧扫描）
+ * - createPersonSession / appendSessionTurn：Initialization Session 持久化（切片 2.1）——
+ *   manifest.md + intake/session-001.md（原始对话记录，非事实层）
  *
  * 真相源由对话式采集/用户维护，引擎只读解析不写。降级惯例同 evidence-watcher：
  * 摘要表缺失 → 字段缺省（空对象），不 invalid——Person 是导航资产，缺字段不阻塞。
@@ -22,6 +24,88 @@ export interface PersonManifest {
 }
 
 const STATUSES = ['active', 'archived'] as const
+
+/** persons/ 子目录名 → person_id 列表（无目录 → 空） */
+function scanPersonIds(ws: Workspace): string[] {
+  try {
+    return readdirSync(ws.paths.persons, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+  } catch {
+    return []
+  }
+}
+
+/** 创建 Person + Initialization Session：persons/{person_id}/manifest.md + intake/session-001.md */
+export function createPersonSession(ws: Workspace, params: { name: string; sourceMode: 'resume' | 'interview' }): { personId: string; sessionId: string } {
+  const { name, sourceMode } = params
+  const seq = scanPersonIds(ws).reduce((m, id) => Math.max(m, Number(id.replace('person_', '')) || 0), 0) + 1
+  const personId = `person_${String(seq).padStart(3, '0')}`
+  const today = new Date().toISOString().slice(0, 10)
+  const manifest = [
+    '---',
+    `id: ${personId}`,
+    `name: ${name}`,
+    'status: active',
+    `created_at: ${today}`,
+    '---',
+    '',
+    `# Person ${String(seq).padStart(3, '0')} — ${name}`,
+    '',
+    '## 分析摘要',
+    '',
+    '| 字段 | 值 |',
+    '|------|-----|',
+    `| id | ${personId} |`,
+    `| name | ${name} |`,
+    '| status | active |',
+    `| source_mode | ${sourceMode} |`,
+    '| init_session | session-001 |',
+    `| created_at | ${today} |`,
+    '',
+  ].join('\n')
+  ws.write(`persons/${personId}/manifest.md`, manifest)
+  ws.write(`persons/${personId}/intake/session-001.md`, sessionTemplate(personId, sourceMode))
+  return { personId, sessionId: 'session-001' }
+}
+
+function sessionTemplate(personId: string, sourceMode: 'resume' | 'interview'): string {
+  return [
+    '# Initialization Session',
+    '',
+    `Person: ${personId}`,
+    'Mode: initialization',
+    `Source: ${sourceMode === 'resume' ? 'resume' : 'user_reported'}`,
+    '',
+    '## Conversation',
+    '',
+    '（对话记录将在这里累积——用户说过的话不会消失）',
+    '',
+    '## Status',
+    '',
+    'Collected: ',
+    'Pending: ',
+    '',
+  ].join('\n')
+}
+
+/** 追加一轮对话到 intake/session-001.md（原始认知输入，非 AI 总结事实） */
+export function appendSessionTurn(ws: Workspace, params: { personId: string; role: 'user' | 'assistant'; content: string; timestamp?: string }): void {
+  const { personId, role, content } = params
+  const rel = `persons/${personId}/intake/session-001.md`
+  if (!ws.exists(rel)) return // 无 session 资产 → 不创建（UI 创建流程负责先 create）
+  const ts = params.timestamp ?? new Date().toISOString()
+  const block = [
+    '',
+    `### Turn（${ts}）`,
+    '',
+    `**${role === 'user' ? 'User' : 'Agent'}:**`,
+    '',
+    content.trim(),
+    '',
+  ].join('\n')
+  ws.write(rel, ws.read(rel).replace(/^## Status\n\nCollected: .*\nPending: .*\n?$/m, block + '\n\n## Status\n\nCollected: \nPending: '))
+}
 
 /** manifest.md → 根声明（frontmatter id/name/status 必填；缺任一 → undefined） */
 export function parsePersonManifest(md: string): PersonManifest | undefined {

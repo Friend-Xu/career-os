@@ -236,6 +236,8 @@ interface AppState {
   setPersonCreateDialogOpen: (open: boolean) => void;
   setActiveResumeId: (id: string) => void;
   addPerson: (person: Omit<Person, 'id'>) => number;
+  /** 回填引擎 person_id（person/session/create 成功后的稳定标识，owner 协议引用键） */
+  setPersonPersonId: (id: number, personId: string) => void;
   archivePerson: (personId: number) => void;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
@@ -253,6 +255,7 @@ interface AppState {
     personName: string
     sourceMode: 'resume' | 'interview'
     interests?: string[]
+    personId?: string
   }) => void;
   /** 初始化会话状态机（Initialization Shell）：welcome/discovering/summary/resolution/compiled */
   initSessionState: 'welcome' | 'discovering' | 'summary' | 'resolution' | 'compiled';
@@ -517,6 +520,12 @@ export const useAppStore = create<AppState>()(
     return nextId
   },
 
+  setPersonPersonId: (id, personId) => {
+    set((state) => ({
+      persons: state.persons.map((p) => (p.id === id ? { ...p, personId } : p)),
+    }))
+  },
+
   archivePerson: (personId) => {
     if (personId === get().currentPersonId) return
     set((state) => ({
@@ -568,7 +577,13 @@ export const useAppStore = create<AppState>()(
   setInitSessionState: (state) => set({ initSessionState: state }),
 
   /** 初始化会话：Agent 主动进入初始化助手角色——内部指令不外显（silent），输入框保持干净 */
-  startInitializationSession: ({ personName, sourceMode, interests }) => {
+  startInitializationSession: (ctx: {
+    personName: string
+    sourceMode: 'resume' | 'interview'
+    interests?: string[]
+    personId?: string
+  }) => {
+    const { personName, sourceMode, interests, personId } = ctx
     const resumeChannel = sourceMode === 'resume'
     const lines = [
       `你是「${personName}」的初始化助手（${resumeChannel ? '简历通道' : '访谈通道'}）。`,
@@ -580,6 +595,9 @@ export const useAppStore = create<AppState>()(
         : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
       '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
+      ...(personId
+        ? [`采集记录：本会话的对话会持续写入 persons/${personId}/intake/session-001.md（原始对话记录）。如果该文件已有内容，先阅读它了解已采集部分并继续；禁止修改该文件（引擎负责写入）。`]
+        : []),
       ...(interests && interests.length > 0
         ? [`当前关注方向（用户自报，非决策，仅作背景参考）：${interests.join('、')}。`]
         : []),
@@ -633,6 +651,9 @@ export const useAppStore = create<AppState>()(
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === currentSessionId)
       void runAgentTask(currentSessionId, content, session?.sdkSessionId)
+      // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
+      const pid = pendingInitPersonId()
+      if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
       return
     }
 
@@ -1284,6 +1305,25 @@ function patchStreamingMessage(
   }))
 }
 
+/** 初始化会话落盘（切片 2.1）：当前人初始化中 + 引擎在线 → 追加对话轮次到 intake/session-001.md */
+async function appendSessionTurnToEngine(personId: string, role: 'user' | 'assistant', content: string): Promise<void> {
+  if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+  const person = useAppStore.getState().persons.find((p) => p.personId === personId)
+  if (!person || person.initStatus !== 'pending') return
+  try {
+    await engine.appendSessionTurn({ personId, role, content })
+  } catch {
+    // 落盘失败不打断对话（过程资产，引擎 exists 校验兜底，不阻塞会话）
+  }
+}
+
+/** 当前人（初始化中且有引擎 person_id）→ 对话轮次可落盘 */
+function pendingInitPersonId(): string | undefined {
+  const s = useAppStore.getState()
+  const person = s.persons.find((p) => p.id === s.currentPersonId)
+  return person?.initStatus === 'pending' && person.personId ? person.personId : undefined
+}
+
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
 async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string): Promise<void> {
   if (!engine) return
@@ -1429,11 +1469,22 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         ),
       }))
       break
-    case 'done':
+    case 'done': {
+      // 初始化会话落盘：assistant 完整回复追加（delete 前取任务映射）
+      const doneTask = agentTasks.get(taskId)
+      const pid = pendingInitPersonId()
+      if (doneTask && pid) {
+        const msg = useAppStore
+          .getState()
+          .sessions.find((s) => s.id === doneTask.sessionId)
+          ?.messages.find((m) => m.id === doneTask.messageId)
+        if (msg?.content) void appendSessionTurnToEngine(pid, 'assistant', msg.content)
+      }
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       agentTasks.delete(taskId)
       if (useAppStore.getState().activeTask?.taskId === taskId) useAppStore.setState({ activeTask: null })
       break
+    }
     case 'error':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       appendToSession(sessionId, {

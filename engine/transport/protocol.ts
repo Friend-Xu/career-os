@@ -53,6 +53,10 @@ export const METHODS = {
   companyGet: 'companies/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
+  /** 创建 Person + Initialization Session（切片 2.1：params { name, sourceMode } → { personId, sessionId }；生成 manifest.md + intake/session-001.md） */
+  createPersonSession: 'person/session/create',
+  /** 追加对话轮次到 intake/session-001.md（params { personId, role, content, timestamp? }；原始对话记录非事实层） */
+  appendSessionTurn: 'person/session/append',
   /** 快照版本存档（M7.1：写入 current 前调用，params { personId, reason, trigger?, sourceRefs? } → SnapshotVersionManifest | null；增量 append-only） */
   snapshotArchive: 'snapshot/archive',
   /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */

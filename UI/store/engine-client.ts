@@ -486,6 +486,16 @@ export class EngineClient {
     return this.rpc<Person[]>(METHODS.listPersons)
   }
 
+  /** 创建 Person + Initialization Session（引擎写 manifest.md + intake/session-001.md） */
+  createPersonSession(params: { name: string; sourceMode: 'resume' | 'interview' }): Promise<{ personId: string; sessionId: string }> {
+    return this.rpc<{ personId: string; sessionId: string }>(METHODS.createPersonSession, params)
+  }
+
+  /** 追加对话轮次到 intake/session-001.md（原始对话记录） */
+  appendSessionTurn(params: { personId: string; role: 'user' | 'assistant'; content: string; timestamp?: string }): Promise<unknown> {
+    return this.rpc(METHODS.appendSessionTurn, params)
+  }
+
   poolGraph(): Promise<GraphResult> {
     return this.rpc<GraphResult>(METHODS.poolGraph)
   }
