@@ -10,6 +10,7 @@
  *   任一子进程退出 → shutdown（自动重启留 v2）
  *   强杀/崩溃无信号 → runtime.json 残留 → 下次启动 recovery 清理
  */
+import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { findPortOccupier, killTree, queryCommandLine, spawnTracked } from './process-manager.mjs'
 import { createShutdown } from './shutdown-manager.mjs'
@@ -30,6 +31,30 @@ const PROCESSES = [
     health: { ports: [5288] },
   },
 ]
+
+const UI_URL = 'http://localhost:5288'
+
+/** 打开默认浏览器（detached 独立进程，不随 supervisor 退出而关闭） */
+function openBrowser(url) {
+  if (process.platform !== 'win32') return
+  spawn('cmd', ['/c', 'start', '', url], { detached: true, windowsHide: true, stdio: 'ignore' }).unref()
+}
+
+/** 轮询端口就绪——前端冷启动需要时间，过早打开浏览器会命中 404 */
+function waitForPort(port, timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs
+    const timer = setInterval(() => {
+      if (findPortOccupier(port) != null) {
+        clearInterval(timer)
+        resolve(true)
+      } else if (Date.now() > deadline) {
+        clearInterval(timer)
+        resolve(false)
+      }
+    }, 500)
+  })
+}
 
 /**
  * 端口预检：recovery 覆盖"state 记录的孤儿"，这里覆盖"无 state 但端口被占"——
@@ -62,7 +87,8 @@ function preflightPorts() {
 function main() {
   const rec = recover()
   if (rec.result === 'already-running') {
-    console.error(`[runtime] 已有实例运行中（PID ${rec.state.owner.pid}）。直接访问 http://localhost:5288；关闭请运行 stop-all.bat`)
+    openBrowser(UI_URL)
+    console.error(`[runtime] 已有实例运行中（PID ${rec.state.owner.pid}）。已打开浏览器；关闭请运行 stop-all.bat`)
     process.exit(1)
   }
   if (rec.result === 'cleaned') console.log(`[runtime] 上次会话残留：已清理 ${rec.killed} 个进程`)
@@ -93,6 +119,10 @@ function main() {
 
     child.stdout.on('data', (d) => process.stdout.write(`[${def.name}] ${d}`))
     child.stderr.on('data', (d) => process.stderr.write(`[${def.name}] ${d}`))
+    child.on('error', (err) => {
+      console.error(`[runtime] ${def.name} spawn 失败：${err.message}`)
+      shutdown(`spawn-error:${def.name}`, 1)
+    })
     child.on('exit', (code) => {
       console.log(`[runtime] ${def.name} exited (${code})`)
       shutdown(`child-exit:${def.name}`, code ?? 1)
@@ -102,6 +132,15 @@ function main() {
   console.log('[runtime] Career OS 运行中：引擎 ws://127.0.0.1:5289 · 前端 http://localhost:5288')
   console.log('[runtime] 关闭请运行 stop-all.bat（直接关窗口可能残留，下次启动自动清理）')
   console.log(`[runtime] session ${state.session} · PID ${process.pid}`)
+
+  waitForPort(5288).then((ready) => {
+    if (ready) {
+      openBrowser(UI_URL)
+      console.log(`[runtime] 前端就绪——已打开浏览器 ${UI_URL}`)
+    } else {
+      console.log(`[runtime] 前端 20s 内未就绪——请手动访问 ${UI_URL}`)
+    }
+  })
 }
 
 main()
