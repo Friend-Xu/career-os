@@ -14,7 +14,7 @@ console.log('Runtime Safety Check')
 console.log('===================')
 if (!state) {
   console.log('未运行（无 runtime.json —— 上次会话干净关闭或从未启动）')
-  console.log('启动：StartWebTUI.bat')
+  console.log('启动：StartWebUI.bat')
   process.exit(0)
 }
 

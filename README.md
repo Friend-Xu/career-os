@@ -61,7 +61,7 @@
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node runtime/supervisor.mjs     # Windows 也可双击 StartWebTUI.bat（内置便携 node，无需系统 Node）
+node runtime/supervisor.mjs     # Windows 也可双击 StartWebUI.bat（内置便携 node，无需系统 Node）
 ```
 关闭：`node runtime/stop-all.mjs` 或双击 stop-all.bat；诊断：`node runtime/doctor.mjs`。
 
@@ -97,7 +97,7 @@ claude --plugin-dir .
 
 | 操作 | 命令 |
 |------|------|
-| 启动 | `StartWebTUI.bat`（或 `node runtime/supervisor.mjs`） |
+| 启动 | `StartWebUI.bat`（或 `node runtime/supervisor.mjs`） |
 | 停止 | `stop-all.bat`（或 `node runtime/stop-all.mjs`）——直接关窗口会残留进程，请用此入口 |
 | 诊断 | `node runtime/doctor.mjs`——软件打不开时的第一步排查 |
 

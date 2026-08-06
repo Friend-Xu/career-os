@@ -281,7 +281,7 @@ Career OS 分两个域，**系统可升级，个人资产永远独立**：
 ## 6. 部署与进程生命周期
 
 ```
-StartWebTUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1）
+StartWebUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1）
   ├─ engine:  .local/node/node.exe main.ts   → WS :5289
   └─ ui:      .local/node/node.exe vite      → :5288（strictPort）
 ```

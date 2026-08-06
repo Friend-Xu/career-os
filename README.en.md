@@ -60,7 +60,7 @@ Walked the full chain with career-advisor: transition feasibility (75% match, so
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node runtime/supervisor.mjs     # Windows: double-click StartWebTUI.bat (bundled portable node, no system Node needed)
+node runtime/supervisor.mjs     # Windows: double-click StartWebUI.bat (bundled portable node, no system Node needed)
 ```
 Stop: `node runtime/stop-all.mjs` or double-click stop-all.bat · Diagnose: `node runtime/doctor.mjs`.
 
@@ -74,7 +74,7 @@ The engine and frontend are supervised by `runtime/supervisor.mjs` — solving "
 
 | Action | Command |
 |--------|---------|
-| Start | `StartWebTUI.bat` (or `node runtime/supervisor.mjs`) |
+| Start | `StartWebUI.bat` (or `node runtime/supervisor.mjs`) |
 | Stop | `stop-all.bat` (or `node runtime/stop-all.mjs`) — closing the window directly leaves processes behind, use this entry |
 | Diagnose | `node runtime/doctor.mjs` — first step when the app won't open |
 
