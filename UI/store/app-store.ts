@@ -140,8 +140,8 @@ interface AppState {
   poolGraph: GraphResult | null;
   sessions: Session[];
   currentSessionId: string;
-  /** 当前运行中的 Agent 任务（sessionId 归属；无任务为 null，不持久化）——停止按钮的驱动源 */
-  activeTask: { taskId: string; sessionId: string } | null;
+  /** 当前运行中的 Agent 任务（sessionId 归属；无任务为 null，不持久化）——停止按钮与运行状态条的驱动源 */
+  activeTask: { taskId: string; sessionId: string; startedAt: number } | null;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
   agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string } };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
@@ -1536,7 +1536,7 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
       timestamp: new Date().toISOString(),
     })
     agentTasks.set(taskId, { sessionId, messageId })
-    useAppStore.setState({ activeTask: { taskId, sessionId } })
+    useAppStore.setState({ activeTask: { taskId, sessionId, startedAt: Date.now() } })
   } catch (err) {
     appendToSession(sessionId, {
       id: `msg-${Date.now()}`,

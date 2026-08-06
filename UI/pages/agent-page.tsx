@@ -28,6 +28,8 @@ import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
+import { deriveAgentPhase, formatElapsed, PHASE_META } from '../store/agent-phase'
+import type { StreamPhase } from '../store/agent-phase'
 import { ModelSelect } from '../components/model-select'
 import { MarkdownView } from '../components/markdown-view'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
@@ -206,7 +208,14 @@ function QuestionCardView({ card, messageId }: { card: QuestionCard; messageId: 
   )
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+/** 流式消息的任务状态条：绑定 activeTask（与停止按钮同源），任务结束前持续显示不闪灭 */
+function MessageBubble({
+  msg,
+  stream,
+}: {
+  msg: ChatMessage
+  stream?: { startedAt: number; now: number; phase: StreamPhase }
+}) {
   const [showThinking, setShowThinking] = useState(false)
 
   // system 角色（权限审批/自动放行反馈）：居中浅注，非气泡
@@ -238,7 +247,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       }}
     >
       <Box sx={{ maxWidth: msg.role === 'user' ? '70%' : '85%' }}>
-        {msg.role === 'assistant' && msg.isThinking && (
+        {msg.role === 'assistant' && stream && (
           <Box
             sx={{
               display: 'inline-flex',
@@ -252,23 +261,20 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               border: `1px solid ${COLORS.border}`,
             }}
           >
-            <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
-              思考中
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: COLORS.accent,
+                animation: 'cos-thinking-dot 1.2s ease-in-out infinite',
+              }}
+            />
+            <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}>
+              {stream.phase === 'waiting_input'
+                ? '等待你的回答'
+                : `${PHASE_META[stream.phase]} · ${formatElapsed(stream.now - stream.startedAt)}`}
             </Typography>
-            <Box sx={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              {[0, 1, 2].map((i) => (
-                <Box
-                  key={i}
-                  sx={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: '50%',
-                    bgcolor: COLORS.textMuted,
-                    animation: `cos-thinking-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
-                  }}
-                />
-              ))}
-            </Box>
           </Box>
         )}
 
@@ -578,10 +584,31 @@ export function AgentPage() {
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
+  /** 任务运行中：每秒心跳驱动运行时长递增（占位消息的 stream prop 引用新 now 触发重渲染） */
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!taskRunning) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [taskRunning])
   /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
   const providerModels = useAppStore((s) => s.agentSettings.providers)
     .filter((p) => p.enabled)
     .flatMap((p) => p.models ?? [])
+
+  /** 任务运行中 = 会话最后一条 assistant 消息承载流式状态（提问挂起时是未答卡片） */
+  const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
+  const stream: { startedAt: number; now: number; phase: StreamPhase } | undefined =
+    streamMsg?.role === 'assistant' && activeTask
+      ? {
+          startedAt: activeTask.startedAt,
+          now,
+          phase:
+            streamMsg.question && !streamMsg.question.answered
+              ? 'waiting_input'
+              : deriveAgentPhase(streamMsg),
+        }
+      : undefined
 
   useEffect(() => {
     if (!locateTarget) return
@@ -720,7 +747,13 @@ export function AgentPage() {
                 </Stack>
               </Box>
             ) : (
-              session.messages.map((m) => <MessageBubble key={m.id} msg={m} />)
+              session.messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  msg={m}
+                  stream={m.id === streamMsg?.id ? stream : undefined}
+                />
+              ))
             )}
           </Box>
         </Box>

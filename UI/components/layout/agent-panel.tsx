@@ -14,9 +14,11 @@ import SendIcon from '@mui/icons-material/Send'
 import StopCircleIcon from '@mui/icons-material/StopCircle'
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
+import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../store/agent-phase'
+import type { StreamPhase } from '../../store/agent-phase'
 import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
 import { MarkdownView } from '../markdown-view'
@@ -44,6 +46,23 @@ export function AgentPanel() {
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
   const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
+  /** 任务运行中：每秒心跳驱动运行时长递增 */
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!taskRunning) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [taskRunning])
+  /** 流式消息（任务运行时 = 会话最后一条 assistant 消息；提问挂起时是未答卡片） */
+  const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
+  const streamPhase: StreamPhase | undefined =
+    streamMsg?.role === 'assistant' && activeTask
+      ? streamMsg.question && !streamMsg.question.answered
+        ? 'waiting_input'
+        : deriveAgentPhase(streamMsg)
+      : undefined
+  /** streamPhase 非 undefined 时 activeTask 必非 null——提前取值供 JSX 引用 */
+  const taskStartedAt = activeTask?.startedAt ?? 0
 
   useEffect(() => {
     if (pendingPrompt && open) {
@@ -174,10 +193,25 @@ export function AgentPanel() {
                   >
                     {msg.content}
                   </Typography>
-                ) : msg.isThinking && msg.content === '' ? (
-                  <Typography sx={{ fontSize: 13, lineHeight: 1.5, color: COLORS.text }}>
-                    思考中…
-                  </Typography>
+                ) : streamMsg && msg.id === streamMsg.id && streamPhase ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        bgcolor: COLORS.accent,
+                        animation: 'cos-thinking-dot 1.2s ease-in-out infinite',
+                      }}
+                    />
+                    <Typography
+                      sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
+                    >
+                      {streamPhase === 'waiting_input'
+                        ? '等待你的回答'
+                        : `${PHASE_META[streamPhase]} · ${formatElapsed(now - taskStartedAt)}`}
+                    </Typography>
+                  </Box>
                 ) : (
                   <MarkdownView
                     content={
