@@ -18,23 +18,23 @@ from direction exploration to resume writing, covering the full decision chain.
 
 ## What You Get
 
-| You say | What the system does | What you get |
-|---------|----------------------|--------------|
-| "Help me write a resume" | Frontier interrogation → STAR reconstruction → direction-specific standards | A resume with quantified achievements, ready to submit |
-| "Is this JD legit?" | Match scoring + euphemism translation + interview prediction | The JD's real intent + your odds |
-| "What direction should I go?" | Skills / interest / market profile → ikigai matching | Ranked candidate directions |
-| "Can I move from mechanical design to robotics?" | Skill overlap + financial model + risk adjustment | Whether to switch, how, and the first step |
-| "Suzhou or Shenzhen?" | City scoring + industry fit + salary comparison | A data-backed city choice |
-| "What good companies are in Suzhou?" | Specialty / funding / hiring signal scanning | A shortlist of target companies |
-| "What about this company?" | 7-chapter due diligence + 10 interview questions to ask | A due-diligence report |
-| "Give me a conclusion" | Aggregation matrix + consistency check | Final recommendation |
+| Scenario | What the system does | What you get |
+|----------|----------------------|--------------|
+| Build a career profile | Resume / interview intake — AI extracts candidate facts, you confirm, they become profile data | A career profile: skills / goals / direction / evidence status at a glance |
+| Know the next step | Profile-state-driven Next Actions + guidance cards + nav badges | Clear action entry points — never lost |
+| Explore career directions | Decision Agent analyzes candidate directions from your profile, output lands in decision records | A direction decision, traceable on the workbench timeline |
+| Analyze a JD / vet a company | Agent breaks down requirements, scores fit, researches the company | Decision records + info-pool graph nodes |
+| Tailor a resume | JD-driven derivation + select-to-rewrite + version management | Resume versions ready to submit |
+| Track applications | Application board + follow-up priority | Application status under control |
+
+The workbench (:5288) projects all of the above as visual assets: career profile / decision timeline / info-pool graph / resume center / application board. The "Decision Agent" panel collaborates with a real LLM (streaming replies / question cards / permission dialogs).
 
 ## A Completed Decision Chain
 
-**Li Ming, 28, non-standard automation mechanical engineer (Changzhou), wants to move into robotics after a 10-month grad-school gap.**
-Walked the full chain with career-advisor: transition feasibility (75% match, soft landing in Suzhou) → city evaluation (Suzhou 8.2/10) → company screening → due diligence → final conclusion.
+**Li Ming, 28, non-standard automation mechanical engineer (Changzhou), wants to move into robotics after a 10-month grad-school gap.** (A **virtual test user** demonstrating the full pipeline — not a real case; companies are pseudonyms.)
+Walked the full chain in Career OS: transition feasibility (44% skill overlap → bridge path: non-standard automation → mechatronics → robotics, close the gap while employed, no quitting cold) → city evaluation (Suzhou 8.2/10, robotics industry density 9/10) → company screening → due diligence → final conclusion.
 
-→ Read the full case study: [docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md) (Chinese, virtual test user)
+→ Read the full decision-chain record: [docs/case-studies/2026-07-李明-非标自动化转机器人.md](docs/case-studies/2026-07-李明-非标自动化转机器人.md) (Chinese, virtual test user)
 
 ## Screenshots
 
