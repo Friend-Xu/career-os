@@ -19,6 +19,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import AddIcon from '@mui/icons-material/Add'
 import TimelineIcon from '@mui/icons-material/Timeline'
 import BuildIcon from '@mui/icons-material/Build'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
@@ -403,12 +404,47 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
+/** 当前理解草稿（Initialization Shell 右侧）：采集中的候选预览空壳——确认逻辑切片 2 接引擎 */
+function UnderstandingDraft() {
+  return (
+    <Box
+      sx={{
+        width: 264,
+        flexShrink: 0,
+        borderLeft: `1px solid ${COLORS.border}`,
+        bgcolor: COLORS.bg,
+        p: 2,
+        overflow: 'auto',
+      }}
+    >
+      <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, mb: 0.75 }}>
+        当前理解草稿
+      </Typography>
+      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6, mb: 2 }}>
+        采集中的信息将在这里累积，你确认后才会写入档案。
+      </Typography>
+      <Box
+        sx={{
+          p: 1.5,
+          borderRadius: '8px',
+          border: `1px dashed ${COLORS.borderStrong}`,
+          textAlign: 'center',
+        }}
+      >
+        <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>还没有候选信息</Typography>
+      </Box>
+    </Box>
+  )
+}
+
 export function AgentPage() {
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const draft = useAppStore((s) => s.agentDraft)
   const setDraft = useAppStore((s) => s.setAgentDraft)
   const send = useAppStore((s) => s.sendAgentMessage)
+  const setPage = useAppStore((s) => s.setPage)
+  const person = useAppStore((s) => s.currentPerson())
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
@@ -419,6 +455,9 @@ export function AgentPage() {
   const setAgentModel = useAppStore((s) => s.setAgentModel)
   const push = useToastStore((s) => s.push)
   const [demoAnchor, setDemoAnchor] = useState<HTMLElement | null>(null)
+
+  /** Initialization Shell：当前人初始化中 → 全屏初始化空间（左对话 + 右理解草稿） */
+  const initMode = person.initStatus === 'pending'
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const taskRunning = activeTask !== null && activeTask.sessionId === currentSessionId
@@ -437,75 +476,108 @@ export function AgentPage() {
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <Stack
-        direction="row"
-        sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
-      >
-        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', flex: 1 }}>
-          {session?.title ?? '决策 Agent'}
-        </Typography>
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-          {/* 会话切换在侧栏（AgentSidebar）——此处只留演示入口 */}
+      {initMode ? (
+        <Stack
+          direction="row"
+          sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
+        >
           <Button
             size="small"
-            onClick={(e) => setDemoAnchor(e.currentTarget)}
-            sx={{ fontSize: 12, color: COLORS.textSecondary }}
+            startIcon={<ArrowBackIcon sx={{ fontSize: 15 }} />}
+            onClick={() => setPage('workbench')}
+            sx={{ fontSize: 12.5, color: COLORS.textSecondary, mr: 1.5, flexShrink: 0 }}
           >
-            演示交互
+            稍后继续
           </Button>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>
+              正在建立「{person.name}」的职业档案
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 0.25 }}>
+              {person.sourceMode === 'resume' ? '简历通道' : '访谈通道'} · 正在了解你的经历
+            </Typography>
+          </Box>
         </Stack>
-      </Stack>
+      ) : (
+        <Stack
+          direction="row"
+          sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
+        >
+          <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', flex: 1 }}>
+            {session?.title ?? '决策 Agent'}
+          </Typography>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+            {/* 会话切换在侧栏（AgentSidebar）——此处只留演示入口 */}
+            <Button
+              size="small"
+              onClick={(e) => setDemoAnchor(e.currentTarget)}
+              sx={{ fontSize: 12, color: COLORS.textSecondary }}
+            >
+              演示交互
+            </Button>
+          </Stack>
+        </Stack>
+      )}
 
-      <ContextCapsule />
+      {!initMode && <ContextCapsule />}
 
-      <Box sx={{ flex: 1, overflow: 'auto', px: 3, py: 2.5 }} aria-live="polite">
-        <Box sx={{ maxWidth: 800, mx: 'auto' }}>
-          {!session?.messages.length ? (
-            <Box sx={{ textAlign: 'center', mt: 10 }}>
-              <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 1 }}>开始深度决策对话</Typography>
-              <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 3 }}>
-                Agent 会读取 profile / decision / company DB，输出建议并确认式写入决策记录
-              </Typography>
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                sx={{ justifyContent: 'center', flexWrap: 'wrap' }}
-              >
-                {['分析转行可行性', '对比深圳 vs 上海', '生成目标企业列表', '评估 JD 匹配度'].map(
-                  (q) => (
-                    <Chip
-                      key={q}
-                      label={q}
-                      onClick={() => {
-                        setDraft(q)
-                        send(q)
-                      }}
-                      sx={{
-                        cursor: 'pointer',
-                        bgcolor: COLORS.bgHover,
-                        border: `1px solid ${COLORS.border}`,
-                        '&:hover': { borderColor: COLORS.accent, color: COLORS.accent },
-                      }}
-                    />
-                  ),
-                )}
-              </Stack>
-            </Box>
-          ) : (
-            session.messages.map((m) => <MessageBubble key={m.id} msg={m} />)
-          )}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, overflow: 'auto', px: 3, py: 2.5 }} aria-live="polite">
+          <Box sx={{ maxWidth: initMode ? 720 : 800, mx: 'auto' }}>
+            {!session?.messages.length ? (
+              <Box sx={{ textAlign: 'center', mt: 10 }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 1 }}>开始深度决策对话</Typography>
+                <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 3 }}>
+                  Agent 会读取 profile / decision / company DB，输出建议并确认式写入决策记录
+                </Typography>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  useFlexGap
+                  sx={{ justifyContent: 'center', flexWrap: 'wrap' }}
+                >
+                  {['分析转行可行性', '对比深圳 vs 上海', '生成目标企业列表', '评估 JD 匹配度'].map(
+                    (q) => (
+                      <Chip
+                        key={q}
+                        label={q}
+                        onClick={() => {
+                          setDraft(q)
+                          send(q)
+                        }}
+                        sx={{
+                          cursor: 'pointer',
+                          bgcolor: COLORS.bgHover,
+                          border: `1px solid ${COLORS.border}`,
+                          '&:hover': { borderColor: COLORS.accent, color: COLORS.accent },
+                        }}
+                      />
+                    ),
+                  )}
+                </Stack>
+              </Box>
+            ) : (
+              session.messages.map((m) => <MessageBubble key={m.id} msg={m} />)
+            )}
+          </Box>
         </Box>
+        {initMode && <UnderstandingDraft />}
       </Box>
 
       <Box sx={{ px: 3, py: 2, borderTop: `1px solid ${COLORS.border}` }}>
-        <Box sx={{ maxWidth: 800, mx: 'auto' }}>
+        <Box sx={{ maxWidth: initMode ? 720 : 800, mx: 'auto' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
             <TextField
               fullWidth
               multiline
               maxRows={6}
-              placeholder={taskRunning ? '任务运行中…（可点 ⏹ 停止）' : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'}
+              placeholder={
+                taskRunning
+                  ? '任务运行中…（可点 ⏹ 停止）'
+                  : initMode
+                    ? '回复 Agent 的问题…（Enter 发送，Shift+Enter 换行）'
+                    : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'
+              }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -559,13 +631,15 @@ export function AgentPage() {
             >
               <SendIcon sx={{ fontSize: 18 }} />
             </IconButton>
-            <ModelSelect
-              compact
-              value={agentSettings.model}
-              onChange={(m) => setAgentModel(m)}
-              options={providerModels}
-              freeInput={false}
-            />
+            {!initMode && (
+              <ModelSelect
+                compact
+                value={agentSettings.model}
+                onChange={(m) => setAgentModel(m)}
+                options={providerModels}
+                freeInput={false}
+              />
+            )}
           </Stack>
         </Box>
       </Box>

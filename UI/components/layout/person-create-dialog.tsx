@@ -29,7 +29,7 @@ export function PersonCreateDialog() {
   const open = useAppStore((s) => s.personCreateDialogOpen)
   const setOpen = useAppStore((s) => s.setPersonCreateDialogOpen)
   const addPerson = useAppStore((s) => s.addPerson)
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const startInitializationSession = useAppStore((s) => s.startInitializationSession)
   const push = useToastStore((s) => s.push)
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -67,18 +67,13 @@ export function PersonCreateDialog() {
       initialInterest: interests.length > 0 ? interests : undefined,
       initStatus: 'pending',
     })
-    // 预置采集上下文：通道 A 读简历资产提取候选；通道 B 访谈引导。AI 只产候选，不直接写档案。
-    const channelPrompt =
-      sourceMode === 'resume'
-        ? `请为新人「${personName}」初始化职业画像（简历通道）：读取 resumes/documents/ 中的简历资产，提取教育/经历/技能候选事实，逐一列出待确认项（标注来源：简历）——不要直接写入档案，等用户确认。`
-        : `请为新人「${personName}」初始化职业画像（访谈通道）：通过渐进式提问（教育→经历→技能→约束）了解背景，提取候选事实并列出待确认项（标注来源：用户描述）——不要直接写入档案，等用户确认。`
-    const interestHint = interests.length > 0 ? `当前关注方向（用户自报，非决策）：${interests.join('、')}。` : ''
-    startAnalysis(`${channelPrompt}${interestHint}`)
+    // 初始化会话：Agent 主动开场（内部指令不外显），输入框保持干净
+    startInitializationSession({ personName, sourceMode, interests })
     push(
       'success',
       `已创建「${personName}」· ${
         sourceMode === 'resume' ? '简历通道（读取现有简历提取候选）' : '访谈通道（对话采集）'
-      } · 采集已开始`,
+      } · 初始化空间已开启`,
     )
     close()
   }

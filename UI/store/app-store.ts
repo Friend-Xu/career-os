@@ -246,7 +246,17 @@ interface AppState {
   setPendingPrompt: (prompt: string | null) => void;
   startAnalysis: (prompt: string) => void;
   expandToFullAgent: () => void;
-  sendAgentMessage: (content: string) => void;
+  /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场） */
+  sendAgentMessage: (content: string, opts?: { silent?: boolean }) => void;
+  /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
+  startInitializationSession: (ctx: {
+    personName: string
+    sourceMode: 'resume' | 'interview'
+    interests?: string[]
+  }) => void;
+  /** 初始化会话状态机（Initialization Shell）：welcome/discovering/summary/resolution/compiled */
+  initSessionState: 'welcome' | 'discovering' | 'summary' | 'resolution' | 'compiled';
+  setInitSessionState: (state: 'welcome' | 'discovering' | 'summary' | 'resolution' | 'compiled') => void;
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
@@ -410,6 +420,7 @@ export const useAppStore = create<AppState>()(
       personSwitchDialogOpen: false,
       pendingPersonId: null,
       personCreateDialogOpen: false,
+      initSessionState: 'welcome',
       activeResumeId: 'r-dji',
       infopoolFilter: 'all',
       companiesFilter: 'all',
@@ -554,6 +565,35 @@ export const useAppStore = create<AppState>()(
     })
   },
 
+  setInitSessionState: (state) => set({ initSessionState: state }),
+
+  /** 初始化会话：Agent 主动进入初始化助手角色——内部指令不外显（silent），输入框保持干净 */
+  startInitializationSession: ({ personName, sourceMode, interests }) => {
+    const resumeChannel = sourceMode === 'resume'
+    const lines = [
+      `你是「${personName}」的初始化助手（${resumeChannel ? '简历通道' : '访谈通道'}）。`,
+      '任务：帮助用户建立第一份职业档案（认知基线）——整理"我做过什么 / 掌握什么能力 / 想探索什么方向"，不是替用户做职业决策。',
+      '开场白（直接说出，不要分析）："你好，我会帮你建立一份职业档案。这里记录的不只是简历，而是你做过什么、积累了什么能力，以及未来想探索什么方向。这些信息以后会成为职业分析的基础。我们先从你的经历开始。"',
+      resumeChannel
+        ? '采集：先读取 resumes/documents/ 中的简历资产提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
+        : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
+      '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
+      '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
+      ...(interests && interests.length > 0
+        ? [`当前关注方向（用户自报，非决策，仅作背景参考）：${interests.join('、')}。`]
+        : []),
+    ].join('\n')
+    set({
+      currentPage: 'agent',
+      agentPanelOpen: false,
+      mainWidthMode: 'fullscreen',
+      initSessionState: 'discovering',
+    })
+    // 独立会话承载初始化采集（绑定当前人；不污染旧会话/其他任务）
+    get().createSession(`「${personName}」初始化采集`)
+    get().sendAgentMessage(lines, { silent: true })
+  },
+
   expandToFullAgent: () => {
     set({
       currentPage: 'agent',
@@ -562,24 +602,29 @@ export const useAppStore = create<AppState>()(
     })
   },
 
-  sendAgentMessage: (content) => {
+  sendAgentMessage: (content, opts) => {
     const { sessions, currentSessionId, engineStatus } = get()
     const now = new Date().toISOString()
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      content,
-      timestamp: now,
+    if (!opts?.silent) {
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content,
+        timestamp: now,
+      }
+      set({
+        agentDraft: '',
+        pendingPrompt: null,
+        sessions: sessions.map((s) =>
+          s.id === currentSessionId
+            ? { ...s, updatedAt: now, messages: [...s.messages, userMsg] }
+            : s,
+        ),
+      })
+    } else {
+      // silent：task 进引擎但不渲染 user 消息——Agent 回复成为首条可见消息（主动开场）
+      set({ agentDraft: '', pendingPrompt: null })
     }
-    set({
-      agentDraft: '',
-      pendingPrompt: null,
-      sessions: sessions.map((s) =>
-        s.id === currentSessionId
-          ? { ...s, updatedAt: now, messages: [...s.messages, userMsg] }
-          : s,
-      ),
-    })
 
     // 真实 Agent 流（引擎在线）：task 直接发 prompt，Agent 在 workspace 根自读信息池；
     // 有 SDK 会话凭据则 resume 续接（会话连续性）
@@ -594,13 +639,16 @@ export const useAppStore = create<AppState>()(
     const assistantMsg: ChatMessage = {
       id: `msg-${Date.now() + 1}`,
       role: 'assistant',
-      content:
-        '已接收你的请求。正在结合 profile、决策链与公司库进行分析…\n\n（引擎离线，演示模式：此处为模拟回复。确认后可写入决策记录。）',
+      content: opts?.silent
+        ? '你好，我会帮你建立一份职业档案。这里记录的不只是简历，而是你做过什么、积累了什么能力，以及未来想探索什么方向。\n\n（引擎离线，演示模式：这是模拟开场。连接引擎后即可开始真实采集对话。）\n\n先从你的经历开始：你最高学历是什么？'
+        : '已接收你的请求。正在结合 profile、决策链与公司库进行分析…\n\n（引擎离线，演示模式：此处为模拟回复。确认后可写入决策记录。）',
       timestamp: now,
-      toolCalls: [
-        { name: 'read_profile', status: 'done' },
-        { name: 'read_decisions', status: 'done' },
-      ],
+      toolCalls: opts?.silent
+        ? []
+        : [
+            { name: 'read_profile', status: 'done' },
+            { name: 'read_decisions', status: 'done' },
+          ],
     }
     useAppStore.setState((s) => ({
       sessions: s.sessions.map((sess) =>
@@ -1631,7 +1679,12 @@ async function pullPersons(): Promise<void> {
   if (!engine) return
   try {
     const list = await engine.listPersons()
-    if (list.length > 0) useAppStore.setState({ persons: list })
+    if (list.length === 0) return
+    // 保护初始化中的本地 Person：引擎 persons/ 尚无对应资产（切片 2 落盘前），不因引擎快照覆盖丢失
+    const localPending = useAppStore
+      .getState()
+      .persons.filter((p) => p.initStatus === 'pending' && !list.some((e) => e.id === p.id))
+    useAppStore.setState({ persons: [...list, ...localPending] })
   } catch {
     // offline：保持现有数据
   }
