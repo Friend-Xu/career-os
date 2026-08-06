@@ -26,6 +26,16 @@ export const PERSONS: Person[] = [
     archived: false,
     profilePath: 'profiles/我.md',
     targetRoles: ['CAE 工程师', '机械设计工程师', '流体仿真工程师', '机器人研发'],
+    sourceMode: 'resume',
+    initStatus: 'active',
+    initialInterest: ['新能源', '机器人'],
+    skills: [
+      { name: 'CATIA', level: 4 },
+      { name: '结构设计', level: 4 },
+      { name: 'ANSYS', level: 3 },
+      { name: 'DFMEA', level: 2 },
+      { name: 'Python', level: 2 },
+    ],
   },
   {
     id: 2,

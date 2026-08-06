@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { NavPageId } from '../types'
 
 export type AttentionLevel = 'success' | 'warning' | 'info'
-export type WorkbenchView = 'dashboard' | 'directions' | 'cities' | 'decisions'
+export type WorkbenchView = 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile'
 /**
  * 来源分层：Attention 是「行动入口层」，生产方分两类——
  * - system：系统状态事件（规则驱动，本轮实现）

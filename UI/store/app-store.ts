@@ -144,7 +144,7 @@ interface AppState {
   /** 当前人初始化采集会话 id（startInitializationSession 创建时记录；person 完成/reset 后失效） */
   initSessionId: string | null;
   /** 各会话运行中的 Agent 任务（归属 session：同会话单任务互斥，跨会话并行）——状态条/停止按钮的驱动源 */
-  sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number }>;
+  sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number; type?: string }>;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
@@ -212,7 +212,7 @@ interface AppState {
   /** 公司页选中的公司（侧栏列表选中 → 档案 Dialog；locateTarget 定位共用） */
   selectedCompanyId: string | null;
   /** 工作台子视图（驾驶舱内部导航：Dashboard/方向/城市/决策记录） */
-  workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions';
+  workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile';
   /** 简历中心视图（M3.5.5：三空间——Draft Workspace / Resume Studio / Resume Assets） */
   resumesView: 'workspace' | 'studio' | 'assets';
   /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心 / Evolution 演化时间线——v0.3 信息架构四区按 slice 落地） */
@@ -259,9 +259,12 @@ interface AppState {
   setAgentDraft: (draft: string) => void;
   setPendingPrompt: (prompt: string | null) => void;
   startAnalysis: (prompt: string) => void;
+  /** 任务启动入口（工作台 Action）：新 Session（主题现场）+ 立即执行——按钮即意图，不等用户二次确认；
+   *  type=任务识别（P2 状态条显示）；与 sendAgentMessage（聊天入口，当前现场）职责分离 */
+  startAgentTask: (prompt: string, opts?: { type?: string; title?: string }) => void;
   expandToFullAgent: () => void;
-  /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场） */
-  sendAgentMessage: (content: string, opts?: { silent?: boolean }) => void;
+  /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示） */
+  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string }) => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -285,7 +288,7 @@ interface AppState {
   ) => Promise<void>;
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
-  setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
+  setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile') => void;
   setCompaniesView: (view: 'profile' | 'map') => void;
   /** 简历中心三空间切换（M3.5.5） */
   setArtifactsView: (view: 'assets' | 'proposals' | 'evolution') => void;
@@ -681,6 +684,13 @@ export const useAppStore = create<AppState>()(
     })
   },
 
+  startAgentTask: (prompt, opts) => {
+    // 新任务 = 新现场（不污染现有会话历史）；任务标题作 session 名，可回溯
+    get().createSession(opts?.title ?? 'AI 任务')
+    set({ agentPanelOpen: true, mainWidthMode: 'narrow' })
+    get().sendAgentMessage(prompt, { taskType: opts?.type })
+  },
+
   setInitSessionState: (state) => set({ initSessionState: state }),
 
   setInitCandidates: (candidates) => set({ initCandidates: candidates }),
@@ -773,13 +783,17 @@ export const useAppStore = create<AppState>()(
   },
 
   sendAgentMessage: (content, opts) => {
-    const { sessions, currentSessionId, engineStatus } = get()
+    const { sessions, engineStatus } = get()
     // Person Capability Gate：当前人初始化中且非初始化会话 → 拒绝新消息（历史可看，发送前拦截）
     const currentPerson = get().currentPerson()
-    if (currentPerson.initStatus === 'pending' && currentSessionId !== get().initSessionId) {
+    const gateSessionId = get().currentSessionId
+    if (currentPerson.initStatus === 'pending' && gateSessionId !== get().initSessionId) {
       useToastStore.getState().push('warning', `完成「${currentPerson.name}」的基础档案后可继续对话`)
       return
     }
+    // 无会话自动创建（Session = 协作现场）：任何发送路径都不丢消息，null 永不进入任务路由
+    let sessionId = gateSessionId
+    if (!sessionId) sessionId = get().createSession()
     const now = new Date().toISOString()
     if (!opts?.silent) {
       const userMsg: ChatMessage = {
@@ -792,7 +806,7 @@ export const useAppStore = create<AppState>()(
         agentDraft: '',
         pendingPrompt: null,
         sessions: sessions.map((s) =>
-          s.id === currentSessionId
+          s.id === sessionId
             ? { ...s, updatedAt: now, messages: [...s.messages, userMsg] }
             : s,
         ),
@@ -806,8 +820,8 @@ export const useAppStore = create<AppState>()(
     // 有 SDK 会话凭据则 resume 续接（会话连续性）
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
-      const session = sessions.find((s) => s.id === currentSessionId)
-      void runAgentTask(currentSessionId, content, session?.sdkSessionId)
+      const session = sessions.find((s) => s.id === sessionId)
+      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
@@ -831,7 +845,7 @@ export const useAppStore = create<AppState>()(
     }
     useAppStore.setState((s) => ({
       sessions: s.sessions.map((sess) =>
-        sess.id === currentSessionId
+        sess.id === sessionId
           ? { ...sess, updatedAt: now, messages: [...sess.messages, assistantMsg] }
           : sess,
       ),
@@ -1580,7 +1594,7 @@ async function persistCandidates(personId: string, candidates: { category: strin
 }
 
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
-async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string): Promise<void> {
+async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string, taskType?: string): Promise<void> {
   if (!engine) return
   // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
   if (useAppStore.getState().sessionTasks[sessionId]) {
@@ -1611,7 +1625,10 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
     })
     agentTasks.set(taskId, { sessionId, messageId })
     useAppStore.setState((s) => ({
-      sessionTasks: { ...s.sessionTasks, [sessionId]: { taskId, messageId, startedAt: Date.now() } },
+      sessionTasks: {
+        ...s.sessionTasks,
+        [sessionId]: { taskId, messageId, startedAt: Date.now(), type: taskType },
+      },
     }))
     ensureHeartbeat()
   } catch (err) {

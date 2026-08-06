@@ -209,13 +209,19 @@ function QuestionCardView({ card, messageId }: { card: QuestionCard; messageId: 
   )
 }
 
+/** 任务类型 → 中文名（P2 状态条显示；startAgentTask 的 type 是英文 key） */
+const TASK_TYPE_LABEL: Record<string, string> = {
+  'career-direction': '探索职业方向',
+  'decision-reassessment': '重新评估',
+}
+
 /** 流式消息的任务状态条：绑定 activeTask（与停止按钮同源），任务结束前持续显示不闪灭 */
 function MessageBubble({
   msg,
   stream,
 }: {
   msg: ChatMessage
-  stream?: { startedAt: number; now: number; phase: StreamPhase }
+  stream?: { startedAt: number; now: number; phase: StreamPhase; taskType?: string }
 }) {
   const [showThinking, setShowThinking] = useState(false)
 
@@ -274,7 +280,7 @@ function MessageBubble({
             <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}>
               {stream.phase === 'waiting_input'
                 ? '等待你的回答'
-                : `${PHASE_META[stream.phase]} · ${formatElapsed(stream.now - stream.startedAt)}`}
+                : `${stream.taskType ? `${TASK_TYPE_LABEL[stream.taskType] ?? stream.taskType} · ` : ''}${PHASE_META[stream.phase]} · ${formatElapsed(stream.now - stream.startedAt)}`}
             </Typography>
           </Box>
         )}
@@ -599,11 +605,12 @@ export function AgentPage() {
 
   /** 任务运行中 = 会话最后一条 assistant 消息承载流式状态（提问挂起时是未答卡片） */
   const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
-  const stream: { startedAt: number; now: number; phase: StreamPhase } | undefined =
+  const stream: { startedAt: number; now: number; phase: StreamPhase; taskType?: string } | undefined =
     streamMsg?.role === 'assistant' && activeTask
       ? {
           startedAt: activeTask.startedAt,
           now,
+          taskType: activeTask.type,
           phase:
             streamMsg.question && !streamMsg.question.answered
               ? 'waiting_input'

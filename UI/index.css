@@ -113,6 +113,17 @@ html.light {
   }
 }
 
+/* 职业画像地图：中心光晕/待确认节点——安静慢呼吸（只动 opacity，不抢注意力） */
+@keyframes cos-profile-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* Export MVP（window.print）：只打印主区简历内容，隐藏应用壳与编辑控件 */
 @media print {
   body {

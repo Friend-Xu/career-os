@@ -19,6 +19,7 @@ import { DecisionEditDialog } from '../components/decision-edit-dialog'
 import { DirectionsView } from '../components/workbench/directions-view'
 import { CitiesView } from '../components/workbench/cities-view'
 import { DecisionsView } from '../components/workbench/decisions-view'
+import { ProfileView } from '../components/workbench/profile-view'
 import { POOL_HEALTH } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, NavPageId, RiskLevel } from '../types'
@@ -113,7 +114,7 @@ function InitializationBanner() {
 function TodaySection() {
   const setPage = useAppStore((s) => s.setPage)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const startAgentTask = useAppStore((s) => s.startAgentTask)
   const decisions = useAppStore((s) => s.decisions)
   const jobs = useAppStore((s) => s.jobs)
   const applications = useAppStore((s) => s.applications)
@@ -180,9 +181,9 @@ function TodaySection() {
                 variant="outlined"
                 onClick={() => {
                   if (a.prompt) {
-                    // 推理引导：跳 Agent 页 + 注入上下文（回车发送）
+                    // 任务启动：新 Session + 立即执行（按钮即意图），转 Agent 页可见运行状态
                     setPage(a.page)
-                    startAnalysis(a.prompt)
+                    startAgentTask(a.prompt, { type: 'career-direction', title: '探索职业方向' })
                     return
                   }
                   if (a.jobId) setSelectedJobId(a.jobId)
@@ -236,7 +237,7 @@ function TodaySection() {
 }
 
 function DecisionTimeline() {
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
+  const startAgentTask = useAppStore((s) => s.startAgentTask)
   const decisions = useAppStore((s) => s.decisions)
   const contexts = useAppStore((s) => s.contexts)
   const person = useAppStore((s) => s.currentPerson())
@@ -358,8 +359,9 @@ function DecisionTimeline() {
                       className="re-eval-btn"
                       onClick={(e) => {
                         e.stopPropagation()
-                        startAnalysis(
+                        startAgentTask(
                           `请重新评估「${d.title}」：结合最新画像与市场信息，更新匹配度与风险`,
+                          { type: 'decision-reassessment', title: '重新评估' },
                         )
                       }}
                       sx={{
@@ -523,10 +525,11 @@ export function WorkbenchPage() {
 
   const maxW = mode === 'narrow' ? 810 : mode === 'wide' ? 1160 : '100%'
 
-  // 子视图界面（方向/城市/决策记录）：非弹窗，主区整页渲染
+  // 子视图界面（画像/方向/城市/决策记录）：非弹窗，主区整页渲染
   if (view !== 'dashboard') {
     return (
       <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {view === 'profile' && <ProfileView />}
         {view === 'directions' && <DirectionsView />}
         {view === 'cities' && <CitiesView />}
         {view === 'decisions' && <DecisionsView />}
