@@ -38,6 +38,7 @@ export function AgentPanel() {
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
   const activeTask = useAppStore((s) => s.sessionTasks[currentSessionId])
   const now = useAppStore((s) => s.now)
+  const initSessionId = useAppStore((s) => s.initSessionId)
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
   const push = useToastStore((s) => s.push)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -47,6 +48,8 @@ export function AgentPanel() {
   const session = sessions.find((s) => s.id === currentSessionId)
   const recentMessages = session?.messages.slice(-4) ?? []
   const taskRunning = activeTask !== undefined
+  /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（发送前拦截） */
+  const inputLocked = person.initStatus === 'pending' && currentSessionId !== initSessionId
   /** 流式消息（任务运行时 = 会话最后一条 assistant 消息；提问挂起时是未答卡片） */
   const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
   const streamPhase: StreamPhase | undefined =
@@ -248,16 +251,22 @@ export function AgentPanel() {
             fullWidth
             multiline
             maxRows={4}
-            placeholder={taskRunning ? '任务运行中…（可点 ⏹ 停止）' : '输入消息…'}
+            placeholder={
+              taskRunning
+                ? '任务运行中…（可点 ⏹ 停止）'
+                : inputLocked
+                  ? `完成「${person.name}」初始化后可继续对话`
+                  : '输入消息…'
+            }
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && draft.trim()) {
+              if (e.key === 'Enter' && !e.shiftKey && draft.trim() && !inputLocked) {
                 e.preventDefault()
                 send(draft.trim())
               }
             }}
-            disabled={taskRunning}
+            disabled={taskRunning || inputLocked}
             size="small"
             sx={{
               '& .MuiOutlinedInput-root': {
@@ -308,7 +317,14 @@ export function AgentPanel() {
         <Button
           fullWidth
           size="small"
-          sx={{ mt: 1, fontSize: 12.5, color: COLORS.textSecondary }}
+          disabled={person.initStatus === 'pending'}
+          title={person.initStatus === 'pending' ? '完成基础档案后可写入决策' : undefined}
+          sx={{
+            mt: 1,
+            fontSize: 12.5,
+            color: COLORS.textSecondary,
+            '&.Mui-disabled': { color: COLORS.textMuted },
+          }}
           onClick={() => {
             const content = draft.trim() || '当前分析结果'
             // direction/city 跟随当前人最新决策（与顶栏方向胶囊同源），演示写入不硬编码方向

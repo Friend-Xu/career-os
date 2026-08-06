@@ -4,6 +4,7 @@
  */
 import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import LockIcon from '@mui/icons-material/Lock'
 import dayjs from 'dayjs'
 import { useAppStore } from '../../../store/app-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../../store/agent-phase'
@@ -17,6 +18,7 @@ export function AgentSidebar() {
   const createSession = useAppStore((s) => s.createSession)
   const sessionTasks = useAppStore((s) => s.sessionTasks)
   const now = useAppStore((s) => s.now)
+  const initSessionId = useAppStore((s) => s.initSessionId)
   const person = useAppStore((s) => s.currentPerson())
   const list = sessions.filter((s) => s.personId === person.id && !s.archived)
 
@@ -79,6 +81,8 @@ export function AgentSidebar() {
         ) : (
           list.map((s) => {
             const active = s.id === currentSessionId
+            /** 当前人初始化中：非初始化采集会话被能力门控锁定（历史可看，不能产生新消息） */
+            const locked = person.initStatus === 'pending' && s.id !== initSessionId
             const phase = rowPhase(s)
             const task = sessionTasks[s.id]
             return (
@@ -96,17 +100,26 @@ export function AgentSidebar() {
                   '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
                 }}
               >
-                <Typography
-                  sx={{
-                    fontSize: 12.5,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? COLORS.accent : COLORS.text,
-                  }}
-                  noWrap
-                >
-                  {s.title}
-                </Typography>
-                {phase !== undefined && task ? (
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                  {locked && <LockIcon sx={{ fontSize: 12, color: COLORS.textMuted }} />}
+                  <Typography
+                    sx={{
+                      fontSize: 12.5,
+                      fontWeight: active ? 600 : 500,
+                      color: active ? COLORS.accent : COLORS.text,
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                    noWrap
+                  >
+                    {s.title}
+                  </Typography>
+                </Stack>
+                {locked ? (
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                    完成初始化后开放
+                  </Typography>
+                ) : phase !== undefined && task ? (
                   <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mt: 0.25 }}>
                     <Box
                       sx={{

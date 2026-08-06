@@ -24,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add'
 import TimelineIcon from '@mui/icons-material/Timeline'
 import BuildIcon from '@mui/icons-material/Build'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import LockIcon from '@mui/icons-material/Lock'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../store/app-store'
@@ -568,6 +569,9 @@ export function AgentPage() {
   const person = useAppStore((s) => s.currentPerson())
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
+  const initSessionId = useAppStore((s) => s.initSessionId)
+  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
+  const startInitializationSession = useAppStore((s) => s.startInitializationSession)
   const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
   const simulateQuestionRequest = useAppStore((s) => s.simulateQuestionRequest)
   const activeTask = useAppStore((s) => s.sessionTasks[currentSessionId])
@@ -586,6 +590,8 @@ export function AgentPage() {
   const taskRunning = activeTask !== undefined
   /** 心跳时间源（store 每秒 tick；消息内状态条/顶部状态条/会话列表共用） */
   const now = useAppStore((s) => s.now)
+  /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（历史可看，发送前拦截） */
+  const inputLocked = person.initStatus === 'pending' && currentSessionId !== initSessionId
   /** 切换器选项 = 已启用服务商的勾选模型（设置页卡片管理） */
   const providerModels = useAppStore((s) => s.agentSettings.providers)
     .filter((p) => p.enabled)
@@ -787,6 +793,45 @@ export function AgentPage() {
 
       <Box sx={{ px: 3, py: 2, borderTop: `1px solid ${COLORS.border}` }}>
         <Box sx={{ maxWidth: initMode ? 720 : 800, mx: 'auto' }}>
+          {inputLocked && (
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: 'center',
+                mb: 1,
+                px: 1.5,
+                py: 0.75,
+                borderRadius: '8px',
+                bgcolor: alpha(COLORS.riskMedium, 0.08),
+                border: `1px solid ${alpha(COLORS.riskMedium, 0.25)}`,
+              }}
+            >
+              <LockIcon sx={{ fontSize: 14, color: COLORS.riskMedium }} />
+              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, flex: 1 }}>
+                「{person.name}」的档案正在初始化，该会话已锁定——历史可查看，完成基础档案后可继续对话
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => {
+                  // 初始化会话存在 → 直接切回；刷新后不存在（会话不持久化）→ 重建初始化空间
+                  if (initSessionId) {
+                    setCurrentSession(initSessionId)
+                  } else {
+                    startInitializationSession({
+                      personName: person.name,
+                      sourceMode: person.sourceMode ?? 'interview',
+                      interests: person.initialInterest,
+                      personId: person.personId,
+                    })
+                  }
+                }}
+                sx={{ fontSize: 12, flexShrink: 0 }}
+              >
+                继续初始化
+              </Button>
+            </Stack>
+          )}
           <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
             <TextField
               fullWidth
@@ -795,19 +840,21 @@ export function AgentPage() {
               placeholder={
                 taskRunning
                   ? '任务运行中…（可点 ⏹ 停止）'
-                  : initMode
-                    ? '回复 Agent 的问题…（Enter 发送，Shift+Enter 换行）'
-                    : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'
+                  : inputLocked
+                    ? `完成「${person.name}」初始化后可继续对话`
+                    : initMode
+                      ? '回复 Agent 的问题…（Enter 发送，Shift+Enter 换行）'
+                      : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'
               }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && draft.trim()) {
+                if (e.key === 'Enter' && !e.shiftKey && draft.trim() && !inputLocked) {
                   e.preventDefault()
                   send(draft.trim())
                 }
               }}
-              disabled={taskRunning}
+              disabled={taskRunning || inputLocked}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   bgcolor: COLORS.bgElevated,
@@ -838,7 +885,7 @@ export function AgentPage() {
               </Tooltip>
             )}
             <IconButton
-              disabled={!draft.trim() || taskRunning}
+              disabled={!draft.trim() || taskRunning || inputLocked}
               onClick={() => draft.trim() && send(draft.trim())}
               sx={{
                 bgcolor: COLORS.accent,

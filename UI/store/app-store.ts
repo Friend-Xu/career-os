@@ -140,6 +140,8 @@ interface AppState {
   poolGraph: GraphResult | null;
   sessions: Session[];
   currentSessionId: string;
+  /** 当前人初始化采集会话 id（startInitializationSession 创建时记录；person 完成/reset 后失效） */
+  initSessionId: string | null;
   /** 各会话运行中的 Agent 任务（归属 session：同会话单任务互斥，跨会话并行）——状态条/停止按钮的驱动源 */
   sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number }>;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
@@ -290,7 +292,7 @@ interface AppState {
   setResumesView: (view: 'workspace' | 'studio' | 'assets') => void;
   /** 选中简历版本（M3.5.5：切到 studio 并定位——Agent/Deep Link/导出跳转共用） */
   selectResume: (id: string) => void;
-  createSession: (title?: string) => void;
+  createSession: (title?: string) => string;
   /** 停止当前会话运行中的 Agent 任务（agent/cancel RPC + 占位消息标记「已停止」） */
   cancelCurrentTask: () => void;
   /** 从引擎拉取 Agent 设置（config.json）到 agentSettings */
@@ -332,7 +334,7 @@ interface AppState {
   /** 删除投递记录（误操作撤销） */
   deleteApplication: (id: number) => void;
   /** 新建简历版本（选择 JD 派生的壳版本：挂 targetCompany/Position，模块复制模板作为编辑起点） */
-  createResumeVersion: (params: { name: string; targetCompany?: string; targetPosition?: string }) => string;
+  createResumeVersion: (params: { name: string; targetCompany?: string; targetPosition?: string }) => string | undefined;
   /** 局部修改决策记录：引擎写回 md → 自动重扫广播；引擎离线抛错（组件 toast） */
   updateDecision: (id: string, fields: Record<string, string>) => Promise<void>;
   /** 新建岗位（M1 只有 create）：引擎写 jobs/{id}.md → jobsChanged 自动重拉 */
@@ -405,6 +407,7 @@ export const useAppStore = create<AppState>()(
       poolGraph: null,
       sessions: SESSIONS,
       currentSessionId: 's-current',
+      initSessionId: null,
       sessionTasks: {},
       now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' } },
@@ -746,7 +749,8 @@ export const useAppStore = create<AppState>()(
       initSessionState: 'discovering',
     })
     // 独立会话承载初始化采集（绑定当前人；不污染旧会话/其他任务）
-    get().createSession(`「${personName}」初始化采集`)
+    const initSessionId = get().createSession(`「${personName}」初始化采集`)
+    set({ initSessionId })
     get().sendAgentMessage(lines, { silent: true })
   },
 
@@ -760,6 +764,12 @@ export const useAppStore = create<AppState>()(
 
   sendAgentMessage: (content, opts) => {
     const { sessions, currentSessionId, engineStatus } = get()
+    // Person Capability Gate：当前人初始化中且非初始化会话 → 拒绝新消息（历史可看，发送前拦截）
+    const currentPerson = get().currentPerson()
+    if (currentPerson.initStatus === 'pending' && currentSessionId !== get().initSessionId) {
+      useToastStore.getState().push('warning', `完成「${currentPerson.name}」的基础档案后可继续对话`)
+      return
+    }
     const now = new Date().toISOString()
     if (!opts?.silent) {
       const userMsg: ChatMessage = {
@@ -820,7 +830,7 @@ export const useAppStore = create<AppState>()(
 
   setCurrentSession: (id) => set({ currentSessionId: id }),
 
-  createSession: (title = '新会话') => {
+  createSession: (title = '新会话'): string => {
     const id = `s-${Date.now()}`
     const now = new Date().toISOString()
     // 归属当前展示的人（currentPerson().id 而非 currentPersonId：引擎拉取后 id 重排，
@@ -839,6 +849,7 @@ export const useAppStore = create<AppState>()(
       sessions: [session, ...state.sessions],
       currentSessionId: id,
     }))
+    return id
   },
 
   cancelCurrentTask: () => {
@@ -973,6 +984,12 @@ export const useAppStore = create<AppState>()(
   },
 
   createResumeVersion: ({ name, targetCompany, targetPosition }) => {
+    // Person Capability Gate：初始化完成前简历无画像依据，拒绝派生
+    const person = get().currentPerson()
+    if (person.initStatus === 'pending') {
+      useToastStore.getState().push('warning', `完成「${person.name}」的基础档案后可生成简历`)
+      return
+    }
     const personId = get().currentPersonId
     const id = `r-${Date.now()}`
     // 模板模块：该人第一份版本深拷贝（编辑起点），id 重生成避免冲突
@@ -1180,6 +1197,12 @@ export const useAppStore = create<AppState>()(
   },
 
   addDecision: (record) => {
+    // Person Capability Gate：初始化完成前决策无画像依据，拒绝写入
+    const person = get().currentPerson()
+    if (person.initStatus === 'pending') {
+      useToastStore.getState().push('warning', `完成「${person.name}」的基础档案后可写入决策`)
+      return
+    }
     // ADR-008：决策链语义降级——决策写入不推进阶段（决策是分析记录，非流程步骤）。
     // 引擎 connected：真相在引擎（写 md → data.decisions.changed 事件 → pullChains 重拉）。
     set((state) => ({

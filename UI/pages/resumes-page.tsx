@@ -312,6 +312,8 @@ export function ResumesPage() {
         <Button
           size="small"
           startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
+          disabled={person.initStatus === 'pending'}
+          title={person.initStatus === 'pending' ? '完成基础档案后可生成简历' : undefined}
           onClick={() => setDeriveOpen(true)}
           sx={{ fontSize: 12 }}
         >
@@ -374,6 +376,8 @@ export function ResumesPage() {
             <Button
               size="small"
               variant="contained"
+              disabled={person.initStatus === 'pending'}
+              title={person.initStatus === 'pending' ? '完成基础档案后可生成简历' : undefined}
               onClick={() => {
                 startAnalysis(`请为「${person.name}」生成简历：基于画像模块化输出，含量化指标与方向关键词`)
                 push('info', '已预置「生成简历」上下文')
