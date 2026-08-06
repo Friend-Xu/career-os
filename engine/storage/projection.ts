@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS decisions_projection (
   key_risk TEXT,
   status TEXT,
   profile TEXT,
+  person_id TEXT,
   summary TEXT,
   created_at TEXT NOT NULL DEFAULT '',
   protocol_version TEXT,
@@ -247,7 +248,7 @@ export function scanProfiles(workspace: Workspace): ProfileScan[] {
 }
 
 /** 投影 schema 版本：升级时 +1；旧版本 drop 重建（投影是 md 真相源的派生，重建零损失） */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
   const { dbPath, workspace } = opts
@@ -286,11 +287,11 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     const insDecision = db.prepare(`
       INSERT INTO decisions_projection (
         id, source_file, title, skill, direction, direction_match, direction_confidence,
-        city, city_score, salary_feasible, risk_level, key_risk, status, profile,
+        city, city_score, salary_feasible, risk_level, key_risk, status, profile, person_id,
         summary, created_at, protocol_version, validation_status, validation_issues
       ) VALUES (
         @id, @sourceFile, @title, @skill, @direction, @directionMatch, @directionConfidence,
-        @city, @cityScore, @salaryFeasible, @riskLevel, @keyRisk, @status, @profile,
+        @city, @cityScore, @salaryFeasible, @riskLevel, @keyRisk, @status, @profile, @personId,
         @summary, @createdAt, @protocolVersion, @validationStatus, @validationIssues
       )
     `)
@@ -315,6 +316,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
         salaryFeasible: r.salaryFeasible === undefined ? null : r.salaryFeasible ? 1 : 0,
         riskLevel: r.riskLevel ?? null, keyRisk: r.keyRisk ?? null, status: r.status ?? null,
         profile: r.profile ?? null,
+        personId: r.personId ?? null,
         summary: r.summary ?? '', createdAt: r.createdAt ?? '',
         protocolVersion: r.protocolVersion ?? '',
         validationStatus: validation?.status ?? null,
@@ -341,7 +343,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     direction_match: number | null; direction_confidence: string | null
     city: string | null; city_score: number | null; salary_feasible: number | null
     risk_level: string | null; key_risk: string | null; status: string | null
-    profile: string | null; summary: string; created_at: string; protocol_version: string
+    profile: string | null; person_id: string | null; summary: string; created_at: string; protocol_version: string
     validation_status: string | null; validation_issues: string | null
   }
 
@@ -358,6 +360,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     if (row.city_score !== null) record.cityScore = row.city_score
     if (row.salary_feasible !== null) record.salaryFeasible = row.salary_feasible === 1
     if (row.profile !== null) record.profile = row.profile
+    if (row.person_id !== null) record.personId = row.person_id
     if (row.validation_status !== null) {
       const validation: Validation = { status: row.validation_status as Validation['status'], issues: [] }
       if (row.validation_issues) {

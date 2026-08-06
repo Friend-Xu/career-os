@@ -28,6 +28,8 @@
 1. `workspace/career-advisor/decisions/{日期}-综合结论.md`（内部格式，含 `## 分析摘要`）
 2. `workspace/career-advisor/exports/{日期}-综合结论.md`（用户交付物，纯报告）
 
+> 内部格式的摘要表必须携带 `person_id`（**系统注入字段，禁止自行生成**）——取值来源 = 当前 Person 上下文的 `personId`（persons/{person_id}/manifest.md 的 id）。详见 `assets/templates/decision.md` 的 person_id 声明。
+
 ### 步骤 6：置信度降级
 → 基准 = 已完成数 / 6 × 最低单子流程置信度
 → 降级：矛盾→低 | 数据>30天→降一级 | ≤2→低

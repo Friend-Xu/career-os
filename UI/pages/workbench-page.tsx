@@ -19,6 +19,7 @@ import { DecisionEditDialog } from '../components/decision-edit-dialog'
 import { DirectionsView } from '../components/workbench/directions-view'
 import { CitiesView } from '../components/workbench/cities-view'
 import { DecisionsView } from '../components/workbench/decisions-view'
+import { belongsToPerson } from '../utils/ownership'
 import { ProfileView } from '../components/workbench/profile-view'
 import { POOL_HEALTH } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
@@ -122,7 +123,7 @@ function TodaySection() {
   const person = useAppStore((s) => s.currentPerson())
 
   const personApps = applications.filter((a) => a.personId === person.id)
-  const personDecisions = decisions.filter((d) => d.profile === person.name)
+  const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
 
   const latestDirection =
     personDecisions.length > 0
@@ -243,7 +244,7 @@ function DecisionTimeline() {
   const person = useAppStore((s) => s.currentPerson())
   const [selectedAggregate, setSelectedAggregate] = useState<DecisionAggregate | null>(null)
   const [editing, setEditing] = useState<DecisionView | null>(null)
-  const personDecisions = decisions.filter((d) => d.profile === person.name)
+  const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
   const items = personDecisions
 
   /** 时间线条目 → 编辑抽屉：在 contexts 中找该决策的问题绑定（有则展示聚合摘要 + 完整聚合入口） */

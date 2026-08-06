@@ -15,6 +15,7 @@ import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt'
 import { useMemo, useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, LAYOUT, SKILL_VIEW_LABEL } from '../../data/constants'
+import { belongsToPerson } from '../../utils/ownership'
 import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
@@ -31,14 +32,14 @@ export function TopBar() {
 
   // ADR-008：探索记录（决策链语义降级）——按决策类型计数，非阶段推进
   const exploration = useMemo(() => {
-    const mine = decisions.filter((d) => d.profile === currentPerson.name)
+    const mine = decisions.filter((d) => belongsToPerson(d, currentPerson))
     const counts = new Map<string, number>()
     for (const d of mine) {
       const type = SKILL_VIEW_LABEL[d.skill] ?? d.skill
       counts.set(type, (counts.get(type) ?? 0) + 1)
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }, [decisions, currentPerson.name])
+  }, [decisions, currentPerson.personId, currentPerson.name])
 
   const explorationLabel = useMemo(() => {
     const shown = exploration.slice(0, 2).map(([k, v]) => `${k}×${v}`).join(' ')
@@ -48,16 +49,16 @@ export function TopBar() {
 
   // 当前方向 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）
   const currentDirection = useMemo(() => {
-    const mine = decisions.filter((d) => d.profile === currentPerson.name)
+    const mine = decisions.filter((d) => belongsToPerson(d, currentPerson))
     if (mine.length === 0) return undefined
     return [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
-  }, [decisions, currentPerson.name])
+  }, [decisions, currentPerson.personId, currentPerson.name])
 
   // 方向数（聚合维度：该人决策记录去重方向；含未标注方向时不计入）
   const directionCount = useMemo(() => {
-    const mine = decisions.filter((d) => d.profile === currentPerson.name && d.direction)
+    const mine = decisions.filter((d) => belongsToPerson(d, currentPerson) && d.direction)
     return new Set(mine.map((d) => d.direction)).size
-  }, [decisions, currentPerson.name])
+  }, [decisions, currentPerson.personId, currentPerson.name])
 
   const openPersonMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)
   const closePersonMenu = () => setAnchor(null)

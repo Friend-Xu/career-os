@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../../store/app-store'
 import { COLORS, RISK_COLOR, RISK_LABEL } from '../../data/constants'
+import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionView } from '../../store/engine-client'
 import { DecisionEditDialog } from '../decision-edit-dialog'
 
@@ -20,9 +21,9 @@ export function DecisionsView() {
   const mine = useMemo(
     () =>
       decisions
-        .filter((d) => d.profile === person.name)
+        .filter((d) => belongsToPerson(d, person))
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
-    [decisions, person.name],
+    [decisions, person.personId, person.name],
   )
 
   const directions = useMemo(

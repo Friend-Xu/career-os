@@ -22,6 +22,7 @@ import type { StreamPhase } from '../../store/agent-phase'
 import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
 import { MarkdownView } from '../markdown-view'
+import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionRecord } from '../../types'
 
 export function AgentPanel() {
@@ -328,7 +329,7 @@ export function AgentPanel() {
           onClick={() => {
             const content = draft.trim() || '当前分析结果'
             // direction/city 跟随当前人最新决策（与顶栏方向胶囊同源），演示写入不硬编码方向
-            const mine = decisions.filter((d) => d.profile === person.name)
+            const mine = decisions.filter((d) => belongsToPerson(d, person))
             const latest = mine.length
               ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
               : undefined

@@ -8,6 +8,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { COLORS, RISK_COLOR, RISK_LABEL } from '../../data/constants'
+import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionView } from '../../store/engine-client'
 import { DecisionEditDialog } from '../decision-edit-dialog'
 
@@ -32,7 +33,7 @@ export function DirectionsView() {
   const [editing, setEditing] = useState<DecisionView | null>(null)
   const [filter, setFilter] = useState<string>('all')
 
-  const mine = decisions.filter((d) => d.profile === person.name)
+  const mine = decisions.filter((d) => belongsToPerson(d, person))
 
   const groups = useMemo(() => {
     const map = new Map<string, DecisionView[]>()

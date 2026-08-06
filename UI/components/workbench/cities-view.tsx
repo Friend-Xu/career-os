@@ -7,6 +7,7 @@ import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../../data/constants'
+import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionView } from '../../store/engine-client'
 import type { RiskLevel } from '../../types'
 
@@ -61,7 +62,7 @@ export function CitiesView() {
 
   /** 城市聚合：按城市取最新评估（cityScore ?? directionMatch）为评分锚点 */
   const cities = useMemo(() => {
-    const mine = decisions.filter((d) => d.profile === person.name && d.city)
+    const mine = decisions.filter((d) => belongsToPerson(d, person) && d.city)
     const map = new Map<string, DecisionView[]>()
     for (const d of mine) {
       const list = map.get(d.city!)
@@ -78,11 +79,11 @@ export function CitiesView() {
       }
     })
     return agg.sort((a, b) => b.score - a.score)
-  }, [decisions, person.name])
+  }, [decisions, person.personId, person.name])
 
   /** 方向是否已确定（最新决策的 direction 非空）——城市评估的前置条件 */
   const hasDirection = (() => {
-    const mine = decisions.filter((d) => d.profile === person.name)
+    const mine = decisions.filter((d) => belongsToPerson(d, person))
     const latest = mine.length ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] : undefined
     return Boolean(latest?.direction && latest.direction !== '方向待定')
   })()

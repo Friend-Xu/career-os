@@ -33,6 +33,7 @@ import { deriveAgentPhase, formatElapsed, PHASE_META } from '../store/agent-phas
 import type { StreamPhase } from '../store/agent-phase'
 import { ModelSelect } from '../components/model-select'
 import { MarkdownView } from '../components/markdown-view'
+import { belongsToPerson } from '../utils/ownership'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord, QuestionCard } from '../types'
 
@@ -41,7 +42,7 @@ function ContextCapsule() {
   const decisions = useAppStore((s) => s.decisions)
 
   // ADR-008：探索记录（决策链语义降级）——该人决策总数，非阶段推进
-  const exploreCount = decisions.filter((d) => d.profile === person.name).length
+  const exploreCount = decisions.filter((d) => belongsToPerson(d, person)).length
 
   return (
     <Stack

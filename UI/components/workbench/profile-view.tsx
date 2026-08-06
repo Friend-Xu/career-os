@@ -8,6 +8,7 @@
 import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useAppStore } from '../../store/app-store'
 import { COLORS, alpha } from '../../data/constants'
+import { belongsToPerson } from '../../utils/ownership'
 
 type DimKey = 'skills' | 'goals' | 'direction' | 'experience' | 'city' | 'preference'
 type DimState = 'confirmed' | 'pending' | 'inferred' | 'missing'
@@ -26,7 +27,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
   const candidates = useAppStore((s) => s.initCandidates)
   const resumes = useAppStore((s) => s.resumes)
 
-  const personDecisions = decisions.filter((d) => d.profile === person.name)
+  const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
   const latest = personDecisions.length
     ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
     : undefined
@@ -373,7 +374,7 @@ function ActionRow() {
   const startAgentTask = useAppStore((s) => s.startAgentTask)
   const decisions = useAppStore((s) => s.decisions)
 
-  const personDecisions = decisions.filter((d) => d.profile === person.name)
+  const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
   const latest = personDecisions.length
     ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
     : undefined
