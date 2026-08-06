@@ -81,6 +81,18 @@ export interface PersonSnapshot {
   eventCount: number // events/*.md 计数（Change Events 轻协议）
 }
 
+/** 初始化采集 Candidate（切片 2.2：extraction/candidates.md 投影）——Candidate ≠ Fact。
+ * 不携带 confidence/score/importance——候选阶段只回答"系统认为这里有一条可能的信息"；
+ * epistemic 语义（confirmed/inferred）与确认动作在 Resolution 阶段（切片 2.3）。 */
+export interface InitCandidate {
+  id: string
+  category: 'education' | 'experience' | 'skill' | 'constraint' | 'interest'
+  content: string
+  source: 'user_reported' | 'resume'
+  status: 'pending' | 'confirmed' | 'rejected'
+  sessionRef: string
+}
+
 /** 决策类型标签（ADR-008 语义降级：不是链上阶段，是 Decision Intelligence 分析类型） */
 export type DecisionType = 'direction' | 'city' | 'company' | 'jd' | 'resume'
 /** 决策历史分组（决策记录按类型聚合；computeHistory 纯投影，不落盘） */

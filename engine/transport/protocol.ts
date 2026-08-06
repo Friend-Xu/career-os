@@ -57,6 +57,10 @@ export const METHODS = {
   createPersonSession: 'person/session/create',
   /** 追加对话轮次到 intake/session-001.md（params { personId, role, content, timestamp? }；原始对话记录非事实层） */
   appendSessionTurn: 'person/session/append',
+  /** 追加候选批次到 extraction/candidates.md（切片 2.2：params { personId, candidates[] } → InitCandidate[]；Candidate ≠ Fact） */
+  appendCandidates: 'person/session/candidates',
+  /** 候选列表（params { personId } → InitCandidate[]；extraction/ 缺失 → 空） */
+  listCandidates: 'person/candidates/list',
   /** 快照版本存档（M7.1：写入 current 前调用，params { personId, reason, trigger?, sourceRefs? } → SnapshotVersionManifest | null；增量 append-only） */
   snapshotArchive: 'snapshot/archive',
   /** 快照版本链（params: { personId } → SnapshotVersionManifest[] 正序；versions/ 缺失 → 空） */

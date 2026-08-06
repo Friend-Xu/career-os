@@ -24,7 +24,7 @@ import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { appendSessionTurn, createPersonSession, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, createPersonSession, listCandidates, scanPersons } from '../storage/person-watcher.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
@@ -187,6 +187,27 @@ function appendSessionTurnParams(params: unknown): { personId: string; role: 'us
   return { personId, role, content, timestamp }
 }
 
+/** person/session/candidates 入参校验（RPC 边界：candidates 数组，category/content 校验） */
+function appendCandidatesParams(params: unknown): { personId: string; candidates: { category: string; content: string; source: string }[] } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  if (!personId) throw new Error('personId 必填')
+  if (!Array.isArray(p.candidates)) throw new Error('candidates 必须为数组')
+  const categories = ['education', 'experience', 'skill', 'constraint', 'interest']
+  const sources = ['user_reported', 'resume']
+  const candidates = (p.candidates as unknown[])
+    .map((c) => {
+      const raw = (c ?? {}) as Record<string, unknown>
+      return {
+        category: typeof raw.category === 'string' ? raw.category : '',
+        content: typeof raw.content === 'string' ? raw.content : '',
+        source: typeof raw.source === 'string' ? raw.source : 'user_reported',
+      }
+    })
+    .filter((c) => categories.includes(c.category) && c.content.trim() && sources.includes(c.source))
+  return { personId, candidates }
+}
+
 /** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
 function jdAnalyzeParams(v: unknown): { jobId: string; personId: string } {
   if (typeof v !== 'object' || v === null) throw new Error('jd/analyze 需要 params { jobId, personId }')
@@ -270,6 +291,14 @@ function snapshotArchiveParams(v: unknown): { personId: string; reason: string; 
 function snapshotVersionsParams(v: unknown): string {
   if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).personId !== 'string') {
     throw new Error('snapshot/versions 需要 params { personId }')
+  }
+  return (v as Record<string, unknown>).personId as string
+}
+
+/** 通用 personId 提取（RPC 边界：缺失 fail fast） */
+function personIdParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).personId !== 'string') {
+    throw new Error('需要 params { personId }')
   }
   return (v as Record<string, unknown>).personId as string
 }
@@ -749,6 +778,8 @@ export async function startServer(opts: {
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.createPersonSession]: (params) => createPersonSession(workspace, createPersonSessionParams(params)),
     [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),
+    [METHODS.appendCandidates]: (params) => appendCandidates(workspace, appendCandidatesParams(params)),
+    [METHODS.listCandidates]: (params) => listCandidates(workspace, personIdParams(params)),
     [METHODS.snapshotArchive]: (params) => {
       const p = snapshotArchiveParams(params)
       return archiveCurrentSnapshot(workspace, p.personId, p)

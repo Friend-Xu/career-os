@@ -28,7 +28,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
@@ -260,6 +260,11 @@ interface AppState {
   /** 初始化会话状态机（Initialization Shell）：welcome/discovering/summary/resolution/compiled */
   initSessionState: 'welcome' | 'discovering' | 'summary' | 'resolution' | 'compiled';
   setInitSessionState: (state: 'welcome' | 'discovering' | 'summary' | 'resolution' | 'compiled') => void;
+  /** 初始化采集候选（切片 2.2：extraction/candidates.md 投影；右侧「正在收集的信息」数据源） */
+  initCandidates: InitCandidate[];
+  setInitCandidates: (candidates: InitCandidate[]) => void;
+  /** 从引擎重拉候选（刷新/重进入初始化空间后恢复右侧） */
+  loadInitCandidates: (personId: string) => Promise<void>;
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions') => void;
@@ -424,6 +429,7 @@ export const useAppStore = create<AppState>()(
       pendingPersonId: null,
       personCreateDialogOpen: false,
       initSessionState: 'welcome',
+      initCandidates: [],
       activeResumeId: 'r-dji',
       infopoolFilter: 'all',
       companiesFilter: 'all',
@@ -576,6 +582,18 @@ export const useAppStore = create<AppState>()(
 
   setInitSessionState: (state) => set({ initSessionState: state }),
 
+  setInitCandidates: (candidates) => set({ initCandidates: candidates }),
+
+  loadInitCandidates: async (personId) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+    try {
+      const list = await engine.listCandidates(personId)
+      useAppStore.setState({ initCandidates: list })
+    } catch {
+      // offline/旧引擎：保持现有
+    }
+  },
+
   /** 初始化会话：Agent 主动进入初始化助手角色——内部指令不外显（silent），输入框保持干净 */
   startInitializationSession: (ctx: {
     personName: string
@@ -594,6 +612,12 @@ export const useAppStore = create<AppState>()(
         ? '采集：先读取 resumes/documents/ 中的简历资产提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
         : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
       '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
+      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。',
+      '示例回复格式：',
+      '好的，机械设计本科——我把它整理为候选信息，稍后可在清单里确认。',
+      '候选标记：教育｜机械设计制造及其自动化本科｜用户描述',
+      '接下来聊聊工作经历：你目前的工作经历是怎样的？',
+      '注意：缺少候选标记行 = 该条信息不会被系统收集。',
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
       ...(personId
         ? [`采集记录：本会话的对话会持续写入 persons/${personId}/intake/session-001.md（原始对话记录）。如果该文件已有内容，先阅读它了解已采集部分并继续；禁止修改该文件（引擎负责写入）。`]
@@ -1324,6 +1348,40 @@ function pendingInitPersonId(): string | undefined {
   return person?.initStatus === 'pending' && person.personId ? person.personId : undefined
 }
 
+/** Agent 候选标记行 → Candidate 输入（`候选标记：类别｜内容｜来源`；类别非法行忽略） */
+function parseCandidateMarks(content: string): { category: string; content: string; source: string }[] {
+  const out: { category: string; content: string; source: string }[] = []
+  const categoryMap: Record<string, string> = {
+    教育: 'education',
+    经历: 'experience',
+    技能: 'skill',
+    约束: 'constraint',
+    兴趣: 'interest',
+  }
+  for (const line of content.split('\n')) {
+    const m = line.match(/^候选标记：([^｜\n]+)｜(.+?)｜([^｜\n]+)/)
+    if (!m) continue
+    const category = categoryMap[m[1]!.trim()]
+    if (!category) continue
+    const source = m[3]!.trim().includes('简历') ? 'resume' : 'user_reported'
+    out.push({ category, content: m[2]!.trim(), source })
+  }
+  return out
+}
+
+/** 候选落盘 + 投影缓存（extraction/candidates.md append-only；Candidate ≠ Fact） */
+async function persistCandidates(personId: string, candidates: { category: string; content: string; source: string }[]): Promise<void> {
+  if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+  try {
+    const added = await engine.appendCandidates({ personId, candidates })
+    if (added.length > 0) {
+      useAppStore.setState((s) => ({ initCandidates: [...s.initCandidates, ...added] }))
+    }
+  } catch {
+    // 落盘失败不打断对话（候选是过程资产，可后续补齐）
+  }
+}
+
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
 async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string): Promise<void> {
   if (!engine) return
@@ -1478,7 +1536,12 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
           .getState()
           .sessions.find((s) => s.id === doneTask.sessionId)
           ?.messages.find((m) => m.id === doneTask.messageId)
-        if (msg?.content) void appendSessionTurnToEngine(pid, 'assistant', msg.content)
+        if (msg?.content) {
+          void appendSessionTurnToEngine(pid, 'assistant', msg.content)
+          // 切片 2.2：候选标记行 → extraction/candidates.md → 右侧投影
+          const marks = parseCandidateMarks(msg.content)
+          if (marks.length > 0) void persistCandidates(pid, marks)
+        }
       }
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
       agentTasks.delete(taskId)

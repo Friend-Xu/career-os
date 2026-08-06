@@ -391,7 +391,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                 {msg.content}
               </Typography>
             ) : (
-              <MarkdownView content={msg.content} />
+              // 隐藏 Agent 候选标记行（切片 2.2 内部协议，候选投影在右侧「正在收集的信息」）
+              <MarkdownView content={msg.content.replace(/^候选标记：.*$/gm, '')} />
             )}
             {msg.reportCard && <ReportCard record={msg.reportCard} />}
           </Box>
@@ -404,8 +405,20 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
-/** 当前理解草稿（Initialization Shell 右侧）：采集中的候选预览空壳——确认逻辑切片 2 接引擎 */
+/** 正在收集的信息（切片 2.2：extraction/candidates.md 投影——候选 ≠ 事实，不弹确认） */
 function UnderstandingDraft() {
+  const candidates = useAppStore((s) => s.initCandidates)
+  const pending = candidates.filter((c) => c.status === 'pending')
+  const groups = ['education', 'experience', 'skill', 'constraint', 'interest'] as const
+  const labelMap: Record<string, string> = {
+    education: '教育经历',
+    experience: '工作/项目经历',
+    skill: '技能',
+    constraint: '偏好与约束',
+    interest: '关注方向',
+  }
+  const sourceLabel = (s: string) => (s === 'resume' ? '简历' : '你的描述')
+
   return (
     <Box
       sx={{
@@ -418,21 +431,55 @@ function UnderstandingDraft() {
       }}
     >
       <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, mb: 0.75 }}>
-        当前理解草稿
+        正在收集的信息
       </Typography>
-      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6, mb: 2 }}>
-        采集中的信息将在这里累积，你确认后才会写入档案。
+      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6, mb: 1.5 }}>
+        已发现 {pending.length} 条待确认 · 确认后才会写入档案
       </Typography>
-      <Box
-        sx={{
-          p: 1.5,
-          borderRadius: '8px',
-          border: `1px dashed ${COLORS.borderStrong}`,
-          textAlign: 'center',
-        }}
-      >
-        <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>还没有候选信息</Typography>
-      </Box>
+      {pending.length === 0 ? (
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: '8px',
+            border: `1px dashed ${COLORS.borderStrong}`,
+            textAlign: 'center',
+          }}
+        >
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>还没有候选信息</Typography>
+        </Box>
+      ) : (
+        groups.map((g) => {
+          const items = pending.filter((c) => c.category === g)
+          if (items.length === 0) return null
+          return (
+            <Box key={g} sx={{ mb: 1.5 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, mb: 0.5 }}>
+                {labelMap[g]}
+              </Typography>
+              {items.map((c) => (
+                <Box
+                  key={c.id}
+                  sx={{
+                    px: 1.25,
+                    py: 1,
+                    mb: 0.5,
+                    borderRadius: '8px',
+                    border: `1px solid ${COLORS.border}`,
+                    bgcolor: COLORS.bgElevated,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12.5, color: COLORS.text, lineHeight: 1.5 }}>
+                    {c.content}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.5 }}>
+                    来源：{sourceLabel(c.source)} · 状态：待确认
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )
+        })
+      )}
     </Box>
   )
 }
@@ -473,6 +520,15 @@ export function AgentPage() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setLocateTarget(null)
   }, [locateTarget, setLocateTarget, session?.messages.length])
+
+  // 初始化模式：进入时从引擎重拉候选（刷新/重进入恢复右侧「正在收集的信息」；
+  // 依赖 engineStatus——连接完成前跳过，连接后自动重拉）
+  const engineStatus = useAppStore((s) => s.engineStatus)
+  useEffect(() => {
+    if (initMode && person.personId && engineStatus === 'connected') {
+      void useAppStore.getState().loadInitCandidates(person.personId)
+    }
+  }, [initMode, person.personId, engineStatus])
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

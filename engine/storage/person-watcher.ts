@@ -107,6 +107,60 @@ export function appendSessionTurn(ws: Workspace, params: { personId: string; rol
   ws.write(rel, ws.read(rel).replace(/^## Status\n\nCollected: .*\nPending: .*\n?$/m, block + '\n\n## Status\n\nCollected: \nPending: '))
 }
 
+const CANDIDATE_CATEGORY_LABEL: Record<string, string> = {
+  education: '教育',
+  experience: '经历',
+  skill: '技能',
+  constraint: '约束',
+  interest: '兴趣',
+}
+
+/** 候选行 → 表格行（extraction/candidates.md 追加）；category 非法 → 跳过该条（不 invalid 整个批次） */
+function candidateRow(c: { category: string; content: string; source: string }): string | null {
+  const category = CANDIDATE_CATEGORY_LABEL[c.category]
+  if (!category || !c.content.trim()) return null
+  const source = c.source === 'resume' ? 'resume' : 'user_reported'
+  return `pending | ${category} | ${c.content.trim().replace(/\|/g, '\\|')} | ${source}`
+}
+
+/** 追加候选批次到 extraction/candidates.md（append-only；id 按现有行数递增） */
+export function appendCandidates(ws: Workspace, params: { personId: string; candidates: { category: string; content: string; source: string }[] }): { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string }[] {
+  const { personId } = params
+  const rel = `persons/${personId}/extraction/candidates.md`
+  if (!ws.exists(rel)) {
+    ws.write(rel, ['# Extraction Candidates', '', '| id | status | category | content | source |', '|----|--------|----------|---------|--------|', ''].join('\n'))
+  }
+  const existing = ws.read(rel)
+  const count = (existing.match(/^\| c-\d+ \|/gm) ?? []).length
+  const added: { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string }[] = []
+  const rows: string[] = []
+  for (const c of params.candidates) {
+    const row = candidateRow(c)
+    if (!row) continue
+    const id = `c-${String(count + rows.length + 1).padStart(3, '0')}`
+    rows.push(`| ${id} | ${row} |`)
+    added.push({ id, category: c.category, content: c.content.trim(), source: c.source === 'resume' ? 'resume' : 'user_reported', status: 'pending', sessionRef: 'session-001' })
+  }
+  if (rows.length > 0) ws.write(rel, existing.replace(/\n?$/, '\n') + rows.join('\n') + '\n')
+  return added
+}
+
+/** extraction/candidates.md → 候选列表（状态过滤 pending/confirmed/rejected；文件缺 → 空） */
+export function listCandidates(ws: Workspace, personId: string): import('../ir/schema.ts').InitCandidate[] {
+  const rel = `persons/${personId}/extraction/candidates.md`
+  if (!ws.exists(rel)) return []
+  const labelToKey = Object.fromEntries(Object.entries(CANDIDATE_CATEGORY_LABEL).map(([k, v]) => [v, k]))
+  const out: import('../ir/schema.ts').InitCandidate[] = []
+  for (const line of ws.read(rel).split('\n')) {
+    const m = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|/)
+    if (!m) continue
+    const category = labelToKey[m[3]!.trim()]
+    if (!category) continue
+    out.push({ id: m[1]!, category: category as never, content: m[4]!.trim(), source: m[5] as never, status: m[2] as never, sessionRef: 'session-001' })
+  }
+  return out
+}
+
 /** manifest.md → 根声明（frontmatter id/name/status 必填；缺任一 → undefined） */
 export function parsePersonManifest(md: string): PersonManifest | undefined {
   const { meta, body } = splitFrontmatter(md)

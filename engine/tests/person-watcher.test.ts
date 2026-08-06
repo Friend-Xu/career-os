@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { parsePersonManifest, parseSnapshotTable, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, createPersonSession, listCandidates, parsePersonManifest, parseSnapshotTable, scanPersons } from '../storage/person-watcher.ts'
 
 const manifestMd = `---
 id: person_001
@@ -121,6 +121,53 @@ test('scanPersons：缺 manifest / 无 persons 目录 → 降级空数组', () =
     assert.equal(scanPersons(ws).length, 0) // 缺 manifest → 跳过
     rmSync(join(dir, 'persons'), { recursive: true, force: true })
     assert.deepEqual(scanPersons(ws), []) // 无目录 → 空
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('createPersonSession：manifest + intake 落盘，person_id 顺序递增', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const first = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    assert.equal(first.personId, 'person_001')
+    assert.equal(first.sessionId, 'session-001')
+    assert.ok(ws.exists('persons/person_001/manifest.md'))
+    assert.ok(ws.exists('persons/person_001/intake/session-001.md'))
+    const second = createPersonSession(ws, { name: '乙', sourceMode: 'resume' })
+    assert.equal(second.personId, 'person_002')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('appendCandidates：追加批次 + id 递增 + 非法分类跳过；listCandidates 回读', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const first = appendCandidates(ws, {
+      personId: 'person_002',
+      candidates: [
+        { category: 'education', content: '机械设计本科', source: 'user_reported' },
+        { category: 'bogus', content: '非法分类', source: 'user_reported' },
+        { category: 'experience', content: '非标自动化 3 年', source: 'resume' },
+      ],
+    })
+    assert.equal(first.length, 2)
+    assert.equal(first[0]!.id, 'c-001')
+    assert.equal(first[0]!.category, 'education')
+    assert.equal(first[0]!.status, 'pending')
+    assert.equal(first[1]!.source, 'resume')
+    const second = appendCandidates(ws, {
+      personId: 'person_002',
+      candidates: [{ category: 'skill', content: 'Creo 建模', source: 'user_reported' }],
+    })
+    assert.equal(second[0]!.id, 'c-003')
+    const all = listCandidates(ws, 'person_002')
+    assert.equal(all.length, 3)
+    assert.equal(all[2]!.category, 'skill')
+    assert.equal(all[2]!.content, 'Creo 建模')
   } finally {
     cleanup(dir)
   }
