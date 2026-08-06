@@ -5,6 +5,9 @@ node_modules/
 workspace/
 logs/
 
+# Runtime state（supervisor 运行状态，机器相关不入库）
+runtime/state/
+
 # Test fixtures（浏览器 E2E 演示数据，隔离目录不入库）
 .test-fixtures/
 

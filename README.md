@@ -61,8 +61,9 @@
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node start-all.mjs     # Windows 也可双击 StarWebtUI.bat（内置便携 node，无需系统 Node）
+node runtime/supervisor.mjs     # Windows 也可双击 StarWebTUI.bat（内置便携 node，无需系统 Node）
 ```
+关闭：`node runtime/stop-all.mjs` 或双击 stop-all.bat；诊断：`node runtime/doctor.mjs`。
 
 打开 **http://localhost:5288**：决策链、信息池图谱、公司尽调、投递看板全部可视化；右上角「决策 Agent」直接与真实 LLM 对话（复用本机 Claude CLI 登录态，支持流式回复 / 提问卡片 / 权限弹窗 / 思考过程）。
 

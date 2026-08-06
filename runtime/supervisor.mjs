@@ -1,0 +1,107 @@
+/**
+ * Runtime supervisor — Career OS 应用生命周期守护（Runtime Safety Layer v1）。
+ *
+ * 职责：recovery（启动自愈）→ 写 runtime.json → spawn 并跟踪真实 PID → 统一信号关闭。
+ * 进程定义抽象 command/health（约束 3）——CodeNarrator / Translate-video-WebUI 可直接复用。
+ *
+ * 关闭语义：
+ *   SIGINT（Ctrl+C）/ SIGBREAK（Ctrl+Break）→ shutdown(reason)
+ *   SIGHUP（Windows 控制台窗口关闭 CTRL_CLOSE，libuv 映射）→ shutdown(reason)——增强而非保障
+ *   任一子进程退出 → shutdown（自动重启留 v2）
+ *   强杀/崩溃无信号 → runtime.json 残留 → 下次启动 recovery 清理
+ */
+import { resolve } from 'node:path'
+import { findPortOccupier, killTree, queryCommandLine, spawnTracked } from './process-manager.mjs'
+import { createShutdown } from './shutdown-manager.mjs'
+import { belongsToProject, recover, PROJECT_ROOT } from './recovery.mjs'
+import { removeRuntimeState, writeRuntimeState } from './runtime-store.mjs'
+
+const PROCESSES = [
+  {
+    name: 'engine',
+    cwd: resolve(PROJECT_ROOT, 'engine'),
+    command: { executable: process.execPath, args: ['main.ts'] },
+    health: { ports: [5289] },
+  },
+  {
+    name: 'frontend',
+    cwd: resolve(PROJECT_ROOT, 'UI'),
+    command: { executable: process.execPath, args: ['node_modules/vite/bin/vite.js'] },
+    health: { ports: [5288] },
+  },
+]
+
+/**
+ * 端口预检：recovery 覆盖"state 记录的孤儿"，这里覆盖"无 state 但端口被占"——
+ * stop-all 半失败（杀了但没删干净）、外部程序占用 5288/5289。
+ * 占用者归属项目 → 清理（孤儿兜底）；外部程序 → 明确报错拒绝启动（不 EADDRINUSE 崩溃）。
+ */
+function preflightPorts() {
+  for (const def of PROCESSES) {
+    for (const port of def.health.ports) {
+      const pid = findPortOccupier(port)
+      if (pid == null) continue
+      const cmd = queryCommandLine(pid)
+      if (belongsToProject(cmd)) {
+        killTree(pid)
+        console.log(`[runtime] 端口 ${port} 被本项目的孤儿进程（PID ${pid}）占用——已清理`)
+        if (findPortOccupier(port) != null) {
+          console.error(`[runtime] 端口 ${port} 清理后仍被占用——请手动处理 PID ${pid}`)
+          process.exit(1)
+        }
+      } else {
+        console.error(
+          `[runtime] 端口 ${port} 被外部进程占用（PID ${pid}${cmd ? `，命令行：${cmd}` : ''}）——非 Career OS 进程，请处理后再启动`,
+        )
+        process.exit(1)
+      }
+    }
+  }
+}
+
+function main() {
+  const rec = recover()
+  if (rec.result === 'already-running') {
+    console.error(`[runtime] 已有实例运行中（PID ${rec.state.owner.pid}）。直接访问 http://localhost:5288；关闭请运行 stop-all.bat`)
+    process.exit(1)
+  }
+  if (rec.result === 'cleaned') console.log(`[runtime] 上次会话残留：已清理 ${rec.killed} 个进程`)
+  if (rec.warnings.length > 0) for (const w of rec.warnings) console.warn(`[runtime] ${w}`)
+
+  preflightPorts()
+
+  const state = {
+    version: 1,
+    session: new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14),
+    owner: { pid: process.pid, startedAt: new Date().toISOString() },
+    processes: PROCESSES.map((p) => ({ name: p.name, pid: null, cmd: p.command.args.join(' ') })),
+    ports: PROCESSES.flatMap((p) => p.health.ports),
+    status: 'running',
+  }
+  writeRuntimeState(state)
+
+  const shutdown = createShutdown(state, { writeState: writeRuntimeState, removeState: removeRuntimeState })
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGBREAK', () => shutdown('SIGBREAK'))
+  process.on('SIGHUP', () => shutdown('SIGHUP')) // Windows 点 X 关窗口
+
+  for (const def of PROCESSES) {
+    const child = spawnTracked(def)
+    // 约束 4：spawn 后立即落盘真实 PID——vite 崩溃后 recovery 仍能找到正确的树
+    state.processes.find((p) => p.name === def.name).pid = child.pid
+    writeRuntimeState(state)
+
+    child.stdout.on('data', (d) => process.stdout.write(`[${def.name}] ${d}`))
+    child.stderr.on('data', (d) => process.stderr.write(`[${def.name}] ${d}`))
+    child.on('exit', (code) => {
+      console.log(`[runtime] ${def.name} exited (${code})`)
+      shutdown(`child-exit:${def.name}`, code ?? 1)
+    })
+  }
+
+  console.log('[runtime] Career OS 运行中：引擎 ws://127.0.0.1:5289 · 前端 http://localhost:5288')
+  console.log('[runtime] 关闭请运行 stop-all.bat（直接关窗口可能残留，下次启动自动清理）')
+  console.log(`[runtime] session ${state.session} · PID ${process.pid}`)
+}
+
+main()

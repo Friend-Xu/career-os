@@ -60,8 +60,9 @@ Walked the full chain with career-advisor: transition feasibility (75% match, so
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node start-all.mjs     # Windows: double-click StarWebtUI.bat (bundled portable node, no system Node needed)
+node runtime/supervisor.mjs     # Windows: double-click StarWebTUI.bat (bundled portable node, no system Node needed)
 ```
+Stop: `node runtime/stop-all.mjs` or double-click stop-all.bat · Diagnose: `node runtime/doctor.mjs`.
 
 Open **http://localhost:5288**: decision chains, info-pool graph, company due diligence and application boards, all visualized. The "Decision Agent" panel chats with a real LLM (reuses your local Claude CLI login — streaming replies, question cards, permission dialogs, thinking process).
 

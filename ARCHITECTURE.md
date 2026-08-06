@@ -270,15 +270,17 @@ Career OS 分两个域，**系统可升级，个人资产永远独立**：
 ## 6. 部署与进程生命周期
 
 ```
-StarWebtUI.bat（双击）→ start-all.mjs（纯 ASCII + CRLF，零依赖）
+StarWebTUI.bat（双击）→ runtime/supervisor.mjs（Runtime Safety Layer v1）
   ├─ engine:  .local/node/node.exe main.ts   → WS :5289
   └─ ui:      .local/node/node.exe vite      → :5288（strictPort）
 ```
 
 - **环境隔离**：内置便携 node `.local/node/node.exe`（不依赖系统 PATH）；一切运行时/依赖在项目根内
-- **进程树杀**：任一进程退出 → 联动关闭另一个；Windows `taskkill /T /F` 树杀（npm 壳下的 node 子进程一并终止），POSIX 负 pid 杀组
+- **Runtime Safety Layer v1**：supervisor 持有生命周期——`runtime.json` 原子写（state/，gitignore）记录 owner/进程真实 PID/端口；SIGINT/SIGBREAK/SIGHUP 统一关闭（running → stopping → taskkill 树 → 删 state = 干净关闭标记）；启动自愈（recovery：owner PID 存活拒双实例，残留按"PID 存活 + 命令行归属验证"才 kill，防 PID 复用误杀）；**端口预检**（spawn 前查 5288/5289 占用者：项目孤儿 → 清理；外部程序 → 明确报错拒绝，不 EADDRINUSE 崩溃）；`stop-all.bat` 显式停止；`node runtime/doctor.mjs` 诊断
+- **进程树杀**：任一子进程退出 → 联动关闭全部；taskkill /PID /T /F（固定用法，绝不 /IM）
 - 引擎优雅关闭：SIGINT/SIGTERM → `handle.shutdown()`（中止活跃 Agent 任务）→ 800ms 后退出
 - 端口：5288（UI）/ 5289（引擎 WS），strictPort 防漂移
+- Job Object（父死必清）为 Future Enhancement：`runtime/native/windows-job-object.md`——Node 无原生实现，启用需 native addon，随桌面化/商业发行再投入
 
 ## 7. 测试与验证
 
