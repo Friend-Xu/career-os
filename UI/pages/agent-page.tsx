@@ -89,7 +89,8 @@ function ReportCard({ record }: { record: DecisionRecord }) {
         mt: 1.5,
         p: 2,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bg,
       }}
     >
@@ -230,7 +231,8 @@ function QuestionCardView({ card, messageId }: { card: QuestionCard; messageId: 
         mt: 1.5,
         p: 2,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bg,
       }}
     >
@@ -539,7 +541,8 @@ function UnderstandingDraft() {
                     py: 1,
                     mb: 0.5,
                     borderRadius: '8px',
-                    border: `1px solid ${COLORS.border}`,
+                    border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                    boxShadow: COLORS.cardShadow,
                     bgcolor: COLORS.bgElevated,
                   }}
                 >

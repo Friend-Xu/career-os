@@ -20,7 +20,7 @@ import type { Components } from 'react-markdown'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
 import type { GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
@@ -245,7 +245,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     <Box sx={{ height: '100%', overflow: 'auto', p: 2.5 }}>
       <Box sx={{ maxWidth: 760, mx: 'auto' }}>
         {/* 头部信息卡：职位标题 + 薪资高亮 + 关键 chips + 任务步骤 + Actions */}
-        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
           <Stack direction="row" sx={{ alignItems: 'flex-start', mb: 0.5 }}>
             <Typography sx={{ fontSize: 18, fontWeight: 600, flex: 1, minWidth: 0 }}>{job.title}</Typography>
             {job.jd && (
@@ -283,7 +283,8 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
               p: 1.5,
               borderRadius: '8px',
               bgcolor: COLORS.bgHover,
-              border: `1px solid ${COLORS.border}`,
+              border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+              boxShadow: COLORS.cardShadow,
               mb: 1,
             }}
           >
@@ -340,7 +341,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         {/* 职位描述（JD 原文 markdown 排版） */}
         {job.jd && (
           <Section title="职位描述">
-            <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+            <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={JD_MD_COMPONENTS}>
                 {cleanJd(job.jd, job)}
               </ReactMarkdown>
@@ -506,7 +507,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
           if (userReqs.length === 0) return null
           return (
             <Section title="任职要求">
-              <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+              <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
                   {userReqs.map((r) => {
                     const st2 = reqStatus(r.statement, gap)
@@ -536,7 +537,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 画像未声明技能或技能名未对齐词表，无法计算覆盖
               </Typography>
             ) : gap ? (
-              <Box sx={{ p: 1.5, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+              <Box sx={{ p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Stack spacing={0.5}>
                   {gap.satisfied.length > 0 && (
                     <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.low }}>
@@ -589,7 +590,8 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 sx={{
                   p: 1.5,
                   borderRadius: '10px',
-                  border: `1px solid ${COLORS.border}`,
+                  border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                  boxShadow: COLORS.cardShadow,
                   bgcolor: COLORS.bg,
                 }}
               >
@@ -630,13 +632,13 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         {st.analyzed && (
           <Section title="投决">
             <Stack direction="row" spacing={1.5}>
-              <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+              <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>JD 匹配</Typography>
                 <Typography sx={{ fontSize: 12.5, color: COLORS.text }}>
                   {job.responsibilities.length > 0 ? `${job.responsibilities.length} 项要求已评估` : '未评估'}
                 </Typography>
               </Box>
-              <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+              <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>公司评估</Typography>
                 <Typography sx={{ fontSize: 12.5, color: st.dueDiligence ? COLORS.text : COLORS.textMuted }}>
                   {st.dueDiligence ? '已尽调' : company ? '待尽调' : '未尽调'}
@@ -649,10 +651,10 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
         {/* 决策记录（证据层） */}
         {jobDecisions.length > 0 && (
           <Section title="决策记录">
-            <Box sx={{ p: 1, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+            <Box sx={{ p: 1, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
               <Stack spacing={0.5}>
                 {jobDecisions.map((d) => (
-                  <Stack key={d.id} direction="row" spacing={0.75} sx={{ alignItems: 'center', p: 0.75, borderRadius: '8px', '&:hover': { bgcolor: COLORS.bgHover } }}>
+                  <Stack key={d.id} direction="row" spacing={0.75} sx={{ alignItems: 'center', p: 0.75, borderRadius: '8px', transition: `background-color 180ms ${EASE}`, '&:hover': { bgcolor: COLORS.bgHover } }}>
                     <HistoryIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
                     <Typography sx={{ fontSize: 12.5, fontWeight: 500, flex: 1, minWidth: 0 }} noWrap>
                       {d.title}

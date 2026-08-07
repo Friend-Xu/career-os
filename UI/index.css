@@ -39,6 +39,7 @@ html.dark {
   --cos-canvas: #0b0d12;
   --cos-on-accent: #0d0f14;
   --cos-shadow: 0 8px 32px rgba(23, 19, 48, 0.55);
+  --cos-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 /* Swiss international style — paper white, hairline grid, strong type contrast */
@@ -60,6 +61,7 @@ html.light {
   --cos-canvas: #f1f1f3;
   --cos-on-accent: #ffffff;
   --cos-shadow: 0 8px 32px rgba(23, 19, 48, 0.18);
+  --cos-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
 }
 
 /* 切换人时短暂开启全站颜色过渡（app-shell 注入 class，400ms 后移除）——避免主题色瞬时跳变 */

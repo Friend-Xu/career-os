@@ -21,7 +21,7 @@ import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined'
 import { useMemo, useState, type ComponentType } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS } from '../data/constants'
+import { alpha, COLORS, EASE } from '../data/constants'
 import type { Application, ApplicationStatus, FollowupUrgency } from '../types'
 
 const COLUMNS: ApplicationStatus[] = [
@@ -81,10 +81,12 @@ function KanbanCard({ app }: { app: Application }) {
         p: 1.5,
         borderRadius: '8px',
         bgcolor: COLORS.bg,
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         mb: 1,
         cursor: job ? 'pointer' : 'default',
-        '&:hover': { borderColor: job ? COLORS.borderStrong : COLORS.border },
+        transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
+        '&:hover': { borderColor: job ? COLORS.borderStrong : COLORS.border, bgcolor: job ? COLORS.bgHover : COLORS.bg },
       }}
     >
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'flex-start', mb: 0.5 }}>
@@ -342,7 +344,8 @@ export function ApplicationsPage() {
                 flexDirection: 'column',
                 bgcolor: COLORS.bgElevated,
                 borderRadius: '10px',
-                border: `1px solid ${COLORS.border}`,
+                border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                boxShadow: COLORS.cardShadow,
                 overflow: 'hidden',
               }}
             >
@@ -383,7 +386,8 @@ export function ApplicationsPage() {
             flex: 1,
             overflow: 'auto',
             borderRadius: '10px',
-            border: `1px solid ${COLORS.border}`,
+            border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+            boxShadow: COLORS.cardShadow,
             bgcolor: COLORS.bgElevated,
           }}
         >

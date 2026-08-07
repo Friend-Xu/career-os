@@ -39,6 +39,9 @@ export const COLORS = {
   riskLow: 'var(--cos-risk-low)',
   canvas: 'var(--cos-canvas)',
   onAccent: 'var(--cos-on-accent)',
+  shadow: 'var(--cos-shadow)',
+  /** 卡片分层阴影（极轻环境阴影：卡片从背景浮起而非贴平；浮层用 shadow） */
+  cardShadow: 'var(--cos-card-shadow)',
   mono: 'ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace',
 } as const
 

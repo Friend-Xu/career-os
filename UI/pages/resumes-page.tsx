@@ -439,7 +439,8 @@ export function ResumesPage() {
                 key={m.id}
                 sx={{
                   borderRadius: '8px',
-                  border: `1px solid ${COLORS.border}`,
+                  border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                  boxShadow: COLORS.cardShadow,
                   bgcolor: COLORS.bgElevated,
                   overflow: 'hidden',
                 }}
@@ -921,8 +922,10 @@ export function ResumesPage() {
                       sx={{
                         p: 1.25,
                         borderRadius: '6px',
-                        border: `1px solid ${COLORS.border}`,
+                        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                        boxShadow: COLORS.cardShadow,
                         cursor: 'pointer',
+                        transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
                         '&:hover': {
                           borderColor: COLORS.accent,
                           bgcolor: COLORS.accentMuted,

@@ -105,7 +105,8 @@ function IdentityCard() {
       sx={{
         p: 2,
         borderRadius: '12px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bgElevated,
         display: 'flex',
         gap: 2.5,
@@ -199,7 +200,8 @@ function ProfileMap() {
       sx={{
         p: 2,
         borderRadius: '12px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bgElevated,
         display: 'grid',
         placeItems: 'center',
@@ -261,7 +263,7 @@ function StatusContent() {
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 2 }}>
       {/* 画像状态 */}
-      <Box sx={{ p: 2, borderRadius: '12px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bgElevated }}>
+      <Box sx={{ p: 2, borderRadius: '12px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 1.25, color: COLORS.textSecondary }}>画像状态</Typography>
         <Stack spacing={0.75}>
           <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>
@@ -314,7 +316,7 @@ function StatusContent() {
       </Box>
 
       {/* 画像内容 */}
-      <Box sx={{ p: 2, borderRadius: '12px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bgElevated }}>
+      <Box sx={{ p: 2, borderRadius: '12px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 1.25, color: COLORS.textSecondary }}>画像内容</Typography>
         {skills.length > 0 ? (
           <Stack spacing={0.75} sx={{ mb: 1.5 }}>

@@ -86,7 +86,7 @@ export function ResumeStudio() {
 
   if (resumeVersions.length === 0) {
     return (
-      <Box sx={{ p: 3, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+      <Box sx={{ p: 3, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
         <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 1 }}>
           暂无简历版本——通过岗位页「AI 派生简历版本」或等待 AI 生成 Draft 后自动登记
         </Typography>
@@ -165,7 +165,7 @@ export function ResumeStudio() {
   return (
     <Box>
       {/* 1. Version Timeline（lineage 图） */}
-      <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg, mb: 2 }}>
+      <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg, mb: 2 }}>
         <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 1 }}>版本进化线（lineage）</Typography>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
           {timeline.map((r, i) => {
@@ -194,7 +194,7 @@ export function ResumeStudio() {
       </Box>
 
       {/* 1.5. AI 建议（M3.5.6：Human Approval Console——AI Propose / 用户 Approve / 引擎 Execute） */}
-      <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg, mb: 2 }}>
+      <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg, mb: 2 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.25 }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>AI 建议（{pendingProposals.length}）</Typography>
           <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>AI 只写提案；接受后引擎确定性生成新版本</Typography>
@@ -294,7 +294,7 @@ export function ResumeStudio() {
       {/* 2+3. 版本详情 + Provenance Panel */}
       {selected && (
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 2, mb: 2 }}>
-          <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+          <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5, flexWrap: 'wrap' }}>
               <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{selected.id}</Typography>
               <Chip size="small" label={STATUS_STYLE[selected.status].label} sx={{ height: 20, fontSize: 11, bgcolor: alpha(STATUS_STYLE[selected.status].color, 0.12), color: STATUS_STYLE[selected.status].color }} />
@@ -358,7 +358,7 @@ export function ResumeStudio() {
           </Box>
 
           {/* Provenance Panel：bullet → claim → evidence → expectation */}
-          <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+          <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
             <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 1 }}>Provenance（为什么写这条）</Typography>
             {selectedClaim ? (
               (() => {
@@ -413,7 +413,7 @@ export function ResumeStudio() {
 
       {/* 4. Validation + Diff + Export 历史 */}
       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 1 }}>Validation（assemble 快照）</Typography>
           {selected?.validation ? (
             <Stack spacing={0.5}>
@@ -444,7 +444,7 @@ export function ResumeStudio() {
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>无 validation 快照（历史版本）</Typography>
           )}
         </Box>
-        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 1 }}>版本对比（Artifact diff）</Typography>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>对比</Typography>

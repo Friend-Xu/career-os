@@ -25,7 +25,7 @@ import '@amap/amap-jsapi-types'
 import { GapAnalysisSection } from '../components/gap-analysis-section'
 import { getEngine, useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { Company } from '../types'
 import type { CompanyDetail } from '../store/engine-client'
 import type { Validation } from '../../engine/ir/schema.ts'
@@ -280,7 +280,8 @@ function MapView() {
           flex: 1,
           m: 2,
           borderRadius: '10px',
-          border: `1px solid ${COLORS.border}`,
+          border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+          boxShadow: COLORS.cardShadow,
           bgcolor: COLORS.canvas,
           display: 'grid',
           placeItems: 'center',
@@ -310,7 +311,7 @@ function MapView() {
     <Box sx={{ flex: 1, minHeight: 0, m: 2, position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <Box
         ref={containerRef}
-        sx={{ flex: 1, borderRadius: '10px', border: `1px solid ${COLORS.border}`, overflow: 'hidden' }}
+        sx={{ flex: 1, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, overflow: 'hidden' }}
       />
       {loadState === 'loading' && (
         <Box
@@ -487,7 +488,8 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
               p: 1.5,
               borderRadius: '8px',
               bgcolor: COLORS.bgHover,
-              border: `1px solid ${COLORS.border}`,
+              border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+              boxShadow: COLORS.cardShadow,
             }}
           >
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1 }}>尽调摘要</Typography>
@@ -549,8 +551,10 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
                   sx={{
                     p: 1,
                     borderRadius: '8px',
-                    border: `1px solid ${COLORS.border}`,
+                    border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                    boxShadow: COLORS.cardShadow,
                     cursor: 'pointer',
+                    transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
                     '&:hover': { bgcolor: COLORS.bgHover, borderColor: COLORS.borderStrong },
                   }}
                 >

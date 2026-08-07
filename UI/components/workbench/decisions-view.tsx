@@ -6,7 +6,7 @@ import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore } from '../../store/app-store'
-import { COLORS, RISK_COLOR, RISK_LABEL } from '../../data/constants'
+import { COLORS, EASE, RISK_COLOR, RISK_LABEL, alpha } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionView } from '../../store/engine-client'
 import { DecisionEditDialog } from '../decision-edit-dialog'
@@ -87,8 +87,10 @@ export function DecisionsView() {
                 sx={{
                   p: 1.25,
                   borderRadius: '8px',
-                  border: `1px solid ${COLORS.border}`,
+                  border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                  boxShadow: COLORS.cardShadow,
                   cursor: 'pointer',
+                  transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
                   '&:hover': { bgcolor: COLORS.bgHover, borderColor: COLORS.borderStrong },
                 }}
               >

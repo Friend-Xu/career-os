@@ -213,7 +213,8 @@ function TodaySection() {
             sx={{
               p: 1.5,
               borderRadius: '10px',
-              border: `1px solid ${COLORS.border}`,
+              border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+              boxShadow: COLORS.cardShadow,
               bgcolor: COLORS.bgElevated,
             }}
           >
@@ -256,7 +257,8 @@ function DecisionTimeline() {
       sx={{
         p: 2,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bgElevated,
         height: '100%',
         display: 'flex',
@@ -297,6 +299,7 @@ function DecisionTimeline() {
               px: 0.5,
               mx: -0.5,
               borderRadius: '8px',
+              transition: `background-color 180ms ${EASE}`,
               '&:hover': { bgcolor: alpha(COLORS.bgHover, 0.6) },
               '&:hover .re-eval-btn': { opacity: 1 },
               '&:focus-within .re-eval-btn': { opacity: 1 },
@@ -459,7 +462,8 @@ function PoolHealthCard() {
       sx={{
         p: 2,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bgElevated,
         height: '100%',
         display: 'flex',

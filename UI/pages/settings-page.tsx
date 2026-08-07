@@ -358,7 +358,7 @@ export function SettingsPage() {
             <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
               PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由免费视觉模型（glm-4.6v-flash）逐页识别。
             </Typography>
-            <Box sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bgElevated }}>
+            <Box sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
                 <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>视觉模型</Typography>
                 <Chip
@@ -915,7 +915,8 @@ function MapServiceCard() {
       sx={{
         p: 1.5,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
         bgcolor: COLORS.bgElevated,
       }}
     >

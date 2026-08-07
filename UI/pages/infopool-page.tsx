@@ -401,7 +401,8 @@ function GraphCanvas({
         overflow: 'hidden',
         bgcolor: COLORS.canvas,
         borderRadius: '10px',
-        border: `1px solid ${COLORS.border}`,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
       }}
     >
       <ForceGraph2D
@@ -601,7 +602,8 @@ export function InfoPoolPage() {
             flex: 1,
             overflow: 'auto',
             borderRadius: '10px',
-            border: `1px solid ${COLORS.border}`,
+            border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+            boxShadow: COLORS.cardShadow,
             bgcolor: COLORS.bgElevated,
           }}
         >
