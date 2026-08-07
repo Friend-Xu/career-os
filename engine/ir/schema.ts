@@ -369,6 +369,9 @@ export interface JobResponsibility {
   }[]
   source: 'user' | 'ai' // 溯源：建档输入 vs AI 分析
   confidence?: Confidence // 解析置信度（AI 条目）
+  /** v2 能力分级（岗位智能段 Category 列，6 列格式）：hard 进匹配 / soft·preference 仅证据
+   *  引导——消费语义见 Capability Matching Boundary（jd-constraint-match-contract v0.2） */
+  category?: 'hard' | 'soft' | 'preference'
 }
 
 /** 岗位（Job）：JD 是一等数据对象——岗位事实，非投递附属文本；jobs/{id}.md 真相源 */

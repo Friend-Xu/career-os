@@ -33,7 +33,10 @@ function parseResponsibilities(raw: string): JobResponsibility[] {
     }))
 }
 
-/** `## 岗位智能` 段落（Agent 双输出写回）→ responsibilities（source: ai）。
+/** `## 岗位智能` 段落（Proposal 通道 Writer 写回）→ responsibilities（source: ai）。
+ *  6 列表格（Responsibility | Priority | Category | Capabilities | Evidence Patterns |
+ *  Questions）优先（v2 契约 Category 列），5 列旧格式兼容——解析错位会把 Category 列值
+ *  （hard/soft）当能力词。
  *  Evidence Patterns 列写 dimension 短名（scope/method/...，skill 词表），
  *  解析映射为 Registry id（engineering_scope）；词表外 dimension 过滤（Agent 是外部输出方，边界校验）。 */
 function parseJobIntelligence(md: string): JobResponsibility[] {
@@ -45,12 +48,20 @@ function parseJobIntelligence(md: string): JobResponsibility[] {
     return t.startsWith('|') && !/^\|[\s\-|]+\|$/.test(t) && !t.includes('Responsibility')
   })
   return rows.flatMap((line, i) => {
-    const cols = line.match(/^\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/)
+    const c6 = line.match(/^\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/)
+    const c5 = !c6 ? line.match(/^\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/) : null
+    const cols = c6 ?? c5
     if (!cols) return []
-    const [, statement, priority, caps, patterns, questions] = cols
-    const capabilities = caps.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
-    const dims = patterns.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
-    const questionList = questions.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const [, s1, s2, s3, s4, s5, s6] = cols
+    const statement = (c6 ? s1 : s1)!
+    const priority = (c6 ? s2 : s2)!
+    const category = c6 ? s3!.trim() : undefined
+    const capsRaw = c6 ? s4! : s3!
+    const patternsRaw = c6 ? s5! : s4!
+    const questionsRaw = c6 ? s6! : s5!
+    const capabilities = capsRaw.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const dims = patternsRaw.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
+    const questionList = questionsRaw.split(REQUIREMENTS_SEP).map((s) => s.trim()).filter(Boolean)
     const evidenceExpectations = dims.flatMap((dim, j) => {
       const patternId = idByDimension.get(dim as EvidenceDimension)
       return patternId ? [{ patternId, questions: questionList[j] ? [questionList[j]] : [] }] : []
@@ -62,6 +73,7 @@ function parseJobIntelligence(md: string): JobResponsibility[] {
       capabilities,
       evidenceExpectations,
       source: 'ai',
+      ...(category === 'hard' || category === 'soft' || category === 'preference' ? { category } : {}),
     }] as JobResponsibility[]
   })
 }
