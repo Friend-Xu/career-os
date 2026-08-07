@@ -12,6 +12,7 @@
  */
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { watch } from 'chokidar'
 import type { PersonSkill, PersonSnapshot } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
@@ -441,4 +442,24 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     out.push(snapshot)
   }
   return out.sort((a, b) => a.personId.localeCompare(b.personId))
+}
+
+/**
+ * watchPersons：persons/{person_id}/ 目录监听（P1 Person Aggregate 生命周期闭环——
+ * identity/career_profile/skill_inventory 等变化 → personsChanged → UI 重拉 persons/list）。
+ * add/change/unlink 任一触发 → onChanged()；返回 { close } 供测试/退出。
+ */
+export function watchPersons(ws: Workspace, onChanged: () => void): { close: () => Promise<void> } {
+  const watcher = watch(ws.paths.persons, { ignoreInitial: true })
+  const rescan = (): void => onChanged()
+  watcher.on('add', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  watcher.on('change', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  watcher.on('unlink', (path: string) => {
+    if (path.endsWith('.md')) rescan()
+  })
+  return { close: () => watcher.close() }
 }

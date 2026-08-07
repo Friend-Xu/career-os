@@ -2250,6 +2250,12 @@ export function connectEngine(): void {
     void pullCompanies()
     void pullGraph()
   })
+  engine.on(EVENTS.personsChanged, () => {
+    // P1 Person Aggregate：identity/career_profile/skill_inventory 变化 → 重拉 persons/list
+    //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）
+    void pullPersons()
+    void pullGraph()
+  })
   engine.on(EVENTS.poolChanged, () => void pullGraph())
   engine.onAgentEvent(handleAgentEvent)
   engine.connect()

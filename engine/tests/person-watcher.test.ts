@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons, watchPersons } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 
 const manifestMd = `---
@@ -400,6 +400,43 @@ test('init_state：旧档案（无字段）→ undefined；completePersonInit �
     assert.equal(parsePersonManifest(md)?.initState, 'completed')
     assert.equal(scanPersons(ws)[0]!.initState, 'completed')
   } finally {
+    cleanup(dir)
+  }
+})
+
+/** 轮询等待条件（chokidar 事件异步到达；默认 3s 超时） */
+function waitFor(pred: () => boolean, timeout = 3000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now()
+    const iv = setInterval(() => {
+      if (pred()) {
+        clearInterval(iv)
+        resolve()
+      } else if (Date.now() - t0 > timeout) {
+        clearInterval(iv)
+        reject(new Error('waitFor 超时'))
+      }
+    }, 25)
+  })
+}
+
+test('watchPersons：add/change/unlink 任一触发 onChanged（P1 Person Aggregate 生命周期闭环）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cos-wps-'))
+  const ws = initWorkspace(dir)
+  let fired = 0
+  const { close } = watchPersons(ws, () => { fired++ })
+  try {
+    await new Promise((r) => setTimeout(r, 250)) // chokidar 就绪
+    const rel = 'persons/person_001/snapshot/current/skill_inventory.md'
+    ws.write(rel, '# 技能\n')
+    await waitFor(() => fired >= 1)
+    ws.write(rel, '# 技能 v2\n')
+    await waitFor(() => fired >= 2)
+    rmSync(join(dir, rel), { recursive: true })
+    await waitFor(() => fired >= 3)
+    assert.equal(fired, 3, 'add/change/unlink 三次都应触发')
+  } finally {
+    await close()
     cleanup(dir)
   }
 })

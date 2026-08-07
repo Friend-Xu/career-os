@@ -220,6 +220,8 @@ export const EVENTS = {
   coverLetterChanged: 'data.cover-letters.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
+  /** persons/ 目录变更后推送（不含数据，客户端用 persons/list 拉快照；P1 Person Aggregate 生命周期闭环） */
+  personsChanged: 'data.persons.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */
