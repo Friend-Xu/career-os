@@ -47,6 +47,7 @@ Exa MCP 需要 API Key。如果你没有安装 ECC，需要自行配置：
 ## 工作流程总览
 
 ```
+Step 0: 查档确认对象 → 读 companies/，识别已有档案（占位/尽调/别名）
 Step 1: 三问定框架 → 阶段 + 职业 + 关心维度
 Step 2: 确认 + 职业推理 → Read references/career-inference.md
 Step 3: 搜索执行      → Read references/search-strategy.md
@@ -55,6 +56,34 @@ Step 5: 对抗验证      → Read references/adversarial-review.md
 Step 6: 输出报告      → Read references/report-template.md + references/interview-questions.md
 Step 7: 收尾          → Read assets/tier3-user-checklist.md
 ```
+
+---
+
+## Step 0: 查档确认对象（Company Artifact Admission）
+
+**先查 companies/ 目录，再开始任何工作。** 公司档案是系统身份资产——同一主体只允许一份档案，
+禁止重复建档（一个主体的两份 markdown = 身份分裂，UI/图谱会把它们当成两家公司）。
+
+```
+输入: company_name_candidate（用户给的或 JD 里的公司名）
+
+流程:
+  1. 列出 companies/ 目录（Read/Glob）
+  2. 精确匹配 canonical name（文件名）
+  3. 匹配既有 aliases（档案摘要表 `aliases` 行的名称）
+  4. 命中 → 本次尽调针对该档案：档案名、已有字段、占位还是已尽调
+  5. 无匹配 → 本次尽调将新建档案，落盘时用与既有命名习惯一致的名称
+```
+
+关键判断：
+
+- **已存在占位档案（摘要表其余字段为 `-`，正文含「占位档案」）** → 本次尽调**升级该档案**：
+  Step 6.5 落盘时写回同一个文件名，不创建新文件。占位档案是 JD 建档自动创建的
+  （文件名 = 建档时用的名称，可能是简称）。
+- **档案名称与用户/JD 名称不一致（简称 vs 全称）** → 落盘时以既有档案名为准（汇川技术、
+  南京新拓尼克、嘉树医疗均为业务名，不是工商全称），同时在摘要表 `aliases` 行登记本次
+  使用的其他称呼（Agent 提议 → 引擎校验登记，消费端按 alias 精确解析）。
+- **禁止**:已存在主体时创建第二份公司 markdown。
 
 ---
 
@@ -186,6 +215,9 @@ Read `references/interview-questions.md`，根据 **career-inference.md 推断�
 ## Step 6.5: 落盘公司档案
 
 Read `references/company-file-contract.md`，将尽调结论落盘为 `workspace/career-advisor/companies/{公司名}.md`：`## 分析摘要` 表（字段值格式严格，match_score 只写 `85%`/`8.2/10`、tags 逗号分隔、contacted 未联系写「否」）+ `## 尽调详情` 正文。引擎监听该目录，写完自动感知并通知 UI，无需手动操作。
+
+**落盘文件名 = Step 0 查档结果**：命中既有档案（含占位）→ 写回**同一个文件名**（升级，不新建）；
+无匹配 → 新建。名称与档案名不一致时，把其他称呼登记进 `aliases` 行（逗号分隔）。
 
 ---
 

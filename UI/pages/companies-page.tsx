@@ -26,6 +26,7 @@ import { GapAnalysisSection } from '../components/gap-analysis-section'
 import { getEngine, useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
+import { resolveCompanyReference } from '../data/company-ref'
 import type { Company } from '../types'
 import type { CompanyDetail } from '../store/engine-client'
 import type { Validation } from '../../engine/ir/schema.ts'
@@ -397,6 +398,7 @@ function MapView() {
 
 /** 「公司档案」视图：左侧公司卡片（460px）+ 右侧尽调详情正文 */
 function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
+  const companies = useAppStore((s) => s.companies)
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const markCompanyContacted = useAppStore((s) => s.markCompanyContacted)
@@ -450,7 +452,7 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
     )
   }
 
-  const companyJobs = jobs.filter((j) => j.company === selected.name)
+  const companyJobs = jobs.filter((j) => resolveCompanyReference(companies, j.company)?.id === selected.id)
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>

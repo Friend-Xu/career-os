@@ -18,7 +18,7 @@ import { buildSkillIndex } from './knowledge-watcher.ts'
 export interface GraphInput {
   decisions: ParsedDecision[]
   /** 公司档案（CompanyView）：带 validation 时 invalid 跳过 */
-  companies: { id: string; name: string; matchScore?: number; riskLevel?: RiskLevel; validation?: Validation }[]
+  companies: { id: string; name: string; matchScore?: number; riskLevel?: RiskLevel; validation?: Validation; aliases?: string[] }[]
   profileNames: string[]
   /** V2 知识层：技能词表（词表节点）+ 岗位清单（岗位节点与需求/雇佣边） */
   skills?: Skill[]
@@ -69,9 +69,11 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
   for (const s of input.skills ?? []) {
     addNode({ id: `skill:${s.name}`, label: s.name, type: 'skill' })
   }
-  const companyNodeByName = new Map<string, string>() // 公司名 → 节点 id（公司档案缺失的公司无雇佣边）
+  const companyNodeByName = new Map<string, string>() // canonical/alias → 节点 id（精确解析；档案缺失的公司无雇佣边）
   for (const c of input.companies) {
-    if (c.validation?.status !== 'invalid') companyNodeByName.set(c.name, `company:${c.id}`)
+    if (c.validation?.status === 'invalid') continue
+    companyNodeByName.set(c.name, `company:${c.id}`)
+    for (const a of c.aliases ?? []) companyNodeByName.set(a, `company:${c.id}`)
   }
   for (const r of input.roles ?? []) {
     const rid = `role:${r.id}`

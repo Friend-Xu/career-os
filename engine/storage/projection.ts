@@ -144,6 +144,7 @@ const COMPANY_FIELD_MAP: Record<string, CompanyFieldSpec> = {
   contacted: { field: 'contacted', parse: (raw) => parseContacted(raw), legal: '是/否' },
   park_id: { field: 'parkId', parse: (raw) => parseParkId(raw), legal: '数字' },
   headcount: { field: 'headcount', parse: (raw) => raw, legal: '人数规模（如 1.5万人 / 1000-5000）' },
+  aliases: { field: 'aliases', parse: (raw) => raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean), legal: '逗号分隔的别名列表' },
 }
 
 function parseContacted(v: string): boolean | undefined {
@@ -161,6 +162,15 @@ function parseParkId(v: string): number | undefined {
  * - 摘要表缺失 → invalid；必填字段缺失 → invalid（error）
  * - 字段存在但值域非法 → degraded（warn）保留原值展示（validator 降级惯例）
  */
+/**
+ * 公司引用解析：canonical exact → alias exact → undefined。
+ * 禁止 substring/fuzzy——错误关联比无关联危险（模糊匹配会把「待尽调」伪装成「已尽调」）。
+ * 消费端（UI 匹配 / 图谱雇佣边）必须走此解析，不自行发明匹配逻辑。
+ */
+export function resolveCompany(views: CompanyView[], ref: string): CompanyView | undefined {
+  return views.find((c) => c.name === ref) ?? views.find((c) => c.aliases?.includes(ref))
+}
+
 /** 删除公司档案文件：id = 文件名（无 .md）；companies/ 无 watcher，删除后由 RPC 层广播 */
 export function deleteCompanyFile(workspace: Workspace, id: string): void {
   if (!/^[^\\/]+$/.test(id)) throw new Error(`非法公司 id：${JSON.stringify(id)}`)
@@ -272,12 +282,33 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
   // ─── 目录扫描（真相源 → 投影）──────────────────────────────────────────
 
   function scanCompanies(): CompanyView[] {
-    return workspace.listMarkdown('companies').sort().map((f) => {
+    const views = workspace.listMarkdown('companies').sort().map((f) => {
       const parsed = parseCompanyMarkdown(workspace.read(`companies/${f}`), f)
       const view: CompanyView = { ...parsed.value }
       if (parsed.validation) view.validation = parsed.validation
       return view
     })
+    // alias 认领冲突校验（Registration 角色）：同一名称被多个档案认领 → degraded warn
+    // （不 invalid——存量容忍，标记身份歧义；解析以排序首个为准）
+    const claimBy = new Map<string, string>()
+    for (const v of views) {
+      for (const claim of [v.name, ...(v.aliases ?? [])].filter(Boolean) as string[]) {
+        const owner = claimBy.get(claim)
+        if (owner && owner !== v.id) {
+          v.validation = {
+            // warn 冲突不覆盖既有 invalid（必填缺失更严重，保持原状态）
+            status: v.validation?.status === 'invalid' ? 'invalid' : 'degraded',
+            issues: [
+              ...(v.validation?.issues ?? []),
+              { path: 'aliases', reason: `名称「${claim}」同时被「${owner}」认领——身份歧义`, severity: 'warn' },
+            ],
+          }
+        } else {
+          claimBy.set(claim, v.id)
+        }
+      }
+    }
+    return views
   }
 
   // ─── 全量重建（单事务）───────────────────────────────────────────────

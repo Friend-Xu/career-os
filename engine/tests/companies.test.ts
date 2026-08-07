@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProjection, parseCompanyMarkdown } from '../storage/projection.ts'
+import { createProjection, parseCompanyMarkdown, resolveCompany } from '../storage/projection.ts'
 import { initWorkspace } from '../storage/workspace.ts'
 import { buildGraph } from '../storage/graph-builder.ts'
 import type { Logger } from '../logger.ts'
@@ -107,6 +107,105 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
   assert.equal(value.matchScore, '很高')
   assert.equal(value.contacted, '也许')
   assert.equal(value.parkId, '一区')
+})
+
+test('aliases：摘要表 aliases 行 → CompanyRecord.aliases（逗号分隔拆分）', () => {
+  const md = companyMd.replace(
+    '| contacted | 否 |',
+    '| contacted | 否 |\n| aliases | 澜山, 澜山自动化股份 |',
+  )
+  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  assert.equal(validation, undefined)
+  assert.deepEqual(value.aliases, ['澜山', '澜山自动化股份'])
+  // 无 aliases 行 → undefined
+  assert.equal(parseCompanyMarkdown(companyMd, '澜山自动化.md').value.aliases, undefined)
+})
+
+test('resolveCompany：canonical exact → alias exact → undefined，禁止模糊匹配', () => {
+  const list = [parseCompanyMarkdown(companyMd, '澜山自动化.md').value]
+  assert.equal(resolveCompany(list, '澜山自动化')?.id, '澜山自动化') // canonical
+  assert.equal(resolveCompany(list, '澜山自动化股份')?.id, undefined) // 未登记 alias → 不命中
+  list[0]!.aliases = ['澜山', '澜山自动化股份']
+  assert.equal(resolveCompany(list, '澜山')?.id, '澜山自动化') // alias exact
+  assert.equal(resolveCompany(list, '澜山自动化股份')?.id, '澜山自动化')
+  assert.equal(resolveCompany(list, '澜山自动'), undefined) // substring 不命中（拒绝模糊）
+  assert.equal(resolveCompany(list, '山自动化'), undefined)
+  assert.equal(resolveCompany(list, ''), undefined)
+})
+
+test('Company Identity Split Regression：占位+全称双档案 → alias 认领冲突 degraded warn；JD 引用解析到正确档案', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-cid-'))
+  const ws = initWorkspace(root)
+  // 占位档案（简称，invalid=待尽调）——JD 建档自动创建
+  ws.write('companies/心玮医疗.md', `# 心玮医疗
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| city | 上海-奉贤区 |
+| industry | - |
+| match_score | - |
+| risk_level | - |
+| source | - |
+| tags | - |
+| contacted | - |
+`)
+  // 尽调档案（全称，合法 + alias 认领简称——身份归一化登记）
+  ws.write(
+    'companies/上海心玮医疗科技股份有限公司.md',
+    companyMd
+      .replace('# 澜山自动化', '# 上海心玮医疗科技股份有限公司')
+      .replace('| aliases | 澜山, 澜山自动化股份 |', '')
+      .replace('| tags | 国产工控龙头, 伺服/变频器, 机器人 |', '| tags | 神经介入, 港股上市 |')
+      .replace('| city | 苏州 |', '| city | 上海 |')
+      .replace('| park_id | 1 |\n', '')
+      .replace('| contacted | 否 |', '| contacted | 否 |\n| aliases | 心玮医疗 |'),
+  )
+  ws.write(
+    'jobs/2026-08-07-心玮医疗-管理培训生.md',
+    `# 管理培训生 — 心玮医疗
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| company | 心玮医疗 |
+| title | 管理培训生 |
+| location | 上海-奉贤区 |
+| salary | 8-15k·15薪 |
+| created_at | 2026-08-07 |
+`,
+  )
+
+  const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
+  const list = projection.listCompanies()
+  // 全称档案被 alias 认领冲突标记（占位档案也认领「心玮医疗」——存量双档案场景）
+  const full = list.find((c) => c.id === '上海心玮医疗科技股份有限公司')
+  assert.ok(full, '尽调档案存在')
+  assert.deepEqual(full?.aliases, ['心玮医疗'])
+  const placeholder = list.find((c) => c.id === '心玮医疗')
+  assert.ok(placeholder, '占位档案仍存在（存量容忍，不静默删除）')
+  // 至少一方被 degraded 标记身份歧义（warn 不 invalid）
+  const conflictWarn = list.some((c) => c.validation?.issues.some((i) => i.path === 'aliases'))
+  assert.ok(conflictWarn, 'alias 认领冲突应产生 warn')
+
+  // 图谱：role 雇佣边经 alias 解析连到尽调档案节点（而非占位档案）
+  const graph = buildGraph({
+    decisions: [],
+    companies: list,
+    profileNames: [],
+    roles: [{ id: '管理培训生-心玮医疗', name: '管理培训生', company: '心玮医疗', skills: [] }],
+  })
+  const fullNode = graph.nodes.find((n) => n.id === 'company:上海心玮医疗科技股份有限公司')
+  assert.ok(fullNode, '尽调档案入图')
+  assert.ok(
+    graph.edges.some((e) => e.source === 'company:上海心玮医疗科技股份有限公司' && e.target === 'role:管理培训生-心玮医疗' && e.relation === '雇佣'),
+    'role 经 alias 解析连到尽调档案',
+  )
+
+  projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
+  rmSync(root, { recursive: true, force: true })
 })
 
 test('listPersons：snapshot 带 skill_inventory → Person.skills 映射（生产契约闭环投影层）', () => {

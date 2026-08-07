@@ -2,6 +2,21 @@
 
 尽调完成后，除聊天输出报告外，还需将结论**落盘**为 `workspace/career-advisor/companies/{公司名}.md`，供引擎投影与 UI 公司卡消费。写完后**无需任何手动操作**——引擎监听该目录（add/change/unlink → 广播 → UI 自动重拉）；如引擎未运行，下次启动时扫描补齐。
 
+## 落盘前必读：Company Artifact Admission（同一主体只允许一份档案）
+
+**写文件前先查 companies/ 目录**（见 company-research SKILL.md Step 0）。已存在该公司的档案时
+（含占位档案、别名档案），落盘**写回既有文件名升级**，禁止创建第二份 markdown——
+
+```
+已存在占位档案（字段为 -）  → 用既有文件名写尽调内容（升级，不新建）
+已存在尽调档案              → 更新既有文件（如补充信息）
+名称不一致（简称 vs 全称）    → 以既有档案名为准，其他称呼登记进 aliases 行
+无任何档案                  → 新建，名称与既有档案命名习惯一致（业务名，非工商全称）
+```
+
+两份档案指向同一主体 = **身份分裂**：UI 公司卡与信息池图谱会当成两家公司，
+JD/投递引用精确解析时可能命中占位档案显示「待尽调」——这是数据事故，不是显示问题。
+
 ## 文件结构
 
 ````markdown
@@ -18,6 +33,7 @@
 | source | 6 轮并行搜索（2026-08-07，company-research 尽调） |
 | tags | design house, 外企, 项目制 |
 | contacted | 否 |
+| aliases | 示例智造, 示例智造科技 |
 
 ---
 
@@ -37,8 +53,18 @@
 | source | ✓ | 非空字符串（搜索渠道 + 日期） |
 | tags | ✓ | **逗号分隔**（半角 `,` 或全角 `，`），每项一个标签；用斜杠/空格分隔会被当成单个标签 |
 | contacted | ✓ | `是` / `否`——**未联系写「否」**，不要写「-」（「-」虽被引擎解析为未联系，但「否」是规范写法） |
+| aliases | 可选 | **逗号分隔**，同一主体的其他称呼（业务名/简称/曾用名）。Agent 提议 + 引擎校验登记；消费端（UI/图谱）按 alias 精确解析。**禁止**把其他公司名写进来；与既有档案名重复时引擎标记身份歧义 warn |
 | park_id | 可选 | 数字（产业园区编号） |
 | headcount | 可选 | 人数规模字符串 |
+
+## Producer Boundary（谁产生什么）
+
+| 字段 | Producer |
+|------|----------|
+| 尽调内容（city/industry/match_score/risk_level/source/tags/正文） | Agent（Content Producer） |
+| canonical company name（文件名） | 既有档案 → 保留既有名；新建 → Agent 按命名习惯提议，**先查档确认不重复** |
+| aliases | Agent 提议 + **Engine 校验登记**（重复认领 → 身份歧义 warn） |
+| company_id | Engine（未来，未触发不建） |
 
 ## 正文段落
 

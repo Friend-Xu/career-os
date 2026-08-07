@@ -24,6 +24,7 @@ import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
 import type { GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
+import { resolveCompanyReference } from '../data/company-ref'
 
 /** store companies 成员（CompanyRecord + validation 标记；占位公司 = invalid = 待尽调） */
 type CompanyWithValidation = Company & { validation?: Validation }
@@ -174,7 +175,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const [jdOpen, setJdOpen] = useState(false)
 
   const job = jobs.find((j) => j.id === jobId)
-  const company = job ? companies.find((c) => c.name === job.company) : undefined
+  const company = job ? resolveCompanyReference(companies, job.company) : undefined
   const app = job ? applications.find((a) => a.jobId === job.id) : undefined
   const st = job ? deriveStatus(job, decisions, company, app?.status) : null
 

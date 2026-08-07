@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
 import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { resolveCompanyReference } from '../../../data/company-ref'
 
 const FILTERS = [
   { id: 'all', label: '全部' },
@@ -188,7 +189,7 @@ export function CompaniesSidebar() {
                       title="删除公司档案"
                       onClick={(e) => {
                         e.stopPropagation()
-                        const appN = applications.filter((a) => a.company === c.name).length
+                        const appN = applications.filter((a) => resolveCompanyReference(companies, a.company)?.id === c.id).length
                         const decN = decisions.filter((d) => d.title.includes(c.name)).length
                         const resN = resumes.filter((r) => r.targetCompany === c.name).length
                         const link = [appN && `投递 ${appN}`, decN && `决策 ${decN}`, resN && `简历版本 ${resN}`]

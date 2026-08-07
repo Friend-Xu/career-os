@@ -441,6 +441,8 @@ export interface CompanyRecord {
   parkId?: number
   /** 人数规模（如 "1.5万人" / "1000-5000"；可选，Agent 建档时填写） */
   headcount?: string
+  /** 别名（业务名/简称——同一主体的其他称呼；Agent 提议、引擎校验登记；消费端 canonical/alias 精确解析，禁止模糊匹配） */
+  aliases?: string[]
 }
 
 // ─── V2 知识层：Skill/Role 领域对象（knowledge/*.md 真相源，V3 Capability 复用同一技能词表）──

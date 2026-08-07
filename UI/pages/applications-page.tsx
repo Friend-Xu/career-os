@@ -22,6 +22,7 @@ import { useMemo, useState, type ComponentType } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
+import { resolveCompanyReference } from '../data/company-ref'
 import type { Application, ApplicationStatus, FollowupUrgency } from '../types'
 
 const COLUMNS: ApplicationStatus[] = [
@@ -61,7 +62,7 @@ function KanbanCard({ app }: { app: Application }) {
   const UrgencyIcon = u.icon
 
   const job = app.jobId ? jobs.find((j) => j.id === app.jobId) : undefined
-  const company = companies.find((c) => c.name === app.company)
+  const company = resolveCompanyReference(companies, app.company)
 
   const changeStatus = (status: ApplicationStatus) => {
     update(app.id, status)

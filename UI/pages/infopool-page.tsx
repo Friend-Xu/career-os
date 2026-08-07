@@ -25,6 +25,7 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
+import { resolveCompanyReference } from '../data/company-ref'
 import type { InfoNode } from '../types'
 
 /**
@@ -516,8 +517,8 @@ export function InfoPoolPage() {
         ? Math.round((1 - isolatedCount / nodes.length) * 100)
         : POOL_HEALTH.healthPercent
 
-  /** 当前右键节点的公司档案（仅 company 节点可能命中）。 */
-  const menuCompany = menu ? companies.find((c) => c.name === menu.node.label) : undefined
+  /** 当前右键节点的公司档案（仅 company 节点可能命中；label = canonical name，resolve 统一语义）。 */
+  const menuCompany = menu ? resolveCompanyReference(companies, menu.node.label) : undefined
 
   const filteredNodes = useMemo(() => {
     const q = search.trim().toLowerCase()
