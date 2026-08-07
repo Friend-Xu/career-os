@@ -30,6 +30,7 @@ test('Parser：明确集合（本科;硕士;博士）→ NORMALIZED，rawValues 
     normalizationStatus: 'NORMALIZED',
     confidence: 'high',
     source: '任职要求 1',
+    matchMode: 'exact',
   })
 })
 
@@ -120,4 +121,37 @@ test('Case 9 偏好表述（硕士优先）→ 无 hard 维度 NOT_DECLARED', ()
 test('档案 rejected → NEEDS_CONFIRMATION（否认 ≠ 低学历，不产生 NOT_MATCHED）', () => {
   const r = matchEducation([edu('博士', 'rejected')], parseJdConstraint(constraintMd('| education | 本科 | 任职要求 1 | high |')).education)
   assert.equal(r.status, 'NEEDS_CONFIRMATION')
+})
+
+// ─── matchMode（Freeze Review 补丁）：5 列模式语义 ─────────────────────────
+
+test('matchMode=related（机械相关专业）→ NEEDS_CONFIRMATION（相关需映射，归一化不猜）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 机械相关专业 | 任职要求 2 | medium | related |'))
+  assert.equal(ir.education!.matchMode, 'related')
+  assert.equal(ir.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
+  assert.equal(ir.education!.normalizedDegrees, undefined)
+  const r = matchEducation([edu('本科')], ir.education)
+  assert.equal(r.status, 'NEEDS_CONFIRMATION')
+})
+
+test('matchMode=preferred（本科以上优先考虑）→ 无 hard 维度（NOT_DECLARED）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 本科以上学历优先考虑 | 任职要求 1 | medium | preferred |'))
+  assert.equal(ir.education, undefined)
+  const r = matchEducation([edu('本科')], ir.education)
+  assert.equal(r.status, 'NOT_DECLARED')
+})
+
+test('matchMode=inferred（Agent 推断值）→ NEEDS_CONFIRMATION（推断非原文直述）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 本科 | 推测自公司岗位惯例 | medium | inferred |'))
+  assert.equal(ir.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
+})
+
+test('matchMode=exact 5 列正常归一化（4 列旧格式兼容：缺省 = exact）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 硕士及以上 | 任职要求 1 | high | exact |'))
+  assert.equal(ir.education!.matchMode, 'exact')
+  assert.deepEqual(ir.education!.normalizedDegrees, ['硕士', '博士'])
+  // 4 列旧格式（无模式列）→ 缺省 exact
+  const old = parseJdConstraint(constraintMd('| education | 本科;硕士 | 任职要求 1 | high |'))
+  assert.equal(old.education!.matchMode, 'exact')
+  assert.deepEqual(old.education!.normalizedDegrees, ['本科', '硕士'])
 })

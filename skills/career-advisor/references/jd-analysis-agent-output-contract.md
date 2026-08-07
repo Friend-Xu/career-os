@@ -202,7 +202,33 @@ interface CapabilityProposal {
 - major/experience 匹配规则**不在此契约**（Constraint Match Contract 暂缓项）
 - 面试重点（Interview Focus）不进 Artifact（v2 已决）
 
-## 8. 相关
+## 9. Freeze Review（2026-08-07，契约冻结验证——只读评审 + 真实 JD 试构，无代码变更）
+
+**三风险检查：**
+
+| 风险 | 结论 |
+|------|------|
+| 分析结果 vs 推理过程混入 | ✅ 通过——Proposal 只有提取结果（value/source/confidence），无 reasoning 字段；推理归 Agent 内部 |
+| 未来扩展空间 | ✅ 有——constraints major/experience 已预留；capabilities category 枚举扩展向后兼容（旧字段不变）；evidencePatterns 词表扩展走版本分派 |
+| Validator 权限边界 | ✅ 清晰——只校验格式/值域/锚点/黑名单；「硕士优先」的值域合法性通过（归一化语义在 Parser）；不做「AI 评审器」 |
+
+**真实 JD 试构（心玮医疗·培养型 + 博流控制·工程型）：**
+
+| 发现 | 结论 |
+|------|------|
+| 「本科;硕士;博士（应届）」括号表述 → Parser 值域外 → 整维度 NEEDS_CONFIRMATION（误伤：学历实际明确） | **提取端拆分职责**：education 枚举 vs experience 状态（「应届」→ experience=fresh）分离——Schema 支持，写进 Prompt 约束 |
+| 「本科以上学历优先考虑」（高频表述）→ preferred → 无 hard 维度 → NOT_DECLARED | **行为确认**：「优先考虑」= 偏好非硬门槛，v1 无偏好模型 → 诚实 NOT_DECLARED（Prompt 约束：优先表述保留原文 + medium 置信度） |
+| **ConstraintProposal 缺 fuzzy 字段**（「相关专业」无法显式标记） | **Schema 补丁建议**：`ConstraintProposal` 加 `fuzzy?: boolean`——major 的「相关专业」→ fuzzy → Matcher NEEDS_CONFIRMATION（契约 v0.2 §4 Case 4 对齐） |
+
+**冻结验证结论**：Proposal v0.1 基本可承载真实 JD（2/2 试构通过，含培养型/工程型两类）；补 fuzzy 字段后进入 Prompt 迁移。
+
+**matchMode 补丁（2026-08-07，已实现）**：`ConstraintProposal` 加 `matchMode?: 'exact' | 'related' | 'preferred' | 'inferred'`（缺省 exact）——语义状态标记，非匹配能力：
+- preferred（「优先考虑」）→ Parser 不产出 hard 维度（Matcher 视 NOT_DECLARED）
+- related（「相关专业」）/ inferred（Agent 推断）→ NEEDS_CONFIRMATION（归一化不猜）
+- exact → 现有归一化逻辑；4 列旧格式（无模式列）兼容 = exact
+- Validator 只校验 matchMode 值域；Writer 投影「模式」列（5 列表格）；Matcher 不改（normalizationStatus 驱动四态）
+
+## 10. 相关
 
 - JD Analysis Artifact Contract v2.0（冻结）——Artifact Schema 源
 - JD Constraint Match Engine Contract v0.2（冻结）——消费端

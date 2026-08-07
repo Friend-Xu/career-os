@@ -55,10 +55,16 @@ export interface JDAnalysisProposalField {
   confidence: 'high' | 'medium'
 }
 
+/** 约束模式（Freeze Review 补丁，2026-08-07）：exact 明确要求 / related 相关领域需映射
+ *  （「机械相关专业」）/ preferred 偏好非门槛（「优先考虑」）/ inferred Agent 推断
+ *  （非原文直述）。语义状态标记，不是匹配能力——匹配语义归 Matcher。缺省 = exact。 */
+export type ConstraintMatchMode = 'exact' | 'related' | 'preferred' | 'inferred'
+
 export interface JDAnalysisConstraintProposal {
   values: string[] // 原文枚举
   source: string
   confidence: 'high' | 'medium'
+  matchMode?: ConstraintMatchMode
 }
 
 export interface JDAnalysisCapabilityProposal {

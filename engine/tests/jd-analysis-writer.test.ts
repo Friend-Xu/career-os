@@ -106,6 +106,42 @@ test('Validator：education 值域外值 → reject；缺失锚点 → reject；
   assert.equal(badCap.filter((i) => i.path.startsWith('capabilities[0]')).length, 3)
 })
 
+test('Validator：matchMode 非法值 → reject（值域校验，不判断语义对错）', () => {
+  const issues = validateJDAnalysisProposal({
+    ...validProposal,
+    constraints: { education: { values: ['本科'], source: '任职要求 1', confidence: 'high', matchMode: 'fuzzyish' as never } },
+  })
+  assert.equal(issues.filter((i) => i.path === 'constraints.education.matchMode')[0]!.severity, 'reject')
+  // 合法值通过（related 模式 + 合法 education 值）
+  const ok = validateJDAnalysisProposal({
+    ...validProposal,
+    constraints: { education: { values: ['本科以上'], source: '任职要求 1', confidence: 'medium', matchMode: 'related' } },
+  })
+  assert.equal(ok.filter((i) => i.path.startsWith('constraints.education')).length, 0)
+})
+
+test('Writer：matchMode 投影到模式列（related）→ Parser 读回 NEEDS_CONFIRMATION', () => {
+  const ws = setup()
+  try {
+    createJob(ws)
+    const p: JDAnalysisProposal = {
+      ...validProposal,
+      constraints: { education: { values: ['本科以上'], source: '任职要求 1', confidence: 'medium', matchMode: 'related' } },
+    }
+    const issues = validateJDAnalysisProposal(p)
+    writeJDAnalysis(ws, p, issues)
+    const md = ws.read(`jobs/${jobId}.md`)
+    assert.match(md, /\| education \| 本科以上 \| 任职要求 1 \| medium \| related \|/)
+    const ir = parseJdConstraint(md)
+    assert.equal(ir.education!.matchMode, 'related')
+    assert.equal(ir.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
+    const result = matchEducation([{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
+    assert.equal(result.status, 'NEEDS_CONFIRMATION')
+  } finally {
+    rmSync(ws.paths.root, { recursive: true, force: true })
+  }
+})
+
 // ─── Writer + Parser + Matcher（3.4/3.5/3.6：Proposal → Artifact → 匹配闭环） ──
 
 test('Writer：合法 Proposal → 三段式写回 jobs md；parseJdConstraint 读回 → matchEducation MATCHED', () => {

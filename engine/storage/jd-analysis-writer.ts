@@ -59,14 +59,16 @@ function buildConstraintSection(p: JDAnalysisProposal, rejected: Set<string>): s
     if (!c) continue
     const pth = `constraints.${key}.values`
     if (rejected.has(pth) || rejected.has(`constraints.${key}.source`)) continue
-    rows.push(`| ${label} | ${c.values.join(';')} | ${c.source.replace(/\|/g, '\\|')} | ${c.confidence} |`)
+    // 模式列（exact/related/preferred/inferred；缺省 exact）——语义状态标记，Writer 不生成推理
+    const mode = c.matchMode ?? 'exact'
+    rows.push(`| ${label} | ${c.values.join(';')} | ${c.source.replace(/\|/g, '\\|')} | ${c.confidence} | ${mode} |`)
   }
   if (rows.length === 0) return ''
   return [
     '## 岗位门槛',
     '',
-    '| 维度 | 值 | 来源 | 置信度 |',
-    '|------|-----|------|--------|',
+    '| 维度 | 值 | 来源 | 置信度 | 模式 |',
+    '|------|-----|------|--------|------|',
     ...rows,
   ].join('\n')
 }

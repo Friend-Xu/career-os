@@ -53,6 +53,9 @@ export function validateJDAnalysisProposal(p: JDAnalysisProposal): JDAnalysisVal
         issues.push({ path: 'constraints.education.values', reason: `含值域外值：${bad.join('、')}`, severity: 'reject' })
       }
     }
+    if (c.matchMode !== undefined && c.matchMode !== 'exact' && c.matchMode !== 'related' && c.matchMode !== 'preferred' && c.matchMode !== 'inferred') {
+      issues.push({ path: `constraints.${dim}.matchMode`, reason: '必须为 exact/related/preferred/inferred', severity: 'reject' })
+    }
   }
 
   // context：结构化条目 + 锚点
