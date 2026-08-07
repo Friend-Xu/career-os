@@ -49,7 +49,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 ### 4. 偏好变更检测
 
 ```
-读 persons/{person_id}/snapshot/ 的关键字段（identity.md 身份 / preference_constraints.md 偏好约束 / career_profile.md 目标方向）
+读 persons/{person_id}/snapshot/ 的关键字段（identity.md 身份 / preference_constraints.md 偏好约束 / career_profile.md 目标方向——契约见 references/career-profile-contract.md：只承载用户意向，推荐/决策结论禁止写入）
 对比 INDEX.md 中该用户的"最后已知偏好"列
 → 一致 → 跳过
 → 不一致 → 扫描 decisions/ 引用旧值的记录 → 输出级联影响清单 → 询问是否重跑
