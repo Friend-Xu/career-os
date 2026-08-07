@@ -129,18 +129,20 @@
 
 ---
 
-## 岗位智能表（Job Intelligence · 双输出写回 jobs/{id}.md）
+## 岗位智能表（Job Intelligence · Proposal 通道，v0.1 冻结）
 
-完整分析时（用户从岗位工作区发起），除决策摘要表写入 `decisions/` 外，把岗位智能表写回岗位文件：
-读取 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md`，在文件末尾追加（或整体替换已有段落）：
+完整分析时（用户从岗位工作区发起），除决策摘要表写入 `decisions/` 外，按
+`../../references/jd-analysis-agent-output-contract.md` 输出「岗位分析提交」JSON
+（JDAnalysisProposal）——引擎校验后写入岗位文件。下表是 Proposal.capabilities 的
+Markdown 投影格式（引擎生成，**Agent 不再直接修改 jobs 文件**）：
 
 ```markdown
 ## 岗位智能
 
-| Responsibility | Priority | Capabilities | Evidence Patterns | Questions |
-|---|---|---|---|---|
-| 自动化设备结构设计 | must | 机械设计;结构优化 | scope;method;validation | 你负责设计哪些模块？;采用什么设计流程？;如何验证设计有效？ |
-| 成本优化 | nice | 成本分析 | impact;adoption | 优化后成本变化多少？;优化方案是否被采纳？ |
+| Responsibility | Priority | Category | Capabilities | Evidence Patterns | Questions |
+|---|---|---|---|---|---|
+| 自动化设备结构设计 | must | hard | 机械设计;结构优化 | scope;method;validation | 你负责设计哪些模块？;采用什么设计流程？;如何验证设计有效？ |
+| 成本优化 | nice | soft | 成本分析 | impact;adoption | 优化后成本变化多少？;优化方案是否被采纳？ |
 ```
 
 规则（与引擎 Evidence Pattern Registry v0 契约同步）：

@@ -14,6 +14,7 @@ import type {
   EvidenceItem,
   GapResult,
   InitCandidate,
+  JDAnalysisProposal,
   JDIntelligenceResult,
   HealthReport,
   JobRecord,
@@ -506,6 +507,11 @@ export class EngineClient {
   /** 追加候选批次到 extraction/candidates.md（Candidate ≠ Fact；payload = 结构化载荷，education 类目键值段） */
   appendCandidates(params: { personId: string; candidates: { category: string; content: string; source: string; payload?: string }[] }): Promise<InitCandidate[]> {
     return this.rpc<InitCandidate[]>(METHODS.appendCandidates, params)
+  }
+
+  /** JD 分析 Proposal 提交（jd/analyze-result：Agent 经此通道提交分析结果，jobs 写入归 Engine） */
+  jdAnalyzeResult(proposal: JDAnalysisProposal): Promise<{ written: boolean; skipped: string[]; issues: { path: string; reason: string; severity: string }[] }> {
+    return this.rpc(METHODS.jdAnalyzeResult, proposal)
   }
 
   /** 候选列表（extraction/ 缺失 → 空） */

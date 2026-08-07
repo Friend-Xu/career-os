@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
@@ -1679,6 +1679,36 @@ async function persistCandidates(personId: string, candidates: { category: strin
   }
 }
 
+/** Agent「岗位分析提交：{JDAnalysisProposal JSON}」行 → Proposal（契约 v0.1：Agent 经此
+ *  通道提交分析结果，jobs 写入归 Engine；JSON 解析失败 → undefined，不打断对话） */
+function parseJDAnalysisProposal(content: string): JDAnalysisProposal | undefined {
+  const m = content.match(/岗位分析提交：(\{[\s\S]*?\})(?:\n|$)/)
+  if (!m) return undefined
+  try {
+    const p = JSON.parse(m[1]!) as JDAnalysisProposal
+    return p?.jobId ? p : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 提交岗位分析 → jd/analyze-result → toast（written/skipped/issues） */
+async function submitJDAnalysis(proposal: JDAnalysisProposal): Promise<void> {
+  if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+  try {
+    const r = await engine.jdAnalyzeResult(proposal)
+    const push = useToastStore.getState().push
+    if (r.written) {
+      const skipped = r.skipped.length > 0 ? `（跳过 ${r.skipped.length} 项：${r.skipped[0]}）` : ''
+      push('success', `岗位分析已写入${skipped}`)
+    } else {
+      push('info', '岗位分析未写入（无通过校验的字段）')
+    }
+  } catch {
+    // 提交失败不打断对话（分析是过程产物，可后续重新分析）
+  }
+}
+
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
 async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string, taskType?: string): Promise<void> {
   if (!engine) return
@@ -1843,16 +1873,22 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       // 初始化会话落盘：assistant 完整回复追加（delete 前取任务映射）
       const doneTask = agentTasks.get(taskId)
       const pid = pendingInitPersonId()
-      if (doneTask && pid) {
+      if (doneTask) {
         const msg = useAppStore
           .getState()
           .sessions.find((s) => s.id === doneTask.sessionId)
           ?.messages.find((m) => m.id === doneTask.messageId)
         if (msg?.content) {
-          void appendSessionTurnToEngine(pid, 'assistant', msg.content)
-          // 切片 2.2：候选标记行 → extraction/candidates.md → 右侧投影
-          const marks = parseCandidateMarks(msg.content)
-          if (marks.length > 0) void persistCandidates(pid, marks)
+          // 岗位分析提交（契约 v0.1）：Agent 输出「岗位分析提交：{JSON}」→ jd/analyze-result
+          // （所有会话统一处理——JD 分析是普通会话行为）
+          const proposal = parseJDAnalysisProposal(msg.content)
+          if (proposal) void submitJDAnalysis(proposal)
+          if (pid) {
+            void appendSessionTurnToEngine(pid, 'assistant', msg.content)
+            // 切片 2.2：候选标记行 → extraction/candidates.md → 右侧投影
+            const marks = parseCandidateMarks(msg.content)
+            if (marks.length > 0) void persistCandidates(pid, marks)
+          }
         }
       }
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))

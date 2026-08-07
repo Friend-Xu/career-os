@@ -137,7 +137,19 @@ Read `references/jd-parsing-guide.md` 和 `references/euphemism-dictionary.md`�
 
 **岗位入库（Roles 生产契约）**：JD 拆解完成后，把岗位登记进 `workspace/career-advisor/knowledge/roles.md`（岗位清单）——格式与 Producer Boundary 见 `../../references/roles-contract.md`（`## 岗位名（公司名）` + `essential:/nice-to-have:` 技能需求，**每项必带 `（来源: JD-{公司}-{日期}）`**；公司名用 canonical 档案名；同公司同名岗位已登记则更新不重复建）。岗位清单是公司岗位实例库，不是市场通识库——技能需求必须能从本 JD 回溯，禁止写 JD 之外的泛化技能。
 
-**Job Intelligence 双输出（M1）**：用户从岗位工作区发起完整分析时，除对话输出与决策摘要表（写 `decisions/`）外，把「岗位智能表」写回岗位文件 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md`（找不到文件名时询问用户）——格式与词表见 `output-template.md`「岗位智能表」。决策摘要表照旧，双输出互不替代。**决策文件名由引擎登记**（系统 ID `decision_{YYYYMMDD}_{序号}`，M1.6）：你照常按 `{日期}-{主题}` 写入 `decisions/`，引擎自动登记重命名——**重复分析同一岗位无需自己加序号**，引擎保证每次登记生成新 ID、历史不覆盖。如需关联岗位，可在决策内容头部声明（可选，引擎登记时透传保留）：
+**岗位分析提交（Agent Output Contract v0.1 冻结）**：用户从岗位工作区发起完整分析时，除对话输出与决策摘要表（写 `decisions/`）外，把分析结果以「岗位分析提交」JSON（JDAnalysisProposal 契约）输出在回复中——引擎校验后写入岗位文件三段式（岗位理解/岗位门槛/岗位智能）。**禁止直接修改 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md` 文件**（写入所有权归 Engine，Agent 无 Artifact 写权限）。格式见 `../../references/jd-analysis-agent-output-contract.md`；JSON 直接输出文本行（不要放入代码块）：
+
+```
+岗位分析提交：{"jobId":"{岗位 id：jobs/ 文件名去 .md}","artifactVersion":2,"context":{...},"constraints":{...},"capabilities":[...],"generatedAt":"{ISO 时间}"}
+```
+
+**Proposal 生成规则（强制，Freeze Review 校准）**：
+- `context`：workMode/careerPath/industry 结构化条目，每项必带 source（JD 段落引用）；禁止评价性语言（营销语/愿景总结）；business_domain 归公司档案，不写
+- `constraints.education.values` 只放学历枚举（如 `["本科","硕士","博士"]`）；**应届/年限归 experience**（「应届」→ `experience: {values:["fresh"]}`），不要把「（应届）」留在 education
+- 「优先/更佳」表述 → `matchMode: "preferred"`（偏好非硬门槛）；「相关专业」→ major `matchMode: "related"`（**不要自行展开专业列表**——映射归 Matcher Policy）；无法从 JD 原文确认的维度不产出
+- 每个约束必带 source 锚点（「任职要求 1」等 JD 段落），**禁止「岗位名称/岗位标题」类锚点**（Anti-Hallucination 硬校验，引擎 reject）
+- `capabilities`：responsibility/priority（must|nice）/category（hard|soft|preference）/capabilities/evidencePatterns（scope|method|validation|impact|adoption）/questions（分号分隔）
+- 决策摘要表照旧写 `decisions/`（双输出互不替代）。**决策文件名由引擎登记**（系统 ID `decision_{YYYYMMDD}_{序号}`，M1.6）：你照常按 `{日期}-{主题}` 写入 `decisions/`，引擎自动登记重命名——**重复分析同一岗位无需自己加序号**，引擎保证每次登记生成新 ID、历史不覆盖。如需关联岗位，可在决策内容头部声明（可选，引擎登记时透传保留）：
 
 ```md
 ---
