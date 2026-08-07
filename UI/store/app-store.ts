@@ -1680,16 +1680,21 @@ async function persistCandidates(personId: string, candidates: { category: strin
 }
 
 /** Agent「岗位分析提交：{JDAnalysisProposal JSON}」行 → Proposal（契约 v0.1：Agent 经此
- *  通道提交分析结果，jobs 写入归 Engine；JSON 解析失败 → undefined，不打断对话） */
+ *  通道提交分析结果，jobs 写入归 Engine）。
+ *  行内贪婪匹配——嵌套 JSON（context/constraints/capabilities 都是对象）非贪婪会在第一个
+ *  `}` 截断，必须匹配到行尾最后一个 `}`。JSON 解析失败 → undefined，不打断对话 */
 function parseJDAnalysisProposal(content: string): JDAnalysisProposal | undefined {
-  const m = content.match(/岗位分析提交：(\{[\s\S]*?\})(?:\n|$)/)
-  if (!m) return undefined
-  try {
-    const p = JSON.parse(m[1]!) as JDAnalysisProposal
-    return p?.jobId ? p : undefined
-  } catch {
-    return undefined
+  for (const line of content.split('\n')) {
+    const m = line.match(/岗位分析提交：(\{.*\})/)
+    if (!m) continue
+    try {
+      const p = JSON.parse(m[1]!) as JDAnalysisProposal
+      return p?.jobId ? p : undefined
+    } catch {
+      continue
+    }
   }
+  return undefined
 }
 
 /** 提交岗位分析 → jd/analyze-result → toast（written/skipped/issues） */
