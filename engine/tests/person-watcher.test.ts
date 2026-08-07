@@ -139,6 +139,33 @@ status: v1
   }
 })
 
+test('scanPersons：User Career Intent 表 → targetRoles（只取 source=user，recommended 不消费为目标）', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'persons/person_001/snapshot/current/career_profile.md': `## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| current_role | 机械结构工程师 |
+
+## User Career Intent
+
+| target_role | priority | source |
+|-------------|----------|--------|
+| 机械结构工程师 | high | user |
+| 机器人结构设计 | medium | recommended |
+`,
+  })
+  try {
+    const ws = initWorkspace(dir)
+    const p = scanPersons(ws)[0]!
+    assert.deepEqual(p.careerProfile?.targetRoles, ['机械结构工程师'])
+    assert.equal(p.careerProfile?.currentRole, '机械结构工程师')
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('scanPersons：缺 manifest / 无 persons 目录 → 降级空数组', () => {
   const dir = makeWorkspace({ 'persons/person_001/snapshot/current/identity.md': identityMd })
   try {

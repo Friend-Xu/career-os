@@ -308,9 +308,25 @@ export function parseSnapshotTable(md: string): Record<string, string> {
   return out
 }
 
-/** snapshot/career_profile.md 的目标方向表 → targetRoles（`- {方向} {匹配度}%` 行；无表 → 空数组） */
+/** snapshot/career_profile.md 的 User Career Intent 表 → targetRoles（只取 source=user 行——
+ *  用户确认的目标岗位；推荐/决策结论不消费为目标，权威源在 decisions/）。无新表时兼容旧
+ *  `- {方向} {匹配度}%` 行（迁移过渡期，不静默丢弃）。契约：references/career-profile-contract.md */
 function extractTargetRoles(md: string): string[] {
   const roles: string[] = []
+  let inIntent = false
+  for (const line of md.split('\n')) {
+    if (line.startsWith('## User Career Intent')) {
+      inIntent = true
+      continue
+    }
+    if (inIntent && line.startsWith('## ')) break
+    if (!inIntent) continue
+    const m = line.match(/^\|\s*(.+?)\s*\|\s*\w+\s*\|\s*(\w+)\s*\|$/)
+    if (!m || m[1]!.trim() === 'target_role' || m[1]!.trim().startsWith('-')) continue
+    if (m[2]!.trim() === 'user') roles.push(m[1]!.trim())
+  }
+  if (roles.length > 0) return roles
+  // 兼容旧 `- {方向} {匹配度}%` 行
   for (const line of md.split('\n')) {
     const m = line.match(/^\s*[-*]\s*(.+?)\s+\d{1,3}%\s*$/)
     if (m) roles.push(m[1]!.trim())
