@@ -135,6 +135,8 @@ Read `references/jd-parsing-guide.md` 和 `references/euphemism-dictionary.md`�
 
 输出按 `output-template.md` 阶段2格式。结尾问"要继续评估匹配度吗？"
 
+**岗位入库（Roles 生产契约）**：JD 拆解完成后，把岗位登记进 `workspace/career-advisor/knowledge/roles.md`（岗位清单）——格式与 Producer Boundary 见 `../../references/roles-contract.md`（`## 岗位名（公司名）` + `essential:/nice-to-have:` 技能需求，**每项必带 `（来源: JD-{公司}-{日期}）`**；公司名用 canonical 档案名；同公司同名岗位已登记则更新不重复建）。岗位清单是公司岗位实例库，不是市场通识库——技能需求必须能从本 JD 回溯，禁止写 JD 之外的泛化技能。
+
 **Job Intelligence 双输出（M1）**：用户从岗位工作区发起完整分析时，除对话输出与决策摘要表（写 `decisions/`）外，把「岗位智能表」写回岗位文件 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md`（找不到文件名时询问用户）——格式与词表见 `output-template.md`「岗位智能表」。决策摘要表照旧，双输出互不替代。**决策文件名由引擎登记**（系统 ID `decision_{YYYYMMDD}_{序号}`，M1.6）：你照常按 `{日期}-{主题}` 写入 `decisions/`，引擎自动登记重命名——**重复分析同一岗位无需自己加序号**，引擎保证每次登记生成新 ID、历史不覆盖。如需关联岗位，可在决策内容头部声明（可选，引擎登记时透传保留）：
 
 ```md
