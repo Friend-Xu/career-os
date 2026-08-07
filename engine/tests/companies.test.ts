@@ -109,6 +109,42 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
   assert.equal(value.parkId, '一区')
 })
 
+test('listPersons：snapshot 带 skill_inventory → Person.skills 映射（生产契约闭环投影层）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-prs-'))
+  const ws = initWorkspace(root)
+  ws.write(
+    'persons/person_001/manifest.md',
+    '---\nid: person_001\nname: 我\nstatus: active\n---\n\n# Person 001 — 我\n',
+  )
+  ws.write(
+    'persons/person_001/snapshot/current/skill_inventory.md',
+    `---
+id: person_001
+status: v1
+---
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill_count | 1 |
+
+## A. 技能清单
+
+| skill_id | 技能 | level | usage_context |
+|----------|------|-------|---------------|
+| skill_a | 机械设计 | applied-professional | 结构设计 |
+`,
+  )
+
+  const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
+  const persons = projection.listPersons()
+  assert.equal(persons.length, 1)
+  assert.deepEqual(persons[0]!.skills, [{ skillId: 'skill_a', name: '机械设计', level: 4 }])
+  projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
+  rmSync(root, { recursive: true, force: true })
+})
+
 test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 invalid 公司', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-cmp-'))
   const ws = initWorkspace(root)

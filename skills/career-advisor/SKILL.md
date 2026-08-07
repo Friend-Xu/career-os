@@ -105,6 +105,17 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 2. 更新 `workspace/career-advisor/INDEX.md` 对应行
 3. 如需更新用户画像 → 走采集协议（persons/{person_id}/intake/：Candidate → 用户确认 → 写入 snapshot/），不直接写 profiles/
 
+### Skill Inventory Output Contract
+
+用户画像技能的唯一事实源 = `persons/{person_id}/snapshot/current/skill_inventory.md`（引擎据此派生 Person.skills；缺此文件 = 画像技能空白，不视为「用户没有技能」）。
+
+- **Content Producer**: 初始化采集流程（Agent 按用户确认的技能候选整理内容——技能名、语义级别、使用场景）
+- **Registration Owner**: 引擎 person snapshot parser（解析登记；Agent 不创建 person 归属字段）
+- **Artifact**: `persons/{person_id}/snapshot/current/skill_inventory.md`（frontmatter `id` 继承任务上下文 person_id；`status: v1` 起，修订递增）
+- **Required**: `| skill_id | 技能 | level | usage_context |` 表格行；level 只许 `applied-professional` / `applied-intermediate` / `applied` / `applied-basic`（引擎映射 4/3/3/2，其他词不识别，语言能力等非专业技能不进清单）
+- **Identity**: person_id 继承任务上下文；Agent 禁止创建身份字段
+- **Lifecycle**: 文件缺失由引擎 person snapshot 投影检测（缺件显式标记，不静默）
+
 ### 摘要字段
 
 | 字段 | 必需？ | 说明 |

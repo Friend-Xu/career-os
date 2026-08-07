@@ -5,6 +5,7 @@
  * 继承信息池图谱语言但无连接线——不制造未证实的关系）→ 画像状态/内容（证据轴计数 + 技能/目标）。
  * 数据全部来自现有 store（person/decisions/initCandidates），零引擎改动。
  */
+import { useEffect } from 'react'
 import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useAppStore } from '../../store/app-store'
 import { COLORS, alpha } from '../../data/constants'
@@ -418,6 +419,13 @@ function ActionRow() {
 }
 
 export function ProfileView() {
+  // 经历/技能维度数据源 = 引擎初始化资产（candidates.md）——挂载即拉，不依赖 agent-page 先访问
+  const personId = useAppStore((s) => s.currentPerson().personId)
+  const loadInitCandidates = useAppStore((s) => s.loadInitCandidates)
+  useEffect(() => {
+    if (personId) void loadInitCandidates(personId)
+  }, [personId, loadInitCandidates])
+
   return (
     <Box sx={{ p: 2.5, maxWidth: 900, mx: 'auto', width: '100%' }}>
       <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 0.25 }}>职业画像</Typography>

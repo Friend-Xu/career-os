@@ -90,11 +90,29 @@ test('parseSnapshotTable：摘要表解析 + 待采集/占位过滤', () => {
   assert.equal(t.years_experience, '5')
 })
 
-test('scanPersons：person_001 完整扫描（identity/career/preference/events 计数）', () => {
+test('scanPersons：person_001 完整扫描（identity/career/preference/events 计数 + skill_inventory）', () => {
   const dir = makeWorkspace({
     'persons/person_001/manifest.md': manifestMd,
     'persons/person_001/snapshot/current/identity.md': identityMd,
     'persons/person_001/snapshot/current/career_profile.md': careerMd,
+    'persons/person_001/snapshot/current/skill_inventory.md': `---
+id: person_001
+status: v1
+---
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill_count | 2 |
+
+## A. 技能清单
+
+| skill_id | 技能 | level | usage_context |
+|----------|------|-------|---------------|
+| skill_a | 机械设计 | applied-professional | 结构设计 |
+| skill_b | 公差分析 | applied-basic | 校核 |
+`,
     'persons/person_001/events/event_20260806_000001.md': '# 事件：person_001 建立\n',
   })
   try {
@@ -110,6 +128,12 @@ test('scanPersons：person_001 完整扫描（identity/career/preference/events 
     assert.equal(p.careerProfile?.currentRole, '机械结构工程师')
     assert.deepEqual(p.careerProfile?.targetRoles, ['机器人结构设计', 'CAE 仿真'])
     assert.equal(p.eventCount, 1)
+    // skill_inventory → confirmed 技能（applied-professional→4 / applied-basic→2；inferred/learned 不进）
+    assert.deepEqual(p.skills, [
+      { skillId: 'skill_a', name: '机械设计', level: 4 },
+      { skillId: 'skill_b', name: '公差分析', level: 2 },
+    ])
+    assert.equal(p.skillInventoryVersion, 'v1')
   } finally {
     cleanup(dir)
   }
