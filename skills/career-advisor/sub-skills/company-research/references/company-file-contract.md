@@ -52,5 +52,5 @@
 
 ## 参考
 
-- 已尽调档案示例：`companies/常州特尔玛科技股份有限公司.md`、`companies/苏州嘉树医疗科技有限公司.md`
+- 已尽调档案示例：`companies/` 下含 `## 尽调详情` 段的档案（字段值格式见上表）
 - 引擎解析实现：`engine/storage/projection.ts`（COMPANY_FIELD_MAP）
