@@ -170,6 +170,15 @@ interface UserDecision {
 - narrative **禁含引擎事实区标题**（岗位差距明细 / 城市评估明细 / 方向评估明细——防事实区伪造 + parsePayload 污染）
 - Writer 输出必须可被现有投影协议回读（title/摘要表解析不失效）——**writer 输出即契约测试断言**（decision-writer.test.ts Case A 锁定）
 
+### Artifact Format Rule v0.1（通用——所有 Markdown Artifact）
+
+> 文档结构由 Contract 定义，不由视觉格式定义（parseNarrativeSections m 标志 bug 的深层教训——Markdown 已进入 Document Artifact 阶段）。
+
+所有 Markdown Artifact：
+- **heading 是 schema boundary**——解析以标题分节，标题文本是契约的一部分，writer 不得插入/挪动
+- **table 是 structured payload**——表结构受 Parser 协议约束（如 SUMMARY_RE：表头后首个表格），中间行破坏解析
+- **prose 是 untrusted narrative**——正文视为不可信叙述（AI 参考标注），不进入系统事实
+
 ## 11. v1 边界（不做什么）
 
 - 不做「岗位偏差」自动分类（Career Ontology 冻结区）
