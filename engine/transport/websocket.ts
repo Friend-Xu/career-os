@@ -34,7 +34,7 @@ import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '
 import { projectDecision } from '../ir/decision-projection.ts'
 import { detectDecisionChange } from '../runtime/decision-change-detector.ts'
 import { whyChanged, replayDecision, whyChangedRecently } from '../runtime/evolution-query.ts'
-import { updateDecisionFile } from '../storage/decision-editor.ts'
+import { updateDecisionFile, readDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
 import { scanClaims } from '../storage/claim-watcher.ts'
@@ -872,6 +872,7 @@ export async function startServer(opts: {
     },
     [METHODS.listCompanies]: () => store.listCompanies(),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
+    [METHODS.decisionGet]: (params) => readDecisionFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.createPersonSession]: (params) => createPersonSession(workspace, createPersonSessionParams(params)),
     [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),

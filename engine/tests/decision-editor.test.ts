@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { updateDecisionFile, updateSummaryFields } from '../storage/decision-editor.ts'
+import { updateDecisionFile, updateSummaryFields, readDecisionFile } from '../storage/decision-editor.ts'
 import { initWorkspace } from '../storage/workspace.ts'
 import { parseDecisionMarkdown } from '../storage/report-watcher.ts'
 
@@ -91,6 +91,22 @@ test('updateDecisionFile 边界 fail fast', () => {
     assert.throws(() => updateDecisionFile(ws, '不存在', { direction: 'x' })) // 文件不存在
     assert.throws(() => updateDecisionFile(ws, '../profiles/我', { direction: 'x' })) // 路径穿越
     assert.throws(() => updateDecisionFile(ws, '2026-07-20-方向探索', { profile: '别人' })) // 不可编辑字段
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readDecisionFile 返回 md 原文（详情抽屉数据源）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cos-de-editor-'))
+  try {
+    const ws = initWorkspace(join(dir, 'ws'))
+    ws.write('decisions/2026-07-20-方向探索.md', SAMPLE_MD)
+    const { id, markdown } = readDecisionFile(ws, '2026-07-20-方向探索')
+    assert.equal(id, '2026-07-20-方向探索')
+    assert.ok(markdown.includes('## 方向探索摘要')) // 全文（正文段落原样）
+    assert.ok(markdown.includes('| direction_match | 82% |'))
+    assert.throws(() => readDecisionFile(ws, '不存在')) // 文件不存在
+    assert.throws(() => readDecisionFile(ws, '../profiles/我')) // 路径穿越
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

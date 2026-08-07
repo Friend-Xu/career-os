@@ -463,6 +463,11 @@ export class EngineClient {
     return this.rpc<CompanyDetail>(METHODS.companyGet, { id })
   }
 
+  /** 单个决策全文（评估详情抽屉渲染；含评估明细段落/打分依据） */
+  getDecisionDetail(id: string): Promise<CompanyDetail> {
+    return this.rpc<CompanyDetail>(METHODS.decisionGet, { id })
+  }
+
   listContexts(): Promise<DecisionAggregate[]> {
     return this.rpc<DecisionAggregate[]>(METHODS.contexts)
   }

@@ -51,6 +51,8 @@ export const METHODS = {
   listCompanies: 'companies/list',
   /** 单个公司档案全文（params: { id } → { id, markdown }；尽调详情正文渲染用） */
   companyGet: 'companies/get',
+  /** 单个决策全文（params: { id } → { id, markdown }；评估详情抽屉渲染用，含明细段落/打分依据） */
+  decisionGet: 'decisions/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
   /** 创建 Person + Initialization Session（切片 2.1：params { name, sourceMode } → { personId, sessionId }；生成 manifest.md + intake/session-001.md） */

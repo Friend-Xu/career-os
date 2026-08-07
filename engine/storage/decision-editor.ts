@@ -41,6 +41,14 @@ export function updateDecisionFile(ws: Workspace, id: string, fields: Record<str
   return { id, updatedFields: Object.keys(updates) }
 }
 
+/** 决策全文读取（评估详情抽屉：params { id } → { id, markdown }；md 原文一体渲染，含评估明细/打分依据） */
+export function readDecisionFile(ws: Workspace, id: string): { id: string; markdown: string } {
+  if (!/^[^\\/]+$/.test(id)) throw new Error(`非法决策 id：${JSON.stringify(id)}`)
+  const rel = `decisions/${id}.md`
+  if (!ws.exists(rel)) throw new Error(`决策不存在：${id}`)
+  return { id, markdown: ws.read(rel) }
+}
+
 export function updateSummaryFields(md: string, updates: Record<string, string>): string {
   const headIdx = md.indexOf(SUMMARY_HEADING)
   if (headIdx === -1) throw new Error('未找到 `## 分析摘要` 段落，无法更新字段')
