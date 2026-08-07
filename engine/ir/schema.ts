@@ -60,6 +60,19 @@ export interface JDAnalysisProposalField {
  *  （非原文直述）。语义状态标记，不是匹配能力——匹配语义归 Matcher。缺省 = exact。 */
 export type ConstraintMatchMode = 'exact' | 'related' | 'preferred' | 'inferred'
 
+/** 匹配状态（四态派生：MATCHED 有证据覆盖 / NOT_MATCHED 明确不满足 / NOT_DECLARED 岗位未要求 /
+ *  NEEDS_CONFIRMATION 不确定映射或档案缺件——Unknown ≠ False，Engine 不猜） */
+export type MatchStatus = 'MATCHED' | 'NOT_MATCHED' | 'NOT_DECLARED' | 'NEEDS_CONFIRMATION'
+
+/** 岗位门槛投影行（jobs/constraint-match RPC 产物；UI 只投影不解释——dim 文案映射归 UI 渲染层） */
+export interface ConstraintMatchRow {
+  dim: 'education' | 'major' | 'experience'
+  requirement: string // 门槛值（原文枚举 join）
+  person: string // 你的情况（confirmed 事实展示或「未登记」）
+  status: MatchStatus
+  note?: string // 状态说明（Engine 只说明缺什么，不做匹配推理外的解释）
+}
+
 export interface JDAnalysisConstraintProposal {
   values: string[] // 原文枚举
   source: string

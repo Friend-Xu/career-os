@@ -8,6 +8,7 @@
 import type {
   AgentRuntimeEvent,
   CompanyRecord,
+  ConstraintMatchRow,
   DecisionAggregate,
   DecisionHistory,
   DecisionRecord,
@@ -295,6 +296,11 @@ export class EngineClient {
   /** 岗位能力覆盖（Signal Layer：Job.responsibilities.capabilities 对齐源，可解释匹配不做百分比） */
   matchJob(jobId: string, person: string): Promise<GapResult> {
     return this.rpc<GapResult>(METHODS.matchJob, { id: jobId, person })
+  }
+
+  /** 岗位门槛匹配投影（约束四态：学历 MATCHED/NOT_MATCHED/NEEDS_CONFIRMATION + 专业/经验待确认；UI 只投影不解释） */
+  constraintMatch(jobId: string, personId: string): Promise<ConstraintMatchRow[]> {
+    return this.rpc<ConstraintMatchRow[]>(METHODS.constraintMatch, { id: jobId, personId })
   }
 
   /** JD 信息 AI 提取（粘贴 JD 自动回填建档表单；LLM 慢操作，超时放宽到 90s） */

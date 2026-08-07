@@ -122,6 +122,8 @@ export const METHODS = {
   getJob: 'jobs/get',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
+  /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
+  constraintMatch: 'jobs/constraint-match',
   /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
   extractJd: 'jobs/extract',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */

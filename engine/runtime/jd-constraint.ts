@@ -28,8 +28,9 @@ export interface JDConstraintEducationIR {
 
 export interface JDConstraintIR {
   education?: JDConstraintEducationIR
-  /** 专业/经验维度：schema 预留（v0.2 只定义结构，匹配规则后续；fuzzy = 「相关专业」类） */
+  /** 专业维度：门槛表解析（related → fuzzy「相关专业」）；匹配规则归 Matcher Policy */
   major?: { rawValues: string[]; fuzzy?: boolean; confidence: 'high' | 'medium'; source: string }
+  /** 经验维度：门槛表解析（原文枚举保留）；应届/年限判定归 Matcher Policy */
   experience?: { rawValue: string; confidence: 'high' | 'medium'; source: string }
 }
 
@@ -80,23 +81,43 @@ export function parseJdConstraint(md: string): JDConstraintIR {
     const rawValues = edu.value.split(/[；;]/).map((s) => s.trim()).filter(Boolean)
     if (rawValues.length > 0) {
       const mode = edu.matchMode ?? 'exact'
-      if (mode === 'preferred') return ir // 偏好非门槛 → 无 hard 维度（Matcher 视 NOT_DECLARED）
-      if (mode === 'related' || mode === 'inferred') {
-        ir.education = { rawValues, normalizationStatus: 'NEEDS_CONFIRMATION', confidence: edu.confidence, source: edu.source, matchMode: mode }
-        return ir
-      }
-      const kinds = rawValues.map(normalizeDegreeValue)
-      if (kinds.every((k) => k === 'preferred')) return ir // 4 列旧格式文本层「优先」兜底
-      if (kinds.some((k) => k === 'unparseable')) {
+      if (mode === 'preferred') {
+        // 偏好非门槛 → 无 hard 维度（Matcher 视 NOT_DECLARED）；继续解析其他维度
+      } else if (mode === 'related' || mode === 'inferred') {
         ir.education = { rawValues, normalizationStatus: 'NEEDS_CONFIRMATION', confidence: edu.confidence, source: edu.source, matchMode: mode }
       } else {
-        const degrees = kinds.flatMap((k) => (k === 'preferred' ? [] : k.degrees))
-        const unique = [...new Set(degrees)]
-        if (unique.length > 0) {
-          ir.education = { rawValues, normalizedDegrees: unique, normalizationStatus: 'NORMALIZED', confidence: edu.confidence, source: edu.source, matchMode: mode }
+        const kinds = rawValues.map(normalizeDegreeValue)
+        if (kinds.every((k) => k === 'preferred')) {
+          // 4 列旧格式文本层「优先」兜底 → 无 hard 维度
+        } else if (kinds.some((k) => k === 'unparseable')) {
+          ir.education = { rawValues, normalizationStatus: 'NEEDS_CONFIRMATION', confidence: edu.confidence, source: edu.source, matchMode: mode }
+        } else {
+          const degrees = kinds.flatMap((k) => (k === 'preferred' ? [] : k.degrees))
+          const unique = [...new Set(degrees)]
+          if (unique.length > 0) {
+            ir.education = { rawValues, normalizedDegrees: unique, normalizationStatus: 'NORMALIZED', confidence: edu.confidence, source: edu.source, matchMode: mode }
+          }
         }
       }
     }
+  }
+  // 专业维度：related → fuzzy（「相关专业」映射归 Policy）；preferred → 偏好非门槛，不产出
+  const major = fields.major
+  if (major && major.value && (major.matchMode ?? 'exact') !== 'preferred') {
+    const rawValues = major.value.split(/[；;]/).map((s) => s.trim()).filter(Boolean)
+    if (rawValues.length > 0) {
+      ir.major = {
+        rawValues,
+        ...((major.matchMode ?? 'exact') === 'related' ? { fuzzy: true } : {}),
+        confidence: major.confidence,
+        source: major.source,
+      }
+    }
+  }
+  // 经验维度：preferred → 偏好非门槛，不产出；原文保留（应届/年限判定归 Matcher Policy）
+  const experience = fields.experience
+  if (experience && experience.value && (experience.matchMode ?? 'exact') !== 'preferred') {
+    ir.experience = { rawValue: experience.value, confidence: experience.confidence, source: experience.source }
   }
   return ir
 }

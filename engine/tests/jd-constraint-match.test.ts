@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PersonEducation } from '../ir/schema.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
-import { matchEducation } from '../runtime/constraint-matcher.ts'
+import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
 
 const edu = (degree: string, status: PersonEducation['status'] = 'confirmed'): PersonEducation => ({
   school: '某校',
@@ -154,4 +154,69 @@ test('matchMode=exact 5 列正常归一化（4 列旧格式兼容：缺省 = exa
   const old = parseJdConstraint(constraintMd('| education | 本科;硕士 | 任职要求 1 | high |'))
   assert.equal(old.education!.matchMode, 'exact')
   assert.deepEqual(old.education!.normalizedDegrees, ['本科', '硕士'])
+})
+
+// ─── Parser 扩展（主线 3：major/experience 维度解析） ───────────────────────
+
+test('Parser：major related → fuzzy 标记；preferred → 不产出（偏好非门槛）', () => {
+  const md5 = (row: string): string => `# 岗位
+
+## 岗位门槛
+
+| 维度 | 值 | 来源 | 置信度 | 模式 |
+|------|-----|------|--------|------|
+${row}
+`
+  const related = parseJdConstraint(md5('| major | 机械设计、流体机械等相关专业 | 任职要求 1 | medium | related |'))
+  assert.deepEqual(related.major, {
+    rawValues: ['机械设计、流体机械等相关专业'],
+    fuzzy: true,
+    confidence: 'medium',
+    source: '任职要求 1',
+  })
+  const preferred = parseJdConstraint(md5('| major | 自动化相关专业优先 | 任职要求 1 | medium | preferred |'))
+  assert.equal(preferred.major, undefined)
+  const exact = parseJdConstraint(constraintMd('| major | 机械工程 | 任职要求 1 | high |'))
+  assert.deepEqual(exact.major, { rawValues: ['机械工程'], confidence: 'high', source: '任职要求 1' })
+})
+
+test('Parser：experience 原文保留；preferred → 不产出；与 education 同表共析', () => {
+  const md = `# 岗位
+
+## 岗位门槛
+
+| 维度 | 值 | 来源 | 置信度 | 模式 |
+|------|-----|------|--------|------|
+| education | 本科;硕士;博士 | 任职要求 1 | high | exact |
+| experience | fresh | 任职要求 1 | high | exact |
+| major | 相关专业 | 任职要求 1 | medium | preferred |
+`
+  const ir = parseJdConstraint(md)
+  assert.deepEqual(ir.education!.normalizedDegrees, ['本科', '硕士', '博士']) // education 不再被其他维度早退阻断
+  assert.deepEqual(ir.experience, { rawValue: 'fresh', confidence: 'high', source: '任职要求 1' })
+  assert.equal(ir.major, undefined) // preferred 不产出
+})
+
+// ─── Matcher Policy v0.1：experience 应届判定 ─────────────────────────────
+
+test('matchExperience：fresh 应届判定——毕业年 ≥ 当前年-1 → MATCHED（Policy 层，事实层只存 graduation_year）', () => {
+  const c = { rawValue: 'fresh', confidence: 'high' as const, source: '任职要求 1' }
+  const now = new Date('2026-08-08')
+  const fresh = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2026, status: 'confirmed', source: 'resume' }], c, now)
+  assert.equal(fresh.status, 'MATCHED')
+  const prev = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2025, status: 'confirmed', source: 'resume' }], c, now)
+  assert.equal(prev.status, 'MATCHED')
+  const old = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2023, status: 'confirmed', source: 'resume' }], c, now)
+  assert.equal(old.status, 'NOT_MATCHED')
+})
+
+test('matchExperience：无毕业年份 → NEEDS_CONFIRMATION（Unknown ≠ False）；非应届类要求（年限）→ 规则未定义不猜', () => {
+  const now = new Date('2026-08-08')
+  const c = { rawValue: 'fresh', confidence: 'high' as const, source: '任职要求 1' }
+  const noYear = matchExperience([{ school: '某校', degree: '本科', status: 'confirmed', source: 'resume' }], c, now)
+  assert.equal(noYear.status, 'NEEDS_CONFIRMATION')
+  const years = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2023, status: 'confirmed', source: 'resume' }], { rawValue: '3 年以上经验', confidence: 'high' as const, source: '任职要求 2' }, now)
+  assert.equal(years.status, 'NEEDS_CONFIRMATION')
+  const noConstraint = matchExperience(undefined, undefined)
+  assert.equal(noConstraint.status, 'NOT_DECLARED')
 })

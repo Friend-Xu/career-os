@@ -22,7 +22,7 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
-import type { GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
+import type { ConstraintMatchRow, GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
 import { resolveCompanyReference } from '../data/company-ref'
 
@@ -40,6 +40,35 @@ const COVERAGE_STYLE: Record<'covered' | 'partial' | 'missing', { icon: string; 
   covered: { icon: '✓', color: RISK_COLOR.low },
   partial: { icon: '△', color: RISK_COLOR.medium },
   missing: { icon: '✗', color: RISK_COLOR.high },
+}
+
+/** 约束四态投影（UI 不拥有语义判断权——直接渲染 Matcher 结果；NOT_DECLARED = 岗位未要求，不投影行） */
+const CONSTRAINT_STATUS: Record<ConstraintMatchRow['status'], { icon: string; color: string; label: string }> = {
+  MATCHED: { icon: '✓', color: RISK_COLOR.low, label: '已满足' },
+  NOT_MATCHED: { icon: '✗', color: RISK_COLOR.high, label: '未满足' },
+  NEEDS_CONFIRMATION: { icon: '△', color: RISK_COLOR.medium, label: '待确认' },
+  NOT_DECLARED: { icon: '—', color: COLORS.textMuted, label: '岗位未要求' },
+}
+const CONSTRAINT_LABEL: Record<ConstraintMatchRow['dim'], string> = { education: '学历', major: '专业', experience: '经验' }
+
+/** 门槛维度行：岗位要求 / 你的情况 / 四态结果（来源锚点 = Matcher evidence，UI 只投影） */
+function ConstraintRow({ row }: { row: ConstraintMatchRow }) {
+  const st = CONSTRAINT_STATUS[row.status]
+  return (
+    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+      <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: COLORS.text, width: 34, flexShrink: 0, lineHeight: '20px' }}>
+        {CONSTRAINT_LABEL[row.dim]}
+      </Typography>
+      <Stack spacing={0} sx={{ flex: 1 }}>
+        <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: '20px' }}>岗位要求：{row.requirement}</Typography>
+        <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: '20px' }}>你的情况：{row.person}</Typography>
+        {row.note && <Typography sx={{ fontSize: 11, color: COLORS.textMuted, lineHeight: '18px' }}>{row.note}</Typography>}
+      </Stack>
+      <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: st.color, whiteSpace: 'nowrap', lineHeight: '20px' }}>
+        {st.icon} {st.label}
+      </Typography>
+    </Stack>
+  )
 }
 
 /** JD 原文 markdown 排版（浅色瑞士风；原文为纯文本+列表，映射段落层级与配色） */
@@ -137,6 +166,8 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
+  const fetchConstraintMatch = useAppStore((s) => s.fetchConstraintMatch)
+  const constraintRows = useAppStore((s) => s.constraintRows)
   const fetchJobCoverage = useAppStore((s) => s.fetchJobCoverage)
   const evidenceCoverage = useAppStore((s) => s.evidenceCoverage)
   const evidenceItems = useAppStore((s) => s.evidence)
@@ -163,6 +194,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       .then(setGap)
       .catch(() => {})
       .finally(() => setGapLoading(false))
+    fetchConstraintMatch(job.id, person.personId ?? '')
     fetchJobCoverage(job.id)
     fetchClaimCoverage(job.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,6 +206,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
   const aiResponsibilities = job.responsibilities.filter((r) => r.source === 'ai')
+  const cRows = constraintRows[job.id] ?? null
 
   const analyze = (): void => {
     startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`)
@@ -499,6 +532,25 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
             </Section>
           )
         })()}
+
+        {/* 岗位门槛（约束四态投影：学历/专业/经验——UI 只投影 Matcher 结果，不解释；无硬约束 → 空态不误判缺失） */}
+        <Section title="岗位门槛">
+          <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
+            {cRows === null ? (
+              <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>计算中…</Typography>
+            ) : cRows.length === 0 ? (
+              <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>
+                暂无明确门槛要求——JD 分析未识别硬性约束（偏好类要求不进入门槛）
+              </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {cRows.map((r) => (
+                  <ConstraintRow key={r.dim} row={r} />
+                ))}
+              </Stack>
+            )}
+          </Box>
+        </Section>
 
         {/* 匹配摘要（可解释覆盖；输入 = 岗位智能段 capabilities——未分析岗位不产出匹配） */}
         {job.responsibilities.length > 0 && (

@@ -13,11 +13,13 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
+import { parseJdConstraint } from '../runtime/jd-constraint.ts'
+import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { exportPdf } from '../export/pdf.ts'
@@ -551,6 +553,53 @@ export function computeJobMatch(workspace: Workspace, jobId: string, person: str
   }
   const personSkills = personSkillsOf(workspace, person)
   return computeGap({ role, person, personSkills, skills })
+}
+
+/** jobs/constraint-match：岗位门槛段 → JDConstraintIR → 逐维度投影行（UI 只投影不解释）。
+ *  学历 = matchEducation 四态；专业/经验 = 门槛值 + 画像事实 + 待确认状态（匹配规则 Policy 层未全定义，
+ *  Engine 不猜——Unknown ≠ False）。无门槛段/全 preferred → 空数组（UI 显示「暂无明确门槛要求」）。 */
+export function computeConstraintMatch(workspace: Workspace, jobId: string, personId: string): ConstraintMatchRow[] {
+  const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+  if (!job) throw new Error(`岗位不存在：${jobId}`)
+  const person = scanPersons(workspace).find((p) => p.personId === personId)
+  if (!person) throw new Error(`人不存在：${personId}`)
+  const ir = parseJdConstraint(workspace.read(`jobs/${jobId}.md`))
+  const confirmed = (person.education ?? []).filter((e) => e.status === 'confirmed')
+  const rows: ConstraintMatchRow[] = []
+
+  if (ir.education) {
+    const r = matchEducation(person.education, ir.education)
+    const degrees = confirmed.filter((e) => e.degree).map((e) => e.degree)
+    rows.push({
+      dim: 'education',
+      requirement: ir.education.rawValues.join('；'),
+      person: degrees.length > 0 ? [...new Set(degrees)].join('、') : '未登记',
+      status: r.status,
+      note: r.status === 'NEEDS_CONFIRMATION' ? (degrees.length === 0 ? '画像未登记学历——需确认' : '门槛含无法归一化的表述——需确认') : undefined,
+    })
+  }
+  if (ir.major) {
+    const majors = confirmed.map((e) => e.major).filter((m): m is string => Boolean(m))
+    rows.push({
+      dim: 'major',
+      requirement: ir.major.rawValues.join('；'),
+      person: majors.length > 0 ? majors.join('、') : '未登记',
+      status: 'NEEDS_CONFIRMATION',
+      note: majors.length === 0 ? '画像未登记专业——需确认' : '相关专业判定规则未定义——需人工确认',
+    })
+  }
+  if (ir.experience) {
+    const r = matchExperience(person.education, ir.experience)
+    const gradYears = confirmed.map((e) => e.graduationYear).filter((y): y is number => y !== undefined)
+    rows.push({
+      dim: 'experience',
+      requirement: ir.experience.rawValue,
+      person: gradYears.length > 0 ? `${Math.max(...gradYears)} 年毕业` : '未登记',
+      status: r.status,
+      note: r.status === 'NEEDS_CONFIRMATION' ? (gradYears.length === 0 ? '画像未登记毕业年份——需确认' : '经验要求非应届类（年限等）——规则未定义需确认') : undefined,
+    })
+  }
+  return rows
 }
 
 /** resume/export 入参校验（RPC 边界） */
@@ -1319,6 +1368,11 @@ export async function startServer(opts: {
       const p = params as Record<string, unknown>
       if (typeof p?.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
       return computeJobMatch(workspace, jobIdParams(params), p.person)
+    },
+    [METHODS.constraintMatch]: (params) => {
+      const p = params as Record<string, unknown>
+      if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+      return computeConstraintMatch(workspace, jobIdParams(params), p.personId)
     },
     [METHODS.jdAnalyzeResult]: (params) => {
       const proposal = jdAnalyzeResultParams(params)

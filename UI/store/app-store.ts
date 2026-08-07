@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
@@ -167,6 +167,8 @@ interface AppState {
   evidence: EvidenceItem[];
   /** 岗位证据覆盖缓存（M2：jobId → ResponsibilityCoverage[]，按岗位拉取） */
   evidenceCoverage: Record<string, ResponsibilityCoverage[]>;
+  /** 岗位门槛匹配投影缓存（主线 3：jobId → ConstraintMatchRow[]，按岗位拉取；UI 只投影不解释） */
+  constraintRows: Record<string, ConstraintMatchRow[]>;
   /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable——可消费性引擎推导） */
   claims: (CareerClaim & { usable: boolean })[];
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
@@ -355,6 +357,8 @@ interface AppState {
   }) => Promise<JobRecord>;
   /** 岗位能力覆盖（Signal Layer：Job.responsibilities.capabilities 对齐源，可解释匹配不做百分比） */
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
+  /** 岗位门槛匹配投影（约束四态；结果缓存 constraintRows[jobId]——UI 只投影不解释） */
+  fetchConstraintMatch: (jobId: string, personId: string) => Promise<void>;
   /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态；结果缓存 evidenceCoverage[jobId]） */
   fetchJobCoverage: (jobId: string) => Promise<void>;
   /** 岗位 Claim 表达候选（M3-1：responsibility → 关联 trusted evidence → 可消费 Claims；缓存 claimCoverage[jobId]） */
@@ -428,6 +432,7 @@ export const useAppStore = create<AppState>()(
       evidence: [],
       /** 岗位证据覆盖缓存（jobId → ResponsibilityCoverage[]；M2 层3 三态） */
       evidenceCoverage: {},
+      constraintRows: {},
       /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable） */
       claims: [],
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
@@ -1110,6 +1115,16 @@ export const useAppStore = create<AppState>()(
   matchJob: async (jobId, personName) => {
     if (!engine) throw new Error('引擎未连接')
     return engine.matchJob(jobId, personName)
+  },
+
+  fetchConstraintMatch: async (jobId, personId) => {
+    if (!engine) return
+    try {
+      const rows = await engine.constraintMatch(jobId, personId)
+      set((state) => ({ constraintRows: { ...state.constraintRows, [jobId]: rows } }))
+    } catch {
+      // offline：保持现有缓存
+    }
   },
 
   fetchJobCoverage: async (jobId) => {
@@ -2249,7 +2264,11 @@ export function connectEngine(): void {
     void pullGraph()
     void pullContexts()
   })
-  engine.on(EVENTS.jobsChanged, () => void pullJobs())
+  engine.on(EVENTS.jobsChanged, () => {
+    void pullJobs()
+    // 门槛匹配缓存失效：JD 分析写入门槛段后重算（下次打开岗位时重拉）
+    useAppStore.setState({ constraintRows: {} })
+  })
   engine.on(EVENTS.evidenceChanged, () => {
     void pullEvidence()
     // 覆盖缓存失效：证据变更后按已缓存岗位重算（缓存键清空，下次打开岗位时重拉）
