@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionHistory, DecisionRecord, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
@@ -36,6 +36,8 @@ import { detectDecisionChange } from '../runtime/decision-change-detector.ts'
 import { whyChanged, replayDecision, whyChangedRecently } from '../runtime/evolution-query.ts'
 import { updateDecisionFile, readDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
+import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
 import { scanClaims } from '../storage/claim-watcher.ts'
 import { scanResumes, transitionResumeStatusFile, cloneResumeFile, diffResumes, markResumeExported } from '../storage/resume-watcher.ts'
@@ -490,6 +492,23 @@ function decisionCommitParams(v: unknown): {
     trigger: { type: t.type as CandidateTrigger['type'], ...(typeof t.source === 'string' && t.source.length > 0 ? { source: t.source } : {}), ...(refs ? { refs } : {}) },
     attribution: { why: a.why, ...(sourceRefs ? { sourceRefs } : {}) },
     confirmation: { type: c.type as 'user_confirmation', ref: c.ref },
+  }
+}
+
+/** jd/analyze-result 入参校验（RPC 边界：外部 Agent 输入，结构粗校验——字段级合法性
+ *  归 validateJDAnalysisProposal（reject 降级写入，不抛错）） */
+function jdAnalyzeResultParams(v: unknown): JDAnalysisProposal {
+  if (typeof v !== 'object' || v === null) throw new Error('jd/analyze-result 需要 params（JDAnalysisProposal）')
+  const p = v as Record<string, unknown>
+  const jobId = typeof p.jobId === 'string' ? p.jobId.trim() : ''
+  if (!jobId) throw new Error('params.jobId 缺失（岗位 id）')
+  return {
+    jobId,
+    artifactVersion: p.artifactVersion === 2 ? 2 : (p.artifactVersion as never),
+    context: (p.context ?? {}) as JDAnalysisProposal['context'],
+    constraints: (p.constraints ?? {}) as JDAnalysisProposal['constraints'],
+    capabilities: Array.isArray(p.capabilities) ? (p.capabilities as JDAnalysisProposal['capabilities']) : [],
+    generatedAt: typeof p.generatedAt === 'string' ? p.generatedAt : new Date().toISOString(),
   }
 }
 
@@ -1298,6 +1317,11 @@ export async function startServer(opts: {
       const p = params as Record<string, unknown>
       if (typeof p?.person !== 'string' || p.person.length === 0) throw new Error('params.person 缺失（画像名）')
       return computeJobMatch(workspace, jobIdParams(params), p.person)
+    },
+    [METHODS.jdAnalyzeResult]: (params) => {
+      const proposal = jdAnalyzeResultParams(params)
+      const issues = validateJDAnalysisProposal(proposal)
+      return writeJDAnalysis(workspace, proposal, issues)
     },
     [METHODS.extractJd]: async (params) => ({
       result: await extractJdFields(extractJdParams(params).jdText, {

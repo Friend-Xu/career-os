@@ -47,6 +47,46 @@ export interface Person {
   education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
 }
 
+/** JD 分析 Proposal（jd/analyze-result RPC 载荷——Agent → Validator，JSON 非 Markdown；
+ *  Markdown 是 Artifact 投影。契约：references/jd-analysis-agent-output-contract.md v0.1 冻结） */
+export interface JDAnalysisProposalField {
+  value: string
+  source: string // 原文锚点（JD 段落引用）
+  confidence: 'high' | 'medium'
+}
+
+export interface JDAnalysisConstraintProposal {
+  values: string[] // 原文枚举
+  source: string
+  confidence: 'high' | 'medium'
+}
+
+export interface JDAnalysisCapabilityProposal {
+  responsibility: string
+  priority: 'must' | 'nice'
+  category: 'hard' | 'soft' | 'preference'
+  capabilities: string[]
+  evidencePatterns: string[] // 固定词表（scope/method/validation/impact/adoption）
+  questions: string[]
+}
+
+export interface JDAnalysisProposal {
+  jobId: string
+  artifactVersion: 2
+  context: {
+    workMode?: JDAnalysisProposalField[]
+    careerPath?: JDAnalysisProposalField[]
+    industry?: JDAnalysisProposalField[]
+  }
+  constraints: {
+    education?: JDAnalysisConstraintProposal
+    major?: JDAnalysisConstraintProposal
+    experience?: JDAnalysisConstraintProposal
+  }
+  capabilities: JDAnalysisCapabilityProposal[]
+  generatedAt: string
+}
+
 // ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
 
 /**

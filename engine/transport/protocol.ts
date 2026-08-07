@@ -47,6 +47,9 @@ export const METHODS = {
   knowledgeGap: 'knowledge/gap',
   /** JD 分析（M6.6.5 Contract 样板）：params { jobId, personId } → JDIntelligenceResult（options/unknowns/inputs，不产生 user_decision） */
   jdAnalyze: 'jd/analyze',
+  /** JD 分析 Proposal 提交（契约 v0.1 冻结）：params JDAnalysisProposal → { issues, written, skipped }；
+   *  Agent 经此通道提交分析结果（JSON），写入 jobs/{id}.md 的写入所有权归 Engine，Agent 无 Artifact 写权限 */
+  jdAnalyzeResult: 'jd/analyze-result',
   /** 公司档案列表（完整 CompanyRecord，含 validation 标记） */
   listCompanies: 'companies/list',
   /** 单个公司档案全文（params: { id } → { id, markdown }；尽调详情正文渲染用） */
