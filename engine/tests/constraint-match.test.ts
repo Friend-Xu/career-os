@@ -7,6 +7,7 @@ import { initWorkspace } from '../storage/workspace.ts'
 import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { computeConstraintMatch } from '../transport/websocket.ts'
+import { constraintRefOf } from '../runtime/decision-draft.ts'
 import type { JDAnalysisProposal } from '../ir/schema.ts'
 
 /**
@@ -80,23 +81,29 @@ test('B 培养型：学历 MATCHED + 专业/经验待确认（相关专业规则
     const rows = computeConstraintMatch(ws, B_ID, 'person_001')
     assert.deepEqual(rows, [
       {
+        id: constraintRefOf('education', '本科；硕士；博士'),
         dim: 'education',
         requirement: '本科；硕士；博士',
         person: '本科',
+        personEvidence: [{ source: 'education', id: 'c-001' }],
         status: 'MATCHED',
         note: undefined,
       },
       {
+        id: constraintRefOf('major', '生物医学工程、机械、材料等专业'),
         dim: 'major',
         requirement: '生物医学工程、机械、材料等专业',
         person: '机械工程',
+        personEvidence: [{ source: 'education', id: 'c-001' }],
         status: 'NEEDS_CONFIRMATION',
         note: '相关专业判定规则未定义——需人工确认',
       },
       {
+        id: constraintRefOf('experience', 'fresh'),
         dim: 'experience',
         requirement: 'fresh',
         person: '2023 年毕业',
+        personEvidence: [{ source: 'education', id: 'c-001' }],
         status: 'NOT_MATCHED',
         note: undefined,
       },

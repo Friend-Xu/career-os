@@ -66,11 +66,42 @@ export type MatchStatus = 'MATCHED' | 'NOT_MATCHED' | 'NOT_DECLARED' | 'NEEDS_CO
 
 /** 岗位门槛投影行（jobs/constraint-match RPC 产物；UI 只投影不解释——dim 文案映射归 UI 渲染层） */
 export interface ConstraintMatchRow {
+  id: string // 稳定 constraintRef（constraintRefOf 派生：维度 + 原文哈希；Decision Layer 引用不复制）
   dim: 'education' | 'major' | 'experience'
   requirement: string // 门槛值（原文枚举 join）
   person: string // 你的情况（confirmed 事实展示或「未登记」）
+  personEvidence: EvidenceRef[] // 证据引用（画像事实回源；空 = 未登记——未声明 ≠ 不具备）
   status: MatchStatus
   note?: string // 状态说明（Engine 只说明缺什么，不做匹配推理外的解释）
+}
+
+/** 证据引用（Claim Strength ≤ Evidence Strength——只引用事实 ID 不复制文本；Decision Layer 透传） */
+export interface EvidenceRef {
+  source: 'skill_inventory' | 'education' | 'identity'
+  id: string // skillId / 教育候选 ID / 段落 ID
+}
+
+/** 差距行动分类（维度级确定性映射，非职业判断——「岗位偏差/是否值得」归 User 或 Career Ontology 冻结区） */
+export type GapActionCategory = 'SKILL_GAP' | 'BACKGROUND_RISK' | 'POLICY_UNDEFINED'
+
+/** 决策问题（status × dim 固定模板派生，禁止 Agent 生成——契约 career-decision-loop-contract-v0.1 §5） */
+export interface DecisionQuestion {
+  type: 'CONFIRM_CAPABILITY' | 'CONFIRM_BACKGROUND' | 'CONFIRM_EXPERIENCE'
+  targetId: string // = constraintRef
+  template: string // 确定性模板填充
+}
+
+/** 差距行（引用上游匹配行，不复制事实——契约 career-decision-loop-contract-v0.1 §4） */
+export interface GapRow {
+  constraintRef: string
+  actionCategory: GapActionCategory
+  question?: DecisionQuestion // NOT_MATCHED 事实明确 → 无确认问题
+}
+
+/** 决策候选（Engine 投影，RPC jobs/decision-draft 产物——Producer = Engine，Agent 不可改写回写） */
+export interface DecisionCandidate {
+  jobId: string
+  gaps: GapRow[]
 }
 
 export interface JDAnalysisConstraintProposal {
