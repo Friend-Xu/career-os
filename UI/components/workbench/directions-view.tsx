@@ -25,6 +25,23 @@ function Mark({ d }: { d: DecisionView }) {
   )
 }
 
+/** 决策展开的方向名列表：方向评估明细（v2.8 payload）逐方向；城市评估用口径方向；旧协议单字符串 */
+function dirsOf(d: DecisionView): string[] {
+  if (d.payload?.type === 'direction' && d.payload.directions.length > 0) {
+    return d.payload.directions.map((x) => x.name)
+  }
+  if (d.payload?.type === 'city' && d.payload.direction) return [d.payload.direction]
+  return d.direction ? [d.direction] : ['未标注方向']
+}
+
+/** 决策在该方向下的匹配度：payload 逐方向 match；旧协议 directionMatch */
+function matchOf(d: DecisionView, name: string): number | undefined {
+  if (d.payload?.type === 'direction') {
+    return d.payload.directions.find((x) => x.name === name)?.match
+  }
+  return d.directionMatch
+}
+
 export function DirectionsView() {
   const decisions = useAppStore((s) => s.decisions)
   const contexts = useAppStore((s) => s.contexts)
@@ -38,10 +55,11 @@ export function DirectionsView() {
   const groups = useMemo(() => {
     const map = new Map<string, DecisionView[]>()
     for (const d of mine) {
-      const key = d.direction || '未标注方向'
-      const list = map.get(key)
-      if (list) list.push(d)
-      else map.set(key, [d])
+      for (const name of dirsOf(d)) {
+        const list = map.get(name)
+        if (list) list.push(d)
+        else map.set(name, [d])
+      }
     }
     // 决策多者优先（最新方向含最新决策，通常决策最多，自然靠前）
     return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
@@ -52,7 +70,7 @@ export function DirectionsView() {
     () =>
       groups.map(([name, list]) => {
         const latest = [...list].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-        return { name, count: list.length, latest }
+        return { name, count: list.length, latest, match: latest ? matchOf(latest, name) : undefined }
       }),
     [groups],
   )
@@ -89,7 +107,7 @@ export function DirectionsView() {
           <Chip
             key={s.name}
             size="small"
-            label={`${s.name} · ${s.count}${s.latest && s.latest.directionMatch > 0 ? ` · ${s.latest.directionMatch}%` : ''}`}
+            label={`${s.name} · ${s.count}${s.match !== undefined && s.match > 0 ? ` · ${s.match}%` : ''}`}
             onClick={() => setFilter(s.name)}
             sx={{
               height: 22,
@@ -143,54 +161,57 @@ export function DirectionsView() {
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, fontFamily: COLORS.mono }}>
                   {st.count} 条
                 </Typography>
-                {latest && latest.directionMatch > 0 && (
+                {st.match !== undefined && st.match > 0 && (
                   <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.accent }}>
-                    最新匹配 {latest.directionMatch}%
+                    最新匹配 {st.match}%
                   </Typography>
                 )}
               </Stack>
               <Stack spacing={0.5} sx={{ ml: 0.75, pl: 1.5, borderLeft: `1px solid ${COLORS.border}` }}>
-                {list.map((d) => (
-                  <Box
-                    key={d.id}
-                    onClick={() => setEditing(d)}
-                    sx={{
-                      p: 1,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      '&:hover': { bgcolor: COLORS.bgHover },
-                    }}
-                  >
-                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0 }} noWrap>
-                        {d.title}
-                      </Typography>
-                      <Mark d={d} />
-                    </Stack>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.25 }}>
-                      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-                        {d.createdAt || '无日期'}
-                      </Typography>
-                      {d.directionMatch > 0 && (
-                        <Typography
-                          sx={{
-                            fontSize: 11.5,
-                            color: COLORS.textSecondary,
-                            fontFamily: COLORS.mono,
-                          }}
-                        >
-                          匹配 {d.directionMatch}%
+                {list.map((d) => {
+                  const m = matchOf(d, name)
+                  return (
+                    <Box
+                      key={d.id}
+                      onClick={() => setEditing(d)}
+                      sx={{
+                        p: 1,
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: COLORS.bgHover },
+                      }}
+                    >
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                        <Typography sx={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0 }} noWrap>
+                          {d.title}
                         </Typography>
-                      )}
-                      {d.skill && (
-                        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>{d.skill}</Typography>
-                      )}
-                      <Typography sx={{ fontSize: 11.5, color: RISK_COLOR[d.riskLevel] }}>
-                        风险{RISK_LABEL[d.riskLevel]}
-                      </Typography>
-                    </Stack>
-                  </Box>
-                ))}
+                        <Mark d={d} />
+                      </Stack>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.25 }}>
+                        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                          {d.createdAt || '无日期'}
+                        </Typography>
+                        {m !== undefined && m > 0 && (
+                          <Typography
+                            sx={{
+                              fontSize: 11.5,
+                              color: COLORS.textSecondary,
+                              fontFamily: COLORS.mono,
+                            }}
+                          >
+                            匹配 {m}%
+                          </Typography>
+                        )}
+                        {d.skill && (
+                          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>{d.skill}</Typography>
+                        )}
+                        <Typography sx={{ fontSize: 11.5, color: RISK_COLOR[d.riskLevel] }}>
+                          风险{RISK_LABEL[d.riskLevel]}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  )
+                })}
               </Stack>
             </Box>
           )

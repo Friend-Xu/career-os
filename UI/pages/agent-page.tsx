@@ -133,6 +133,60 @@ function ReportCard({ record }: { record: DecisionRecord }) {
           </Box>
         ))}
       </Box>
+      {record.payload?.type === 'city' && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.5 }}>城市评估明细</Typography>
+          <Stack spacing={0.5}>
+            {record.payload.cities.map((c) => (
+              <Box key={c.name} sx={{ p: 1, borderRadius: '6px', bgcolor: COLORS.bgHover }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>{c.name}</Typography>
+                  <Typography sx={{ fontSize: 12.5, fontFamily: COLORS.mono, color: COLORS.accent }}>
+                    {c.score}/100
+                  </Typography>
+                  {c.confidence && (
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>置信{c.confidence}</Typography>
+                  )}
+                </Stack>
+                {(c.strengths.length > 0 || c.risks.length > 0) && (
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25, lineHeight: 1.5 }}>
+                    {c.strengths.length > 0 && `优势：${c.strengths.join('、')}`}
+                    {c.strengths.length > 0 && c.risks.length > 0 && '　'}
+                    {c.risks.length > 0 && `风险：${c.risks.join('、')}`}
+                  </Typography>
+                )}
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      )}
+      {record.payload?.type === 'direction' && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.5 }}>方向评估明细</Typography>
+          <Stack spacing={0.5}>
+            {record.payload.directions.map((d) => (
+              <Box key={d.name} sx={{ p: 1, borderRadius: '6px', bgcolor: COLORS.bgHover }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>{d.name}</Typography>
+                  <Typography sx={{ fontSize: 12.5, fontFamily: COLORS.mono, color: COLORS.accent }}>
+                    {d.match}%
+                  </Typography>
+                  {d.confidence && (
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>置信{d.confidence}</Typography>
+                  )}
+                </Stack>
+                {(d.strengths.length > 0 || d.risks.length > 0) && (
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.25, lineHeight: 1.5 }}>
+                    {d.strengths.length > 0 && `优势：${d.strengths.join('、')}`}
+                    {d.strengths.length > 0 && d.risks.length > 0 && '　'}
+                    {d.risks.length > 0 && `风险：${d.risks.join('、')}`}
+                  </Typography>
+                )}
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      )}
       <Stack direction="row" spacing={1}>
         <Button
           size="small"

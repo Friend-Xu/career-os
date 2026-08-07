@@ -6,7 +6,7 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.7' as const
+export const ProtocolVersion = '2.8' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'
@@ -229,7 +229,35 @@ export interface DecisionRecord {
   personId?: string
   /** Contract v1 inputs：本次分析引用的 Person Aggregate 资产（`## 输入引用` 段落） */
   inputs?: DecisionInputs
+  /** v2.8：城市评估置信度（摘要表 city_confidence；缺失合法） */
+  cityConfidence?: Confidence
+  /** v2.8：领域化评估明细（`## 城市评估明细` / `## 方向评估明细` 段落解析）。
+   *  通用字段保持扁平（metadata），多值领域数据进 payload——解决多城市/多方向自由字符串协议局限。 */
+  payload?: DecisionPayload
 }
+
+// ─── V2.8：Decision Payload（业务协议结构化——多值领域数据从摘要表字符串升级为机器可读段落）──
+
+/** 城市评估明细行（`## 城市评估明细` 表格行；得分 X/10 → IR 0-100 归一） */
+export interface CityEvaluationRow {
+  name: string
+  score: number // 0-100（明细表 7.6/10 → 76）
+  confidence?: Confidence
+  strengths: string[]
+  risks: string[]
+}
+/** 方向评估明细行（`## 方向评估明细` 表格行；匹配度 %） */
+export interface DirectionEvaluationRow {
+  name: string
+  match: number // 0-100
+  confidence?: Confidence
+  strengths: string[]
+  risks: string[]
+}
+/** 领域化 payload（v2.8 判别联合：type 定领域，行结构随领域） */
+export type DecisionPayload =
+  | { type: 'city'; direction?: string; cities: CityEvaluationRow[] }
+  | { type: 'direction'; directions: DirectionEvaluationRow[] }
 
 // ─── V2.1：Evidence Pattern Registry v0（工程族岗位证据词表；引擎单方定义，扩展走 Registry 条目）──
 

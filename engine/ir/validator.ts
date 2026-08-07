@@ -87,25 +87,55 @@ const DECISION_REQUIRED: Record<'v21' | 'v20', string[]> = {
   v20: ['id', 'title', 'skill', 'riskLevel', 'keyRisk', 'status', 'protocolVersion', 'summary'],
 }
 
+/** v2.8 payload 结构校验：type 判别 + 行数组非空 + name/score/confidence 值域（行级非法 → degraded，不整体 invalid） */
+function checkPayload(checks: FieldCheck[], payload: unknown): void {
+  if (payload === undefined) return
+  if (!isRecord(payload) || (payload.type !== 'city' && payload.type !== 'direction')) {
+    checks.push(illegal('payload', payload, 'DecisionPayload（type: city/direction）'))
+    return
+  }
+  const key = payload.type === 'city' ? 'cities' : 'directions'
+  const rows = payload[key]
+  const scoreKey = payload.type === 'city' ? 'score' : 'match'
+  if (!Array.isArray(rows) || rows.length === 0) {
+    checks.push(illegal(`payload.${key}`, rows, '非空数组'))
+    return
+  }
+  for (const [i, r] of rows.entries()) {
+    if (!isRecord(r) || !expectString(r.name)) {
+      checks.push(illegal(`payload.${key}[${i}].name`, isRecord(r) ? r.name : r, '非空字符串'))
+    }
+    const score = isRecord(r) ? r[scoreKey] : undefined
+    if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 100) {
+      checks.push(illegal(`payload.${key}[${i}].${scoreKey}`, score, '0-100'))
+    }
+    if (isRecord(r) && r.confidence !== undefined && !CONFIDENCES.includes(r.confidence as Confidence)) {
+      checks.push(illegal(`payload.${key}[${i}].confidence`, r.confidence, 'high/medium/low'))
+    }
+  }
+}
+
 export function validateDecisionRecord(input: unknown, opts: { requireProfile?: boolean } = {}): Validated<DecisionRecord> {
   const value = isRecord(input) ? input : {}
   const checks: FieldCheck[] = []
 
   const version = protocolVersionOf(value)
   if (!isSupportedVersion(version)) {
-    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3）`, severity: 'error' })
+    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8）`, severity: 'error' })
   }
   const required = opts.requireProfile ? DECISION_REQUIRED.v21 : DECISION_REQUIRED.v20
   for (const field of required) {
     if (!expectString(value[field])) checks.push(missing(field, value[field]))
   }
   checkEnum(checks, 'directionConfidence', value.directionConfidence, CONFIDENCES)
+  checkEnum(checks, 'cityConfidence', value.cityConfidence, CONFIDENCES)
   checkEnum(checks, 'riskLevel', value.riskLevel, RISK_LEVELS)
   checkPercent(checks, 'directionMatch', value.directionMatch)
   checkPercent(checks, 'cityScore', value.cityScore)
   if (typeof value.salaryFeasible !== 'boolean') {
     checks.push(illegal('salaryFeasible', value.salaryFeasible, 'true/false'))
   }
+  checkPayload(checks, value.payload)
   return finalize(value as unknown as DecisionRecord, checks)
 }
 
@@ -219,6 +249,7 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
   const value = isRecord(input) ? input : {}
   const version = protocolVersionOf(value)
   switch (version) {
+    case '2.8':
     case '2.3':
     case '2.2':
     case '2.1':
@@ -227,7 +258,7 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
       return validateDecisionRecord(value)
     default:
       return finalize(value as unknown as DecisionRecord, [
-        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3）`, severity: 'error' },
+        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8）`, severity: 'error' },
       ])
   }
 }

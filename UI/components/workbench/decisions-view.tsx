@@ -113,10 +113,21 @@ export function DecisionsView() {
                   <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, flex: 1, minWidth: 0 }} noWrap>
                     {d.keyRisk}
                   </Typography>
-                  {d.direction && (
-                    <Chip size="small" label={d.direction} sx={{ height: 18, fontSize: 11, flexShrink: 0 }} />
+                  {d.payload?.type === 'direction' && d.payload.directions.length > 0 ? (
+                    d.payload.directions.map((x) => (
+                      <Chip
+                        key={x.name}
+                        size="small"
+                        label={`${x.name} ${x.match}%`}
+                        sx={{ height: 18, fontSize: 11, flexShrink: 0 }}
+                      />
+                    ))
+                  ) : (
+                    d.direction && (
+                      <Chip size="small" label={d.direction} sx={{ height: 18, fontSize: 11, flexShrink: 0 }} />
+                    )
                   )}
-                  {d.directionMatch > 0 && (
+                  {d.payload?.type !== 'direction' && d.directionMatch > 0 && (
                     <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.accent }}>
                       匹配 {d.directionMatch}%
                     </Typography>

@@ -64,9 +64,10 @@ test('解析 2.0 记录：字段映射 + 值转换 + 无 validation（协议必�
   assert.ok(value.summary.includes('转行决策摘要') || value.summary.includes('可行但有代价'))
 })
 
-test('city_score X/10 → 0-100；缺失字段（city_confidence 无 IR 映射、city_score 为 - 时缺省）', () => {
+test('city_score X/10 → 0-100；city_confidence 映射为 cityConfidence；city_score = - 时缺省', () => {
   const { value, validation } = parseDecisionMarkdown(cityMd, '2026-08-01-城市评估.md')
   assert.equal(value.cityScore, 82) // 8.2/10 → 82
+  assert.equal(value.cityConfidence, 'medium') // 中 → medium（v2.8 映射）
   assert.equal(value.riskLevel, 'low')
   assert.equal(validation, undefined)
 })
@@ -131,5 +132,126 @@ test('decision_ 文件名（无 frontmatter）：createdAt 从系统文件名派
   const { value } = parseDecisionMarkdown(transitionMd, 'decision_20260805_00002.md')
   assert.equal(value.id, 'decision_20260805_00002')
   assert.equal(value.createdAt, '2026-08-05')
+})
+
+// ─── v2.8 Decision Payload（业务协议结构化）───
+
+const cityDetailMd = `# 城市评估 — 苏州 vs 深圳
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill | city-advisor |
+| profile | 你好 |
+| direction | 机器人结构设计 |
+| direction_match | - |
+| city | - |
+| city_score | - |
+| city_confidence | 中 |
+| salary_feasible | true |
+| risk_level | 中 |
+| key_risk | 测试风险 |
+| status | complete |
+| protocol_version | 2.8 |
+
+## 城市评估明细
+
+| 城市 | 得分 | 置信度 | 关键优势 | 关键风险 |
+|------|:--:|:--:|---------|---------|
+| 苏州 | 7.6/10 | 中 | 薪酬性价比/政策 | 产业规模小于深圳 |
+| 深圳 | 6.95/10 | - | 行业天花板 | 租金负担率高 |
+
+## 结论
+
+**苏州（7.6）> 深圳（6.95）**
+`
+
+const dirDetailMd = `# 职业方向探索
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill | career-path |
+| profile | 你好 |
+| direction | - |
+| direction_match | - |
+| direction_confidence | - |
+| city | - |
+| city_score | - |
+| salary_feasible | true |
+| risk_level | 中 |
+| key_risk | 测试风险 |
+| status | complete |
+| protocol_version | 2.8 |
+
+## 方向评估明细
+
+| 方向 | 匹配度 | 置信度 | 关键优势 | 关键风险 |
+|------|:--:|:--:|---------|---------|
+| 医疗器械结构设计 | 71% | 高 | 画像匹配/经验直接 | - |
+| 热管理 | 59% | 中 | 散热经验可迁移 | 需实操验证 |
+| 工业软件开发 | 57.5% | 低 | 跨领域 | 技能差距大 |
+`
+
+test('城市评估明细段落 → city payload：0-100 归一、优势/风险拆分、direction 口径继承', () => {
+  const { value, validation } = parseDecisionMarkdown(cityDetailMd, '2026-08-07-苏州vs深圳.md')
+  assert.equal(validation, undefined)
+  assert.equal(value.cityConfidence, 'medium')
+  assert.equal(value.payload?.type, 'city')
+  const p = value.payload
+  if (p?.type !== 'city') throw new Error('payload 应为 city')
+  assert.equal(p.direction, '机器人结构设计') // 摘要表 direction 继承为评估口径
+  assert.equal(p.cities.length, 2)
+  const su = p.cities[0]
+  assert.equal(su.name, '苏州')
+  assert.equal(su.score, 76) // 7.6/10 → 76
+  assert.equal(su.confidence, 'medium')
+  assert.deepEqual(su.strengths, ['薪酬性价比', '政策'])
+  assert.deepEqual(su.risks, ['产业规模小于深圳'])
+  const sz = p.cities[1]
+  assert.equal(sz.name, '深圳')
+  assert.equal(sz.score, 69.5) // 6.95/10 → 69.5（保留两位小数）
+  assert.equal(sz.confidence, undefined) // '-' 缺省
+  assert.deepEqual(sz.strengths, ['行业天花板'])
+})
+
+test('方向评估明细段落 → direction payload：多方向逐行 match/confidence', () => {
+  const { value, validation } = parseDecisionMarkdown(dirDetailMd, '2026-08-07-方向探索.md')
+  assert.equal(validation, undefined)
+  const p = value.payload
+  if (p?.type !== 'direction') throw new Error('payload 应为 direction')
+  assert.equal(p.directions.length, 3)
+  assert.deepEqual(
+    p.directions.map((d) => [d.name, d.match, d.confidence]),
+    [
+      ['医疗器械结构设计', 71, 'high'],
+      ['热管理', 59, 'medium'],
+      ['工业软件开发', 57.5, 'low'], // 57.5% 保留原始精度
+    ],
+  )
+  assert.deepEqual(p.directions[0].strengths, ['画像匹配', '经验直接'])
+  assert.deepEqual(p.directions[0].risks, [])
+})
+
+test('无明细段落 → payload undefined（存量决策无 payload 属常态）', () => {
+  const { value } = parseDecisionMarkdown(transitionMd, '2026-08-01-转行分析.md')
+  assert.equal(value.payload, undefined)
+})
+
+test('空明细表（无数据行）→ payload undefined', () => {
+  const md = cityDetailMd.replace(/\| 苏州 \|.*\n\| 深圳 \|.*\n/, '')
+  const { value } = parseDecisionMarkdown(md, '2026-08-07-空明细.md')
+  assert.equal(value.payload, undefined)
+})
+
+test('明细得分缺单位（裸数字）→ 该行跳过（协议要求显式单位 X/10 或 X%）', () => {
+  const md = cityDetailMd.replace('| 苏州 | 7.6/10 |', '| 苏州 | 7.6 |')
+  const { value } = parseDecisionMarkdown(md, '2026-08-07-裸数字.md')
+  const p = value.payload
+  if (p?.type !== 'city') throw new Error('payload 应为 city')
+  assert.equal(p.cities.length, 1) // 深圳行保留
+  assert.equal(p.cities[0].name, '深圳')
 })
 

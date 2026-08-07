@@ -77,8 +77,10 @@ function RecordSummary({ record }: { record: DecisionRecord }) {
     >
       <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{record.title}</Typography>
       <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mt: 0.25 }}>
-        {record.direction && `方向 ${record.direction}`}
-        {record.directionMatch > 0 && ` · 匹配 ${record.directionMatch}%`}
+        {record.payload?.type === 'direction' && record.payload.directions.length > 0
+          ? `方向 ${record.payload.directions.map((x) => `${x.name} ${x.match}%`).join(' / ')}`
+          : record.direction && `方向 ${record.direction}`}
+        {record.payload?.type !== 'direction' && record.directionMatch > 0 && ` · 匹配 ${record.directionMatch}%`}
         {` · 风险${RISK_LABEL[record.riskLevel]}`}
       </Typography>
       {record.keyRisk && (

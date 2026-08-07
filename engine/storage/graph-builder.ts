@@ -97,14 +97,31 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
       mergeScore(`person:${r.profile}`, r.directionMatch)
       mergeRisk(`person:${r.profile}`, r.riskLevel)
     }
-    if (r.direction) {
+    // v2.8 payload 优先：方向评估明细/城市评估明细 → 每方向/每城市一个节点；无 payload 回退摘要表单值（存量决策）
+    if (r.payload?.type === 'direction' && r.payload.directions.length > 0) {
+      for (const d of r.payload.directions) {
+        const nid = `direction:${d.name}`
+        addNode({ id: nid, label: d.name, type: 'direction' })
+        addEdge(did, nid, '归属', strengthOf(d.match))
+        mergeScore(nid, d.match)
+        mergeRisk(nid, r.riskLevel)
+      }
+    } else if (r.direction) {
       const nid = `direction:${r.direction}`
       addNode({ id: nid, label: r.direction, type: 'direction' })
       addEdge(did, nid, '归属', strengthOf(r.directionMatch))
       mergeScore(nid, r.directionMatch)
       mergeRisk(nid, r.riskLevel)
     }
-    if (r.city) {
+    if (r.payload?.type === 'city' && r.payload.cities.length > 0) {
+      for (const c of r.payload.cities) {
+        const nid = `city:${c.name}`
+        addNode({ id: nid, label: c.name, type: 'city' })
+        addEdge(did, nid, '位于', strengthOf(c.score))
+        mergeScore(nid, c.score)
+        mergeRisk(nid, r.riskLevel)
+      }
+    } else if (r.city) {
       const nid = `city:${r.city}`
       addNode({ id: nid, label: r.city, type: 'city' })
       addEdge(did, nid, '位于', strengthOf(r.cityScore))

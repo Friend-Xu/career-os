@@ -16,6 +16,7 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, LAYOUT, SKILL_VIEW_LABEL } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
+import type { DecisionView } from '../../store/engine-client'
 import { ThemeToggle } from './theme-toggle'
 
 export function TopBar() {
@@ -47,17 +48,28 @@ export function TopBar() {
     return `探索记录：${shown}${exploration.length > 2 ? ` 等 ${exploration.length} 类` : ''}`
   }, [exploration])
 
-  // 当前方向 = 当前人最新决策的 direction（方案 A：跟随决策链，纯展示非切换器）
+  // 决策展开的方向名集合：方向评估明细（v2.8 payload）逐方向；城市评估用口径方向；旧协议单字符串
+  const dirsOf = (d: DecisionView): string[] => {
+    if (d.payload?.type === 'direction' && d.payload.directions.length > 0) return d.payload.directions.map((x) => x.name)
+    if (d.payload?.type === 'city' && d.payload.direction) return [d.payload.direction]
+    return d.direction ? [d.direction] : []
+  }
+
+  // 当前方向 = 当前人最新决策的方向（方案 A：跟随决策链，纯展示非切换器）；多方向决策取主方向（匹配最高）
   const currentDirection = useMemo(() => {
     const mine = decisions.filter((d) => belongsToPerson(d, currentPerson))
     if (mine.length === 0) return undefined
-    return [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
+    const latest = [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
+    if (latest.payload?.type === 'direction' && latest.payload.directions.length > 0) {
+      return [...latest.payload.directions].sort((a, b) => b.match - a.match)[0].name
+    }
+    return latest.direction
   }, [decisions, currentPerson.personId, currentPerson.name])
 
-  // 方向数（聚合维度：该人决策记录去重方向；含未标注方向时不计入）
+  // 方向数（聚合维度：该人决策记录展开方向去重；无方向的决策不计入）
   const directionCount = useMemo(() => {
-    const mine = decisions.filter((d) => belongsToPerson(d, currentPerson) && d.direction)
-    return new Set(mine.map((d) => d.direction)).size
+    const mine = decisions.filter((d) => belongsToPerson(d, currentPerson))
+    return new Set(mine.flatMap(dirsOf)).size
   }, [decisions, currentPerson.personId, currentPerson.name])
 
   const openPersonMenu = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)

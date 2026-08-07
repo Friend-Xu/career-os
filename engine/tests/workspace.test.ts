@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace, WorkspaceError } from '../storage/workspace.ts'
+import { ProtocolVersion } from '../ir/schema.ts'
 
 function tempWorkspace(): string {
   return mkdtempSync(join(tmpdir(), 'cos-ws-'))
@@ -18,7 +19,7 @@ test('initWorkspace：创建目录树 + INDEX.md + protocol.json', () => {
   assert.ok(existsSync(ws.paths.indexFile))
   const protocol = JSON.parse(readFileSync(ws.paths.protocolFile, 'utf8'))
   assert.equal(protocol.protocol, 'career-os')
-  assert.equal(protocol.version, '2.7')
+  assert.equal(protocol.version, ProtocolVersion)
   assert.ok(typeof protocol.created === 'string')
   rmSync(root, { recursive: true, force: true })
 })

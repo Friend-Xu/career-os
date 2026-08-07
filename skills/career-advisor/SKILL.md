@@ -111,10 +111,10 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 |------|:--:|------|
 | skill | 是 | 来源子流程名称 |
 | direction | 否 | career-path/transition/jd-analysis 必填 |
-| direction_match | 否 | 匹配度% |
+| direction_match | 否 | 匹配度%。**多方向评估填 `-`，各方向明细进 `## 方向评估明细` 段落** |
 | direction_confidence | 否 | 高/中/低 |
 | city | 否 | city-advisor/company-screener 必填 |
-| city_score | 否 | X/10 |
+| city_score | 否 | X/10。**多城市评估填 `-`，各城市明细进 `## 城市评估明细` 段落** |
 | city_confidence | 否 | 高/中/低 |
 | salary_feasible | 否 | true/false |
 | companies | 否 | 涉及的公司名列表。company-research/jd-analysis 必填 |
@@ -122,7 +122,30 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 | risk_level | 是 | 低/中/中高/高 |
 | key_risk | 是 | ≤30字 |
 | status | 是 | complete/partial/draft |
-| protocol_version | 是 | 2.0 |
+| protocol_version | 是 | 2.8（v2.8 起含评估明细段落；存量 2.0 记录仍合法） |
+
+### 评估明细段落（v2.8 业务协议结构化）
+
+多方向/多城市评估的**结构化明细**不放进摘要表单值字符串，写在正文 `##` 段落（引擎解析为决策 payload，驱动图谱/视图/INDEX）：
+
+```md
+## 方向评估明细
+
+| 方向 | 匹配度 | 置信度 | 关键优势 | 关键风险 |
+|------|:--:|:--:|---------|---------|
+| 机器人结构设计 | 82% | 高 | 画像匹配/市场热度 | 岗位供给小 |
+
+## 城市评估明细
+
+| 城市 | 得分 | 置信度 | 关键优势 | 关键风险 |
+|------|:--:|:--:|---------|---------|
+| 苏州 | 7.6/10 | 中 | 薪酬性价比/政策 | 产业规模小于深圳 |
+```
+
+- 列协议固定：名称 / 得分或匹配度（**显式单位**：`X/10` 或 `X%`，禁止裸数字） / 置信度 / 关键优势 / 关键风险
+- 优势与风险以 `/` 或 `、` 分隔多条；无则填 `-`
+- 段落名不可改名（引擎按名解析）；同一决策两种明细段落只出现其评估类型对应的一种
+- 摘要表对应标量字段填 `-` 时，视图/图谱/INDEX 从明细段落派生
 
 ### 置信度
 

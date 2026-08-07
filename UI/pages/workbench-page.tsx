@@ -390,7 +390,11 @@ function DecisionTimeline() {
               </Stack>
               <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mt: 0.25 }} noWrap>
                 {d.keyRisk}
-                {d.directionMatch > 0 && ` · 匹配 ${d.directionMatch}%`}
+                {d.payload?.type === 'city' && d.payload.cities.length > 0
+                  ? ` · ${d.payload.cities.map((c) => `${c.name} ${Math.round((c.score / 10) * 100) / 100}`).join(' / ')}`
+                  : d.payload?.type === 'direction' && d.payload.directions.length > 0
+                    ? ` · ${d.payload.directions.map((x) => `${x.name} ${x.match}%`).join(' / ')}`
+                    : d.directionMatch > 0 && ` · 匹配 ${d.directionMatch}%`}
                 {` · 风险${RISK_LABEL[d.riskLevel]}`}
               </Typography>
             </Box>

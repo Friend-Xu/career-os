@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS decisions_projection (
   summary TEXT,
   created_at TEXT NOT NULL DEFAULT '',
   protocol_version TEXT,
+  payload TEXT,
   validation_status TEXT,
   validation_issues TEXT
 );
@@ -248,7 +249,7 @@ export function scanProfiles(workspace: Workspace): ProfileScan[] {
 }
 
 /** 投影 schema 版本：升级时 +1；旧版本 drop 重建（投影是 md 真相源的派生，重建零损失） */
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
   const { dbPath, workspace } = opts
@@ -288,11 +289,11 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
       INSERT INTO decisions_projection (
         id, source_file, title, skill, direction, direction_match, direction_confidence,
         city, city_score, salary_feasible, risk_level, key_risk, status, profile, person_id,
-        summary, created_at, protocol_version, validation_status, validation_issues
+        summary, created_at, protocol_version, payload, validation_status, validation_issues
       ) VALUES (
         @id, @sourceFile, @title, @skill, @direction, @directionMatch, @directionConfidence,
         @city, @cityScore, @salaryFeasible, @riskLevel, @keyRisk, @status, @profile, @personId,
-        @summary, @createdAt, @protocolVersion, @validationStatus, @validationIssues
+        @summary, @createdAt, @protocolVersion, @payload, @validationStatus, @validationIssues
       )
     `)
     const insTimeline = db.prepare(`
@@ -319,6 +320,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
         personId: r.personId ?? null,
         summary: r.summary ?? '', createdAt: r.createdAt ?? '',
         protocolVersion: r.protocolVersion ?? '',
+        payload: r.payload ? JSON.stringify(r.payload) : null,
         validationStatus: validation?.status ?? null,
         validationIssues: validation ? JSON.stringify(validation.issues) : null,
       }
@@ -344,6 +346,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     city: string | null; city_score: number | null; salary_feasible: number | null
     risk_level: string | null; key_risk: string | null; status: string | null
     profile: string | null; person_id: string | null; summary: string; created_at: string; protocol_version: string
+    payload: string | null
     validation_status: string | null; validation_issues: string | null
   }
 
@@ -361,6 +364,11 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
     if (row.salary_feasible !== null) record.salaryFeasible = row.salary_feasible === 1
     if (row.profile !== null) record.profile = row.profile
     if (row.person_id !== null) record.personId = row.person_id
+    if (row.payload !== null) {
+      try {
+        record.payload = JSON.parse(row.payload) as DecisionRecord['payload']
+      } catch { /* 投影自产 JSON，解析失败视为无 payload */ }
+    }
     if (row.validation_status !== null) {
       const validation: Validation = { status: row.validation_status as Validation['status'], issues: [] }
       if (row.validation_issues) {

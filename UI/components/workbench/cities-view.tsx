@@ -55,27 +55,37 @@ function heatLabel(score: number): string {
   return '谨慎'
 }
 
+/** 决策的评估城市集合：v2.8 payload 逐城市（带各自得分）；旧协议单 city 字符串（多城字符串无法拆分，score 缺失 → 0） */
+function citiesOf(d: DecisionView): { name: string; score: number }[] {
+  if (d.payload?.type === 'city' && d.payload.cities.length > 0) {
+    return d.payload.cities.map((c) => ({ name: c.name, score: c.score }))
+  }
+  return d.city ? [{ name: d.city, score: d.cityScore ?? 0 }] : []
+}
+
 export function CitiesView() {
   const decisions = useAppStore((s) => s.decisions)
   const person = useAppStore((s) => s.currentPerson())
   const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
 
-  /** 城市聚合：仅城市评估决策（skill=city-advisor；方向探索的自报意向 city 不是评估结果）按城市取最新评估（cityScore ?? directionMatch）为评分锚点 */
+  /** 城市聚合：仅城市评估决策（skill=city-advisor；方向探索的自报意向 city 不是评估结果）按城市展开，各城市最新评估得分 */
   const cities = useMemo(() => {
-    const mine = decisions.filter((d) => belongsToPerson(d, person) && d.skill === 'city-advisor' && d.city)
-    const map = new Map<string, DecisionView[]>()
+    const mine = decisions.filter((d) => belongsToPerson(d, person) && d.skill === 'city-advisor' && (d.city || d.payload?.type === 'city'))
+    const map = new Map<string, { d: DecisionView; score: number }[]>()
     for (const d of mine) {
-      const list = map.get(d.city!)
-      if (list) list.push(d)
-      else map.set(d.city!, [d])
+      for (const c of citiesOf(d)) {
+        const list = map.get(c.name)
+        if (list) list.push({ d, score: c.score })
+        else map.set(c.name, [{ d, score: c.score }])
+      }
     }
-    const agg: CityAgg[] = [...map.entries()].map(([city, list]) => {
-      const latest = [...list].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
+    const agg: CityAgg[] = [...map.entries()].map(([city, hits]) => {
+      const latest = [...hits].sort((a, b) => (a.d.createdAt < b.d.createdAt ? 1 : -1))[0]
       return {
         city,
-        score: latest.cityScore ?? latest.directionMatch ?? 0,
-        risk: latest.riskLevel,
-        count: list.length,
+        score: latest.score,
+        risk: latest.d.riskLevel,
+        count: hits.length,
       }
     })
     return agg.sort((a, b) => b.score - a.score)

@@ -66,8 +66,87 @@ test('不支持的协议版本：invalid + error', () => {
 test('validateByProtocol：按版本分派', () => {
   const ok = validateByProtocol(validRecord)
   assert.equal(ok.validation, undefined)
+  const v28 = validateByProtocol({ ...validRecord, protocolVersion: '2.8' })
+  assert.equal(v28.validation, undefined)
   const bad = validateByProtocol({ ...validRecord, protocolVersion: '1.0' })
   assert.equal(bad.validation?.status, 'invalid')
+})
+
+// ─── v2.8 Decision Payload 校验 ───
+
+const validPayloadRecord = {
+  ...validRecord,
+  protocolVersion: '2.8',
+  payload: {
+    type: 'city',
+    direction: '机器人结构设计',
+    cities: [
+      { name: '苏州', score: 76, confidence: 'medium', strengths: ['薪酬性价比'], risks: [] },
+      { name: '深圳', score: 69.5, strengths: [], risks: ['租金高'] },
+    ],
+  },
+}
+
+test('合法 payload（city）：不带 validation', () => {
+  const { validation } = validateDecisionRecord(validPayloadRecord)
+  assert.equal(validation, undefined)
+})
+
+test('payload.type 非法：degraded + warn', () => {
+  const { validation } = validateDecisionRecord({
+    ...validRecord,
+    protocolVersion: '2.8',
+    payload: { type: 'company', cities: [{ name: '苏州', score: 76 }] },
+  })
+  assert.equal(validation?.status, 'degraded')
+  assert.ok(validation?.issues.some((i) => i.path === 'payload' && i.severity === 'warn'))
+})
+
+test('payload 行数组为空：degraded + warn', () => {
+  const { validation } = validateDecisionRecord({
+    ...validRecord,
+    protocolVersion: '2.8',
+    payload: { type: 'city', cities: [] },
+  })
+  assert.equal(validation?.status, 'degraded')
+  assert.ok(validation?.issues.some((i) => i.path === 'payload.cities' && i.severity === 'warn'))
+})
+
+test('payload 行 score 越界：degraded + warn（行级不整体 invalid）', () => {
+  const { validation } = validateDecisionRecord({
+    ...validRecord,
+    protocolVersion: '2.8',
+    payload: {
+      type: 'direction',
+      directions: [
+        { name: '热管理', match: 59 },
+        { name: '工业软件开发', match: 150 }, // 越界
+      ],
+    },
+  })
+  assert.equal(validation?.status, 'degraded')
+  assert.ok(validation?.issues.some((i) => i.path === 'payload.directions[1].match' && i.severity === 'warn'))
+})
+
+test('payload 行 confidence 非法枚举：degraded + warn', () => {
+  const { validation } = validateDecisionRecord({
+    ...validRecord,
+    protocolVersion: '2.8',
+    payload: { type: 'direction', directions: [{ name: '热管理', match: 59, confidence: '极高' }] },
+  })
+  assert.equal(validation?.status, 'degraded')
+  assert.ok(validation?.issues.some((i) => i.path.includes('confidence') && i.severity === 'warn'))
+})
+
+test('无 payload：合法（存量决策无 payload 属常态）', () => {
+  const { validation } = validateDecisionRecord({ ...validRecord, protocolVersion: '2.8' })
+  assert.equal(validation, undefined)
+})
+
+test('cityConfidence 非法枚举：degraded + warn', () => {
+  const { validation } = validateDecisionRecord({ ...validRecord, protocolVersion: '2.8', cityConfidence: '极高' })
+  assert.equal(validation?.status, 'degraded')
+  assert.ok(validation?.issues.some((i) => i.path === 'cityConfidence' && i.severity === 'warn'))
 })
 
 test('版本分派：2.1 缺 profile → invalid；2.0 缺 profile → ok', () => {

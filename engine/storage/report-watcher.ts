@@ -7,7 +7,7 @@
  * 摘要表协议（SKILL.md）：`## 分析摘要` 两列表格（字段|值），字段 snake_case；
  * 缺失值填 `-`（属常态）；risk_level 四档中文（低/中/中高/高）；city_score X/10。
  */
-import type { Confidence, DecisionInputs, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
+import type { Confidence, DecisionInputs, DecisionPayload, DecisionRecord, RiskLevel, Validation } from '../ir/schema.ts'
 import { validateByProtocol, type Validated, finalize } from '../ir/validator.ts'
 import { parseSummaryTable } from '../ir/summary-table.ts'
 import type { Workspace } from './workspace.ts'
@@ -22,6 +22,7 @@ const FIELD_MAP: Record<string, keyof DecisionRecord> = {
   direction_confidence: 'directionConfidence',
   city: 'city',
   city_score: 'cityScore',
+  city_confidence: 'cityConfidence',
   salary_feasible: 'salaryFeasible',
   risk_level: 'riskLevel',
   key_risk: 'keyRisk',
@@ -35,13 +36,13 @@ const RISK_MAP: Record<string, RiskLevel> = { 低: 'low', 中: 'medium', 中高:
 const CONFIDENCE_MAP: Record<string, Confidence> = { 高: 'high', 中: 'medium', 低: 'low' }
 const HIGHLOW: readonly string[] = ['high', 'medium', 'low']
 
-/** 百分比解析：85% → 85、8.2/10 → 82（公司/决策摘要表共用） */
+/** 百分比解析：85% → 85、8.2/10 → 82、6.95/10 → 69.5（保留原始精度，不取整——公司/决策摘要表共用） */
 export function parsePercent(v: string): number | undefined {
   if (v === '-' || v === '') return undefined
   const pct = v.match(/^(\d+(?:\.\d+)?)%$/)
-  if (pct) return Math.round(Number(pct[1]))
+  if (pct) return Number(pct[1])
   const tenth = v.match(/^(\d+(?:\.\d+)?)\/10$/)
-  if (tenth) return Math.round(Number(tenth[1]) * 10)
+  if (tenth) return Number(tenth[1]) * 10
   return undefined
 }
 
@@ -128,6 +129,60 @@ export function parseInputRefs(md: string): DecisionInputs | undefined {
   return hasAny ? inputs : undefined
 }
 
+/**
+ * v2.8 Decision Payload 解析（业务协议结构化）：
+ * `## 城市评估明细` / `## 方向评估明细` 表格 → DecisionPayload。
+ * 列协议（表头固定，按位置解析）：| 名称 | 得分/匹配度 | 置信度 | 关键优势 | 关键风险 |
+ * 得分列显式单位（7.6/10 或 82%——裸数字单位歧义不可解析）；优势/风险以 /、、分隔；空表 → undefined。
+ */
+const PAYLOAD_TABLE_RE = /##\s*(城市评估明细|方向评估明细)\s*\n((?:\|[^\n]*\|\n*)+)/
+
+interface DetailRow {
+  name: string
+  value: number
+  confidence?: Confidence
+  strengths: string[]
+  risks: string[]
+}
+
+function splitList(v: string | undefined): string[] {
+  if (!v || v === '-') return []
+  return v.split(/[/、]/).map((s) => s.trim()).filter(Boolean)
+}
+
+function parseDetailRows(table: string): DetailRow[] {
+  const rows: DetailRow[] = []
+  for (const line of table.split('\n')) {
+    if (!line.trim().startsWith('|')) continue
+    if (/^\|[\s\-|]+\|$/.test(line)) continue
+    const cells = line.split('|').slice(1, -1).map((c) => c.trim())
+    if (cells.length < 2 || !cells[0] || cells[0] === '城市' || cells[0] === '方向') continue
+    const value = parsePercent(cells[1])
+    if (value === undefined) continue
+    const confidence = parseConfidence(cells[2] ?? '')
+    rows.push({
+      name: cells[0],
+      value,
+      ...(confidence ? { confidence } : {}),
+      strengths: splitList(cells[3]),
+      risks: splitList(cells[4]),
+    })
+  }
+  return rows
+}
+
+/** 明细段落 → 领域化 payload（无明细段落/空表 → undefined，存量决策无 payload 属常态） */
+export function parsePayload(md: string): DecisionPayload | undefined {
+  const m = md.match(PAYLOAD_TABLE_RE)
+  if (!m) return undefined
+  const rows = parseDetailRows(m[2])
+  if (rows.length === 0) return undefined
+  if (m[1] === '城市评估明细') {
+    return { type: 'city', cities: rows.map((r) => ({ name: r.name, score: r.value, ...(r.confidence ? { confidence: r.confidence } : {}), strengths: r.strengths, risks: r.risks })) }
+  }
+  return { type: 'direction', directions: rows.map((r) => ({ name: r.name, match: r.value, ...(r.confidence ? { confidence: r.confidence } : {}), strengths: r.strengths, risks: r.risks })) }
+}
+
 export function parseDecisionMarkdown(md: string, sourceFile: string): Validated<DecisionRecord> {
   const { meta, body } = splitFrontmatter(md)
   const fields = parseSummaryTable(body)
@@ -147,6 +202,12 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
   if (inputs) record.inputs = inputs
   // ADR-014：person_id 是系统身份字段——frontmatter（新协议，权威）优先，摘要表（存量 v2.1）兜底
   if (meta.person_id) record.personId = meta.person_id
+  const payload = parsePayload(body)
+  if (payload) {
+    // 城市评估 payload 携带方向口径（摘要表 direction 行——「机器人结构设计」）
+    if (payload.type === 'city' && fields.direction && fields.direction !== '-') payload.direction = fields.direction
+    record.payload = payload
+  }
   for (const [tableField, irField] of Object.entries(FIELD_MAP)) {
     if (irField === 'personId' && record.personId !== undefined) continue
     const raw = fields[tableField]
@@ -158,7 +219,8 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
         if (n !== undefined) record[irField] = n
         break
       }
-      case 'directionConfidence': {
+      case 'directionConfidence':
+      case 'cityConfidence': {
         const c = parseConfidence(raw)
         if (c !== undefined) record[irField] = c
         break
