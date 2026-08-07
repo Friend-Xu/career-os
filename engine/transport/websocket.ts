@@ -20,7 +20,8 @@ import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
 import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
-import { buildDecisionCandidate, constraintRefOf } from '../runtime/decision-draft.ts'
+import { buildDecisionCandidate, constraintRefOf, resolveGapDisplay } from '../runtime/decision-draft.ts'
+import { writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { exportPdf } from '../export/pdf.ts'
@@ -287,6 +288,20 @@ function jobIdParams(v: unknown): string {
     throw new Error('params.id 缺失')
   }
   return (v as Record<string, unknown>).id as string
+}
+
+/** decision/narrative-submit 入参校验（RPC 边界）：narrative 可选对象，各段可选字符串 */
+function narrativeParams(v: unknown): DecisionNarrativeDraft {
+  if (v === undefined || v === null) return {}
+  if (typeof v !== 'object' || Array.isArray(v)) throw new Error('params.narrative 需为对象')
+  const out: DecisionNarrativeDraft = {}
+  for (const key of ['summary', 'understanding', 'preparationPlan', 'resumeAdvice'] as const) {
+    const val = (v as Record<string, unknown>)[key]
+    if (val === undefined) continue
+    if (typeof val !== 'string') throw new Error(`narrative.${key} 需为字符串`)
+    out[key] = val
+  }
+  return out
 }
 
 /** snapshot/archive 入参校验（RPC 边界：reason 白名单字符，sourceRefs 字符串数组） */
@@ -1397,6 +1412,24 @@ export async function startServer(opts: {
       const p = params as Record<string, unknown>
       if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
       return computeDecisionCandidate(workspace, jobIdParams(params), p.personId)
+    },
+    [METHODS.narrativeSubmit]: (params) => {
+      const p = params as Record<string, unknown>
+      if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+      const jobId = jobIdParams(params)
+      const person = scanPersons(workspace).find((x) => x.personId === p.personId)
+      if (!person) throw new Error(`人不存在：${p.personId}`)
+      const candidate = computeDecisionCandidate(workspace, jobId, p.personId)
+      const rows = computeConstraintMatch(workspace, jobId, p.personId)
+      const missing = computeJobMatch(workspace, jobId, person.name).missing
+      const decisionId = writeDecisionRecord(workspace, {
+        jobId,
+        personId: p.personId,
+        displayRows: resolveGapDisplay(candidate, rows, missing),
+        narrative: narrativeParams(p.narrative),
+      })
+      broadcast({ event: EVENTS.decisionsChanged })
+      return { decisionId }
     },
     [METHODS.jdAnalyzeResult]: (params) => {
       const proposal = jdAnalyzeResultParams(params)

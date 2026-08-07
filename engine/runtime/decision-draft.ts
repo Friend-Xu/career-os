@@ -1,4 +1,4 @@
-import type { ConstraintMatchRow, DecisionCandidate, DecisionQuestion, GapActionCategory, GapRow, SkillGap } from '../ir/schema.ts'
+import type { ConstraintMatchRow, DecisionCandidate, DecisionQuestion, GapActionCategory, GapRow, MatchStatus, SkillGap } from '../ir/schema.ts'
 
 /**
  * Career Decision Loop v0.1：DecisionCandidate 投影（Engine 纯函数，Producer = Engine）。
@@ -64,4 +64,53 @@ export function buildDecisionCandidate(jobId: string, constraintRows: Constraint
   }
   for (const m of missingSkills) gaps.push(gapFromMissingSkill(m))
   return { jobId, gaps }
+}
+
+/** 差距展示行（决策记录明细段写时快照——展示列由 transport 回源解析；权威语义经 constraintRef 回源，
+ *  快照不构成事实所有权。契约 career-decision-loop-contract-v0.1 §3） */
+export interface GapDisplayRow {
+  constraintRef: string
+  dim: 'capability' | 'education' | 'major' | 'experience'
+  requirement: string
+  person: string
+  status: MatchStatus
+  note?: string
+  actionCategory: GapActionCategory
+  question?: DecisionQuestion
+}
+
+/** GapRow 引用 → 展示行（按 candidate.gaps 顺序：门槛行 → 能力行） */
+export function resolveGapDisplay(candidate: DecisionCandidate, constraintRows: ConstraintMatchRow[], missingSkills: SkillGap[]): GapDisplayRow[] {
+  const byRef = new Map(candidate.gaps.map((g) => [g.constraintRef, g]))
+  const out: GapDisplayRow[] = []
+  for (const row of constraintRows) {
+    const gap = byRef.get(row.id)
+    if (!gap) continue
+    out.push({
+      constraintRef: row.id,
+      dim: row.dim,
+      requirement: row.requirement,
+      person: row.person,
+      status: row.status,
+      note: row.note,
+      actionCategory: gap.actionCategory,
+      question: gap.question,
+    })
+  }
+  for (const m of missingSkills) {
+    const ref = constraintRefOf('capability', m.name)
+    const gap = byRef.get(ref)
+    if (!gap) continue
+    out.push({
+      constraintRef: ref,
+      dim: 'capability',
+      requirement: m.name,
+      person: '未声明',
+      status: 'NOT_DECLARED',
+      note: '未声明——不代表不具备',
+      actionCategory: gap.actionCategory,
+      question: gap.question,
+    })
+  }
+  return out
 }

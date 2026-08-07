@@ -162,6 +162,14 @@ interface UserDecision {
 - **JobDecisionPayload 独立设计**——不向 DecisionPayload 追加 type 分支（city/direction 边界冻结不变，见记忆 [[decision-payload-boundary]]）
 - 摘要表 14 字段标量不动；`key_risk` 现有差距描述保持 AI 参考语义
 
+### Writer 解析边界不变量（Step 3 实测教训，2026-08-08）
+
+> **Markdown 是存储格式，不是展示文本**——Writer MUST preserve parser-owned structural boundaries。
+
+- `## 分析摘要` 头与表格之间**禁止插入任何中间行**（`ir/summary-table.ts` SUMMARY_RE 协议——标记行插入 → 解析失败 → title undefined → 投影 NOT NULL 崩溃，实测踩坑）
+- narrative **禁含引擎事实区标题**（岗位差距明细 / 城市评估明细 / 方向评估明细——防事实区伪造 + parsePayload 污染）
+- Writer 输出必须可被现有投影协议回读（title/摘要表解析不失效）——**writer 输出即契约测试断言**（decision-writer.test.ts Case A 锁定）
+
 ## 11. v1 边界（不做什么）
 
 - 不做「岗位偏差」自动分类（Career Ontology 冻结区）

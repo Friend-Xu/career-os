@@ -126,6 +126,8 @@ export const METHODS = {
   constraintMatch: 'jobs/constraint-match',
   /** 决策候选投影（params: { jobId, personId } → DecisionCandidate：门槛行非 MATCHED + 能力未声明 → 差距清单；只引用不复制，Producer = Engine） */
   decisionDraft: 'jobs/decision-draft',
+  /** Agent 叙述提交（params: { id: jobId, personId, narrative? } → { decisionId }：Writer 合并 Engine 差距段 + Agent 叙述段写 decisions/{id}.md；narrative 禁含引擎事实区标题） */
+  narrativeSubmit: 'decision/narrative-submit',
   /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
   extractJd: 'jobs/extract',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
