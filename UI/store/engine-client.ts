@@ -503,8 +503,8 @@ export class EngineClient {
     return this.rpc(METHODS.appendSessionTurn, params)
   }
 
-  /** 追加候选批次到 extraction/candidates.md（Candidate ≠ Fact） */
-  appendCandidates(params: { personId: string; candidates: { category: string; content: string; source: string }[] }): Promise<InitCandidate[]> {
+  /** 追加候选批次到 extraction/candidates.md（Candidate ≠ Fact；payload = 结构化载荷，education 类目键值段） */
+  appendCandidates(params: { personId: string; candidates: { category: string; content: string; source: string; payload?: string }[] }): Promise<InitCandidate[]> {
     return this.rpc<InitCandidate[]>(METHODS.appendCandidates, params)
   }
 

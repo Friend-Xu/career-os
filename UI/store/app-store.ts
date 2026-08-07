@@ -750,10 +750,10 @@ export const useAppStore = create<AppState>()(
           : '采集：先引导用户提供简历（粘贴文本），提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
         : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
       '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
-      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。',
+      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。教育类目必须附加第四段结构化载荷（其余类目省略）：候选标记：教育｜{内容}｜{来源}｜学校=…；专业=…；学历=…；起=…；止=…。学历取值只能是：高中、大专、本科、硕士、博士；学校/专业/年份与内容一致；年份为数字（如 2019）。',
       '示例回复格式：',
       '好的，机械设计本科——我把它整理为候选信息，稍后可在清单里确认。',
-      '候选标记：教育｜机械设计制造及其自动化本科｜用户描述',
+      '候选标记：教育｜机械设计制造及其自动化本科｜用户描述｜学校=某大学；专业=机械设计制造及其自动化；学历=本科；起=2015；止=2019',
       '接下来聊聊工作经历：你目前的工作经历是怎样的？',
       '注意：缺少候选标记行 = 该条信息不会被系统收集。',
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
@@ -1643,9 +1643,10 @@ function pendingInitPersonId(): string | undefined {
   return person?.initStatus === 'pending' && person.personId ? person.personId : undefined
 }
 
-/** Agent 候选标记行 → Candidate 输入（`候选标记：类别｜内容｜来源`；类别非法行忽略） */
-function parseCandidateMarks(content: string): { category: string; content: string; source: string }[] {
-  const out: { category: string; content: string; source: string }[] = []
+/** Agent 候选标记行 → Candidate 输入（`候选标记：类别｜内容｜来源｜结构化载荷(可选)`；
+ *  类别非法行忽略；教育类目第 4 段 = 键值段：学校=…；专业=…；学历=…；起=…；止=…） */
+function parseCandidateMarks(content: string): { category: string; content: string; source: string; payload?: string }[] {
+  const out: { category: string; content: string; source: string; payload?: string }[] = []
   const categoryMap: Record<string, string> = {
     教育: 'education',
     经历: 'experience',
@@ -1654,18 +1655,19 @@ function parseCandidateMarks(content: string): { category: string; content: stri
     兴趣: 'interest',
   }
   for (const line of content.split('\n')) {
-    const m = line.match(/^候选标记：([^｜\n]+)｜(.+?)｜([^｜\n]+)/)
+    const m = line.match(/^候选标记：([^｜\n]+)｜(.+?)｜([^｜\n]+)(?:｜(.+))?/)
     if (!m) continue
     const category = categoryMap[m[1]!.trim()]
     if (!category) continue
     const source = m[3]!.trim().includes('简历') ? 'resume' : 'user_reported'
-    out.push({ category, content: m[2]!.trim(), source })
+    const payload = m[4]?.trim()
+    out.push({ category, content: m[2]!.trim(), source, payload: payload || undefined })
   }
   return out
 }
 
 /** 候选落盘 + 投影缓存（extraction/candidates.md append-only；Candidate ≠ Fact） */
-async function persistCandidates(personId: string, candidates: { category: string; content: string; source: string }[]): Promise<void> {
+async function persistCandidates(personId: string, candidates: { category: string; content: string; source: string; payload?: string }[]): Promise<void> {
   if (!engine || useAppStore.getState().engineStatus !== 'connected') return
   try {
     const added = await engine.appendCandidates({ personId, candidates })

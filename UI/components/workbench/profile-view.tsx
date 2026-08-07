@@ -11,7 +11,7 @@ import { useAppStore } from '../../store/app-store'
 import { COLORS, alpha } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
 
-type DimKey = 'skills' | 'goals' | 'direction' | 'experience' | 'city' | 'preference'
+type DimKey = 'skills' | 'education' | 'goals' | 'direction' | 'experience' | 'city' | 'preference'
 type DimState = 'confirmed' | 'pending' | 'inferred' | 'missing'
 
 interface ProfileDim {
@@ -47,6 +47,15 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
       label: '技能',
       state: skills.length > 0 ? 'confirmed' : 'missing',
       detail: skills.length > 0 ? `${skills.length} 项声明` : '未建立',
+    },
+    {
+      key: 'education',
+      label: '教育',
+      state: (person.education ?? []).length > 0 ? 'confirmed' : 'missing',
+      detail:
+        (person.education ?? []).length > 0
+          ? person.education!.map((e) => `${e.school} · ${e.degree}`).join('、')
+          : '未建立',
     },
     {
       key: 'goals',

@@ -496,6 +496,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
           profilePath: s.manifestPath,
           targetRoles: s.careerProfile?.targetRoles ?? [],
           ...(s.skills ? { skills: s.skills } : {}),
+          ...(s.education ? { education: s.education } : {}),
           ...(s.initState ? { initStatus: s.initState === 'in_progress' ? 'pending' : 'active' as const } : {}),
           ...(s.sourceMode ? { sourceMode: s.sourceMode } : {}),
         }))

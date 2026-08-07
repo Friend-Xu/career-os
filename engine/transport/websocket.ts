@@ -191,7 +191,7 @@ function appendSessionTurnParams(params: unknown): { personId: string; role: 'us
 }
 
 /** person/session/candidates 入参校验（RPC 边界：candidates 数组，category/content 校验） */
-function appendCandidatesParams(params: unknown): { personId: string; candidates: { category: string; content: string; source: string }[] } {
+function appendCandidatesParams(params: unknown): { personId: string; candidates: { category: string; content: string; source: string; payload?: string }[] } {
   const p = (params ?? {}) as Record<string, unknown>
   const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
   if (!personId) throw new Error('personId 必填')
@@ -205,6 +205,7 @@ function appendCandidatesParams(params: unknown): { personId: string; candidates
         category: typeof raw.category === 'string' ? raw.category : '',
         content: typeof raw.content === 'string' ? raw.content : '',
         source: typeof raw.source === 'string' ? raw.source : 'user_reported',
+        payload: typeof raw.payload === 'string' && raw.payload.trim() ? raw.payload.trim() : undefined,
       }
     })
     .filter((c) => categories.includes(c.category) && c.content.trim() && sources.includes(c.source))

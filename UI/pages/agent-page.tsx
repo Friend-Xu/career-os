@@ -549,6 +549,18 @@ function UnderstandingDraft() {
                   <Typography sx={{ fontSize: 12.5, color: COLORS.text, lineHeight: 1.5 }}>
                     {c.content}
                   </Typography>
+                  {c.education && (
+                    <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {[c.education.school, c.education.degree, c.education.major]
+                        .filter(Boolean)
+                        .map((v) => (
+                          <Chip key={v as string} size="small" label={v as string} sx={{ height: 18, fontSize: 10.5, bgcolor: COLORS.bgHover, color: COLORS.textSecondary }} />
+                        ))}
+                      {c.education.startYear && c.education.endYear && (
+                        <Chip size="small" label={`${c.education.startYear}-${c.education.endYear}`} sx={{ height: 18, fontSize: 10.5, bgcolor: COLORS.bgHover, color: COLORS.textMuted }} />
+                      )}
+                    </Stack>
+                  )}
                   <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.5 }}>
                     来源：{sourceLabel(c.source)} · 待确认
                   </Typography>

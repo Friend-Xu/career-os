@@ -44,6 +44,7 @@ export interface Person {
   initialInterest?: string[] // 创建时自报的关注方向（user_reported 意向，非方向决策；语义见 M6.5 initial_interest）
   initStatus?: 'pending' | 'active' // 初始化生命周期状态（Banner 显隐；缺省 = active；session 内部多阶段在引擎资产层）
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
+  education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
 }
 
 // ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
@@ -80,6 +81,9 @@ export interface PersonSnapshot {
   }
   /** M6.6.5：confirmed 技能（snapshot/skill_inventory.md 派生；inferred/learned 不进） */
   skills?: PersonSkill[]
+  /** education 事实（facts/education.md 派生；无 = 未采集——缺件语义，缺件显式表达见
+   *  Person Education Registration Contract §6） */
+  education?: PersonEducation[]
   /** skill_inventory 版本（frontmatter status: vX；Decision inputs.skillRefs.version） */
   skillInventoryVersion?: string
   eventCount: number // events/*.md 计数（Change Events 轻协议）
@@ -95,6 +99,25 @@ export interface InitCandidate {
   source: 'user_reported' | 'resume'
   status: 'pending' | 'confirmed' | 'rejected'
   sessionRef: string
+  /** 结构化载荷（提取端 proposal；candidates.md 通用 payload 列；education 类目 = 键值段
+   *  `学校=…；专业=…；学历=…；起=…；止=…`，其余类目暂空） */
+  payload?: string
+  /** education 类目候选的结构化解析（listCandidates 派生；其余类目无） */
+  education?: { school: string; major?: string; degree?: string; startYear?: number; endYear?: number }
+}
+
+/** Person 教育事实（persons/{pid}/facts/education.md 派生；Registration Owner = Engine——
+ *  candidate resolve 确认时登记；无文件 = 未采集（缺件语义，与「无教育」区分）。契约：
+ *  references/person-education-registration-contract.md */
+export interface PersonEducation {
+  school: string
+  major?: string
+  degree: string // 归一化枚举：高中/大专/本科/硕士/博士
+  startYear?: number
+  graduationYear?: number
+  status: 'pending' | 'confirmed' | 'rejected' // 复用 candidates 状态
+  source: 'user_reported' | 'resume'
+  candidateId?: string
 }
 
 /** 决策类型标签（ADR-008 语义降级：不是链上阶段，是 Decision Intelligence 分析类型） */

@@ -142,58 +142,139 @@ const CANDIDATE_CATEGORY_LABEL: Record<string, string> = {
   interest: '兴趣',
 }
 
-/** 候选行 → 表格行（extraction/candidates.md 追加）；category 非法 → 跳过该条（不 invalid 整个批次） */
-function candidateRow(c: { category: string; content: string; source: string }): string | null {
+/** 候选行 → 表格行（extraction/candidates.md 追加）；category 非法 → 跳过该条（不 invalid 整个批次）。
+ *  payload 为通用结构化载荷列（education 类目键值段：学校=…；专业=…；学历=…；起=…；止=…；其余类目留空）——
+ *  空 payload 输出 5 列（旧格式兼容），有 payload 输出 6 列 */
+function candidateRow(c: { category: string; content: string; source: string; payload?: string }): string | null {
   const category = CANDIDATE_CATEGORY_LABEL[c.category]
   if (!category || !c.content.trim()) return null
   const source = c.source === 'resume' ? 'resume' : 'user_reported'
-  return `pending | ${category} | ${c.content.trim().replace(/\|/g, '\\|')} | ${source}`
+  const payload = c.payload?.trim() ? c.payload.trim().replace(/\|/g, '\\|') : ''
+  const content = c.content.trim().replace(/\|/g, '\\|')
+  return payload ? `pending | ${category} | ${content} | ${source} | ${payload}` : `pending | ${category} | ${content} | ${source}`
 }
 
 /** 追加候选批次到 extraction/candidates.md（append-only；id 按现有行数递增） */
-export function appendCandidates(ws: Workspace, params: { personId: string; candidates: { category: string; content: string; source: string }[] }): { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string }[] {
+export function appendCandidates(ws: Workspace, params: { personId: string; candidates: { category: string; content: string; source: string; payload?: string }[] }): { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string; payload?: string }[] {
   const { personId } = params
   const rel = `persons/${personId}/extraction/candidates.md`
   if (!ws.exists(rel)) {
-    ws.write(rel, ['# Extraction Candidates', '', '| id | status | category | content | source |', '|----|--------|----------|---------|--------|', ''].join('\n'))
+    ws.write(rel, ['# Extraction Candidates', '', '| id | status | category | content | source | payload |', '|----|--------|----------|---------|--------|---------|', ''].join('\n'))
   }
   const existing = ws.read(rel)
   const count = (existing.match(/^\| c-\d+ \|/gm) ?? []).length
-  const added: { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string }[] = []
+  const added: { id: string; category: string; content: string; source: string; status: 'pending'; sessionRef: string; payload?: string }[] = []
   const rows: string[] = []
   for (const c of params.candidates) {
     const row = candidateRow(c)
     if (!row) continue
     const id = `c-${String(count + rows.length + 1).padStart(3, '0')}`
     rows.push(`| ${id} | ${row} |`)
-    added.push({ id, category: c.category, content: c.content.trim(), source: c.source === 'resume' ? 'resume' : 'user_reported', status: 'pending', sessionRef: 'session-001' })
+    added.push({ id, category: c.category, content: c.content.trim(), source: c.source === 'resume' ? 'resume' : 'user_reported', status: 'pending', sessionRef: 'session-001', payload: c.payload?.trim() })
   }
   if (rows.length > 0) ws.write(rel, existing.replace(/\n?$/, '\n') + rows.join('\n') + '\n')
   return added
 }
 
-/** extraction/candidates.md → 候选列表（状态过滤 pending/confirmed/rejected；文件缺 → 空） */
+/** 教育候选键值段 → 结构化 proposal（`学校=…；专业=…；学历=…；起=…；止=…`；缺学校 → 无结构化——
+ *  结构化失败时 content 原文仍在（Candidate 双层：raw_content + structured_proposal）） */
+export function parseEducationPayload(payload: string | undefined): { school: string; major?: string; degree?: string; startYear?: number; endYear?: number } | undefined {
+  if (!payload?.trim()) return undefined
+  const fields: Record<string, string> = {}
+  for (const seg of payload.split(/[；;]/)) {
+    const m = seg.trim().match(/^([^=：]+?)[=：](.+)$/)
+    if (m && m[2]!.trim()) fields[m[1]!.trim()] = m[2]!.trim()
+  }
+  const school = fields['学校'] ?? fields['school']
+  if (!school) return undefined
+  const num = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined)
+  return {
+    school,
+    major: fields['专业'] ?? fields['major'],
+    degree: fields['学历'] ?? fields['degree'],
+    startYear: num(fields['起'] ?? fields['start'] ?? fields['start_year']),
+    endYear: num(fields['止'] ?? fields['end'] ?? fields['end_year']),
+  }
+}
+
+/** extraction/candidates.md → 候选列表（状态过滤 pending/confirmed/rejected；文件缺 → 空；
+ *  5 列旧格式（无 payload）兼容） */
 export function listCandidates(ws: Workspace, personId: string): import('../ir/schema.ts').InitCandidate[] {
   const rel = `persons/${personId}/extraction/candidates.md`
   if (!ws.exists(rel)) return []
   const labelToKey = Object.fromEntries(Object.entries(CANDIDATE_CATEGORY_LABEL).map(([k, v]) => [v, k]))
   const out: import('../ir/schema.ts').InitCandidate[] = []
   for (const line of ws.read(rel).split('\n')) {
-    const m = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|/)
+    const m6 = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \| (.+?) \|$/)
+    const m5 = !m6 ? line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|$/) : null
+    const m = m6 ?? m5
     if (!m) continue
     const category = labelToKey[m[3]!.trim()]
     if (!category) continue
-    out.push({ id: m[1]!, category: category as never, content: m[4]!.trim(), source: m[5] as never, status: m[2] as never, sessionRef: 'session-001' })
+    const payload = m6 ? m6[6]!.trim() : undefined
+    const cand: import('../ir/schema.ts').InitCandidate = {
+      id: m[1]!,
+      category: category as never,
+      content: (m6 ?? m5)![4]!.trim(),
+      source: (m6 ?? m5)![5]! as never,
+      status: m[2]! as never,
+      sessionRef: 'session-001',
+    }
+    if (payload && category === 'education') {
+      cand.payload = payload
+      cand.education = parseEducationPayload(payload)
+    }
+    out.push(cand)
   }
   return out
 }
 
 const RESOLUTION_ACTION_LABEL: Record<string, string> = { confirmed: '确认', rejected: '拒绝', modified: '修改' }
 
+/** 候选行 source（resume/user_reported）——resolve 后从行末取 */
+function m5Source(ws: Workspace, personId: string, candidateId: string): 'resume' | 'user_reported' {
+  const rel = `persons/${personId}/extraction/candidates.md`
+  if (!ws.exists(rel)) return 'user_reported'
+  for (const line of ws.read(rel).split('\n')) {
+    const m = line.match(new RegExp(`^\\| ${candidateId} \\| \\w+ \\| [^|]+ \\| .+? \\| (\\w+) \\|`))
+    if (m) return m[1] === 'resume' ? 'resume' : 'user_reported'
+  }
+  return 'user_reported'
+}
+
+/** facts/education.md 已登记候选 id 集合（幂等：同一候选不重复登记） */
+function registeredEducationIds(ws: Workspace, personId: string): Set<string> {
+  const rel = `persons/${personId}/facts/education.md`
+  if (!ws.exists(rel)) return new Set()
+  const ids = new Set<string>()
+  for (const line of ws.read(rel).split('\n')) {
+    const m = line.match(/^\|\s*(c-\d+)\s*\|/)
+    if (m) ids.add(m[1]!.trim())
+  }
+  return ids
+}
+
+/** 教育事实登记（Registration Owner = Engine）：candidate resolve 确认（education 类目 + 结构化
+ *  payload）→ facts/education.md 追加行。契约：references/person-education-registration-contract.md */
+export function registerEducationFact(
+  ws: Workspace,
+  personId: string,
+  fact: { candidateId: string; school: string; major?: string; degree?: string; startYear?: number; endYear?: number; source: 'resume' | 'user_reported' },
+): void {
+  const rel = `persons/${personId}/facts/education.md`
+  if (!ws.exists(rel)) {
+    ws.write(rel, ['# Education Facts', '', '## 教育记录', '', '| candidate_id | school | major | degree | start_year | end_year | status | source |', '|--------------|--------|-------|--------|-----------|----------|--------|--------|', ''].join('\n'))
+  }
+  const cell = (v: string | number | undefined): string => (v === undefined || v === '' ? '-' : String(v).replace(/\|/g, '\\|'))
+  const row = `| ${fact.candidateId} | ${cell(fact.school)} | ${cell(fact.major)} | ${cell(fact.degree)} | ${cell(fact.startYear)} | ${cell(fact.endYear)} | confirmed | ${fact.source} |`
+  ws.write(rel, ws.read(rel).replace(/\n?$/, '\n') + row + '\n')
+}
+
 /**
  * 候选裁决（切片 2.3）：更新 candidates.md 状态 + 写 resolution 事件（审计：
  * "为什么档案里有这个事实" → "因为用户在某次初始化会话中确认了这个候选"）。
  * confirmed/modified → status confirmed；rejected → status rejected；modified 替换内容。
+ * education 类目 confirmed（含结构化 payload）→ 同步登记 facts/education.md（Registration）。
  */
 export function resolveCandidate(
   ws: Workspace,
@@ -206,18 +287,38 @@ export function resolveCandidate(
   let changed = false
   let categoryLabel = ''
   let content = ''
+  let payload = ''
   const next = lines.map((line) => {
-    const m = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|$/)
+    const m6 = line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \| (.+?) \|$/)
+    const m5 = !m6 ? line.match(/^\| (c-\d+) \| (\w+) \| ([^|]+) \| (.+?) \| (\w+) \|$/) : null
+    const m = m6 ?? m5
     if (!m || m[1] !== candidateId) return line
     changed = true
     categoryLabel = m[3]!.trim()
     content = m[4]!.trim()
+    payload = m6 ? m6[6]!.trim() : ''
     if (action === 'rejected') return line.replace(/^(\| \S+ \| )\w+( \|)/, `$1rejected$2`)
     const newContent = action === 'modified' && params.modifiedContent?.trim() ? params.modifiedContent.trim() : content
-    return `| ${m[1]} | confirmed | ${m[3]} | ${newContent.replace(/\|/g, '\\|')} | ${m[5]} |`
+    return `| ${m[1]} | confirmed | ${m[3]} | ${newContent.replace(/\|/g, '\\|')} | ${m[5]}${m6 ? ` | ${m6[6]}` : ''} |`
   })
   if (!changed) return null
   ws.write(rel, next.join('\n'))
+
+  // Registration：education 类目确认 + 结构化 payload → facts/education.md（幂等）
+  if (action !== 'rejected' && categoryLabel === '教育') {
+    const edu = parseEducationPayload(payload)
+    if (edu && !registeredEducationIds(ws, personId).has(candidateId)) {
+      registerEducationFact(ws, personId, {
+        candidateId,
+        school: edu.school,
+        major: edu.major,
+        degree: edu.degree,
+        startYear: edu.startYear,
+        endYear: edu.endYear,
+        source: m5Source(ws, personId, candidateId),
+      })
+    }
+  }
 
   const ts = params.timestamp ?? new Date().toISOString()
   const date = ts.slice(0, 10).replace(/-/g, '')
@@ -367,6 +468,27 @@ function parseSkillInventory(md: string): { skills: PersonSkill[]; version: stri
   return { skills, version }
 }
 
+/** facts/education.md → PersonEducation[]（教育事实登记表；无行 → 空数组） */
+function parseEducationFacts(md: string): import('../ir/schema.ts').PersonEducation[] {
+  const out: import('../ir/schema.ts').PersonEducation[] = []
+  for (const line of md.split('\n')) {
+    const m = line.match(/^\|\s*(c-\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|$/)
+    if (!m) continue
+    const dash = (v: string): string | undefined => (v.trim() === '-' ? undefined : v.trim())
+    out.push({
+      candidateId: m[1]!.trim(),
+      school: m[2]!.trim(),
+      major: dash(m[3]!),
+      degree: m[4]!.trim(),
+      startYear: dash(m[5]!) ? Number(dash(m[5]!)) : undefined,
+      graduationYear: dash(m[6]!) ? Number(dash(m[6]!)) : undefined,
+      status: m[7]!.trim() as never,
+      source: m[8]!.trim() as never,
+    })
+  }
+  return out
+}
+
 /** persons/ 子目录扫描 → PersonSnapshot[]（manifest 缺 id → 跳过该 person） */
 export function scanPersons(ws: Workspace): PersonSnapshot[] {
   let entries: import('node:fs').Dirent[]
@@ -390,6 +512,8 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     const careerMd = ws.exists(careerRel) ? ws.read(careerRel) : undefined
     const career = careerMd ? parseSnapshotTable(careerMd) : undefined
     const preference = snapshotOf(ws, pid, 'preference_constraints.md')
+    const eduRel = `persons/${pid}/facts/education.md`
+    const education = ws.exists(eduRel) ? parseEducationFacts(ws.read(eduRel)) : undefined
 
     let eventCount = 0
     try {
@@ -415,6 +539,9 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
         currentStatus: identity.current_status,
         yearsExperience: identity.years_experience,
       }
+    }
+    if (education && education.length > 0) {
+      snapshot.education = education
     }
     if (career) {
       snapshot.careerProfile = {
