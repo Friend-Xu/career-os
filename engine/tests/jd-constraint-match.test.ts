@@ -1,0 +1,123 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import type { PersonEducation } from '../ir/schema.ts'
+import { parseJdConstraint } from '../runtime/jd-constraint.ts'
+import { matchEducation } from '../runtime/constraint-matcher.ts'
+
+const edu = (degree: string, status: PersonEducation['status'] = 'confirmed'): PersonEducation => ({
+  school: '某校',
+  degree,
+  status,
+  source: 'resume',
+})
+
+const constraintMd = (row: string): string => `# 岗位
+
+## 岗位门槛
+
+| 维度 | 值 | 来源 | 置信度 |
+|------|-----|------|--------|
+${row}
+`
+
+// ─── Parser：岗位门槛段 → JDConstraintEducationIR ─────────────────────────
+
+test('Parser：明确集合（本科;硕士;博士）→ NORMALIZED，rawValues 保留原文', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 本科;硕士;博士 | 任职要求 1 | high |'))
+  assert.deepEqual(ir.education, {
+    rawValues: ['本科', '硕士', '博士'],
+    normalizedDegrees: ['本科', '硕士', '博士'],
+    normalizationStatus: 'NORMALIZED',
+    confidence: 'high',
+    source: '任职要求 1',
+  })
+})
+
+test('Parser：及以上展开（硕士及以上 → [硕士;博士]），rawValues 保留「硕士及以上」原文', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 硕士及以上 | 任职要求 1 | high |'))
+  assert.deepEqual(ir.education!.rawValues, ['硕士及以上'])
+  assert.deepEqual(ir.education!.normalizedDegrees, ['硕士', '博士'])
+  assert.equal(ir.education!.normalizationStatus, 'NORMALIZED')
+})
+
+test('Parser：无法归一化（应届/不限）→ NEEDS_CONFIRMATION（不猜）', () => {
+  const a = parseJdConstraint(constraintMd('| education | 应届 | 任职要求 1 | high |'))
+  assert.equal(a.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
+  assert.equal(a.education!.normalizedDegrees, undefined)
+  const b = parseJdConstraint(constraintMd('| education | 不限 | 任职要求 1 | medium |'))
+  assert.equal(b.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
+})
+
+test('Parser：优先表述（硕士优先）→ v1 无偏好模型，不产出该维度（Matcher 视 NOT_DECLARED）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 硕士优先 | 任职要求 1 | medium |'))
+  assert.equal(ir.education, undefined)
+})
+
+test('Parser：混合（本科以上，硕士优先）→ 只取硬性部分（本科;硕士;博士）', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 本科以上；硕士优先 | 任职要求 1 | high |'))
+  assert.deepEqual(ir.education!.normalizedDegrees, ['本科', '硕士', '博士'])
+  assert.equal(ir.education!.normalizationStatus, 'NORMALIZED')
+})
+
+test('Parser：缺岗位门槛段 → 空 IR；行级非法维度跳过', () => {
+  assert.deepEqual(parseJdConstraint('# 岗位\n\n## 分析摘要\n\n| a | b |'), {})
+  const ir = parseJdConstraint(
+    '# 岗位\n\n## 岗位门槛\n\n| 维度 | 值 | 来源 | 置信度 |\n|------|-----|------|--------|\n| education | 本科 | 任职要求 1 | high |\n| bogus | x | - | - |\n',
+  )
+  assert.equal(ir.education!.normalizedDegrees!.length, 1)
+  assert.equal(ir.major, undefined)
+})
+
+// ─── Matcher：四态派生（契约 §8 九个 Golden Case） ────────────────────────
+
+test('Case 1 心玮：本科 confirmed + [本科;硕士;博士] → MATCHED', () => {
+  const r = matchEducation([edu('本科')], parseJdConstraint(constraintMd('| education | 本科;硕士;博士 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'MATCHED')
+  assert.deepEqual(r.evidence, { person: '本科', requirement: '本科、硕士、博士' })
+})
+
+test('Case 2 JD 未写学历 → NOT_DECLARED', () => {
+  const r = matchEducation([edu('本科')], undefined)
+  assert.equal(r.status, 'NOT_DECLARED')
+})
+
+test('Case 3 档案缺失 → NEEDS_CONFIRMATION（Unknown ≠ False）', () => {
+  const r = matchEducation([], parseJdConstraint(constraintMd('| education | 本科;硕士 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NEEDS_CONFIRMATION')
+})
+
+test('Case 4 无法归一化（应届）→ NEEDS_CONFIRMATION', () => {
+  const r = matchEducation([edu('本科')], parseJdConstraint(constraintMd('| education | 应届 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NEEDS_CONFIRMATION')
+})
+
+test('Case 5 低于要求：大专 vs [本科;硕士;博士] → NOT_MATCHED', () => {
+  const r = matchEducation([edu('大专')], parseJdConstraint(constraintMd('| education | 本科;硕士;博士 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NOT_MATCHED')
+})
+
+test('Case 6 多学历：本科+硕士 confirmed → 取最高 MATCHED', () => {
+  const r = matchEducation([edu('本科'), edu('硕士')], parseJdConstraint(constraintMd('| education | 硕士;博士 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'MATCHED')
+})
+
+test('Case 7 多学历含 pending：本科 confirmed + 博士 pending → 按本科算 NOT_MATCHED（pending 不参与）', () => {
+  const r = matchEducation([edu('本科'), edu('博士', 'pending')], parseJdConstraint(constraintMd('| education | 硕士;博士 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NOT_MATCHED')
+})
+
+test('Case 8 归一化：本科 vs 硕士及以上（[硕士;博士]）→ NOT_MATCHED', () => {
+  const r = matchEducation([edu('本科')], parseJdConstraint(constraintMd('| education | 硕士及以上 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NOT_MATCHED')
+})
+
+test('Case 9 偏好表述（硕士优先）→ 无 hard 维度 NOT_DECLARED', () => {
+  const ir = parseJdConstraint(constraintMd('| education | 硕士优先 | 任职要求 1 | medium |'))
+  const r = matchEducation([edu('本科')], ir.education)
+  assert.equal(r.status, 'NOT_DECLARED')
+})
+
+test('档案 rejected → NEEDS_CONFIRMATION（否认 ≠ 低学历，不产生 NOT_MATCHED）', () => {
+  const r = matchEducation([edu('博士', 'rejected')], parseJdConstraint(constraintMd('| education | 本科 | 任职要求 1 | high |')).education)
+  assert.equal(r.status, 'NEEDS_CONFIRMATION')
+})
