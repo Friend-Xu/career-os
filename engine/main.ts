@@ -18,6 +18,7 @@ import { registerPendingPortfolioProjects, registerPendingPortfolioProposals, wa
 import { registerPendingInterviewQas, registerPendingInterviewProposals, watchInterviews } from './storage/interview-watcher.ts'
 import { registerPendingCoverLetters, registerPendingCoverLetterProposals, watchCoverLetters } from './storage/cover-letter-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
+import { watchCompanies } from './storage/company-watcher.ts'
 import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -163,6 +164,11 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.jobsChanged })
         logger.info(`jobs/ 变更：重扫 ${parsed.length} 条并广播`)
       })
+      // companies/ 变更只发信号（skill 尽调直写档案；UI 收到 companiesChanged 重拉 companies/list + 图谱）
+      watchCompanies(ws, () => {
+        broadcast({ event: EVENTS.companiesChanged })
+        logger.info('companies/ 变更：已广播（companies/list 按需重扫）')
+      })
       // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
       watchEvidence(ws, (parsed) => {
         broadcast({ event: EVENTS.evidenceChanged })
@@ -201,6 +207,7 @@ async function main(args: string[]): Promise<void> {
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
+      logger.info('companies/ 监听已启用（watcher.enabled=true）')
       logger.info('evidence/ 监听已启用（watcher.enabled=true）')
       logger.info('claims/ 监听已启用（watcher.enabled=true）')
       logger.info('resumes/ 监听已启用（watcher.enabled=true）')

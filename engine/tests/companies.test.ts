@@ -87,6 +87,13 @@ test('缺必填字段（city/contacted 未填）→ invalid，parkId 缺失合�
   assert.equal(value.parkId, undefined)
 })
 
+test('contacted 填 -（未联系）→ false，不判 invalid；其余字段 - 仍跳过', () => {
+  const md = companyMd.replace('| contacted | 否 |', '| contacted | - |')
+  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  assert.equal(validation, undefined)
+  assert.equal(value.contacted, false)
+})
+
 test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
   const md = companyMd
     .replace('| risk_level | 低 |', '| risk_level | 超高 |')

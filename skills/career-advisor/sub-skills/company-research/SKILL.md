@@ -183,6 +183,12 @@ Read `references/interview-questions.md`，根据 **career-inference.md 推断�
 
 ---
 
+## Step 6.5: 落盘公司档案
+
+Read `references/company-file-contract.md`，将尽调结论落盘为 `workspace/career-advisor/companies/{公司名}.md`：`## 分析摘要` 表（字段值格式严格，match_score 只写 `85%`/`8.2/10`、tags 逗号分隔、contacted 未联系写「否」）+ `## 尽调详情` 正文。引擎监听该目录，写完自动感知并通知 UI，无需手动操作。
+
+---
+
 ## Step 7: 收尾
 
 报告末尾，Read `assets/tier3-user-checklist.md`，输出用户需要自己去确认的事项清单。

@@ -147,8 +147,8 @@ const COMPANY_FIELD_MAP: Record<string, CompanyFieldSpec> = {
 }
 
 function parseContacted(v: string): boolean | undefined {
+  if (v === '-' || v === '否' || v === 'false') return false // - = 未填写 = 未联系（合法状态，不是档案缺失）
   if (v === '是' || v === 'true') return true
-  if (v === '否' || v === 'false') return false
   return undefined
 }
 
@@ -191,7 +191,8 @@ export function parseCompanyMarkdown(md: string, sourceFile: string): Validated<
   const checks: FieldCheck[] = []
   for (const [tableField, spec] of Object.entries(COMPANY_FIELD_MAP)) {
     const raw = fields[tableField]
-    if (raw === undefined || raw === '-' || raw === '') continue // 缺失填 - 属常态
+    // 缺失填 - 属常态；contacted 的 - = 未联系（parseContacted 处理，不跳过）
+    if (raw === undefined || raw === '' || (raw === '-' && tableField !== 'contacted')) continue
     const parsed = spec.parse(raw)
     if (parsed !== undefined) {
       record[spec.field] = parsed
