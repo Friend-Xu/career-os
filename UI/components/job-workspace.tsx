@@ -63,30 +63,6 @@ const JD_MD_COMPONENTS: Components = {
   ),
 }
 
-/** 要求项匹配状态（gap 技能名与要求名双向子串容错）→ 匹配色 chip */
-function reqStatus(reqName: string, gap: GapResult | null): 'ok' | 'partial' | 'missing' | 'none' {
-  if (!gap) return 'none'
-  const hit = (list: { name: string }[]) =>
-    list.some((s) => s.name.includes(reqName) || reqName.includes(s.name))
-  if (hit(gap.satisfied)) return 'ok'
-  if (hit(gap.transferable)) return 'partial'
-  if (hit(gap.missing)) return 'missing'
-  return 'none'
-}
-
-const REQ_STATUS_STYLE: Record<'ok' | 'partial' | 'missing' | 'none', { chip: string; text: string }> = {
-  ok: { chip: alpha(RISK_COLOR.low, 0.12), text: RISK_COLOR.low },
-  partial: { chip: alpha(RISK_COLOR.medium, 0.12), text: RISK_COLOR.medium },
-  missing: { chip: alpha(RISK_COLOR.high, 0.1), text: RISK_COLOR.high },
-  none: { chip: COLORS.bgHover, text: COLORS.textSecondary },
-}
-const REQ_STATUS_PREFIX: Record<'ok' | 'partial' | 'missing' | 'none', string> = {
-  ok: '✓ ',
-  partial: '△ ',
-  missing: '✗ ',
-  none: '',
-}
-
 /** JD 原文行级清洗：去掉与结构化要求重复的行（任职要求卡已展示）与头部信息尾巴（与头部卡重复） */
 function cleanJd(jd: string, job: JobRecord): string {
   const norm = (s: string) =>
@@ -190,7 +166,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     fetchJobCoverage(job.id)
     fetchClaimCoverage(job.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId])
+  }, [jobId, job])
 
   if (!job || !st) return null
 
@@ -502,7 +478,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
           )
         })()}
 
-        {/* 任职要求（Signal Layer：建档技能词匹配色 chips；ai 责任单元在岗位理解区，物理分家） */}
+        {/* 任职要求（建档原文展示——纯事实，无匹配语义；匹配状态见「JD 匹配」区，职责分离） */}
         {(() => {
           const userReqs = job.responsibilities.filter((r) => r.source === 'user')
           if (userReqs.length === 0) return null
@@ -510,33 +486,43 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
             <Section title="任职要求">
               <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-                  {userReqs.map((r) => {
-                    const st2 = reqStatus(r.statement, gap)
-                    const s = REQ_STATUS_STYLE[st2]
-                    return (
-                      <Chip
-                        key={r.id}
-                        size="small"
-                        label={`${REQ_STATUS_PREFIX[st2]}${r.statement}`}
-                        sx={{ height: 22, fontSize: 11.5, bgcolor: s.chip, color: s.text }}
-                      />
-                    )
-                  })}
+                  {userReqs.map((r) => (
+                    <Chip
+                      key={r.id}
+                      size="small"
+                      label={r.statement}
+                      sx={{ height: 22, fontSize: 11.5, bgcolor: COLORS.bgHover, color: COLORS.textSecondary }}
+                    />
+                  ))}
                 </Stack>
               </Box>
             </Section>
           )
         })()}
 
-        {/* 匹配摘要（可解释覆盖） */}
+        {/* 匹配摘要（可解释覆盖；输入 = 岗位智能段 capabilities——未分析岗位不产出匹配） */}
         {job.responsibilities.length > 0 && (
           <Section title="JD 匹配">
             {gapLoading ? (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>计算中…</Typography>
             ) : gap && gap.satisfied.length === 0 && gap.transferable.length === 0 && gap.missing.length === 0 ? (
-              <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-                画像未声明技能或技能名未对齐词表，无法计算覆盖
-              </Typography>
+              /* 空 gap = 岗位未分析（无岗位智能段 capabilities）——不硬算匹配（长句对齐必然失败） */
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: '10px',
+                  border: `1px solid ${alpha(RISK_COLOR.medium, 0.25)}`,
+                  bgcolor: alpha(RISK_COLOR.medium, 0.04),
+                }}
+              >
+                <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 0.5 }}>尚未完成岗位分析</Typography>
+                <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mb: 1.25 }}>
+                  当前仅保存 JD 原文，系统还未生成岗位能力模型——分析后这里会显示技能匹配与差距
+                </Typography>
+                <Button size="small" variant="outlined" startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />} onClick={analyze} sx={{ fontSize: 12 }}>
+                  分析 JD
+                </Button>
+              </Box>
             ) : gap ? (
               <Box sx={{ p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Stack spacing={0.5}>

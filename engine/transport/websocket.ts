@@ -502,7 +502,11 @@ function extractJdParams(v: unknown): { jdText: string } {
   return { jdText: text }
 }
 
-/** jobs/match：Job.responsibilities（capabilities 对齐源）→ computeGap → GapResult（Signal Layer：可解释匹配，不做百分比） */
+/** jobs/match：岗位技能来源 = 岗位智能段 capabilities（jd-analysis 产物，唯一匹配输入）→ computeGap → GapResult。
+ *  Signal Layer：可解释匹配，不做百分比。
+ *  Artifact Boundary：不消费 roles.md（长期岗位知识资产，服务图谱/差距分析；实例匹配只认本次 JD 分析——
+ *  roles 存在 ≠ JD 已分析，接入会让未分析岗位伪造匹配结果）；不 fallback 长句 statement（长句与技能词
+ *  对齐必然全 miss，伪造缺口）。未分析岗位 → role.skills 空 → 空 gap，UI 显示「尚未完成岗位分析」。 */
 export function computeJobMatch(workspace: Workspace, jobId: string, person: string): GapResult {
   const job = scanJobs(workspace).find((j) => j.record.id === jobId)
   if (!job) throw new Error(`岗位不存在：${jobId}`)
@@ -511,21 +515,16 @@ export function computeJobMatch(workspace: Workspace, jobId: string, person: str
     id: job.record.id,
     name: job.record.title,
     company: job.record.company,
-    // capabilities 为对齐源；迁移数据（capabilities 空）回退 statement——旧技能词等价旧行为；
-    // 去重：ai capabilities 可能与 user statement 重叠（computeGap 的 missing 不去重）
+    // capabilities 为对齐源（ai 分析产物）；无 → 空（岗位未分析，不产出匹配）
     skills: (() => {
       const seen = new Set<string>()
-      return job.record.responsibilities.flatMap((r) =>
-        (r.capabilities.length > 0 ? r.capabilities : [r.statement]).map((name) => ({
-          name,
-          essential: r.priority === 'must',
-          source: 'JD',
-        })),
-      ).filter((s) => {
-        if (seen.has(s.name)) return false
-        seen.add(s.name)
-        return true
-      })
+      return job.record.responsibilities
+        .flatMap((r) => r.capabilities.map((name) => ({ name, essential: r.priority === 'must', source: 'JD' })))
+        .filter((s) => {
+          if (seen.has(s.name)) return false
+          seen.add(s.name)
+          return true
+        })
     })(),
   }
   const personSkills = personSkillsOf(workspace, person)
