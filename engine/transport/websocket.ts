@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill } from '../ir/schema.ts'
+import type { DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
@@ -21,7 +21,9 @@ import { computeGap } from '../runtime/gap-calculator.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
 import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
 import { buildDecisionCandidate, constraintRefOf, resolveGapDisplay } from '../runtime/decision-draft.ts'
+import { buildResumeRewriteContext, parseNarrativeSections } from '../runtime/resume-context.ts'
 import { writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
+import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { exportPdf } from '../export/pdf.ts'
@@ -634,6 +636,22 @@ export function computeDecisionCandidate(workspace: Workspace, jobId: string, pe
   const constraints = computeConstraintMatch(workspace, jobId, personId)
   const match = computeJobMatch(workspace, jobId, person.name)
   return buildDecisionCandidate(jobId, constraints, match.missing)
+}
+
+/** decision/resume-context：决策记录 → ResumeRewriteContext（差距/证据回源 Engine 匹配行——权威语义；
+ *  叙述段解析 Engine 自家格式——resume-writing 只消费结构化上下文，不解析 decisions/ markdown） */
+export function computeResumeRewriteContext(workspace: Workspace, decisionId: string, personId: string): ResumeRewriteContext {
+  const md = workspace.read(`decisions/${decisionId}.md`)
+  const { meta } = splitFrontmatter(md)
+  const jobId = meta.subject_id
+  if (!jobId) throw new Error(`决策记录缺少 subject_id：${decisionId}`)
+  const person = scanPersons(workspace).find((p) => p.personId === personId)
+  if (!person) throw new Error(`人不存在：${personId}`)
+  const candidate = computeDecisionCandidate(workspace, jobId, personId)
+  const rows = computeConstraintMatch(workspace, jobId, personId)
+  const missing = computeJobMatch(workspace, jobId, person.name).missing
+  const evidenceByRef = new Map(rows.map((r) => [r.id, r.personEvidence]))
+  return buildResumeRewriteContext(jobId, resolveGapDisplay(candidate, rows, missing), evidenceByRef, parseNarrativeSections(md))
 }
 
 /** resume/export 入参校验（RPC 边界） */
@@ -1430,6 +1448,11 @@ export async function startServer(opts: {
       })
       broadcast({ event: EVENTS.decisionsChanged })
       return { decisionId }
+    },
+    [METHODS.resumeContext]: (params) => {
+      const p = params as Record<string, unknown>
+      if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+      return computeResumeRewriteContext(workspace, jobIdParams(params), p.personId)
     },
     [METHODS.jdAnalyzeResult]: (params) => {
       const proposal = jdAnalyzeResultParams(params)

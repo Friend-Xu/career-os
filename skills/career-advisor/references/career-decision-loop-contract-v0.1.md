@@ -177,6 +177,16 @@ interface UserDecision {
 - 不扩 DecisionPayload；不建 `job-decisions/` 第二套体系
 - 不做 Application Tracking 实现（future module，仅预留 intent 状态槽）
 
+## 12. Resume Rewrite Context（Step 4 适配层）
+
+```
+Decision Record → Decision Context Adapter（Engine）→ ResumeRewriteContext → resume-writing
+```
+
+- **消费通道**：Engine 投影——`decision/resume-context` RPC（params: { id: decisionId, personId }）与 `node engine/main.ts --resume-context {decisionId} {personId}` CLI 同一计算源；**resume-writing 只消费结构化上下文，不解析 decisions/ markdown**（存储格式归 Engine）
+- **语义边界**：`GapReference { dimension, requirement, status, evidence: EvidenceRef[] }`——传维度/要求/状态/证据引用，**禁止「缺少流体机械经验」类自由文本判断**；叙述段（AI 参考）以 `AIReference[]` 结构化携带（preparationNotes），标注参考语义
+- **简历表达**：差距行保持四态原文（NOT_DECLARED = 未声明不代表不具备 / NEEDS_CONFIRMATION = 待确认）；未声明能力 →「若候选人实际具备，可加入技能区」（人工确认式建议），**不自动添加技能**；待确认项转面试准备问题，不写进简历
+
 ---
 
 Related:

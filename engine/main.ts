@@ -25,7 +25,7 @@ import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-wat
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
-import { ServerError, startServer } from './transport/websocket.ts'
+import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 
 async function main(args: string[]): Promise<void> {
@@ -96,6 +96,17 @@ async function main(args: string[]): Promise<void> {
         }
         logger.info(`共 ${parsed.length} 条，invalid ${parsed.filter((p) => p.validation?.status === 'invalid').length} 条`)
       }
+      return
+    }
+
+    // ─── Resume Context（--resume-context {decisionId} {personId}）：决策记录 → 结构化简历改写上下文
+    //      （resume-writing skill 消费通道；与 decision/resume-context RPC 同一计算源）
+    if (args.includes('--resume-context')) {
+      const idx = args.indexOf('--resume-context')
+      const decisionId = args[idx + 1]
+      const personId = args[idx + 2]
+      if (!decisionId || !personId) throw new Error('--resume-context 需要 {decisionId} {personId}')
+      console.log(JSON.stringify(computeResumeRewriteContext(ws, decisionId, personId), null, 2))
       return
     }
 

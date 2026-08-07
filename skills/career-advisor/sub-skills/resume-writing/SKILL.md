@@ -89,8 +89,11 @@ B 转行：
 
 C 有 JD：
   → 用户粘贴 JD 或提供链接
-  → "先帮你拆一下这个 JD，看看它到底要什么。"
-  → 加载 jd-analysis SKILL.md Step 1-2（JD质量快判 + 深度拆解）
+  → 检查是否已有该岗位的岗位决策记录（decisions/ 中 type: jd-analysis + subject_id 匹配岗位 id）
+  → 有 → 消费结构化岗位差距上下文（Engine 投影：`node engine/main.ts --resume-context {decisionId} {personId}` CLI，或经 UI 的 decision/resume-context RPC）——
+         三部分：岗位要求（JD 原文投影）/ 候选人已有（画像证据引用）/ 待确认差距（四态：NOT_DECLARED = 未声明不代表不具备）
+         **禁止解析 decisions/ markdown 差距表**——存储格式归 Engine，结构化上下文是消费契约（见 ../../references/career-decision-loop-contract-v0.1.md §12）
+  → 无 → 加载 jd-analysis SKILL.md Step 1-2（JD质量快判 + 深度拆解）
   → 将拆解结果（必备技能/加分项/隐性信号）作为 Step 2 的事实来源
   → 进入 Step 1（JD 信息替代部分基本信息采集）
 
@@ -305,6 +308,7 @@ D 有简历：
 4. 保留姓名/邮箱/电话/城市/链接/时间等基础事实
 5. JD 要求但用户没有证据的能力 → 弱化为"了解/有兴趣"，不伪造
 6. 每条子弹句可追溯到用户口述（内部映射表记录）
+7. **差距语义边界（决策上下文消费时）**：差距行保持四态原文（NOT_DECLARED = 未声明不代表不具备，NEEDS_CONFIRMATION = 待确认）；对未声明能力的简历处理为「若候选人实际具备 X，可加入技能区」（人工确认式建议），**禁止写成「缺少/不足 X」**；待确认项转面试准备问题，不写进简历
 
 ### 输出质量
 

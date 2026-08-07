@@ -104,6 +104,30 @@ export interface DecisionCandidate {
   gaps: GapRow[]
 }
 
+// ─── Career Decision Loop v0.1 Step 4：Resume Rewrite Context（适配层）──
+
+/** 差距引用（简历改写上下文——传 dimension/requirement/status/evidence，禁止「缺少经验」类自由文本判断） */
+export interface GapReference {
+  dimension: 'capability' | 'education' | 'major' | 'experience'
+  requirement: string
+  status: MatchStatus
+  evidence: EvidenceRef[] // 画像证据（空 = 未声明——不代表不具备）
+}
+
+/** AI 参考叙述（决策记录叙述段；不构成系统事实） */
+export interface AIReference {
+  section: 'understanding' | 'preparationPlan' | 'resumeAdvice'
+  content: string
+}
+
+/** Resume Rewrite Context（Engine 投影——resume-writing 只消费此结构，不解析 decisions/ markdown） */
+export interface ResumeRewriteContext {
+  jobId: string
+  confirmedGaps: GapReference[]
+  evidenceHighlights: EvidenceRef[]
+  preparationNotes: AIReference[]
+}
+
 export interface JDAnalysisConstraintProposal {
   values: string[] // 原文枚举
   source: string

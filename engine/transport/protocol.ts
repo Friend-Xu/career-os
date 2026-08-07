@@ -128,6 +128,8 @@ export const METHODS = {
   decisionDraft: 'jobs/decision-draft',
   /** Agent 叙述提交（params: { id: jobId, personId, narrative? } → { decisionId }：Writer 合并 Engine 差距段 + Agent 叙述段写 decisions/{id}.md；narrative 禁含引擎事实区标题） */
   narrativeSubmit: 'decision/narrative-submit',
+  /** 简历改写上下文（params: { id: decisionId, personId } → ResumeRewriteContext：差距/证据回源 + 叙述段；resume-writing 只消费此结构不解析 decisions/ markdown） */
+  resumeContext: 'decision/resume-context',
   /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
   extractJd: 'jobs/extract',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
