@@ -33,24 +33,32 @@ export function computeGap(opts: {
   const { role, person, personSkills, skills } = opts
   const index = buildSkillIndex(skills)
 
-  // 声明技能按规范名索引（同义词声明取级别最高者，避免顺序依赖）
+  // 声明技能按规范名索引（同义词声明取级别最高者，避免顺序依赖）；
+  // 三键索引（Skill Representation v0.1）：声明名 + aliases + tools 指向同一 PersonSkill——JD 工具词命中即算声明命中
   const declared = new Map<string, PersonSkill>()
+  const declare = (key: string, ps: PersonSkill): void => {
+    const cur = declared.get(key)
+    if (!cur || ps.level > cur.level) declared.set(key, ps)
+  }
   for (const ps of personSkills) {
     const canonical = index.get(ps.name) ?? ps.name
-    const cur = declared.get(canonical)
-    if (!cur || ps.level > cur.level) declared.set(canonical, ps)
+    declare(canonical, ps)
+    for (const a of ps.aliases ?? []) declare(a, ps)
+    for (const t of ps.tools ?? []) declare(t, ps)
   }
 
-  const satisfied: { name: string; level: number }[] = []
-  const transferable: { name: string; level: number }[] = []
+  const satisfied: { name: string; level: number; via?: string }[] = []
+  const transferable: { name: string; level: number; via?: string }[] = []
   const missing: SkillGap[] = []
   for (const req of role.skills) {
     const canonical = index.get(req.name) ?? req.name
     const hit = declared.get(canonical)
     if (hit) {
-      // 同一声明命中多个需求只列一次（satisfied 与 transferable 各自去重）
+      // 同一声明命中多个需求只列一次（satisfied 与 transferable 各自去重）；via = 命中键（工具词/别名，UI 显示来源）
       const bucket = hit.level >= 3 ? satisfied : transferable
-      if (!bucket.some((e) => e.name === hit.name)) bucket.push({ name: hit.name, level: hit.level })
+      if (!bucket.some((e) => e.name === hit.name)) {
+        bucket.push({ name: hit.name, level: hit.level, ...(canonical !== hit.name ? { via: canonical } : {}) })
+      }
     } else {
       missing.push({ name: req.name, essential: req.essential, source: req.source, action: missingAction(req.name) })
     }

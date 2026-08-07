@@ -139,6 +139,36 @@ status: v1
   }
 })
 
+test('scanPersons：skill_inventory 括号工具词 → tools 派生（Skill Representation v0.1；无括号 → 缺省）', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'persons/person_001/snapshot/current/skill_inventory.md': `---
+id: person_001
+status: v1
+---
+
+## A. 技能清单
+
+| skill_id | 技能 | level | usage_context |
+|----------|------|-------|---------------|
+| skill_001 | 机械制图与三维建模（SolidWorks/Creo/AutoCAD） | applied-professional | 结构设计 |
+| skill_007 | 静应力仿真（Creo） | applied-basic | 基础仿真 |
+| skill_005 | 方案设计与样机调试 | applied-professional | 整机开发 |
+`,
+  })
+  try {
+    const ws = initWorkspace(dir)
+    const p = scanPersons(ws)[0]!
+    assert.deepEqual(p.skills, [
+      { skillId: 'skill_001', name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] },
+      { skillId: 'skill_007', name: '静应力仿真（Creo）', level: 2, tools: ['Creo'] },
+      { skillId: 'skill_005', name: '方案设计与样机调试', level: 4 },
+    ])
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('scanPersons：User Career Intent 表 → targetRoles（只取 source=user，recommended 不消费为目标）', () => {
   const dir = makeWorkspace({
     'persons/person_001/manifest.md': manifestMd,

@@ -540,6 +540,10 @@ export interface PersonSkill {
   level: number // 1-5（SFIA 式行为锚点）
   /** skill_inventory 的 skill_id（M6.6.5：Decision inputs.skillRefs 的 provenance 键） */
   skillId?: string
+  /** 声明侧别名（Skill Representation v0.1 契约形态；v0.1 无数据源，来源登记后续，消费端已支持） */
+  aliases?: string[]
+  /** 工具词（注册时 Engine 从 name 括号确定性派生：「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」→ SolidWorks/Creo/AutoCAD） */
+  tools?: string[]
 }
 
 /** 差距分析（纯派生视图：目标 Role 技能矩阵 vs 画像技能声明；引擎不自己打分，只做清单） */
@@ -552,8 +556,8 @@ export interface SkillGap {
 export interface GapResult {
   role: Role
   person: string
-  satisfied: { name: string; level: number }[] // 声明水平 ≥3（可独立产出）
-  transferable: { name: string; level: number }[] // 声明水平 1-2（有基础需补强）
+  satisfied: { name: string; level: number; via?: string }[] // 声明水平 ≥3（可独立产出）；via = 命中键（工具词/别名，UI 显示来源）
+  transferable: { name: string; level: number; via?: string }[] // 声明水平 1-2（有基础需补强）
   missing: SkillGap[] // 未声明（需学习）
 }
 

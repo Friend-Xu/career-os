@@ -528,18 +528,23 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 <Stack spacing={0.5}>
                   {gap.satisfied.length > 0 && (
                     <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.low }}>
-                      ✓ 符合：{gap.satisfied.map((s) => s.name).join('、')}
+                      ✓ 符合：{gap.satisfied.map((s) => (s.via ? `${s.via}（${s.name.split(/[（(]/)[0]!.trim()}）` : s.name)).join('、')}
                     </Typography>
                   )}
                   {gap.transferable.length > 0 && (
                     <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.medium }}>
-                      △ 有基础：{gap.transferable.map((s) => s.name).join('、')}
+                      △ 有基础：{gap.transferable.map((s) => (s.via ? `${s.via}（${s.name.split(/[（(]/)[0]!.trim()}）` : s.name)).join('、')}
                     </Typography>
                   )}
                   {gap.missing.length > 0 && (
-                    <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.high }}>
-                      ✗ 不足：{gap.missing.map((s) => s.name).join('、')}
-                    </Typography>
+                    <Stack spacing={0.25}>
+                      <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.high }}>
+                        未覆盖能力：{gap.missing.map((m) => m.name).join('、')}
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                        岗位要求这些能力，画像未声明——不代表不具备；可在画像中补充确认
+                      </Typography>
+                    </Stack>
                   )}
                 </Stack>
               </Box>

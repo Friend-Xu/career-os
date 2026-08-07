@@ -539,6 +539,8 @@ export function computeJobMatch(workspace: Workspace, jobId: string, person: str
     skills: (() => {
       const seen = new Set<string>()
       return job.record.responsibilities
+        // Capability Matching Boundary：只消费 hard 能力（soft 责任单元不产出硬匹配；undefined = 旧 5 列格式，兼容消费）
+        .filter((r) => r.category === undefined || r.category === 'hard')
         .flatMap((r) => r.capabilities.map((name) => ({ name, essential: r.priority === 'must', source: 'JD' })))
         .filter((s) => {
           if (seen.has(s.name)) return false

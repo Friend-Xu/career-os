@@ -32,7 +32,7 @@ created_at: 2026-08-06
 # Person 001 — 我
 `
 
-/** person 技能：办公软件 4 级 + 数据整理与文案 2 级（与 roles.md 条目部分重叠） */
+/** person 技能：办公软件 4 级 + 数据整理与文案 2 级（与 roles.md 条目部分重叠）+ 括号工具词声明（tools 派生） */
 const skillInvMd = `---
 id: person_001
 status: v2
@@ -42,7 +42,7 @@ status: v2
 
 | 字段 | 值 |
 |------|-----|
-| skill_count | 2 |
+| skill_count | 3 |
 | status | v2 resolved |
 
 ## A. 通用能力
@@ -51,6 +51,7 @@ status: v2
 |----------|------|-------|---------------|---------------|------------|
 | skill_a | 办公软件 | applied-professional | 简历 | 日常办公 | high |
 | skill_b | 数据整理与文案 | applied-basic | 简历 | 报告整理 | high |
+| skill_c | 机械制图与三维建模（SolidWorks/Creo/AutoCAD） | applied-professional | 简历 | 结构设计 | high |
 `
 
 function setup(): ReturnType<typeof initWorkspace> {
@@ -104,6 +105,40 @@ test('jobs/match：匹配输入 = 岗位智能段 capabilities（roles.md 存在
     assert.deepEqual(gap.satisfied, [{ name: '办公软件', level: 4 }])
     assert.deepEqual(gap.transferable, [])
     assert.deepEqual(gap.missing.map((m) => m.name), ['跨部门协作'])
+  } finally {
+    rmSync(ws.paths.root, { recursive: true, force: true })
+  }
+})
+
+test('jobs/match：工具词命中（Skill Representation v0.1）+ soft 责任单元不消费（Capability Matching Boundary）', () => {
+  const ws = setup()
+  try {
+    ws.write('jobs/2026-08-07-心玮医疗-管理培训生.md', `# 管理培训生 — 心玮医疗
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| company | 心玮医疗 |
+| title | 管理培训生 |
+| requirements | 熟练使用办公软件 |
+| created_at | 2026-08-07 |
+
+## 岗位智能
+
+| Responsibility | Priority | Category | Capabilities | Evidence Patterns | Questions |
+|----------------|----------|-----------|--------------|-------------------|-----------|
+| 熟练使用办公软件 | must | hard | 办公软件 | | |
+| 三维建模工具 | must | hard | SolidWorks | | |
+| 团队协作 | nice | soft | 团队协作 | | |
+`)
+    const gap = computeJobMatch(ws, '2026-08-07-心玮医疗-管理培训生', '我')
+    assert.deepEqual(gap.satisfied, [
+      { name: '办公软件', level: 4 },
+      { name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }, // JD 工具词命中声明 tools
+    ])
+    assert.deepEqual(gap.transferable, [])
+    assert.deepEqual(gap.missing, []) // soft 团队协作被过滤，不进匹配
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
   }

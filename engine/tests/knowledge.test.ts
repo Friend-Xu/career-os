@@ -221,7 +221,7 @@ test('computeGap：别名归一化双向命中——声明别名命中需求名 
     ],
     skills,
   })
-  assert.deepEqual(gap.satisfied, [{ name: '非标设计', level: 4 }]) // 条目名 = 声明名
+  assert.deepEqual(gap.satisfied, [{ name: '非标设计', level: 4, via: '机械设计' }]) // 条目名 = 声明名；via = 需求词（可解释来源）
   assert.deepEqual(gap.transferable, [{ name: '减速器设计', level: 2 }])
   assert.equal(gap.missing.length, 0)
 })
@@ -269,6 +269,30 @@ test('computeGap：词表外自由技能按名精确匹配', () => {
     skills: [],
   })
   assert.deepEqual(gap.satisfied, [{ name: '焊接切割工艺', level: 3 }])
+})
+
+test('computeGap：tools 工具词命中（Skill Representation v0.1）——JD 工具词命中声明 tools → satisfied + via；未声明 → missing', () => {
+  const gap = computeGap({
+    role: roleOf({ skills: [
+      { name: 'SolidWorks', essential: true, source: 'JD-博流' },
+      { name: '泵选型', essential: true, source: 'JD-博流' },
+    ] }),
+    person: '我',
+    personSkills: [{ name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] }],
+    skills: [],
+  })
+  assert.deepEqual(gap.satisfied, [{ name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }]) // via = 命中工具词（UI 显示来源）
+  assert.deepEqual(gap.missing.map((m) => m.name), ['泵选型'])
+})
+
+test('computeGap：aliases 声明别名进索引（声明侧别名键命中需求）', () => {
+  const gap = computeGap({
+    role: roleOf({ skills: [{ name: '三维建模', essential: false, source: 'JD-y' }] }),
+    person: '我',
+    personSkills: [{ name: '机械制图与三维建模', level: 4, aliases: ['三维建模'] }],
+    skills: [],
+  })
+  assert.deepEqual(gap.satisfied, [{ name: '机械制图与三维建模', level: 4, via: '三维建模' }])
 })
 
 // ─── 目录扫描 / 图谱 / RPC 接线 ───────────────────────────────────────────

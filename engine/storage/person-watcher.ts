@@ -449,6 +449,17 @@ const SKILL_LEVEL_MAP: Record<string, number> = {
   'applied-basic': 2,
 }
 
+/** skill_inventory 技能名括号内工具词 → tools（确定性派生，非推理；Skill Representation v0.1）：
+ *  「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」→ [SolidWorks, Creo, AutoCAD]；无括号 → 空 */
+function deriveTools(name: string): string[] {
+  const m = name.match(/[（(]([^（）()]+)[)）]/)
+  if (!m) return []
+  return m[1]!
+    .split(/[/／,，;；、\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 2 && !/^\d+$/.test(s))
+}
+
 /**
  * snapshot/skill_inventory.md → confirmed 技能 + 版本。
  * 解析所有 `| skill_id | 名称 | level |` 表格行（A/B/C 段）；level 单元格取首词
@@ -462,7 +473,9 @@ function parseSkillInventory(md: string): { skills: PersonSkill[]; version: stri
     const levelWord = m[3]!.trim().split(/[（(]/)[0]!.trim()
     const level = SKILL_LEVEL_MAP[levelWord]
     if (level === undefined) continue
-    skills.push({ skillId: m[1]!.trim(), name: m[2]!.trim(), level })
+    const name = m[2]!.trim()
+    const tools = deriveTools(name)
+    skills.push({ skillId: m[1]!.trim(), name, level, ...(tools.length > 0 ? { tools } : {}) })
   }
   const version = md.match(/^status:\s*(v[\w.-]+)/m)?.[1] ?? 'v1'
   return { skills, version }
