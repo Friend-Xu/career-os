@@ -1,8 +1,8 @@
 # Skill Representation Contract v0.1（已冻结，2026-08-08）
 
 > 冻结版（评审裁决：收敛——不做完整「职业语义翻译层」，只落 **Skill Representation
-> Layer v0.1**：能力主体/工具/别名的结构拆分；related/partial/推断归 Semantic Translation
-> 层 v0.x 预留，需 Evidence Boundary）。
+> Layer v0.1**：能力主体/工具/别名的结构拆分；related/partial/推断归 Career Ontology
+> 层 v0.x 预留（长期命名——非纯翻译，含关系/迁移/推理/行业上下文），需 Evidence Boundary）。
 > 背景：博流 JD 匹配 22 个 ✗ 实测暴露——「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」
 > 声明无法命中 JD 工具词 SolidWorks。根因不是匹配算法 bug，而是 **PersonSkill 把
 > 能力主体+工具+领域压成一个 name 字符串**：两个职业世界（画像声明 / JD 语言）
@@ -21,8 +21,8 @@ Career OS Skill Model
         ├── Skill Representation（本契约 v0.1）——结构拆分
         │       tools / aliases（确定性派生，Engine）
         │
-        └── Semantic Translation（v0.x 预留，不做）——关系层
-                related / partial / 迁移 / 推理
+        └── Career Ontology（v0.x 预留，不做；长期命名——非纯翻译，
+                含关系/迁移/推理/行业上下文）——关系层
 ```
 
 ## 2. 问题（冻结级）
@@ -97,7 +97,9 @@ MATCHED（via: "SolidWorks"，UI 显示来源 = 声明名）
 - `via` 命中键透传到 GapResult（satisfied/transferable），UI 展示「JD 词 ✓ 来源声明」
 - 未命中 → 未声明（missing）——UI 呈现「未覆盖能力/画像未声明」，禁止渲染成「不足」（Claim Strength ≤ Evidence Strength：未声明 ≠ 不会）
 
-## 6. 不做清单（Semantic Translation 层 v0.x 预留，冻结级）
+## 6. 不做清单（Career Ontology 层 v0.x 预留，冻结级；长期命名——非纯翻译层，
+    最终含 synonym / parent capability / transferable relation / evidence requirement /
+    industry context，全部需要 Evidence Boundary + 关系契约设计，**不混入本层 matcher**）
 
 以下全部需要 Evidence Boundary + 关系契约设计，**不混入本层 matcher**：
 
