@@ -13,6 +13,7 @@ import HistoryIcon from '@mui/icons-material/History'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
+import { workingCopyLabel } from '../../../utils/resume-label'
 import { COLORS, RISK_COLOR } from '../../../data/constants'
 import { resumeVersionLabel } from '../../../utils/resume-label'
 import type { ResumeWorkspaceView } from '../../../store/app-store'
@@ -42,6 +43,7 @@ const SPACES: { key: ResumeWorkspaceView; label: string; desc: string; icon: Rea
 export function ResumesSidebar() {
   const person = useAppStore((s) => s.currentPerson())
   const workingCopies = useAppStore((s) => s.workingCopies)
+  const jobs = useAppStore((s) => s.jobs)
   const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
   const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
   const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
@@ -49,7 +51,6 @@ export function ResumesSidebar() {
   const selectResume = useAppStore((s) => s.selectResume)
   const selectedResumeId = useAppStore((s) => s.selectedResumeId)
   const resumeVersions = useAppStore((s) => s.resumeVersions)
-  const jobs = useAppStore((s) => s.jobs)
   const careerContext = useAppStore((s) => s.careerContext)
 
   const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
@@ -123,7 +124,7 @@ export function ResumesSidebar() {
                 <Stack key={w.id} onClick={() => setActiveWorkingCopy(w.id)} sx={{ mb: 0.5, px: 1.25, py: 1, borderRadius: '8px', cursor: 'pointer', border: `1px solid ${active ? COLORS.accent : COLORS.border}`, bgcolor: active ? COLORS.accentMuted : COLORS.bg, '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover } }}>
                   <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                     <Typography sx={{ fontSize: 12.5, fontWeight: active ? 600 : 500, color: active ? COLORS.accent : COLORS.text, flex: 1, minWidth: 0 }} noWrap>
-                      {w.id.slice(-10)}
+                      {workingCopyLabel(w, jobs)}
                     </Typography>
                     <Typography sx={{ fontSize: 11, color: w.status === 'promoted' ? COLORS.textMuted : COLORS.accent, flexShrink: 0 }}>
                       {w.status === 'promoted' ? '已发布' : '编辑中'}

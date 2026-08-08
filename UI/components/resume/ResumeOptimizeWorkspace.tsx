@@ -11,6 +11,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
+import { workingCopyLabel } from '../../utils/resume-label'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../../engine/storage/opportunity-proposal-registry.ts'
@@ -250,7 +251,7 @@ export function ResumeOptimizeWorkspace() {
             </MenuItem>
             {personWorkingCopies.map((w) => (
               <MenuItem key={w.id} value={w.id} sx={{ fontSize: 12.5 }}>
-                {w.id.slice(-10)} · {w.status === 'promoted' ? '已发布' : '编辑中'}
+                {workingCopyLabel(w, jobs)} · {w.status === 'promoted' ? '已发布' : '编辑中'}
               </MenuItem>
             ))}
           </Select>
@@ -282,7 +283,7 @@ export function ResumeOptimizeWorkspace() {
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>当前分析对象：</Typography>
             <Chip
               size="small"
-              label={`${wc.id.slice(-10)} · 更新 ${wc.updatedAt.slice(5, 16).replace('T', ' ')}`}
+              label={`${workingCopyLabel(wc, jobs)} · 更新 ${wc.updatedAt.slice(5, 16).replace('T', ' ')}`}
               sx={{ height: 20, fontSize: 11, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
             />
             {selectedJob && (
