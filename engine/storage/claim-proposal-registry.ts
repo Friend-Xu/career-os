@@ -66,12 +66,12 @@ const SOURCES: ClaimProposalSource[] = ['star_reconstructor', 'user_edit', 'inte
 const SECTIONS = ['summary', 'experience', 'projects', 'skills', 'education']
 
 /** statement 中的数字 token（锚点比对用——数字须能在证据文本找到，防 AI 编造指标） */
-function numbersOf(s: string): string[] {
+export function numbersOf(s: string): string[] {
   return [...new Set(s.match(/\d+(?:\.\d+)?/g) ?? [])]
 }
 
-/** evidence 全文本（title + role + contribution + 各维度内容——锚点比对语料） */
-function evidenceText(e: EvidenceItem): string {
+/** evidence 全文本（title + role + contribution + 各维度内容——锚点比对语料）——opportunity-proposal FACT_GROUNDING 复用 */
+export function evidenceText(e: EvidenceItem): string {
   const dims = Object.values(e.evidence)
     .flat()
     .map((v) => v.content)
@@ -79,8 +79,8 @@ function evidenceText(e: EvidenceItem): string {
   return `${e.event.title} ${e.role} ${e.contribution} ${dims}`
 }
 
-/** 锚点校验（Claim Strength ≤ Evidence Strength）：statement 数字须在证据文本中有锚 */
-function anchorCheck(statement: string, items: EvidenceItem[]): string[] {
+/** 锚点校验（Claim Strength ≤ Evidence Strength）：statement 数字须在证据文本中有锚——opportunity-proposal numeric_anchor 复用 */
+export function anchorCheck(statement: string, items: EvidenceItem[]): string[] {
   const nums = numbersOf(statement)
   if (nums.length === 0) return []
   const corpus = items.map(evidenceText).join(' ')

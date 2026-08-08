@@ -77,6 +77,13 @@ import {
   type ClaimProposalInput,
 } from '../storage/claim-proposal-registry.ts'
 import {
+  approveOpportunityProposal,
+  buildBridgeContext,
+  rejectOpportunityProposal,
+  scanOpportunityProposals,
+  submitOpportunityProposal,
+} from '../storage/opportunity-proposal-registry.ts'
+import {
   promoteToDocumentCandidate,
   scanWorkingCopies,
   upsertWorkingCopy,
@@ -1478,6 +1485,44 @@ export async function startServer(opts: {
         resumeDocument: document,
         wc,
       })
+    },
+    [METHODS.opportunityContext]: (params) => {
+      const p = params as Record<string, unknown>
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const opportunityId = typeof p?.opportunityId === 'string' ? p.opportunityId : ''
+      if (!wcId || !opportunityId) throw new Error('opportunityId/wcId 必填')
+      return buildBridgeContext(workspace, wcId, opportunityId)
+    },
+    [METHODS.opportunityProposalSubmit]: (params) => {
+      const p = params as Record<string, unknown>
+      const opportunityId = typeof p?.opportunityId === 'string' ? p.opportunityId : ''
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const changes = Array.isArray(p?.changes) ? (p.changes as Record<string, unknown>[]) : []
+      if (!opportunityId || !wcId) throw new Error('opportunityId/wcId 必填')
+      const proposal = submitOpportunityProposal(workspace, {
+        opportunityId,
+        wcId,
+        changes: changes.map((c) => ({
+          ...(typeof c.blockId === 'string' ? { blockId: c.blockId } : {}),
+          before: typeof c.before === 'string' ? c.before : '',
+          after: typeof c.after === 'string' ? c.after : '',
+          operation: c.operation as 'rewrite' | 'insert' | 'delete',
+        })),
+      })
+      broadcast({ event: EVENTS.opportunityProposalsChanged })
+      return proposal
+    },
+    [METHODS.opportunityProposalList]: () => scanOpportunityProposals(workspace),
+    [METHODS.opportunityProposalApprove]: (params) => {
+      const proposal = approveOpportunityProposal(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.opportunityProposalsChanged })
+      return proposal
+    },
+    [METHODS.opportunityProposalReject]: (params) => {
+      const p = params as Record<string, unknown>
+      const proposal = rejectOpportunityProposal(workspace, jobIdParams(params), typeof p?.reason === 'string' ? p.reason : undefined)
+      broadcast({ event: EVENTS.opportunityProposalsChanged })
+      return proposal
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
       ...r.record,

@@ -162,6 +162,16 @@ export const METHODS = {
   workingCopyAlignment: 'working-copies/alignment',
   /** 工作副本机会投影（params: { wcId, jobId } → Opportunity[]——P3.2：一等对象「为什么值得改」；alignment/material 两类，纯投影不落盘） */
   workingCopyOpportunities: 'working-copies/opportunities',
+  /** 机会 Proposal Bridge 上下文（params: { opportunityId, wcId } → ProposalBridgeContext——P3.3：Engine 组装证据回源，Agent 只消费此结构不读库；material 机会不建 Proposal） */
+  opportunityContext: 'opportunity-proposals/context',
+  /** 机会 Proposal 提交（params: { opportunityId, wcId, changes[] } → OpportunityProposal——P3.3：Engine 校验 FACT_GROUNDING + snapshot 后登记 pending；Agent 提供 changes 内容不拥有事实生产权） */
+  opportunityProposalSubmit: 'opportunity-proposals/generate',
+  /** 全量机会 Proposal（opportunity-proposals/ 扫描；P3.3 登记通道——与 proposals/ 版本建议层分离） */
+  opportunityProposalList: 'opportunity-proposals/list',
+  /** 批准机会 Proposal（params: { id } → pending → approved——approved ≠ applied，apply 在 P3.4） */
+  opportunityProposalApprove: 'opportunity-proposals/approve',
+  /** 拒绝机会 Proposal（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  opportunityProposalReject: 'opportunity-proposals/reject',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
@@ -255,6 +265,8 @@ export const EVENTS = {
   claimsChanged: 'data.claims.changed',
   /** claim-proposals/ 目录变更后推送（不含数据，客户端用 claim-proposals/list 拉快照；ADR-022 P1.1） */
   claimProposalsChanged: 'data.claim-proposals.changed',
+  /** opportunity-proposals/ 目录变更后推送（不含数据，客户端用 opportunity-proposals/list 拉快照；P3.3） */
+  opportunityProposalsChanged: 'data.opportunity-proposals.changed',
   /** resumes/working-copies/ 目录变更后推送（不含数据，客户端用 working-copies/list 拉快照；ADR-023 P2.2） */
   workingCopiesChanged: 'data.working-copies.changed',
   /** resumes/ 目录变更后推送（不含数据，客户端用 resumes/list 拉快照；M3.5） */
