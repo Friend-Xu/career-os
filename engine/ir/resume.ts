@@ -62,6 +62,7 @@ export interface WorkingBlock {
   id: string
   text: string
   provenanceLinks?: string[] // 多源 claim 引用（一表达多 claim）；Assembly 时映射单主 claimId
+  expectationId?: string // 表达锚（P4.1——apply rewrite 时引擎写入：表达对应岗位期望 E；重诊断据此判定表达已写入）
 }
 
 /** 段（层级：WorkingCopy → Section → Block——blocks 属于 section，删除段时块生命周期一并明确） */

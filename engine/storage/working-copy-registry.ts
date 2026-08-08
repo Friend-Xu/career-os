@@ -55,7 +55,12 @@ export function serializeWorkingCopy(wc: WorkingCopy): string {
   const body = wc.sections
     .map((s) => {
       const blocks = s.blocks
-        .map((b) => `- ${b.text}${b.provenanceLinks && b.provenanceLinks.length > 0 ? `（claims: ${b.provenanceLinks.join(', ')}）` : ''}`)
+        .map((b) => {
+          const suffix: string[] = []
+          if (b.provenanceLinks && b.provenanceLinks.length > 0) suffix.push(`claims: ${b.provenanceLinks.join(', ')}`)
+          if (b.expectationId) suffix.push(`expectation: ${b.expectationId}`)
+          return `- ${b.text}${suffix.length > 0 ? `（${suffix.join('）（')}）` : ''}`
+        })
         .join('\n')
       return `## ${s.title}\n\n${blocks}`
     })
@@ -77,13 +82,17 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
     const block = line.match(/^\s*[-*]\s*(.+)$/)
     if (block && current) {
       const raw = block[1].trim()
-      const claimsM = raw.match(/^(.*?)（claims:\s*([^）]+)）\s*$/)
-      if (claimsM) {
-        current.blocks.push({ id: `blk_${current.blocks.length + 1}`, text: claimsM[1].trim(), provenanceLinks: claimsM[2].split(',').map((c) => c.trim()) })
-      } else {
+      const claimsM = raw.match(/（claims:\s*([^）]+)）/)
+      const expM = raw.match(/（expectation:\s*([^）]+)）/)
+      const text = raw.replace(/\s*（(?:claims|expectation):\s*[^）]*）/g, '').trim()
+      const expectationId = expM?.[1].trim()
+      current.blocks.push({
+        id: `blk_${current.blocks.length + 1}`,
+        text,
+        ...(expectationId ? { expectationId } : {}),
         // 契约 ApplyTransaction §2：不制造第三种 undefined 态——unbound 块显式 provenanceLinks = []
-        current.blocks.push({ id: `blk_${current.blocks.length + 1}`, text: raw, provenanceLinks: [] })
-      }
+        provenanceLinks: claimsM ? claimsM[1].split(',').map((c) => c.trim()) : [],
+      })
     }
   }
   return {
@@ -175,14 +184,15 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
       continue
     }
     const bullets = s.blocks.map((b): { bullet: ResumeDocument['sections'][number]['bullets'][number] | null; issue?: ResumeValidationIssue } => {
+      const meta = b.expectationId ? { expectationId: b.expectationId } : undefined
       if (b.provenanceLinks && b.provenanceLinks.length > 0) {
         const main = b.provenanceLinks[0]
         const claim = claimsById.get(main)
         if (!claim) return { bullet: null, issue: { code: 'CLAIM_NOT_FOUND', message: `主 claim 不存在：${main}`, target: b.id } }
-        return { bullet: { sentence: b.text, claimId: main } }
+        return { bullet: { sentence: b.text, claimId: main, ...(meta ? { metadata: meta } : {}) } }
       }
       return {
-        bullet: { sentence: b.text, claimId: '' },
+        bullet: { sentence: b.text, claimId: '', ...(meta ? { metadata: meta } : {}) },
         issue: { code: 'UNBOUND_BLOCK', message: '未资产化块（无 claim 锚）——不参与对齐/证据投影', target: b.id },
       }
     })

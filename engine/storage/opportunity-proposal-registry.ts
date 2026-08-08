@@ -1,12 +1,15 @@
 /**
  * opportunity-proposal-registry（P3.3——契约 docs/domain/opportunity-proposal-contract-v0.1.md，FROZEN）：
- * Proposal Bridge 登记通道——Opportunity「为什么改」→ OpportunityProposal「怎么改」。
+ * 提案域登记通道——Opportunity「为什么改」→ OpportunityProposal「怎么改」→ ApplyTransaction「怎么落」→
+ * OpportunityHistory「决策事件审计」（P4.1——契约 opportunity-history-contract-v0.1，FROZEN，同域聚合避免循环依赖）。
  * - Producer Boundary：Agent 提供 changes 内容，Engine 登记 + 确定性校验（FACT_GROUNDING），
  *   User decision 决定状态；Proposal 不拥有事实生产权（不产 Claim、不改 WorkingCopy——P3.4 才 apply）
  * - 校验：numeric_anchor（复用 claim-proposal anchorCheck）+ capability_anchor（级别词不高于证据）；
  *   entity/outcome 子锚 v0.2（需要语义规则——标准缺失先立标准，诚实标注）
- * - snapshot：生成时固化 wcRevision + evidenceHash + opportunityVersion——P3.4 apply 防过期覆盖
+ * - snapshot：生成时固化 wcRevision + evidenceHash + opportunityVersion + opportunitySnapshot（P4.1——
+ *   Opportunity 是 derived projection，重诊断后消失；submit 时固化为不可变解释来源，apply/reject 不重算）
  * - approved ≠ applied：approve 只是用户同意（P3.3）；apply 成功才改 WorkingCopy（P3.4）
+ * - history 不变式：条目不可变；只在用户决策终态登记（rejected/applied/conflict）；无快照旧提案不登记
  */
 import { createHash } from 'node:crypto'
 import type { EvidenceItem } from '../ir/schema.ts'
@@ -52,6 +55,18 @@ export interface ProposalValidation {
   issues: { code: string; message: string }[]
 }
 
+/** submit 时固化的机会快照（P4.1——Opportunity 是 derived projection，重诊断后字段消失；快照是不可变解释来源，apply/reject 不重算） */
+export interface OpportunitySnapshot {
+  source: Opportunity['source']
+  severity: Opportunity['severity']
+  intent: Opportunity['intent']
+  anchor: Opportunity['anchor']
+  applyTarget?: Opportunity['applyTarget']
+  reason: string
+  suggestedAction: string
+  refs: { evidenceIds: string[]; claimIds: string[] }
+}
+
 export interface OpportunityProposal {
   id: string
   opportunityId: string
@@ -61,6 +76,7 @@ export interface OpportunityProposal {
   status: OpportunityProposalStatus
   createdAt: string
   decidedAt?: string
+  opportunitySnapshot?: OpportunitySnapshot // P4.1——submit 时固化；旧格式文件 parse 后缺省（history 不登记）
 }
 
 export interface OpportunityProposalInput {
@@ -228,6 +244,16 @@ export function submitOpportunityProposal(ws: Workspace, input: OpportunityPropo
     validation,
     status: 'pending',
     createdAt: now.toISOString(),
+    opportunitySnapshot: {
+      source: opportunity.source,
+      severity: opportunity.severity,
+      intent: opportunity.intent,
+      anchor: opportunity.anchor,
+      ...(opportunity.applyTarget ? { applyTarget: opportunity.applyTarget } : {}),
+      reason: opportunity.reason,
+      suggestedAction: opportunity.suggestedAction,
+      refs: opportunity.refs,
+    },
   }
   ws.write(`opportunity-proposals/${id}.md`, serializeOpportunityProposal(proposal))
   return proposal
@@ -247,18 +273,106 @@ function serializeOpportunityProposal(p: OpportunityProposal): string {
     ...(p.decidedAt ? [`decided_at: ${p.decidedAt}`] : []),
   ]
   const parts = [`---\n${meta.join('\n')}\n---`, `# 候选：${p.changes[0]?.after.slice(0, 40) ?? ''}`]
-  p.changes.forEach((c, i) => {
-    parts.push(
-      `## 变更 ${i + 1}\n\n| 字段 | 值 |\n|------|-----|\n` +
-        `| block_id | ${c.blockId ?? ''} |\n` +
-        `| section_id | ${c.sectionId ?? ''} |\n` +
-        `| operation | ${c.operation} |\n` +
-        `| before | ${c.before} |\n` +
-        `| after | ${c.after} |\n`,
-    )
-  })
+  if (p.opportunitySnapshot) parts.push(serializeOpportunitySnapshotBlock(p.opportunitySnapshot))
+  parts.push(...serializeChangeBlocks(p.changes))
   parts.push(`## 校验\n\n- status: ${v.status}\n- evaluated_at: ${v.evaluatedAt}`)
   return parts.join('\n\n')
+}
+
+// ─── 共享表格序列化/解析（proposal / apply_tx / history 三资产同构——变更块 + 机会快照块）──
+
+/** 变更块序列化（`## 变更 N` 表格——三资产共用格式） */
+export function serializeChangeBlocks(changes: ProposalChange[]): string[] {
+  return changes.map((c, i) => {
+    return (
+      `## 变更 ${i + 1}\n\n| 字段 | 值 |\n|------|-----|\n` +
+      `| block_id | ${c.blockId ?? ''} |\n` +
+      `| section_id | ${c.sectionId ?? ''} |\n` +
+      `| operation | ${c.operation} |\n` +
+      `| before | ${c.before} |\n` +
+      `| after | ${c.after} |\n`
+    )
+  })
+}
+
+/** 变更块解析（body 中全部 `## 变更 N` 段） */
+export function parseChangeBlocks(body: string): ProposalChange[] {
+  const changes: ProposalChange[] = []
+  for (const m of body.matchAll(/##\s*变更 (\d+)([\s\S]*?)(?=\n##\s|$)/g)) {
+    const section = m[2]
+    const blockId = section.match(/\|\s*block_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
+    const sectionId = section.match(/\|\s*section_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
+    const operation = section.match(/\|\s*operation\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() as ProposalChange['operation']
+    const before = section.match(/\|\s*before\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
+    const after = section.match(/\|\s*after\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
+    changes.push({ ...(blockId ? { blockId } : {}), ...(sectionId ? { sectionId } : {}), before, after, operation })
+  }
+  return changes
+}
+
+/** 机会快照块序列化（`## 机会快照` 表格——P4.1 submit 固化） */
+export function serializeOpportunitySnapshotBlock(s: OpportunitySnapshot): string {
+  const a = s.anchor
+  const t = s.applyTarget
+  const rows: [string, string][] = [
+    ['source', s.source],
+    ['severity', s.severity],
+    ['intent', s.intent],
+    ['anchor_kind', a.kind],
+    ['anchor_job_id', a.jobId ?? ''],
+    ['anchor_responsibility_id', a.responsibilityId ?? ''],
+    ['anchor_state', a.state ?? ''],
+    ['anchor_evidence_id', a.evidenceId ?? ''],
+    ['anchor_claim_id', a.claimId ?? ''],
+    ['apply_target_wc_id', t?.wcId ?? ''],
+    ['apply_target_action', t?.action ?? ''],
+    ['apply_target_block_id', t?.blockId ?? ''],
+    ['reason', s.reason],
+    ['suggested_action', s.suggestedAction],
+    ['ref_evidence_ids', s.refs.evidenceIds.join('、')],
+    ['ref_claim_ids', s.refs.claimIds.join('、')],
+  ]
+  return `## 机会快照\n\n| 字段 | 值 |\n|------|-----|\n` + rows.map(([k, v]) => `| ${k} | ${v} |`).join('\n')
+}
+
+/** 机会快照块解析（缺块 → undefined——旧格式 proposal 兼容，history 不登记） */
+export function parseOpportunitySnapshotBlock(body: string): OpportunitySnapshot | undefined {
+  const m = body.match(/##\s*机会快照([\s\S]*?)(?=\n##\s|$)/)
+  if (!m) return undefined
+  const cell = (k: string): string => m[1].match(new RegExp(`\\|\\s*${k}\\s*\\|\\s*([^|]*)\\s*\\|`))?.[1]?.trim() ?? ''
+  const split = (s: string): string[] => (s ? s.split('、').filter(Boolean) : [])
+  const anchor: Opportunity['anchor'] = { kind: cell('anchor_kind') as Opportunity['anchor']['kind'] }
+  const jobId = cell('anchor_job_id')
+  if (jobId) anchor.jobId = jobId
+  const responsibilityId = cell('anchor_responsibility_id')
+  if (responsibilityId) anchor.responsibilityId = responsibilityId
+  const state = cell('anchor_state')
+  if (state) anchor.state = state as Opportunity['anchor']['state']
+  const evidenceId = cell('anchor_evidence_id')
+  if (evidenceId) anchor.evidenceId = evidenceId
+  const claimId = cell('anchor_claim_id')
+  if (claimId) anchor.claimId = claimId
+  const action = cell('apply_target_action') as NonNullable<Opportunity['applyTarget']>['action'] | ''
+  const wcId = cell('apply_target_wc_id')
+  const blockId = cell('apply_target_block_id')
+  return {
+    source: cell('source') as Opportunity['source'],
+    severity: cell('severity') as Opportunity['severity'],
+    intent: cell('intent') as Opportunity['intent'],
+    anchor,
+    ...(action
+      ? {
+          applyTarget: {
+            wcId,
+            action,
+            ...(blockId ? { blockId } : {}),
+          } as NonNullable<Opportunity['applyTarget']>,
+        }
+      : {}),
+    reason: cell('reason'),
+    suggestedAction: cell('suggested_action'),
+    refs: { evidenceIds: split(cell('ref_evidence_ids')), claimIds: split(cell('ref_claim_ids')) },
+  }
 }
 
 /** 全量扫描（opportunity-proposals/ 目录） */
@@ -270,21 +384,12 @@ export function scanOpportunityProposals(ws: Workspace): OpportunityProposal[] {
 export function parseOpportunityProposalMarkdown(md: string, sourceFile: string): OpportunityProposal {
   const { meta, body } = splitFrontmatter(md)
   const id = meta.id ?? sourceFile.replace(/\.md$/, '')
-  const changes: ProposalChange[] = []
-  for (const m of body.matchAll(/##\s*变更 (\d+)([\s\S]*?)(?=\n##\s|$)/g)) {
-    const section = m[2]
-    const blockId = section.match(/\|\s*block_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
-    const sectionId = section.match(/\|\s*section_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
-    const operation = section.match(/\|\s*operation\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() as ProposalChange['operation']
-    const before = section.match(/\|\s*before\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
-    const after = section.match(/\|\s*after\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
-    changes.push({ ...(blockId ? { blockId } : {}), ...(sectionId ? { sectionId } : {}), before, after, operation })
-  }
+  const opportunitySnapshot = parseOpportunitySnapshotBlock(body)
   return {
     id,
     opportunityId: meta.opportunity_id ?? '',
     wcId: meta.wc_id ?? '',
-    changes,
+    changes: parseChangeBlocks(body),
     validation: {
       status: (body.match(/status:\s*(valid|invalid)/)?.[1] as 'valid' | 'invalid') ?? 'valid',
       evaluatedAt: body.match(/evaluated_at:\s*(\S+)/)?.[1] ?? '',
@@ -299,6 +404,7 @@ export function parseOpportunityProposalMarkdown(md: string, sourceFile: string)
     status: (meta.status as OpportunityProposalStatus) ?? 'pending',
     createdAt: meta.created_at ?? '',
     ...(meta.decided_at ? { decidedAt: meta.decided_at } : {}),
+    ...(opportunitySnapshot ? { opportunitySnapshot } : {}),
   }
 }
 
@@ -322,12 +428,28 @@ export function approveOpportunityProposal(ws: Workspace, id: string, now: Date 
   return updateStatus(ws, id, 'approved', now)
 }
 
-/** reject：pending → rejected（单向不 reopen，审计保留） */
+/** reject：pending → rejected（单向不 reopen，审计保留）。P4.1 审计先行——历史登记（决策事件）成功后再写状态 */
 export function rejectOpportunityProposal(ws: Workspace, id: string, _reason?: string, now: Date = new Date()): OpportunityProposal {
   const file = `opportunity-proposals/${id}.md`
   if (!ws.exists(file)) throw new OpportunityProposalError(`提案不存在：${id}`)
   const proposal = parseOpportunityProposalMarkdown(ws.read(file), `${id}.md`)
   if (proposal.status !== 'pending') throw new OpportunityProposalError(`仅 pending 可 reject（当前 ${proposal.status}）`)
+  const wc = scanWorkingCopies(ws).find((w) => w.id === proposal.wcId)!
+  recordOpportunityHistory(
+    ws,
+    {
+      proposalId: proposal.id,
+      opportunityId: proposal.opportunityId,
+      wcId: proposal.wcId,
+      decision: 'rejected',
+      outcome: 'rejected',
+      opportunitySnapshot: proposal.opportunitySnapshot,
+      changesSnapshot: proposal.changes,
+      beforeRevision: wc.revision,
+      decidedAt: now.toISOString(),
+    },
+    now,
+  )
   return updateStatus(ws, id, 'rejected', now)
 }
 
@@ -363,8 +485,10 @@ function normalizeBlockText(t: string): string {
   return t.trim().replace(/^[-*]\s+/, '')
 }
 
-/** 应用 changes（纯函数——构造新 sections；原子性靠一次写盘） */
-function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
+/** 应用 changes（纯函数——构造新 sections；原子性靠一次写盘）。
+ *  表达锚（P4.1 闭环收敛）：rewrite 时写入块.expectationId（对应机会锚定的岗位期望）——
+ *  重诊断据此判定「表达已写入」→ 四态从 expressive_gap 收敛为 unsupported_claim（写了但未资产化） */
+function applyChanges(wc: WorkingCopy, changes: ProposalChange[], patternId?: string): WorkingCopy {
   const sections = wc.sections.map((s) => ({ ...s, blocks: [...s.blocks] }))
   for (const c of changes) {
     if (c.operation === 'rewrite' || c.operation === 'delete') {
@@ -372,7 +496,8 @@ function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
       if (!sec) throw new OpportunityProposalError(`${c.operation} 目标块不存在：${c.blockId}`)
       if (c.operation === 'rewrite') {
         const i = sec.blocks.findIndex((b) => b.id === c.blockId)
-        sec.blocks[i] = { ...sec.blocks[i], text: normalizeBlockText(c.after) }
+        const existing = sec.blocks[i]
+        sec.blocks[i] = { ...existing, text: normalizeBlockText(c.after), ...(patternId && !existing.expectationId ? { expectationId: patternId } : {}) }
       } else {
         sec.blocks = sec.blocks.filter((b) => b.id !== c.blockId)
       }
@@ -416,17 +541,8 @@ function serializeApplyTransaction(tx: ApplyTransaction): string {
     ...(tx.conflict
       ? [`## 冲突信息\n\n- reason: ${tx.conflict.reason}\n- expected_revision: ${tx.conflict.expectedRevision}\n- current_revision: ${tx.conflict.currentRevision}`]
       : []),
+    ...serializeChangeBlocks(tx.changes),
   ]
-  tx.changes.forEach((c, i) => {
-    parts.push(
-      `## 变更 ${i + 1}\n\n| 字段 | 值 |\n|------|-----|\n` +
-        `| block_id | ${c.blockId ?? ''} |\n` +
-        `| section_id | ${c.sectionId ?? ''} |\n` +
-        `| operation | ${c.operation} |\n` +
-        `| before | ${c.before} |\n` +
-        `| after | ${c.after} |\n`,
-    )
-  })
   return parts.join('\n\n')
 }
 
@@ -439,23 +555,13 @@ export function scanApplyTransactions(ws: Workspace): ApplyTransaction[] {
 export function parseApplyTransactionMarkdown(md: string, sourceFile: string): ApplyTransaction {
   const { meta, body } = splitFrontmatter(md)
   const id = meta.id ?? sourceFile.replace(/\.md$/, '')
-  const changes: ProposalChange[] = []
-  for (const m of body.matchAll(/##\s*变更 (\d+)([\s\S]*?)(?=\n##\s|$)/g)) {
-    const section = m[2]
-    const blockId = section.match(/\|\s*block_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
-    const sectionId = section.match(/\|\s*section_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
-    const operation = section.match(/\|\s*operation\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() as ProposalChange['operation']
-    const before = section.match(/\|\s*before\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
-    const after = section.match(/\|\s*after\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
-    changes.push({ ...(blockId ? { blockId } : {}), ...(sectionId ? { sectionId } : {}), before, after, operation })
-  }
   return {
     id,
     proposalId: meta.proposal_id ?? '',
     wcId: meta.wc_id ?? '',
     beforeRevision: Number(meta.before_revision ?? 0),
     afterRevision: Number(meta.after_revision ?? 0),
-    changes,
+    changes: parseChangeBlocks(body),
     status: (meta.status as ApplyTransaction['status']) ?? 'failed',
     createdAt: meta.created_at ?? '',
     ...(meta.applied_at ? { appliedAt: meta.applied_at } : {}),
@@ -483,8 +589,26 @@ export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = 
   if (!wc) throw new OpportunityProposalError(`工作副本不存在：${proposal.wcId}`)
 
   // 不变量 2：revision check——快照漂移 → conflict（不覆盖用户新内容）
+  // P4.1 审计先行：history（决策事件）→ apply_tx → wc 状态变更（契约 §5 写入顺序，失败抛错不允许静默成功）
   const expected = proposal.validation.sourceSnapshot.wcRevision
   if (expected !== wc.revision) {
+    recordOpportunityHistory(
+      ws,
+      {
+        proposalId: proposal.id,
+        opportunityId: proposal.opportunityId,
+        wcId: wc.id,
+        decision: 'approved',
+        outcome: 'conflict',
+        opportunitySnapshot: proposal.opportunitySnapshot,
+        changesSnapshot: proposal.changes,
+        beforeRevision: wc.revision,
+        expectedRevision: expected,
+        currentRevision: wc.revision,
+        decidedAt: proposal.decidedAt!,
+      },
+      now,
+    )
     const tx = registerTransaction(
       ws,
       {
@@ -508,16 +632,138 @@ export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = 
   }
 
   // 不变量 1：apply 不重新生成——直接采用 Proposal.changes
-  const next = applyChanges(wc, proposal.changes)
+  // 表达锚：机会锚定的 responsibility → 首个期望模式 patternId（重诊断闭环收敛；旧提案无快照 → 不打锚）
+  const jobId = jobIdFromOpportunityId(proposal.opportunityId)
+  const job = jobId ? scanJobs(ws).find((j) => j.record.id === jobId)?.record : undefined
+  const respId = proposal.opportunitySnapshot?.anchor.responsibilityId
+  const patternId = job && respId ? job.responsibilities.find((r) => r.id === respId)?.evidenceExpectations[0]?.patternId : undefined
+  const next = applyChanges(wc, proposal.changes, patternId)
   const afterRevision = wc.revision + 1
-  ws.write(
-    `resumes/working-copies/${wc.id}.md`,
-    serializeWorkingCopy({ ...next, revision: afterRevision, updatedAt: now.toISOString() }),
+  recordOpportunityHistory(
+    ws,
+    {
+      proposalId: proposal.id,
+      opportunityId: proposal.opportunityId,
+      wcId: wc.id,
+      decision: 'approved',
+      outcome: 'applied',
+      opportunitySnapshot: proposal.opportunitySnapshot,
+      changesSnapshot: proposal.changes,
+      beforeRevision: wc.revision,
+      afterRevision,
+      decidedAt: proposal.decidedAt!,
+    },
+    now,
   )
   const tx = registerTransaction(
     ws,
     { proposalId: proposal.id, wcId: wc.id, beforeRevision: wc.revision, afterRevision, changes: proposal.changes, status: 'applied', appliedAt: now.toISOString() },
     now,
   )
+  ws.write(
+    `resumes/working-copies/${wc.id}.md`,
+    serializeWorkingCopy({ ...next, revision: afterRevision, updatedAt: now.toISOString() }),
+  )
   return { status: 'applied', transactionId: tx.id, newRevision: afterRevision }
+}
+
+// ─── P4.1：OpportunityHistory（契约 opportunity-history-contract-v0.1，FROZEN）──
+
+export const OPPORTUNITY_HISTORY_SPEC: ArtifactSpec = {
+  type: 'opportunity_history',
+  dir: 'opportunity-history',
+  idPrefix: 'oh_',
+  marker: /##\s*机会快照/,
+  passthroughFields: [],
+}
+
+/** 决策事件历史条目（不可变审计——Opportunity 是 derived projection，快照在 submit 时固化，apply/reject 不重算） */
+export interface OpportunityHistoryEntry {
+  id: string
+  proposalId: string // 外部关联——history 不读取 proposal 作为解释来源（Proposal 删除 ≠ History 无效）
+  opportunityId: string
+  wcId: string
+  decision: 'approved' | 'rejected' // 只记录用户决策终态（expired/abandoned 等投影生命周期失效不登记）
+  outcome: 'applied' | 'conflict' | 'rejected'
+  opportunitySnapshot: OpportunitySnapshot
+  changesSnapshot: ProposalChange[] // 全文快照（自包含审计；与 proposal 文件内容一致）
+  beforeRevision: number
+  afterRevision?: number // outcome = applied（before + 1）
+  expectedRevision?: number // outcome = conflict（快照值）
+  currentRevision?: number // outcome = conflict（当前值）
+  decidedAt: string
+  recordedAt: string
+}
+
+export type OpportunityHistoryInput = Omit<OpportunityHistoryEntry, 'id' | 'recordedAt' | 'opportunitySnapshot'> & {
+  opportunitySnapshot?: OpportunitySnapshot // 旧格式提案 parse 后缺省——record 内部按 Case 6 不登记
+}
+
+/**
+ * 历史登记（审计先行——调用方在状态变更写盘前调用；失败抛错冒泡，不允许静默成功）。
+ * 无快照的旧格式提案 → 不登记、不抛错（契约验证矩阵 Case 6——不制造数据）。
+ */
+export function recordOpportunityHistory(ws: Workspace, input: OpportunityHistoryInput, now: Date = new Date()): OpportunityHistoryEntry | null {
+  if (!input.opportunitySnapshot) return null
+  // 契约 Case 5（幂等）：一个提案 = 一条决策事件——apply 不改 proposal.status，重复 apply 不产生重复条目
+  if (scanOpportunityHistory(ws).some((h) => h.proposalId === input.proposalId)) return null
+  const entry: OpportunityHistoryEntry = {
+    id: nextArtifactId(ws, OPPORTUNITY_HISTORY_SPEC, now),
+    recordedAt: now.toISOString(),
+    ...input,
+    opportunitySnapshot: input.opportunitySnapshot,
+  }
+  ws.write(`opportunity-history/${entry.id}.md`, serializeOpportunityHistory(entry))
+  return entry
+}
+
+function serializeOpportunityHistory(e: OpportunityHistoryEntry): string {
+  const meta = [
+    `id: ${e.id}`,
+    `recorded_at: ${e.recordedAt}`,
+    `proposal_id: ${e.proposalId}`,
+    `opportunity_id: ${e.opportunityId}`,
+    `wc_id: ${e.wcId}`,
+    `decision: ${e.decision}`,
+    `outcome: ${e.outcome}`,
+    `before_revision: ${e.beforeRevision}`,
+    ...(e.afterRevision !== undefined ? [`after_revision: ${e.afterRevision}`] : []),
+    ...(e.expectedRevision !== undefined ? [`expected_revision: ${e.expectedRevision}`] : []),
+    ...(e.currentRevision !== undefined ? [`current_revision: ${e.currentRevision}`] : []),
+    `decided_at: ${e.decidedAt}`,
+  ]
+  const parts = [
+    `---\n${meta.join('\n')}\n---`,
+    `# 机会历史：${e.opportunityId}`,
+    serializeOpportunitySnapshotBlock(e.opportunitySnapshot),
+    ...serializeChangeBlocks(e.changesSnapshot),
+  ]
+  return parts.join('\n\n')
+}
+
+/** 全量扫描（opportunity-history/ 目录——P4.2 Evaluation 消费入口） */
+export function scanOpportunityHistory(ws: Workspace): OpportunityHistoryEntry[] {
+  if (!ws.exists('opportunity-history')) return []
+  return ws.listMarkdown('opportunity-history').sort().map((f) => parseOpportunityHistoryMarkdown(ws.read(`opportunity-history/${f}`), f))
+}
+
+export function parseOpportunityHistoryMarkdown(md: string, sourceFile: string): OpportunityHistoryEntry {
+  const { meta, body } = splitFrontmatter(md)
+  const id = meta.id ?? sourceFile.replace(/\.md$/, '')
+  return {
+    id,
+    proposalId: meta.proposal_id ?? '',
+    opportunityId: meta.opportunity_id ?? '',
+    wcId: meta.wc_id ?? '',
+    decision: (meta.decision as OpportunityHistoryEntry['decision']) ?? 'approved',
+    outcome: (meta.outcome as OpportunityHistoryEntry['outcome']) ?? 'rejected',
+    opportunitySnapshot: parseOpportunitySnapshotBlock(body)!,
+    changesSnapshot: parseChangeBlocks(body),
+    beforeRevision: Number(meta.before_revision ?? 0),
+    ...(meta.after_revision !== undefined ? { afterRevision: Number(meta.after_revision) } : {}),
+    ...(meta.expected_revision !== undefined ? { expectedRevision: Number(meta.expected_revision) } : {}),
+    ...(meta.current_revision !== undefined ? { currentRevision: Number(meta.current_revision) } : {}),
+    decidedAt: meta.decided_at ?? '',
+    recordedAt: meta.recorded_at ?? '',
+  }
 }
