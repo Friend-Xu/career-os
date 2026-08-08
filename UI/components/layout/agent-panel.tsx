@@ -15,13 +15,16 @@ import StopCircleIcon from '@mui/icons-material/StopCircle'
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useEffect, useRef } from 'react'
+import dayjs from 'dayjs'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../store/agent-phase'
 import type { StreamPhase } from '../../store/agent-phase'
 import { NEXT_ACTION } from '../../data/mock-data'
-import { COLORS, EASE, LAYOUT, alpha } from '../../data/constants'
+import { COLORS, EASE, LAYOUT, RISK_COLOR, alpha } from '../../data/constants'
 import { MarkdownView } from '../markdown-view'
+import { QuestionCardView } from '../agent/question-card-view'
+import { useSessionScroll } from '../../hooks/use-session-scroll'
 import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionRecord } from '../../types'
 
@@ -47,7 +50,9 @@ export function AgentPanel() {
   const decisions = useAppStore((s) => s.decisions)
 
   const session = sessions.find((s) => s.id === currentSessionId)
-  const recentMessages = session?.messages.slice(-4) ?? []
+  /** 面板会话窗口 = 最近 10 条完整消息（完整会话在全屏页——顶部「更早消息」入口跳转） */
+  const recentMessages = session?.messages.slice(-10) ?? []
+  const totalMessages = session?.messages.length ?? 0
   const taskRunning = activeTask !== undefined
   /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（发送前拦截） */
   const inputLocked = person.initStatus === 'pending' && currentSessionId !== initSessionId
@@ -61,6 +66,14 @@ export function AgentPanel() {
       : undefined
   /** streamPhase 非 undefined 时 activeTask 必非 null——提前取值供 JSX 引用 */
   const taskStartedAt = activeTask?.startedAt ?? 0
+  /** 会话滚动：打开/切会话滚到底；流式近底跟随、远底阅读保护（滚动位置是 View 层状态） */
+  const { containerRef: scrollRef, scrollToLatest, hasNewContent, newCount } = useSessionScroll({
+    sessionId: currentSessionId,
+    messageCount: session?.messages.length ?? 0,
+    contentTick: streamMsg?.content.length ?? 0,
+    streaming: taskRunning,
+    open,
+  })
 
   useEffect(() => {
     if (pendingPrompt && open) {
@@ -158,70 +171,122 @@ export function AgentPanel() {
         </Stack>
       </Box>
 
-      <Box sx={{ flex: 1, overflow: 'auto', px: 1.5, py: 1 }}>
-        {recentMessages.length === 0 ? (
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted, textAlign: 'center', mt: 4 }}>
-            快捷对话 — 带当前阶段上下文
-          </Typography>
-        ) : (
-          <Stack spacing={1.25}>
-            {recentMessages.map((msg) => (
-              <Box
-                key={msg.id}
-                sx={{
-                  p: 1.25,
-                  borderRadius: '8px',
-                  bgcolor: msg.role === 'user' ? COLORS.bgHover : alpha(COLORS.accent, 0.08),
-                  border: `1px solid ${
-                    msg.role === 'user' ? COLORS.border : alpha(COLORS.accent, 0.15)
-                  }`,
-                }}
-              >
-                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
-                  {msg.role === 'user' ? '你' : '助手'}
-                </Typography>
-                {msg.role === 'user' ? (
-                  <Typography
-                    sx={{
-                      fontSize: 13,
-                      whiteSpace: 'pre-wrap',
-                      lineHeight: 1.5,
-                      color: COLORS.text,
-                    }}
-                  >
-                    {msg.content}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+        {totalMessages > recentMessages.length && (
+          <Box sx={{ px: 1.25, py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+            <Button
+              size="small"
+              fullWidth
+              onClick={expandToFull}
+              sx={{
+                fontSize: 11.5,
+                color: COLORS.accent,
+                bgcolor: COLORS.bgHover,
+                borderRadius: '6px',
+                '&:hover': { bgcolor: COLORS.bgActive },
+              }}
+            >
+              ↑ 更早消息（{totalMessages - recentMessages.length}）· 查看完整会话 →
+            </Button>
+          </Box>
+        )}
+        <Box ref={scrollRef} sx={{ flex: 1, overflow: 'auto', px: 1.5, py: 1 }}>
+          {recentMessages.length === 0 ? (
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, textAlign: 'center', mt: 4 }}>
+              快捷对话 — 带当前阶段上下文
+            </Typography>
+          ) : (
+            <Stack spacing={1.25}>
+              {recentMessages.map((msg) => (
+                <Box
+                  key={msg.id}
+                  sx={{
+                    p: 1.25,
+                    borderRadius: '8px',
+                    bgcolor: msg.role === 'user' ? COLORS.bgHover : alpha(COLORS.accent, 0.08),
+                    border: `1px solid ${
+                      msg.role === 'user' ? COLORS.border : alpha(COLORS.accent, 0.15)
+                    }`,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
+                    {msg.role === 'user' ? '你' : '助手'} · {dayjs(msg.timestamp).format('HH:mm')}
                   </Typography>
-                ) : streamMsg && msg.id === streamMsg.id && streamPhase ? (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                  {msg.role === 'user' ? (
+                    <Typography
+                      sx={{
+                        fontSize: 13,
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.6,
+                        color: COLORS.text,
+                      }}
+                    >
+                      {msg.content}
+                    </Typography>
+                  ) : msg.error ? (
                     <Box
                       sx={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        bgcolor: COLORS.accent,
-                        animation: 'cos-thinking-dot 1.2s ease-in-out infinite',
+                        p: 1,
+                        borderRadius: '6px',
+                        bgcolor: alpha(RISK_COLOR.high, 0.08),
+                        border: `1px solid ${alpha(RISK_COLOR.high, 0.3)}`,
                       }}
-                    />
-                    <Typography
-                      sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
                     >
-                      {streamPhase === 'waiting_input'
-                        ? '等待你的回答'
-                        : `${PHASE_META[streamPhase]} · ${formatElapsed(now - taskStartedAt)}`}
-                    </Typography>
-                  </Box>
-                ) : (
-                  <MarkdownView
-                    content={
-                      msg.content.length > 180
-                        ? `${msg.content.slice(0, 180)}…`
-                        : msg.content
-                    }
-                  />
-                )}
-              </Box>
-            ))}
-          </Stack>
+                      <Typography sx={{ fontSize: 12, fontWeight: 600, color: RISK_COLOR.high, mb: 0.5 }}>
+                        AI 助手运行错误 · {msg.error.code}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12.5, color: COLORS.text, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {msg.error.message}
+                      </Typography>
+                    </Box>
+                  ) : streamMsg && msg.id === streamMsg.id && streamPhase ? (
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          bgcolor: COLORS.accent,
+                          animation: 'cos-thinking-dot 1.2s ease-in-out infinite',
+                        }}
+                      />
+                      <Typography
+                        sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
+                      >
+                        {streamPhase === 'waiting_input'
+                          ? '等待你的回答'
+                          : `${PHASE_META[streamPhase]} · ${formatElapsed(now - taskStartedAt)}`}
+                      </Typography>
+                    </Box>
+                  ) : msg.question ? (
+                    <QuestionCardView card={msg.question} messageId={msg.id} />
+                  ) : (
+                    <MarkdownView content={msg.content} />
+                  )}
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
+        {hasNewContent && newCount > 0 && (
+          <Button
+            size="small"
+            onClick={scrollToLatest}
+            sx={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              fontSize: 12,
+              color: COLORS.textSecondary,
+              bgcolor: COLORS.bgElevated,
+              border: `1px solid ${COLORS.borderStrong}`,
+              boxShadow: COLORS.cardShadow,
+              borderRadius: '999px',
+              '&:hover': { bgcolor: COLORS.bgHover, color: COLORS.text },
+            }}
+          >
+            ↓ {newCount} 条新内容
+          </Button>
         )}
       </Box>
 

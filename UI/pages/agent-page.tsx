@@ -33,9 +33,11 @@ import { deriveAgentPhase, formatElapsed, PHASE_META } from '../store/agent-phas
 import type { StreamPhase } from '../store/agent-phase'
 import { ModelSelect } from '../components/model-select'
 import { MarkdownView } from '../components/markdown-view'
+import { QuestionCardView } from '../components/agent/question-card-view'
+import { useSessionScroll } from '../hooks/use-session-scroll'
 import { belongsToPerson } from '../utils/ownership'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
-import type { ChatMessage, DecisionRecord, QuestionCard } from '../types'
+import type { ChatMessage, DecisionRecord } from '../types'
 
 function ContextCapsule() {
   const person = useAppStore((s) => s.currentPerson())
@@ -251,51 +253,6 @@ function ReportCard({ record }: { record: DecisionRecord }) {
           查看时间线
         </Button>
       </Stack>
-    </Box>
-  )
-}
-
-/** AskUserQuestion 卡片：问题 + 选项；点击选项回填用户消息并标记已作答 */
-function QuestionCardView({ card, messageId }: { card: QuestionCard; messageId: string }) {
-  const answer = useAppStore((s) => s.answerQuestion)
-
-  return (
-    <Box
-      sx={{
-        mt: 1.5,
-        p: 2,
-        borderRadius: '10px',
-        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
-        boxShadow: COLORS.cardShadow,
-        bgcolor: COLORS.bg,
-      }}
-    >
-      <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1.5 }}>{card.question}</Typography>
-      <Stack spacing={1}>
-        {card.options.map((opt) => (
-          <Button
-            key={opt}
-            fullWidth
-            size="small"
-            disabled={card.answered}
-            onClick={() => answer(messageId, opt)}
-            variant={card.answered && card.answer === opt ? 'contained' : 'outlined'}
-            sx={{
-              justifyContent: 'flex-start',
-              textAlign: 'left',
-              fontSize: 12.5,
-              textTransform: 'none',
-            }}
-          >
-            {opt}
-          </Button>
-        ))}
-      </Stack>
-      {card.answered && (
-        <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 1.25 }}>
-          已选择：{card.answer}
-        </Typography>
-      )}
     </Box>
   )
 }
@@ -722,6 +679,14 @@ export function AgentPage() {
         }
       : undefined
 
+  /** 会话滚动：打开/切会话滚到底；流式近底跟随、远底阅读保护（滚动位置是 View 层状态） */
+  const { containerRef: scrollRef, scrollToLatest, hasNewContent, newCount } = useSessionScroll({
+    sessionId: currentSessionId,
+    messageCount: session?.messages.length ?? 0,
+    contentTick: streamMsg?.content.length ?? 0,
+    streaming: taskRunning,
+  })
+
   useEffect(() => {
     if (!locateTarget) return
     document
@@ -854,8 +819,9 @@ export function AgentPage() {
       </Dialog>
 
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <Box sx={{ flex: 1, overflow: 'auto', px: 3, py: 2.5 }} aria-live="polite">
-          <Box sx={{ maxWidth: initMode ? 720 : 800, mx: 'auto' }}>
+        <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+          <Box ref={scrollRef} sx={{ height: '100%', overflow: 'auto', px: 3, py: 2.5 }} aria-live="polite">
+            <Box sx={{ maxWidth: initMode ? 720 : 800, mx: 'auto' }}>
             {!session?.messages.length ? (
               <Box sx={{ textAlign: 'center', mt: 10 }}>
                 <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 1 }}>开始深度决策对话</Typography>
@@ -904,7 +870,28 @@ export function AgentPage() {
             )}
           </Box>
         </Box>
+        {hasNewContent && newCount > 0 && (
+          <Button
+            size="small"
+            onClick={scrollToLatest}
+            sx={{
+              position: 'absolute',
+              bottom: 16,
+              right: 24,
+              fontSize: 12.5,
+              color: COLORS.textSecondary,
+              bgcolor: COLORS.bgElevated,
+              border: `1px solid ${COLORS.borderStrong}`,
+              boxShadow: COLORS.cardShadow,
+              borderRadius: '999px',
+              '&:hover': { bgcolor: COLORS.bgHover, color: COLORS.text },
+            }}
+          >
+            ↓ {newCount} 条新内容
+          </Button>
+        )}
         {initMode && <UnderstandingDraft />}
+        </Box>
       </Box>
 
       <Box sx={{ px: 3, py: 2, borderTop: `1px solid ${COLORS.border}` }}>
