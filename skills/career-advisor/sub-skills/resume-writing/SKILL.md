@@ -21,9 +21,9 @@
 |------|---------|------|
 | `references/discovery-engine.md` | Step 2 始终 | frontier 追问引擎 |
 | `references/direction-standards/{方向}.md` | Step 2-3 条件 | 方向特定简历内容标准（HR关键词/量化锚点/强力动词/项目分组/ATS清单） |
-| `references/star-reconstructor.md` | Step 3 始终 | STAR 拼接 + 量化萃取 |
+| `references/star-reconstructor.md` | Step 3 始终 | 素材池 → 候选表达（Claim Producer——写 claim-proposals/，不直接产出简历文本） |
 | `references/verb-dictionary.md` | Step 3 始终 | 动词升级 |
-| `references/resume-output-template.md` | Step 4 始终 | 输出模板 |
+| `references/resume-output-template.md` | Step 4 始终 | 输出模板（基于已确认表达组装） |
 
 ---
 
@@ -188,32 +188,56 @@ D 有简历：
 
 ---
 
-## Step 3：STAR 重构
+## Step 3：STAR 重构（→ 候选表达）
 
 引用 `references/star-reconstructor.md` + `references/verb-dictionary.md`。
+
+**定位（ADR-022 Claim Producer Boundary）**：本步产出**候选表达**（写 claim-proposals/），
+不是简历文本——Agent 提案，用户确认后才成为表达资产，简历组装只消费已确认表达。
 
 ### 流程
 
 1. 从用户多轮回答中，为每段经历构建素材池
-2. 提取 STAR 骨架 → 拼接子弹句（≤80字，3-5条/段）
+2. 提取 STAR 骨架 → 拼接候选表达（≤80字，3-5条/段）
 3. 逐条做动词升级（弱动词 → 强动词）
 4. 量化萃取（能精确的精确，不能的半定量，不超过 3 处半定量）
-5. 生成内部映射表（每条子弹的证据来源 + 置信度）
+5. 证据锚定（evidenceRefs——只引用已登记的 Evidence 资产；无锚内容先提示登记，不产出）
+6. 写 claim-proposals/{id}.md（格式见 star-reconstructor.md 第六节——引擎扫描登记为待确认）
 
 ### 质量自检
 
 逐条检查：
-- 可追溯：每条能追溯到用户口述
+- 可追溯：每条候选能对应到 evidenceRefs（Evidence 资产条目）
 - 无编造：无用户未提及的公司/项目/数字/技术名词
 - 动词强度："负责/参与/做了" ≤ 1 处/段
 - 量化充分：≥ 2 处可量化
+- 锚点完整：候选中的数字/能力词在 evidence 文本中可找到（引擎锚点校验）
 - 转行场景：动词方向与目标方向对齐
+
+---
+
+## Step 3.5：用户确认候选
+
+候选表达不会自动成为简历内容——引导用户确认（素材空间「待确认表达」/编辑空间）：
+
+```
+"我从你的经历整理出 N 条表达建议，可以确认加入素材库：
+  1. 主导产线关键产品良率改善，将良率从92%提升至96%
+  2. ...
+确认后这些表达可以加入简历；不想用的可以直接丢弃。"
+```
+
+用户确认 → 引擎登记为 CareerClaim（素材空间「已确认表达」）→ 简历组装可消费。
+未确认的候选不进入简历（Claim 是资产，简历是表达组合——不自动插入）。
 
 ---
 
 ## Step 4：组装输出
 
 引用 `references/resume-output-template.md`。
+
+**消费边界**：仅从**已确认表达资产**组装简历（引擎 claims/select + sentence-generator
+消费端契约）；素材池里尚未确认的新内容 → 先走 Step 3 候选 + Step 3.5 确认，不直接写入。
 
 ### 输出内容
 

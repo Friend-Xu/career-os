@@ -49,7 +49,9 @@ ExpressionSentence { claimId, statement }（临时；供 Resume Assembly 消费�
 4. 类型合规：fact 为主体、interpretation 不单独作 bullet 主体
 5. 语言族对齐：动词/量化/关键词符合 standards/mechanical/{族}.md
 
-## 5. 与旧链路的边界
+## 5. 与上游 Producer 的边界
 
-- star-reconstructor（素材池驱动）是 M2 之前的链路；M3 链路输入为 ExpressionCandidate（claims/select）
-- 两条链路可并存：旧素材池（frontier 追问）与新 Claim 资产；**生成纪律相同**（不编造、可追溯、动词合规）
+- star-reconstructor（ADR-022 P1.3）是 **Claim Producer**——素材池 → 候选表达（claim-proposals/），
+  用户确认后登记为 CareerClaim；本模块消费端输入为 ExpressionCandidate（claims/select）
+- 生产（素材 → Claim）与消费（Claim → Sentence）分离：Sentence 生成不承担素材整理，
+  Claim 登记不承担岗位表达（各层职责单一）
