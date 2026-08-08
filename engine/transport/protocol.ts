@@ -144,6 +144,14 @@ export const METHODS = {
   claimCoverage: 'claims/coverage',
   /** 表达候选选择（params: { id: jobId } → ResponsibilityCandidates[]：ExpressionCandidate + SelectionReason + 可解释 priority；M3-1 Step 4，Resume 消费端输入） */
   claimSelect: 'claims/select',
+  /** Claim 提案创建（params: ClaimProposalInput → pending；只登记不生成——evidenceRefs + proposedClaim 由 Producer 提供，Engine validate + store；ADR-022 P1.1） */
+  claimProposalCreate: 'claim-proposals/create',
+  /** 全量 Claim 提案（claim-proposals/ 扫描；P1.1） */
+  claimProposalList: 'claim-proposals/list',
+  /** 接受 Claim 提案（params: { id } → 二次校验 → registerClaim 写 claims/{id}.md → approved；Engine 单方登记） */
+  claimProposalApprove: 'claim-proposals/approve',
+  /** 拒绝 Claim 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
+  claimProposalReject: 'claim-proposals/reject',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
@@ -235,6 +243,8 @@ export const EVENTS = {
   evidenceChanged: 'data.evidence.changed',
   /** claims/ 目录变更后推送（不含数据，客户端用 claims/list 拉快照；M3-0） */
   claimsChanged: 'data.claims.changed',
+  /** claim-proposals/ 目录变更后推送（不含数据，客户端用 claim-proposals/list 拉快照；ADR-022 P1.1） */
+  claimProposalsChanged: 'data.claim-proposals.changed',
   /** resumes/ 目录变更后推送（不含数据，客户端用 resumes/list 拉快照；M3.5） */
   resumesChanged: 'data.resumes.changed',
   /** proposals/ 目录变更后推送（不含数据，客户端用 proposals/list 拉快照；M3.5.6） */

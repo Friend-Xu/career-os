@@ -69,6 +69,13 @@ import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
 import { scanClaims } from '../storage/claim-watcher.ts'
+import {
+  approveClaimProposal,
+  createClaimProposal,
+  rejectClaimProposal,
+  scanClaimProposals,
+  type ClaimProposalInput,
+} from '../storage/claim-proposal-registry.ts'
 import { scanResumes, transitionResumeStatusFile, cloneResumeFile, diffResumes, markResumeExported } from '../storage/resume-watcher.ts'
 import { indexEvidence, canUseClaim } from '../storage/claim-policy.ts'
 import { computeClaimCoverage } from '../runtime/claim-coverage.ts'
@@ -1359,6 +1366,40 @@ export async function startServer(opts: {
       const job = scanJobs(workspace).find((j) => j.record.id === id)
       if (!job) throw new Error(`岗位不存在：${id}`)
       return selectExpressionCandidates(job.record, scanEvidence(workspace).map((e) => e.record), scanClaims(workspace).map((c) => c.record))
+    },
+    [METHODS.claimProposalCreate]: (params) => {
+      const p = params as Record<string, unknown>
+      const input: ClaimProposalInput = {
+        source: p?.source as ClaimProposalInput['source'],
+        evidenceRefs: Array.isArray(p?.evidenceRefs) ? (p.evidenceRefs as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+        proposedClaim: {
+          statement: typeof (p?.proposedClaim as Record<string, unknown> | undefined)?.statement === 'string' ? ((p.proposedClaim as Record<string, unknown>).statement as string) : '',
+          ...(typeof (p?.proposedClaim as Record<string, unknown> | undefined)?.section === 'string'
+            ? { section: ((p.proposedClaim as Record<string, unknown>).section as string) }
+            : {}),
+          ...(typeof (p?.proposedClaim as Record<string, unknown> | undefined)?.expectationId === 'string'
+            ? { expectationId: ((p.proposedClaim as Record<string, unknown>).expectationId as string) }
+            : {}),
+        },
+        explanation: typeof p?.explanation === 'string' ? p.explanation : '',
+      }
+      const proposal = createClaimProposal(workspace, input)
+      broadcast({ event: EVENTS.claimProposalsChanged })
+      return proposal
+    },
+    [METHODS.claimProposalList]: () => scanClaimProposals(workspace),
+    [METHODS.claimProposalApprove]: (params) => {
+      const result = approveClaimProposal(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.claimProposalsChanged })
+      broadcast({ event: EVENTS.claimsChanged })
+      return result
+    },
+    [METHODS.claimProposalReject]: (params) => {
+      const p = params as Record<string, unknown>
+      const reason = typeof p?.reason === 'string' && p.reason.trim().length > 0 ? p.reason : undefined
+      const updated = rejectClaimProposal(workspace, jobIdParams(params), reason)
+      broadcast({ event: EVENTS.claimProposalsChanged })
+      return updated
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
       ...r.record,

@@ -33,6 +33,7 @@ export interface WorkspacePaths {
   applications: string
   evidence: string
   claims: string
+  claimProposals: string
   resumes: string
   proposals: string
   portfolio: string
@@ -77,6 +78,7 @@ export function buildPaths(root: string): WorkspacePaths {
     applications: join(root, 'applications'),
     evidence: join(root, 'evidence'),
     claims: join(root, 'claims'),
+    claimProposals: join(root, 'claim-proposals'),
     resumes: join(root, 'resumes'),
     proposals: join(root, 'proposals'),
     portfolio: join(root, 'portfolio'),
@@ -124,6 +126,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.applications, { recursive: true })
     mkdirSync(paths.evidence, { recursive: true })
     mkdirSync(paths.claims, { recursive: true })
+    mkdirSync(paths.claimProposals, { recursive: true })
     mkdirSync(paths.resumes, { recursive: true })
     mkdirSync(join(paths.resumes, 'documents'), { recursive: true })
     mkdirSync(join(paths.resumes, 'drafts'), { recursive: true })
