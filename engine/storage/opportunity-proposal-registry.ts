@@ -22,6 +22,7 @@ import { scanClaims } from './claim-watcher.ts'
 import { scanWorkingCopies, workingCopyToDocument, serializeWorkingCopy } from './working-copy-registry.ts'
 import { anchorCheck, evidenceText } from './claim-proposal-registry.ts'
 import { computeOpportunities, type Opportunity } from '../runtime/opportunity.ts'
+import { computeResumeAlignment, type AlignmentState } from '../runtime/resume-alignment.ts'
 
 export const OPPORTUNITY_PROPOSAL_SPEC: ArtifactSpec = {
   type: 'opportunity_proposal',
@@ -486,8 +487,9 @@ function normalizeBlockText(t: string): string {
 }
 
 /** 应用 changes（纯函数——构造新 sections；原子性靠一次写盘）。
- *  表达锚（P4.1 闭环收敛）：rewrite 时写入块.expectationId（对应机会锚定的岗位期望）——
- *  重诊断据此判定「表达已写入」→ 四态从 expressive_gap 收敛为 unsupported_claim（写了但未资产化） */
+ *  表达锚（P4.1/P4.2 闭环收敛——ApplyTransaction 契约 §5 invariant）：rewrite/insert 均写入
+ *  块.expectationId（对应机会锚定 responsibility 的首个期望模式）——重诊断据此判定「表达已写入」，
+ *  四态从 expressive_gap 收敛（rewrite → unsupported_claim 红线 / insert → 同上）；delete 无锚（块消失） */
 function applyChanges(wc: WorkingCopy, changes: ProposalChange[], patternId?: string): WorkingCopy {
   const sections = wc.sections.map((s) => ({ ...s, blocks: [...s.blocks] }))
   for (const c of changes) {
@@ -508,7 +510,7 @@ function applyChanges(wc: WorkingCopy, changes: ProposalChange[], patternId?: st
         const n = /^blk_(\d+)$/.exec(b.id)
         return n ? Math.max(m, Number(n[1])) : m
       }, 0)
-      target.blocks.push({ id: `blk_${maxSeq + 1}`, text: normalizeBlockText(c.after), provenanceLinks: [] })
+      target.blocks.push({ id: `blk_${maxSeq + 1}`, text: normalizeBlockText(c.after), provenanceLinks: [], ...(patternId ? { expectationId: patternId } : {}) })
     }
   }
   return { ...wc, sections }
@@ -577,6 +579,21 @@ export function parseApplyTransactionMarkdown(md: string, sourceFile: string): A
   }
 }
 
+/** apply 事务内重诊断（P4.2 校准 4——基于内存 next wc 纯投影，无落盘 IO）：
+ *  机会锚定 responsibility 的 afterState = 状态迁移轨迹终点（事务内部计算值，非独立事件） */
+function computeAfterState(ws: Workspace, next: WorkingCopy, jobId: string | null, respId?: string): AlignmentState | undefined {
+  if (!jobId || !respId) return undefined
+  const job = scanJobs(ws).find((j) => j.record.id === jobId)?.record
+  if (!job) return undefined
+  const alignment = computeResumeAlignment({
+    job,
+    evidenceItems: scanEvidence(ws).map((e) => e.record),
+    claims: scanClaims(ws).map((c) => c.record),
+    resumeDocument: workingCopyToDocument(next, ws),
+  })
+  return alignment.rows.find((r) => r.responsibilityId === respId)?.state
+}
+
 /** apply：approved → revision check → 应用 changes（原子写盘）→ 事务登记 → revision+1。
  *  conflict 是正常协作冲突不是失败（不抛错）——返回 expected/current 供 UI 提示重新分析 */
 export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = new Date()): ApplyResult {
@@ -639,6 +656,8 @@ export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = 
   const patternId = job && respId ? job.responsibilities.find((r) => r.id === respId)?.evidenceExpectations[0]?.patternId : undefined
   const next = applyChanges(wc, proposal.changes, patternId)
   const afterRevision = wc.revision + 1
+  // P4.2 校准 4：afterState 是事务内部计算值（内存 next wc 重诊断）——与 history 一次写盘，防「history 成功 wc 失败」污染
+  const afterState = computeAfterState(ws, next, jobId, respId)
   recordOpportunityHistory(
     ws,
     {
@@ -651,6 +670,7 @@ export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = 
       changesSnapshot: proposal.changes,
       beforeRevision: wc.revision,
       afterRevision,
+      afterState,
       decidedAt: proposal.decidedAt!,
     },
     now,
@@ -691,6 +711,7 @@ export interface OpportunityHistoryEntry {
   afterRevision?: number // outcome = applied（before + 1）
   expectedRevision?: number // outcome = conflict（快照值）
   currentRevision?: number // outcome = conflict（当前值）
+  afterState?: AlignmentState // P4.2——仅 outcome = applied（apply 事务内重诊断固化；状态迁移轨迹）
   decidedAt: string
   recordedAt: string
 }
@@ -730,6 +751,7 @@ function serializeOpportunityHistory(e: OpportunityHistoryEntry): string {
     ...(e.afterRevision !== undefined ? [`after_revision: ${e.afterRevision}`] : []),
     ...(e.expectedRevision !== undefined ? [`expected_revision: ${e.expectedRevision}`] : []),
     ...(e.currentRevision !== undefined ? [`current_revision: ${e.currentRevision}`] : []),
+    ...(e.afterState ? [`after_state: ${e.afterState}`] : []),
     `decided_at: ${e.decidedAt}`,
   ]
   const parts = [
@@ -763,6 +785,7 @@ export function parseOpportunityHistoryMarkdown(md: string, sourceFile: string):
     ...(meta.after_revision !== undefined ? { afterRevision: Number(meta.after_revision) } : {}),
     ...(meta.expected_revision !== undefined ? { expectedRevision: Number(meta.expected_revision) } : {}),
     ...(meta.current_revision !== undefined ? { currentRevision: Number(meta.current_revision) } : {}),
+    ...(meta.after_state ? { afterState: meta.after_state as AlignmentState } : {}),
     decidedAt: meta.decided_at ?? '',
     recordedAt: meta.recorded_at ?? '',
   }
