@@ -19,6 +19,9 @@ import type { ResumeModule } from '../types'
 import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
+import { ResumeDashboard } from '../components/resume/ResumeDashboard'
+import { ResumeOptimizeEmpty } from '../components/resume/ResumeOptimizeEmpty'
+import { computeResumeQuality } from '../utils/resume-quality'
 
 /** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
 const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
@@ -75,7 +78,8 @@ export function ResumesPage() {
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
-  const resumesView = useAppStore((s) => s.resumesView)
+  const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
+  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const engineStatus = useAppStore((s) => s.engineStatus)
@@ -168,15 +172,7 @@ export function ResumesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeResumeId])
 
-  const qualityScore = useMemo(() => {
-    const totalLen = modules.reduce((s, m) => s + m.content.length, 0)
-    const hasMetrics = modules.some((m) => /\d+%|\d+年/.test(m.content))
-    let score = 70
-    if (totalLen > 200) score += 10
-    if (hasMetrics) score += 12
-    if (modules.length >= 4) score += 5
-    return Math.min(score, 96)
-  }, [modules])
+  const qualityScore = useMemo(() => computeResumeQuality(modules), [modules])
 
   /** 划词/键盘选中 → 显示「✨ 改写」按钮（选区右下，不直接弹候选）。 */
   const onSelect = (el: HTMLTextAreaElement, moduleId: string) => {
@@ -297,7 +293,13 @@ export function ResumesPage() {
         spacing={1.5}
         sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
       >
-        <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>简历中心</Typography>
+        <Typography
+          sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', cursor: 'pointer', '&:hover': { color: COLORS.accent } }}
+          title="回到工作台"
+          onClick={() => setResumeWorkspaceView('dashboard')}
+        >
+          简历工作台
+        </Typography>
         {resume && (
           <>
             {/* 版本切换在侧栏（ResumesSidebar）——此处只显示当前版本目标 */}
@@ -352,21 +354,36 @@ export function ResumesPage() {
 
       {/* 版本切换在侧栏「版本」——此处不重复提供入口 */}
 
-      {/* M3.5.5 Resume Studio：Artifact Evolution Graph + Human Approval Console（无 Sentence 编辑器） */}
-      {resumesView === 'studio' && (
+      {/* Dashboard（落地页，非第五空间——ADR-021 §1） */}
+      {resumeWorkspaceView === 'dashboard' && (
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <ResumeDashboard onDerive={() => setDeriveOpen(true)} />
+        </Box>
+      )}
+
+      {/* 优化：空态引导（R2 实现 Alignment Projection；「选择岗位」接派生对话框） */}
+      {resumeWorkspaceView === 'optimize' && (
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <ResumeOptimizeEmpty onSelectJob={() => setDeriveOpen(true)} />
+        </Box>
+      )}
+
+      {/* 历史空间：Resume Studio（Artifact Evolution Graph + Human Approval Console） */}
+      {resumeWorkspaceView === 'history' && (
         <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
           <ResumeStudio />
         </Box>
       )}
 
-      {/* M3.5.5 Resume Assets：AI Read Projection Viewer（CareerContext 只读投影） */}
-      {resumesView === 'assets' && (
+      {/* 素材空间：Resume Assets（CareerContext 只读投影） */}
+      {resumeWorkspaceView === 'library' && (
         <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
           <ResumeAssets />
         </Box>
       )}
 
-      {resumesView === 'workspace' && !resume ? (
+      {resumeWorkspaceView === 'edit' && (
+        !resume ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
           <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
             <Typography sx={{ fontSize: 14, fontWeight: 600 }}>「{person.name}」暂无简历</Typography>
@@ -596,7 +613,8 @@ export function ResumesPage() {
           含量化指标 · 模块完整 · 无明显空泛表述
         </Typography>
       </Stack>
-      </>
+        </>
+        )
       )}
 
       {/* AI 改写：选中 → ✨ 浮动按钮（不直接弹候选，避免干扰划词） */}

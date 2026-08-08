@@ -129,6 +129,9 @@ function patchToolCallStatus(
   )
 }
 
+/** 简历工作台视图（ADR-021 R0：Dashboard 落地页 + 四空间——编辑/优化/历史/素材） */
+export type ResumeWorkspaceView = 'dashboard' | 'edit' | 'optimize' | 'history' | 'library'
+
 interface AppState {
   currentPersonId: number;
   currentPage: NavPageId;
@@ -215,8 +218,8 @@ interface AppState {
   selectedCompanyId: string | null;
   /** 工作台子视图（驾驶舱内部导航：Dashboard/方向/城市/决策记录） */
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile';
-  /** 简历中心视图（M3.5.5：三空间——Draft Workspace / Resume Studio / Resume Assets） */
-  resumesView: 'workspace' | 'studio' | 'assets';
+  /** 简历工作台视图（ADR-021 R0：Dashboard 落地页 + 四空间——编辑/优化/历史/素材） */
+  resumeWorkspaceView: ResumeWorkspaceView;
   /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心 / Evolution 演化时间线——v0.3 信息架构四区按 slice 落地） */
   artifactsView: 'assets' | 'proposals' | 'evolution';
   /** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 引擎实时派生（已确定性排序，UI 不重排） */
@@ -294,9 +297,9 @@ interface AppState {
   setCompaniesView: (view: 'profile' | 'map') => void;
   /** 简历中心三空间切换（M3.5.5） */
   setArtifactsView: (view: 'assets' | 'proposals' | 'evolution') => void;
-  /** 简历中心视图（M3.5.5：三空间） */
-  setResumesView: (view: 'workspace' | 'studio' | 'assets') => void;
-  /** 选中简历版本（M3.5.5：切到 studio 并定位——Agent/Deep Link/导出跳转共用） */
+  /** 简历工作台视图切换（ADR-021 R0：四空间——编辑/优化/历史/素材；Dashboard 为默认落地不占 tab） */
+  setResumeWorkspaceView: (view: ResumeWorkspaceView) => void;
+  /** 选中简历版本（M3.5.5：切到历史空间并定位——Agent/Deep Link/导出跳转共用） */
   selectResume: (id: string) => void;
   createSession: (title?: string) => string;
   /** 停止当前会话运行中的 Agent 任务（agent/cancel RPC + 占位消息标记「已停止」） */
@@ -472,7 +475,7 @@ export const useAppStore = create<AppState>()(
       selectedCompanyId: null,
       workbenchView: 'dashboard',
       companiesView: 'profile',
-      resumesView: 'workspace',
+      resumeWorkspaceView: 'dashboard',
       artifactsView: 'assets',
       timelineEvents: [],
       traceability: null,
@@ -1066,6 +1069,8 @@ export const useAppStore = create<AppState>()(
         ...state.resumes,
       ],
       activeResumeId: id,
+      // 派生后进入编辑空间（用户意图 = 编辑定制新草稿；ADR-021 R0 四空间）
+      resumeWorkspaceView: 'edit',
     }))
     // Attention：简历派生完成 → 引导查看（操作反馈由 toast 承担，此卡负责「去哪里看」）
     useAttentionStore.getState().addAttention({
@@ -1284,11 +1289,11 @@ export const useAppStore = create<AppState>()(
   setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
   setWorkbenchView: (view) => set({ workbenchView: view }),
   setCompaniesView: (view) => set({ companiesView: view }),
-  /** 简历中心三空间切换（M3.5.5） */
-  setResumesView: (view) => set({ resumesView: view }),
+  /** 简历工作台四空间切换（ADR-021 R0） */
+  setResumeWorkspaceView: (view) => set({ resumeWorkspaceView: view }),
   setArtifactsView: (view) => set({ artifactsView: view }),
-  /** 选中简历版本（M3.5.5：切到 studio 视图并定位） */
-  selectResume: (id) => set({ selectedResumeId: id, resumesView: 'studio' }),
+  /** 选中简历版本（M3.5.5：切到历史空间并定位） */
+  selectResume: (id) => set({ selectedResumeId: id, resumeWorkspaceView: 'history' }),
 
   requestPermission: (toolName, description) => {
     const sessionId = get().currentSessionId

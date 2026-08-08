@@ -1,16 +1,21 @@
 /**
- * 简历空间侧栏（M3.5.5）：三空间导航 + 按区上下文列表。
- * - workspace：草稿列表（旧 ResumeVersion——普通草稿/未资产化，UI 不暴露 Legacy 概念）
- * - studio：引擎版本列表（状态色/目标岗位/派生链/validation/claims 数——Artifact 语义）
- * - assets：资产概览（Claims/Evidence/Exports 计数——CareerContext 投影）
+ * 简历工作台侧栏（ADR-021 R0）：四空间导航（编辑/优化/历史/素材）+ 按区上下文列表。
+ * - 编辑：草稿列表（普通草稿/未资产化——Unbound Draft，ADR-021 §8）
+ * - 优化：空态（R2 实现 Resume Alignment Projection，R0 只给定位文案）
+ * - 历史：引擎版本列表（状态色/目标岗位/派生链/validation/claims 数——Artifact 语义）
+ * - 素材：资产概览（Claims/Evidence/Exports 计数——CareerContext 投影）
  */
 import { Box, IconButton, Stack, Typography } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import HistoryIcon from '@mui/icons-material/History'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import { useMemo } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
 import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
+import type { ResumeWorkspaceView } from '../../../store/app-store'
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
   draft: { color: RISK_COLOR.medium, label: '草稿' },
@@ -25,14 +30,23 @@ const VALIDATION_LABEL: Record<string, string> = {
   invalid: '✗ 无效',
 }
 
+/** 空间图标（编辑=主图标；优化/历史/素材 = 任务语义图标） */
+const SPACE_ICON: Record<ResumeWorkspaceView, typeof AutoAwesomeIcon> = {
+  dashboard: DescriptionOutlinedIcon,
+  edit: DescriptionOutlinedIcon,
+  optimize: AutoAwesomeIcon,
+  history: HistoryIcon,
+  library: CollectionsIcon,
+}
+
 export function ResumesSidebar() {
   const person = useAppStore((s) => s.currentPerson())
   const resumes = useAppStore((s) => s.resumes)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const deleteResumeVersion = useAppStore((s) => s.deleteResumeVersion)
-  const resumesView = useAppStore((s) => s.resumesView)
-  const setResumesView = useAppStore((s) => s.setResumesView)
+  const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
+  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const selectResume = useAppStore((s) => s.selectResume)
   const selectedResumeId = useAppStore((s) => s.selectedResumeId)
   const resumeVersions = useAppStore((s) => s.resumeVersions)
@@ -50,40 +64,49 @@ export function ResumesSidebar() {
     return v ? new Set(v.sections.flatMap((s) => s.bullets.map((b) => b.claimId))).size : 0
   }
 
-  const NAV = [
-    { key: 'workspace' as const, label: '草稿' },
-    { key: 'studio' as const, label: '版本' },
-    { key: 'assets' as const, label: '资产' },
+  /** 四空间导航（Dashboard 是落地页不占 tab——ADR-021 §1） */
+  const NAV: { key: ResumeWorkspaceView; label: string }[] = [
+    { key: 'edit', label: '编辑' },
+    { key: 'optimize', label: '优化' },
+    { key: 'history', label: '历史' },
+    { key: 'library', label: '素材' },
   ]
 
   return (
     <Stack sx={{ p: 1.25 }}>
-      {/* 三空间导航 */}
+      {/* 四空间导航 */}
       <Stack direction="row" spacing={0.5} sx={{ mb: 1, px: 0.5 }}>
-        {NAV.map((n) => (
-          <Box
-            key={n.key}
-            onClick={() => setResumesView(n.key)}
-            sx={{
-              flex: 1,
-              textAlign: 'center',
-              py: 0.7,
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-              bgcolor: resumesView === n.key ? alpha(COLORS.accent, 0.12) : 'transparent',
-              color: resumesView === n.key ? COLORS.accent : COLORS.textSecondary,
-              '&:hover': { bgcolor: resumesView === n.key ? alpha(COLORS.accent, 0.12) : COLORS.bgHover },
-            }}
-          >
-            {n.label}
-          </Box>
-        ))}
+        {NAV.map((n) => {
+          const Icon = SPACE_ICON[n.key]
+          const active = resumeWorkspaceView === n.key
+          return (
+            <Box
+              key={n.key}
+              onClick={() => setResumeWorkspaceView(n.key)}
+              sx={{
+                flex: 1,
+                textAlign: 'center',
+                py: 0.7,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                bgcolor: active ? alpha(COLORS.accent, 0.12) : 'transparent',
+                color: active ? COLORS.accent : COLORS.textSecondary,
+                '&:hover': { bgcolor: active ? alpha(COLORS.accent, 0.12) : COLORS.bgHover },
+              }}
+            >
+              <Stack direction="row" spacing={0.4} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+                <Icon sx={{ fontSize: 13 }} />
+                <span>{n.label}</span>
+              </Stack>
+            </Box>
+          )
+        })}
       </Stack>
 
-      {/* ── workspace：草稿列表（普通草稿/未资产化）── */}
-      {resumesView === 'workspace' && (
+      {/* ── 编辑：草稿列表（Unbound Draft——可编辑可导出，不参与溯源投影）── */}
+      {resumeWorkspaceView === 'edit' && (
         <>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
             <DescriptionOutlinedIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
@@ -122,11 +145,27 @@ export function ResumesSidebar() {
         </>
       )}
 
-      {/* ── studio：引擎版本列表（Artifact 语义）── */}
-      {resumesView === 'studio' && (
+      {/* ── 优化：空态（R2 实现 Alignment Projection，R0 只给定位文案）── */}
+      {resumeWorkspaceView === 'optimize' && (
         <>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
-            <DescriptionOutlinedIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
+            <AutoAwesomeIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>岗位优化</Typography>
+          </Stack>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 1, lineHeight: 1.6 }}>
+            将当前简历与目标岗位要求匹配，发现表达缺口并基于已有经历提出优化建议。
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, px: 1, lineHeight: 1.6, opacity: 0.85 }}>
+            需要先关联岗位（草稿「基于 JD 派生」或从 Dashboard 选择）。
+          </Typography>
+        </>
+      )}
+
+      {/* ── 历史：引擎版本列表（Artifact 语义）── */}
+      {resumeWorkspaceView === 'history' && (
+        <>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
+            <HistoryIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
             <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>版本空间</Typography>
             <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>{versions.length}</Typography>
           </Stack>
@@ -163,22 +202,22 @@ export function ResumesSidebar() {
         </>
       )}
 
-      {/* ── assets：资产概览（CareerContext 投影，只读）── */}
-      {resumesView === 'assets' && (
+      {/* ── 素材：资产概览（CareerContext 投影，只读）── */}
+      {resumeWorkspaceView === 'library' && (
         <>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
-            <DescriptionOutlinedIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>资产空间</Typography>
+            <CollectionsIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>素材库</Typography>
           </Stack>
           <Stack spacing={0.5} sx={{ px: 1 }}>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>表述（可消费表达）</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>已有表达</Typography>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
                 共 {(careerContext?.claims ?? []).length} 条 · 可消费 {(careerContext?.claims ?? []).filter((c) => c.usable).length} 条
               </Typography>
             </Box>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>事实资产</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>可用经历</Typography>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
                 有效 {useAppStore.getState().evidence.filter((e) => e.lifecycle !== 'legacy').length} 条 · 历史 {useAppStore.getState().evidence.filter((e) => e.lifecycle === 'legacy').length} 条
               </Typography>
