@@ -30,9 +30,98 @@ import { resolveCompanyReference } from '../data/company-ref'
 import type { Company } from '../types'
 import type { CompanyDetail } from '../store/engine-client'
 import type { Validation } from '../../engine/ir/schema.ts'
+import type { CompanyRecord } from '../../engine/ir/schema.ts'
 
 /** store companies 成员（CompanyRecord + validation 标记；占位公司 = invalid = 待尽调） */
 type CompanyWithValidation = Company & { validation?: Validation }
+
+/** 职业价值块（Company Intelligence v0.1——Engine 投影，UI 只展示不计算；
+ *  禁「公司评分/综合评分/推荐指数」文案（ADR-018 语义冻结）；信号只映射 ✓/⚠ 不解释（解释权归 Assessment）） */
+const DIM_LABELS: Record<string, string> = {
+  credibility: '企业可信度',
+  growth: '成长性',
+  technology: '技术价值',
+  opportunity: '职业机会',
+  stability: '稳定性',
+}
+
+function CompanyAssessmentBlock({ assessment }: { assessment: CompanyRecord['assessment'] }) {
+  const a = assessment ?? null
+  // 三态：null = 待评估（未评估 ≠ 0 分）；PARTIAL 不显示基础分（基础分不是价值判断）；INSUFFICIENT_DATA = 信息不足
+  const statusText =
+    a === null ? '待评估'
+    : a.status === 'EVALUATED' ? `${a.qualityScore} / 100`
+    : a.status === 'PARTIAL' ? '部分评估'
+    : '信息不足'
+  const positives = a?.signals.filter((s) => !(s.points.stability !== undefined && s.points.stability < 0)) ?? []
+  const risks = a?.signals.filter((s) => s.points.stability !== undefined && s.points.stability < 0) ?? []
+  const pendingDims = a?.status === 'PARTIAL'
+    ? Object.entries(a.dimensions).filter(([, v]) => v === 0).map(([k]) => DIM_LABELS[k] ?? k)
+    : []
+  return (
+    <Box
+      sx={{
+        p: 1.5,
+        borderRadius: '8px',
+        bgcolor: COLORS.bgHover,
+        border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+        boxShadow: COLORS.cardShadow,
+      }}
+    >
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', mb: 1 }}>
+        <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>职业价值</Typography>
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: a === null ? COLORS.textMuted : COLORS.accent }}>
+          {statusText}
+        </Typography>
+      </Stack>
+      {a !== null && (
+        <>
+          {positives.length > 0 && (
+            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5, mb: 0.5 }}>
+              {positives.map((s) => (
+                <Chip
+                  key={s.factId}
+                  size="small"
+                  label={`✓ ${s.value}`}
+                  sx={{ height: 22, fontSize: 12, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
+                />
+              ))}
+            </Stack>
+          )}
+          {risks.length > 0 && (
+            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5, mb: 0.5 }}>
+              {risks.map((s) => (
+                <Chip
+                  key={s.factId}
+                  size="small"
+                  label={`⚠ ${s.value}`}
+                  sx={{ height: 22, fontSize: 12, bgcolor: alpha(RISK_COLOR.medium, 0.12), color: RISK_COLOR.medium }}
+                />
+              ))}
+            </Stack>
+          )}
+          {pendingDims.length > 0 && (
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.5 }}>
+              待确认：{pendingDims.join(' · ')}
+            </Typography>
+          )}
+          {a.degradedFacts.length > 0 && (
+            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {a.degradedFacts.map((f) => (
+                <Chip
+                  key={f.factId}
+                  size="small"
+                  label={`⚠ ${f.value} 待确认`}
+                  sx={{ height: 22, fontSize: 12, bgcolor: alpha(RISK_COLOR.medium, 0.12), color: RISK_COLOR.medium }}
+                />
+              ))}
+            </Stack>
+          )}
+        </>
+      )}
+    </Box>
+  )
+}
 
 /** 城市 → 经纬度（高德 GCJ-02 坐标系，城市中心近似）；未收录城市落中部默认点 */
 const CITY_COORDS: Record<string, [number, number]> = {
@@ -485,6 +574,7 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
               <Chip key={t} size="small" label={t} sx={{ height: 22, fontSize: 12 }} />
             ))}
           </Stack>
+          <CompanyAssessmentBlock assessment={selected.assessment} />
           <Box
             sx={{
               p: 1.5,
