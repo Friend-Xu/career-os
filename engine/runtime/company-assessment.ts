@@ -1,4 +1,4 @@
-import type { CompanyAssessment, CompanyDimension, CompanyFact, CompanyFactType, CompanySignal } from '../ir/schema.ts'
+import type { CompanyAssessment, CompanyDimension, CompanyFact, CompanySignal } from '../ir/schema.ts'
 import { RULE_VERSION, pickHighest, ruleOf } from './company-assessment-rules.ts'
 
 /**
@@ -9,58 +9,41 @@ import { RULE_VERSION, pickHighest, ruleOf } from './company-assessment-rules.ts
  * - 枚举外 value / 缺 evidence → degraded 不计分（不影响其他事实计分）
  */
 
-/** 输入事实（Agent 采集层形状；id 由 normalize 确定性生成） */
-export interface RawCompanyFact {
-  type: CompanyFactType
-  value: string
-  evidence?: { source?: string; url?: string }
-  collectedAt?: string
-}
-
 export interface NormalizedFact {
   fact: CompanyFact
   degraded: boolean
   reason?: 'NO_EVIDENCE' | 'UNKNOWN_VALUE'
 }
 
-/** 稳定 factId（djb2 哈希 type+value+source——同 constraintRef 模式；事实内容不变 → 引用稳定） */
-export function factIdOf(type: string, value: string, source: string): string {
-  const s = `${type}:${value}:${source}`
+/** 稳定 factId（djb2 哈希 companyId+type+value——同 constraintRef 模式；事实内容不变 → 引用稳定，
+ *  来源变化不改 id（事实身份不变）；companyId 隔离不同公司。Agent 不写 id，Engine 生成） */
+export function factIdOf(companyId: string, type: string, value: string): string {
+  const s = `${companyId}:${type}:${value}`
   let h = 5381
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
   return `fact:${h.toString(16).padStart(8, '0')}`
 }
 
 /**
- * 规范化：缺 evidence / 空 source → NO_EVIDENCE；value 枚举外 → UNKNOWN_VALUE；同 type+value 去重（保留已确认）。
- * 返回 NormalizedFact[]（输入顺序稳定，degraded 与 confirmed 混排）。
+ * 规范化：缺 evidence（source 空）→ NO_EVIDENCE；value 枚举外 → UNKNOWN_VALUE；同 type+value 去重（保留首条）。
+ * 输入已带 id（parser 生成）；返回 NormalizedFact[]（输入顺序稳定，degraded 与 confirmed 混排）。
  */
-export function normalizeFacts(raw: RawCompanyFact[]): NormalizedFact[] {
+export function normalizeFacts(facts: CompanyFact[]): NormalizedFact[] {
   const seen = new Set<string>()
   const out: NormalizedFact[] = []
-  for (const r of raw) {
-    const source = r.evidence?.source?.trim()
-    if (!source) {
-      out.push({ fact: { id: factIdOf(r.type, r.value, ''), type: r.type, value: r.value, evidence: { source: '' } }, degraded: true, reason: 'NO_EVIDENCE' })
+  for (const f of facts) {
+    if (!f.evidence.source?.trim()) {
+      out.push({ fact: f, degraded: true, reason: 'NO_EVIDENCE' })
       continue
     }
-    if (!ruleOf(r.type, r.value)) {
-      out.push({ fact: { id: factIdOf(r.type, r.value, source), type: r.type, value: r.value, evidence: { source, ...(r.evidence?.url ? { url: r.evidence.url } : {}) } }, degraded: true, reason: 'UNKNOWN_VALUE' })
+    if (!ruleOf(f.type, f.value)) {
+      out.push({ fact: f, degraded: true, reason: 'UNKNOWN_VALUE' })
       continue
     }
-    const key = `${r.type}:${r.value}`
+    const key = `${f.type}:${f.value}`
     if (seen.has(key)) continue // 重复事实（同 type+value）→ 去重，保留首条
     seen.add(key)
-    out.push({
-      fact: {
-        id: factIdOf(r.type, r.value, source),
-        type: r.type,
-        value: r.value,
-        evidence: { source, ...(r.evidence?.url ? { url: r.evidence.url } : {}) },
-        ...(r.collectedAt ? { collectedAt: r.collectedAt } : {}),
-      },
-      degraded: false,
-    })
+    out.push({ fact: f, degraded: false })
   }
   return out
 }
@@ -70,8 +53,8 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 /** CompanyFact[] → CompanyAssessment（normalize → Group 去重 → 规则匹配 → 维度聚合 → status/score） */
-export function computeCompanyAssessment(raw: RawCompanyFact[], assessedAt = new Date().toISOString()): CompanyAssessment {
-  const normalized = normalizeFacts(raw)
+export function computeCompanyAssessment(facts: CompanyFact[], assessedAt = new Date().toISOString()): CompanyAssessment {
+  const normalized = normalizeFacts(facts)
   const confirmed = normalized.filter((n) => !n.degraded).map((n) => n.fact)
   const degradedFacts = normalized
     .filter((n) => n.degraded)

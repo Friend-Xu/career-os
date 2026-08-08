@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeCompanyAssessment, factIdOf, normalizeFacts, type RawCompanyFact } from '../runtime/company-assessment.ts'
+import { computeCompanyAssessment, factIdOf, normalizeFacts } from '../runtime/company-assessment.ts'
+import type { CompanyFact } from '../ir/schema.ts'
 
 /**
  * Company Assessment 确定性核心回归（Company Intelligence Layer v0.1，契约 references/company-assessment-contract-v0.1.md）。
@@ -8,7 +9,8 @@ import { computeCompanyAssessment, factIdOf, normalizeFacts, type RawCompanyFact
  * 认证去重取最高级别 / 融资去重取最新最高轮 / 风险可叠加 / 缺 evidence 或枚举外 → degraded 不计分 / 纯函数确定性。
  */
 
-const fact = (type: RawCompanyFact['type'], value: string, source = '来源'): RawCompanyFact => ({
+const fact = (type: CompanyFact['type'], value: string, source = '来源'): CompanyFact => ({
+  id: factIdOf('c_test', type, value),
   type,
   value,
   evidence: { source },
@@ -80,7 +82,7 @@ test('Case F：风险累加——经营异常 + 失信叠加（-20 + -30）', ()
 
 test('Case G：缺 evidence → degraded 不计分（NO_EVIDENCE）', () => {
   const a = computeCompanyAssessment([
-    { type: 'CERTIFICATION', value: '国家级专精特新小巨人', evidence: {} },
+    { id: factIdOf('c_test', 'CERTIFICATION', '国家级专精特新小巨人'), type: 'CERTIFICATION', value: '国家级专精特新小巨人', evidence: { source: '' } },
   ])
   assert.equal(a.status, 'INSUFFICIENT_DATA')
   assert.equal(a.qualityScore, null)
@@ -134,5 +136,5 @@ test('normalizeFacts：factId 稳定 + 排序稳定', () => {
   assert.equal(n.length, 2)
   assert.equal(n[0].degraded, false)
   assert.match(n[0].fact.id, /^fact:[0-9a-f]{8}$/)
-  assert.equal(n[1].fact.id, factIdOf('RISK', '经营异常', '来源'))
+  assert.equal(n[1].fact.id, factIdOf('c_test', 'RISK', '经营异常'))
 })
