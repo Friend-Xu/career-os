@@ -30,8 +30,8 @@ const EVIDENCE: EvidenceItem = {
   event: { title: '减速机壳体结构设计项目' },
   role: '结构负责人',
   contribution: '负责机械结构设计，完成强度校核',
-  evidence: { scope: ['减速机壳体结构设计'] },
-  source: 'resume_import',
+  evidence: { scope: [{ content: '减速机壳体结构设计' }] },
+  source: { type: 'resume', capturedAt: '2026-08-08T00:00:00' },
   status: 'trusted',
   lifecycle: 'active',
 }
@@ -40,7 +40,7 @@ const UNRELATED_EVIDENCE: EvidenceItem = {
   ...EVIDENCE,
   id: 'e2',
   contribution: '负责市场调研与竞品分析',
-  evidence: { scope: ['市场分析'] },
+  evidence: { scope: [{ content: '市场分析' }] },
 }
 
 const CLAIM: CareerClaim = {

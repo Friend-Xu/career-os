@@ -156,6 +156,8 @@ export const METHODS = {
   diffResumes: 'resumes/diff',
   /** 导出简历版本（params: { id } → exportResumePdf + ExportRecord 持久化 + status=exported + operation 审计） */
   exportResume: 'resumes/export',
+  /** Resume Alignment Projection（params: { resumeId, jobId } → 四态矩阵；R2.1，契约 resume-alignment-projection-v0.1；纯投影不落盘） */
+  resumeAlignment: 'resumes/alignment',
   /** 全量提案（proposals/ 扫描 + 校验标记；M3.5.6 AI 建议层） */
   listProposals: 'proposals/list',
   /** 接受提案（params: { id, reason? } → checksum 校验 → 确定性应用 → 新版本（lineage.parent + ai_revision + apply_proposal 审计）；成功即产生新版本，永不覆盖源；reason 可选写回 accept_reason——M3.5.7 决策反馈） */

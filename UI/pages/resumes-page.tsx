@@ -21,7 +21,7 @@ import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
 import { ResumeDashboard } from '../components/resume/ResumeDashboard'
-import { ResumeOptimizeEmpty } from '../components/resume/ResumeOptimizeEmpty'
+import { ResumeOptimizeWorkspace } from '../components/resume/ResumeOptimizeWorkspace'
 import { computeResumeQuality, computeQualityChecks } from '../utils/resume-quality'
 
 /** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
@@ -90,9 +90,15 @@ export function ResumesPage() {
   const resetRewrite = useAppStore((s) => s.resetRewrite)
   const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
   const resumes = useAppStore((s) => s.resumes)
+  const updateResumeModules = useAppStore((s) => s.updateResumeModules)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
   const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
+  /** 模块变更统一出口：本地 state（输入流畅）+ store 写回（切页不丢——修复编辑内容丢失） */
+  const commitModules = (next: ResumeModule[]) => {
+    setModules(next)
+    if (resume) updateResumeModules(resume.id, next)
+  }
   /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
   const [selButton, setSelButton] = useState<{
     top: number;
@@ -246,23 +252,22 @@ export function ResumesPage() {
     if (!selButton) return
     const { moduleId, text: selectedText } = selButton
     let applied = false
-    setModules((prev) =>
-      prev.map((m) => {
-        if (m.id !== moduleId) return m
-        const idx = m.content.indexOf(selectedText)
-        if (idx === -1) return m
-        applied = true
-        setRevert({ moduleId, prevContent: m.content })
-        return {
-          ...m,
-          content:
-            m.content.slice(0, idx) +
-            text +
-            m.content.slice(idx + selectedText.length),
-        }
-      }),
-    )
+    const next = modules.map((m) => {
+      if (m.id !== moduleId) return m
+      const idx = m.content.indexOf(selectedText)
+      if (idx === -1) return m
+      applied = true
+      setRevert({ moduleId, prevContent: m.content })
+      return {
+        ...m,
+        content:
+          m.content.slice(0, idx) +
+          text +
+          m.content.slice(idx + selectedText.length),
+      }
+    })
     if (applied) {
+      commitModules(next)
       push('success', '已应用 AI 改写（可撤销）')
     } else {
       push('warning', '原文已变化，请重新划词')
@@ -272,8 +277,8 @@ export function ResumesPage() {
 
   const undoRewrite = () => {
     if (!revert) return
-    setModules((prev) =>
-      prev.map((m) => (m.id === revert.moduleId ? { ...m, content: revert.prevContent } : m)),
+    commitModules(
+      modules.map((m) => (m.id === revert.moduleId ? { ...m, content: revert.prevContent } : m)),
     )
     setRevert(null)
     push('info', '已撤销本次改写')
@@ -282,11 +287,9 @@ export function ResumesPage() {
   const moveModule = (index: number, dir: -1 | 1) => {
     const next = index + dir
     if (next < 0 || next >= modules.length) return
-    setModules((prev) => {
-      const copy = [...prev];
-      [copy[index], copy[next]] = [copy[next], copy[index]]
-      return copy.map((m, i) => ({ ...m, order: i }))
-    })
+    const copy = [...modules];
+    [copy[index], copy[next]] = [copy[next], copy[index]]
+    commitModules(copy.map((m, i) => ({ ...m, order: i })))
   }
 
   return (
@@ -365,10 +368,10 @@ export function ResumesPage() {
         </Box>
       )}
 
-      {/* 优化：空态引导（R2 实现 Alignment Projection；「选择岗位」接派生对话框） */}
+      {/* 优化空间：Resume Alignment Projection 四态视图（R2.2；只消费引擎版本 × 已建档 JD） */}
       {resumeWorkspaceView === 'optimize' && (
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-          <ResumeOptimizeEmpty onSelectJob={() => setDeriveOpen(true)} />
+        <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <ResumeOptimizeWorkspace />
         </Box>
       )}
 
@@ -508,8 +511,8 @@ export function ResumesPage() {
                   }}
                   onChange={(e) => {
                     setRevert(null)
-                    setModules((prev) =>
-                      prev.map((x) => (x.id === m.id ? { ...x, content: e.target.value } : x)),
+                    commitModules(
+                      modules.map((x) => (x.id === m.id ? { ...x, content: e.target.value } : x)),
                     )
                   }}
                   sx={{

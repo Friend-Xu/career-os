@@ -29,6 +29,7 @@ import type {
   Validation,
 } from '../../engine/ir/schema.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
+import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { ExtractionResult } from '../../engine/runtime/document/pdf-import.ts'
@@ -359,6 +360,11 @@ export class EngineClient {
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */
   listResumes(): Promise<ResumeDocument[]> {
     return this.rpc<ResumeDocument[]>(METHODS.listResumes)
+  }
+
+  /** Resume Alignment Projection（R2.2：四态矩阵——纯投影不落盘） */
+  fetchResumeAlignment(resumeId: string, jobId: string): Promise<ResumeAlignmentProjection> {
+    return this.rpc<ResumeAlignmentProjection>(METHODS.resumeAlignment, { resumeId, jobId })
   }
 
   /** 单个简历版本（M3.5） */

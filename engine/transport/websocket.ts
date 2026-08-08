@@ -76,6 +76,7 @@ import { selectExpressionCandidates } from '../runtime/claim-selector.ts'
 import { exportResumePdf, serializeExportRecord } from '../export/resume-export.ts'
 import { buildCareerContext } from '../context/career-context.ts'
 import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
+import { computeResumeAlignment } from '../runtime/resume-alignment.ts'
 import { acceptProposalFile, rejectProposalFile, scanProposals } from '../storage/proposal-watcher.ts'
 import {
   acceptPortfolioProposal,
@@ -1363,6 +1364,22 @@ export async function startServer(opts: {
       ...r.record,
       ...(r.validation ? { validation: r.validation } : {}),
     })),
+    [METHODS.resumeAlignment]: (params) => {
+      const p = params as Record<string, unknown>
+      const resumeId = typeof p?.resumeId === 'string' ? p.resumeId : ''
+      const jobId = typeof p?.jobId === 'string' ? p.jobId : ''
+      if (!resumeId || !jobId) throw new Error('resumes/alignment 需要 params { resumeId, jobId }')
+      const resume = scanResumes(workspace).find((r) => r.record.id === resumeId)
+      if (!resume) throw new Error(`简历版本不存在：${resumeId}`)
+      const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+      if (!job) throw new Error(`岗位不存在：${jobId}`)
+      return computeResumeAlignment({
+        job: job.record,
+        evidenceItems: scanEvidence(workspace).map((e) => e.record),
+        resumeDocument: resume.record,
+        claims: scanClaims(workspace).map((c) => c.record),
+      })
+    },
     [METHODS.getResume]: (params) => {
       const id = jobIdParams(params)
       const r = scanResumes(workspace).find((x) => x.record.id === id)

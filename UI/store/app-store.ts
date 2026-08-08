@@ -15,6 +15,7 @@ import type {
   NavPageId,
   PendingPermission,
   Person,
+  ResumeModule,
   ResumeVersion,
   RewriteFeedbackReason,
   RewriteState,
@@ -41,6 +42,7 @@ import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
+import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -373,6 +375,8 @@ interface AppState {
   transitionResume: (id: string, targetStatus: ResumeStatus) => Promise<ResumeDocument>;
   /** 导出简历版本（M3.5：exportResumePdf + ExportRecord + status=exported；与旧 HTML 导出 exportResume 区分） */
   exportResumeVersion: (id: string) => Promise<{ result: { pdf: string; fileName: string }; record: ResumeExportRecord }>;
+  /** Resume Alignment Projection（R2.2：四态矩阵——纯投影不落盘） */
+  fetchResumeAlignment: (resumeId: string, jobId: string) => Promise<ResumeAlignmentProjection>;
   /** 版本对比（M3.5：identity diff） */
   diffResumes: (a: string, b: string) => Promise<ResumeDiff>;
   /** 接受提案（M3.5.6：引擎确定性应用 → 新版本；成功即产生 v4；reason 可选——M3.5.7 决策反馈） */
@@ -399,6 +403,8 @@ interface AppState {
   deleteCompany: (id: string) => Promise<void>;
   /** 删除简历版本（本地 resumes 过滤；删除当前版本回退到第一份） */
   deleteResumeVersion: (id: string) => void;
+  /** 草稿模块内容写回（R0 修复：编辑内容切页不丢——modules 本地 state 与 store 同步） */
+  updateResumeModules: (id: string, modules: ResumeModule[]) => void;
   addDecision: (record: DecisionRecord) => void;
   markCompanyContacted: (id: string) => void;
   setInfopoolFilter: (filter: string) => void;
@@ -1149,6 +1155,12 @@ export const useAppStore = create<AppState>()(
     return engine.exportResumeVersion(id)
   },
 
+  /** Resume Alignment Projection（R2.2：四态矩阵——纯投影不落盘） */
+  fetchResumeAlignment: async (resumeId, jobId) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.fetchResumeAlignment(resumeId, jobId)
+  },
+
   /** 版本对比（M3.5：identity diff——claimId 变化 = removed+added，不丢 provenance） */
   diffResumes: async (a, b) => {
     if (!engine) throw new Error('引擎未连接')
@@ -1254,6 +1266,15 @@ export const useAppStore = create<AppState>()(
       resumes: remaining,
       activeResumeId: activeResumeId === id ? (remaining[0]?.id ?? '') : activeResumeId,
     })
+  },
+
+  /** 草稿模块内容写回（R0 修复：编辑内容切页不丢） */
+  updateResumeModules: (id, modules) => {
+    set((state) => ({
+      resumes: state.resumes.map((r) =>
+        r.id === id ? { ...r, modules, updatedAt: new Date().toISOString().slice(0, 10) } : r,
+      ),
+    }))
   },
 
   addDecision: (record) => {
