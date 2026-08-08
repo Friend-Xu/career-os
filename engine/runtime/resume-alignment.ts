@@ -35,13 +35,17 @@ export interface ResumeAlignmentInput {
   claims: CareerClaim[]
 }
 
-/** 责任 → 命中该责任任一期望模式的简历 bullet（expectationId = patternId） */
+/** 责任 → 命中该责任任一期望模式的简历 bullet。
+ *  双路径（P3.2 前置——WorkingCopy 组装不产生 expectationId，P2.4 后四态退化成两态）：
+ *  版本路径 = bullet.metadata.expectationId 锚匹配（原）；
+ *  工作副本路径 = bullet.claimId 非空（bound 块表达意图存在——unbound 块 claimId 空不算表达） */
 function hitBullets(resp: JobRecord['responsibilities'][number], resume: ResumeDocument): ResumeBullet[] {
   const patterns = new Set(resp.evidenceExpectations.map((e) => e.patternId))
   const out: ResumeBullet[] = []
   for (const s of resume.sections) {
     for (const b of s.bullets) {
-      if (b.metadata?.expectationId && patterns.has(b.metadata.expectationId)) out.push(b)
+      if (b.metadata?.expectationId && patterns.has(b.metadata.expectationId)) { out.push(b); continue }
+      if (b.claimId) out.push(b)
     }
   }
   return out

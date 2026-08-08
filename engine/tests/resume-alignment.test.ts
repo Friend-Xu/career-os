@@ -72,6 +72,43 @@ const RESUME_WITH_BULLET: ResumeDocument = {
 
 const RESUME_EMPTY: ResumeDocument = { ...RESUME_WITH_BULLET, id: 'resume-empty', sections: [] }
 
+/** 工作副本组装形状（P2.4：bound 块只有 sentence + claimId，无 expectationId 锚） */
+const WC_BOUND: ResumeDocument = {
+  ...RESUME_WITH_BULLET,
+  id: 'wc-bound',
+  sections: [
+    {
+      type: 'projects',
+      title: '项目经验',
+      bullets: [{ sentence: '完成减速机壳体结构设计', claimId: 'c1' }],
+    },
+  ],
+}
+
+const WC_BOUND_GHOST: ResumeDocument = {
+  ...RESUME_WITH_BULLET,
+  id: 'wc-bound-ghost',
+  sections: [
+    {
+      type: 'projects',
+      title: '项目经验',
+      bullets: [{ sentence: '主导量产导入', claimId: 'c-ghost' }],
+    },
+  ],
+}
+
+const WC_UNBOUND: ResumeDocument = {
+  ...RESUME_WITH_BULLET,
+  id: 'wc-unbound',
+  sections: [
+    {
+      type: 'projects',
+      title: '项目经验',
+      bullets: [{ sentence: '主导量产导入', claimId: '' }],
+    },
+  ],
+}
+
 function run(input: Partial<ResumeAlignmentInput> & { resumeDocument: ResumeDocument }): ReturnType<typeof computeResumeAlignment> {
   return computeResumeAlignment({
     job: JOB,
@@ -144,4 +181,22 @@ test('多责任单元：只遍历有 evidenceExpectations 的责任（无期望�
   const p = computeResumeAlignment({ job, evidenceItems: [EVIDENCE], claims: [CLAIM], resumeDocument: RESUME_WITH_BULLET })
   assert.equal(p.rows.length, 1)
   assert.equal(p.rows[0].responsibilityId, 'r1')
+})
+
+test('P3.2 前置·工作副本路径：bound 块（无锚）+ 证据 → covered', () => {
+  const p = run({ evidenceItems: [EVIDENCE], claims: [CLAIM], resumeDocument: WC_BOUND })
+  assert.equal(p.rows[0].state, 'covered')
+  assert.deepEqual(p.rows[0].bulletRefs, ['完成减速机壳体结构设计'])
+})
+
+test('P3.2 前置·工作副本路径：bound 块但 claim 无证据锚 → unsupported_claim（红线）', () => {
+  const p = run({ evidenceItems: [EVIDENCE], claims: [CLAIM], resumeDocument: WC_BOUND_GHOST })
+  assert.equal(p.rows[0].state, 'unsupported_claim')
+  assert.match(p.rows[0].explanation, /找不到可信事实来源/)
+})
+
+test('P3.2 前置·工作副本路径：unbound 块（claimId 空）不算表达 → expressive_gap', () => {
+  const p = run({ evidenceItems: [EVIDENCE], claims: [CLAIM], resumeDocument: WC_UNBOUND })
+  assert.equal(p.rows[0].state, 'expressive_gap')
+  assert.deepEqual(p.rows[0].bulletRefs, [])
 })
