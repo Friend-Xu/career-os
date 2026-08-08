@@ -40,7 +40,28 @@ JD/投递引用精确解析时可能命中占位档案显示「待尽调」—�
 ## 尽调详情
 
 {完整报告正文}
+
+---
+
+## 公司事实
+
+| 类型 | 内容 | 来源 | 链接 |
+|------|------|------|------|
+| CERTIFICATION | 国家级专精特新小巨人 | 工信部公示 | https://... |
+| RISK | 经营异常 | 国家企业信用信息公示系统 | ... |
 ````
+
+## 公司事实段（Company Intelligence Layer v0.1）
+
+尽调后**顺带采信号**写入 `## 公司事实` 段（4 列表格：类型 / 内容 / 来源 / 链接，链接可选）。
+完整规则见 `../../references/company-assessment-contract-v0.1.md` §7.1（CompanyFact Producer）：
+
+- 类型必须 ∈ `CERTIFICATION / FINANCING / PATENT / INDUSTRY_STATUS / GROWTH / OPPORTUNITY / RISK`
+- 内容必须 ∈ 评估契约 §4 规则表 value 枚举（枚举外 → 不计分，UI 标「待确认」）
+- **来源必填**（外部公开渠道：官网/工信部公示/新闻/公示系统）；缺来源 → 不计分
+- 禁止 narrative 式事实（「公司很优秀」归 `## 尽调详情` 正文，不进事实段）
+- id 由 Engine 生成，Agent 不写
+- 无事实段 = 未评估（不影响档案合法性；UI 显示「待评估」）
 
 ## 字段与值格式（引擎严格校验）
 
