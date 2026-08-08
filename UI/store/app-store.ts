@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { useToastStore } from './toast-store'
 import { useAttentionStore } from './attention-store'
+import { hasAgentPanelZone } from '../utils/agent-panel'
 import type {
   Application,
   ApplicationView,
@@ -652,7 +653,9 @@ export const useAppStore = create<AppState>()(
 
   toggleAgentPanel: () => {
     const { agentPanelOpen, mainWidthMode, currentPage } = get()
-    if (currentPage === 'agent' || currentPage === 'resumes') return
+    // 无面板区的页面（agent 主区即 AI / settings 纯设置）不响应——⌘B 与把手都经此判定，
+    // 避免「UI 暴露动作但能力不存在」与状态污染
+    if (!hasAgentPanelZone(currentPage)) return
     const nextOpen = !agentPanelOpen
     let nextMode = mainWidthMode
     if (!nextOpen && mainWidthMode === 'narrow') nextMode = 'wide'

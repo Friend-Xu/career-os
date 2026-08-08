@@ -2,6 +2,7 @@ import { Box } from '@mui/material'
 import { useEffect } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
+import { canShowAgentPanelRail, hasAgentPanelZone } from '../../utils/agent-panel'
 import { TopBar } from './top-bar'
 import { IconNav } from './icon-nav'
 import { SecondarySidebar } from './secondary-sidebar'
@@ -107,11 +108,11 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handler)
   }, [setCommandPaletteOpen, toggleAgentPanel, setPage, createSession, currentPage])
 
-  // AI 面板交互模型：Agent 页主区即 AI（无面板区）；设置页隐藏。
+  // AI 面板交互模型（utils/agent-panel 单一事实源）：无面板区 = agent（主区即 AI）/ settings；
+  // 无常驻把手 = resumes/infopool（全屏主区，面板由页面内 AI 动作唤起）；
   // 其余页面默认收起 → 44px 把手；显式动作（把手/⌘B/AI 动作）展开 → 350px Dock。
-  const panelZone = currentPage !== 'agent' && currentPage !== 'settings'
-  const showAgent = agentPanelOpen && panelZone
-  const showAgentTab = !agentPanelOpen && panelZone
+  const showAgent = agentPanelOpen && hasAgentPanelZone(currentPage)
+  const showAgentTab = !agentPanelOpen && canShowAgentPanelRail(currentPage)
 
   return (
     <Box
