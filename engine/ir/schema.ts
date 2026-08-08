@@ -585,6 +585,51 @@ export interface CompanyRecord {
   aliases?: string[]
 }
 
+// ─── Company Intelligence Layer v0.1：公司事实 → 职业价值评分（契约 references/company-assessment-contract-v0.1.md）──
+
+export type CompanyFactType =
+  | 'CERTIFICATION'   // 企业资质
+  | 'FINANCING'       // 融资
+  | 'PATENT'          // 专利/技术壁垒
+  | 'INDUSTRY_STATUS' // 行业地位
+  | 'GROWTH'          // 成长性（营收/团队）
+  | 'OPPORTUNITY'     // 职业机会（招聘活跃/岗位）
+  | 'RISK'            // 风险（经营异常/诉讼/失信）
+
+export type CompanyDimension = 'credibility' | 'growth' | 'technology' | 'opportunity' | 'stability'
+
+/** 公司事实（Layer 1，Agent 采集）：id = 稳定引用（同 constraintRef 模式）；value 枚举值域见契约 §4 */
+export interface CompanyFact {
+  id: string
+  type: CompanyFactType
+  value: string
+  evidence: { source: string; url?: string }
+  collectedAt?: string
+}
+
+export type AssessmentStatus = 'EVALUATED' | 'PARTIAL' | 'INSUFFICIENT_DATA'
+
+/** 参与计分的信号（Group 去重后）：points = 维度贡献（引用 factId，不复制事实） */
+export interface CompanySignal {
+  factId: string
+  factType: CompanyFactType
+  value: string
+  points: Partial<Record<CompanyDimension, number>>
+  evidence: { source: string; url?: string }
+}
+
+/** 职业价值评估（Layer 3，Engine 确定性派生；version/ruleVersion/assessedAt = 「为什么去年 85 现在 78」的可审计锚点） */
+export interface CompanyAssessment {
+  version: 'v0.1'
+  ruleVersion: string
+  assessedAt: string
+  status: AssessmentStatus
+  qualityScore: number | null   // INSUFFICIENT_DATA → null（未知 ≠ 中等）
+  dimensions: Record<CompanyDimension, number>
+  signals: CompanySignal[]
+  degradedFacts: { factId: string; value: string; reason: 'NO_EVIDENCE' | 'UNKNOWN_VALUE' }[]
+}
+
 // ─── V2 知识层：Skill/Role 领域对象（knowledge/*.md 真相源，V3 Capability 复用同一技能词表）──
 
 /** 技能（受控词表叶技能，别名归一化；不建技能树——个人规模扁平词表足够） */
