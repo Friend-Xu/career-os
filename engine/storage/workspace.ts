@@ -35,6 +35,7 @@ export interface WorkspacePaths {
   claims: string
   claimProposals: string
   resumes: string
+  workingCopies: string
   proposals: string
   portfolio: string
   portfolioProjects: string
@@ -80,6 +81,7 @@ export function buildPaths(root: string): WorkspacePaths {
     claims: join(root, 'claims'),
     claimProposals: join(root, 'claim-proposals'),
     resumes: join(root, 'resumes'),
+    workingCopies: join(root, 'resumes', 'working-copies'),
     proposals: join(root, 'proposals'),
     portfolio: join(root, 'portfolio'),
     portfolioProjects: join(root, 'portfolio', 'projects'),
@@ -131,6 +133,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(join(paths.resumes, 'documents'), { recursive: true })
     mkdirSync(join(paths.resumes, 'drafts'), { recursive: true })
     mkdirSync(join(paths.resumes, 'exports'), { recursive: true })
+    mkdirSync(paths.workingCopies, { recursive: true })
     mkdirSync(paths.proposals, { recursive: true })
     mkdirSync(paths.portfolio, { recursive: true })
     mkdirSync(paths.portfolioProjects, { recursive: true })

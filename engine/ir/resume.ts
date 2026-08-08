@@ -53,6 +53,35 @@ export interface ResumeDocument {
   validation?: ResumeValidation // M3.5.4：assemble 快照（Context 投影展示；重算需反推 manifest 不可靠）
 }
 
+// ─── ADR-023：Working Copy（创作层——用户持续编辑对象，发布前非资产）──
+
+export type WorkingCopyStatus = 'active' | 'ready_for_promote' | 'promoted'
+
+/** 表达块（用户文本 + 可选多源 claim 引用；unbound 合法——provenance 是增强不是负担） */
+export interface WorkingBlock {
+  id: string
+  text: string
+  provenanceLinks?: string[] // 多源 claim 引用（一表达多 claim）；Assembly 时映射单主 claimId
+}
+
+/** 段（层级：WorkingCopy → Section → Block——blocks 属于 section，删除段时块生命周期一并明确） */
+export interface WorkingSection {
+  id: string
+  title: string
+  blocks: WorkingBlock[]
+}
+
+/** 用户创作对象（resumes/working-copies/；promote → ResumeDocument Candidate） */
+export interface WorkingCopy {
+  id: string // wc_{YYYYMMDD}_{NNNNN}，引擎登记
+  owner: string // person_id
+  sections: WorkingSection[]
+  targetContext?: { jobId?: string } // 目标岗位/JD 引用（编辑与优化共享）
+  status: WorkingCopyStatus
+  revision: number // 双写协商（UI/Engine）——local > engine push；engine > local 询问合并
+  updatedAt: string
+}
+
 // ─── M3.5：Version Management（契约 RESUME-VERSION-M3-v0.2）──
 
 /** 派生链（append-only 历史；sourceResumeIds 为 merge 预留，v0.1 只使用 parent） */

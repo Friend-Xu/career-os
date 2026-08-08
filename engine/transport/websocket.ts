@@ -76,6 +76,12 @@ import {
   scanClaimProposals,
   type ClaimProposalInput,
 } from '../storage/claim-proposal-registry.ts'
+import {
+  promoteToDocumentCandidate,
+  scanWorkingCopies,
+  upsertWorkingCopy,
+  type WorkingCopyInput,
+} from '../storage/working-copy-registry.ts'
 import { scanResumes, transitionResumeStatusFile, cloneResumeFile, diffResumes, markResumeExported } from '../storage/resume-watcher.ts'
 import { indexEvidence, canUseClaim } from '../storage/claim-policy.ts'
 import { computeClaimCoverage } from '../runtime/claim-coverage.ts'
@@ -1400,6 +1406,41 @@ export async function startServer(opts: {
       const updated = rejectClaimProposal(workspace, jobIdParams(params), reason)
       broadcast({ event: EVENTS.claimProposalsChanged })
       return updated
+    },
+    [METHODS.workingCopyList]: () => scanWorkingCopies(workspace),
+    [METHODS.workingCopyUpsert]: (params) => {
+      const p = params as Record<string, unknown>
+      const sections = Array.isArray(p?.sections)
+        ? (p.sections as Record<string, unknown>[]).map((s) => ({
+            id: typeof s?.id === 'string' ? s.id : '',
+            title: typeof s?.title === 'string' ? s.title : '',
+            blocks: Array.isArray(s?.blocks)
+              ? (s.blocks as Record<string, unknown>[]).map((b) => ({
+                  id: typeof b?.id === 'string' ? b.id : '',
+                  text: typeof b?.text === 'string' ? b.text : '',
+                  ...(Array.isArray(b?.provenanceLinks) ? { provenanceLinks: (b.provenanceLinks as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
+                }))
+              : [],
+          }))
+        : []
+      const input: WorkingCopyInput = {
+        ...(typeof p?.id === 'string' ? { id: p.id } : {}),
+        owner: typeof p?.owner === 'string' ? p.owner : '',
+        sections,
+        revision: typeof p?.revision === 'number' ? p.revision : 0,
+        ...(p?.targetContext && typeof (p.targetContext as Record<string, unknown>)?.jobId === 'string'
+          ? { targetContext: { jobId: ((p.targetContext as Record<string, unknown>).jobId as string) } }
+          : {}),
+      }
+      const result = upsertWorkingCopy(workspace, input)
+      if (result.status !== 'conflict') broadcast({ event: EVENTS.workingCopiesChanged })
+      return result
+    },
+    [METHODS.workingCopyPromote]: (params) => {
+      const document = promoteToDocumentCandidate(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.workingCopiesChanged })
+      broadcast({ event: EVENTS.resumesChanged })
+      return document
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
       ...r.record,

@@ -152,6 +152,12 @@ export const METHODS = {
   claimProposalApprove: 'claim-proposals/approve',
   /** 拒绝 Claim 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
   claimProposalReject: 'claim-proposals/reject',
+  /** 全量工作副本（resumes/working-copies/ 扫描；ADR-023 P2.2——用户创作对象） */
+  workingCopyList: 'working-copies/list',
+  /** 工作副本 upsert（params: WorkingCopyInput → { status: ok|conflict|created, copy }——revision 协商：engine > local → conflict 询问合并；local >= engine → push） */
+  workingCopyUpsert: 'working-copies/upsert',
+  /** 创建版本（params: { id } → ResumeDocument Candidate——promoteToDocumentCandidate；unbound 块 UNBOUND_BLOCK warning 不阻止） */
+  workingCopyPromote: 'working-copies/promote',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
@@ -245,6 +251,8 @@ export const EVENTS = {
   claimsChanged: 'data.claims.changed',
   /** claim-proposals/ 目录变更后推送（不含数据，客户端用 claim-proposals/list 拉快照；ADR-022 P1.1） */
   claimProposalsChanged: 'data.claim-proposals.changed',
+  /** resumes/working-copies/ 目录变更后推送（不含数据，客户端用 working-copies/list 拉快照；ADR-023 P2.2） */
+  workingCopiesChanged: 'data.working-copies.changed',
   /** resumes/ 目录变更后推送（不含数据，客户端用 resumes/list 拉快照；M3.5） */
   resumesChanged: 'data.resumes.changed',
   /** proposals/ 目录变更后推送（不含数据，客户端用 proposals/list 拉快照；M3.5.6） */
