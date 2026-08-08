@@ -20,10 +20,22 @@ import {
   AGENT_TASK_TYPES,
   CONTEXT_REF_TYPES,
   OUTPUT_TARGETS,
+  type AgentContextBundle,
+  type AgentTaskRejected,
+  type AgentTaskRequest,
   type AgentTaskType,
   type ContextReference,
   type OutputTarget,
 } from '../ir/agent-task.ts'
+import { validateContextPolicy } from '../agent/context/validator.ts'
+import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
+import { assembleContextBundle } from '../agent/context/assembler.ts'
+
+/** TaskRejected → RPC error message（RPC 通道仅 code+message——reason/refs 编码进 message，UI 按前缀识别） */
+function taskRejectedMessage(rejected: AgentTaskRejected): string {
+  const refs = rejected.refs.map((r) => `${r.type} ${r.id || '(无)'} ${r.error}`).join('; ')
+  return `TaskRejected: ${rejected.reason}${refs ? `: ${refs}` : ''}`
+}
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
@@ -1152,6 +1164,23 @@ export async function startServer(opts: {
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => {
       const p = agentStartParams(params)
+      // ADR-020 Context Assembly（Commit B）：policy 校验 → 引用解析 → Bundle。
+      // Rejected = RPC 错误（message 前缀 `TaskRejected: <reason>`——RPC 通道仅 code+message，
+      // reason 语义编码进 message），不进入 runtime；taskType 缺省 = 旧调用不装配（兼容）
+      let bundle: AgentContextBundle | undefined
+      if (p.taskType !== undefined) {
+        const req: AgentTaskRequest = {
+          taskType: p.taskType,
+          contextRefs: p.contextRefs,
+          outputTarget: p.outputTarget,
+          trigger: p.trigger ?? 'user_action',
+        }
+        const rejected = validateContextPolicy(req)
+        if (rejected) throw new Error(taskRejectedMessage(rejected))
+        const resolved = resolveContextRefs(workspace, store as unknown as RegistryStore, p.contextRefs ?? [])
+        if ('reason' in resolved) throw new Error(taskRejectedMessage(resolved))
+        bundle = assembleContextBundle(resolved.resolved)
+      }
       // 当前分析对象（系统事实）：personId → person 快照（name）；注入任务上下文供 Agent 传递归属（ADR-014）
       const person = p.personId
         ? (store.listPersons() as Person[]).find((x) => x.personId === p.personId)
@@ -1175,6 +1204,7 @@ export async function startServer(opts: {
           },
           workspace.paths.root,
         ),
+        ...(bundle ? { contextBundle: bundle } : {}),
       }
     },
     [METHODS.settingsGet]: () => ({

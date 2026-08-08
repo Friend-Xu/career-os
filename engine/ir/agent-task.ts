@@ -42,6 +42,34 @@ export const CONTEXT_REF_TYPES: ContextReference['type'][] = ['job', 'company', 
 
 export const OUTPUT_TARGETS: OutputTarget[] = ['decision', 'artifact', 'none']
 
+/** Context Policy（Registry 语义表代码化——validator 消费；required 缺失 = TaskRejected） */
+export interface ContextPolicy {
+  required: ContextReference['type'][]
+  optional: ContextReference['type'][]
+  emptyAllowed: boolean
+}
+
+export const CONTEXT_POLICY: Record<AgentTaskType, ContextPolicy> = {
+  job_analysis: { required: ['job'], optional: ['company', 'resume'], emptyAllowed: false },
+  company_research: { required: ['company'], optional: [], emptyAllowed: false },
+  decision_reassessment: { required: ['decision'], optional: [], emptyAllowed: false },
+  decision_review: { required: ['decision'], optional: [], emptyAllowed: false },
+  resume_generation: { required: [], optional: ['resume'], emptyAllowed: true },
+  resume_adaptation: { required: ['job', 'resume'], optional: [], emptyAllowed: false },
+  interview_preparation: { required: ['job'], optional: ['resume', 'company'], emptyAllowed: false },
+  explanation: { required: [], optional: [], emptyAllowed: true },
+  career_direction: { required: [], optional: ['resume'], emptyAllowed: true },
+}
+
+/** TaskRejected reason（契约 §6 失败语义：required 缺失 ≠ 引用不存在，语义分离） */
+export type TaskRejectedReason = 'INVALID_CONTEXT_REFERENCE' | 'MISSING_REQUIRED_CONTEXT'
+
+/** Context Assembly 失败返回（RPC 错误，不进入 runtime，不创建 Session） */
+export interface AgentTaskRejected {
+  reason: TaskRejectedReason
+  refs: { type: ContextReference['type']; id: string; error: string }[]
+}
+
 /** 领域对象引用（禁 file/markdown/workspace_path——Context Contract 面向领域对象不面向存储结构） */
 export interface ContextReference {
   type: 'job' | 'company' | 'resume' | 'decision'
