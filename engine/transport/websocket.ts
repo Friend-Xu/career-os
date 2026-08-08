@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
+import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import {
@@ -114,8 +114,8 @@ import {
   linkApplicationDecision,
   listApplications,
   updateApplicationStatus,
-  type CreateApplicationRequest,
 } from '../storage/application-registry.ts'
+import type { CreateApplicationRequest } from '../ir/schema.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -1089,7 +1089,7 @@ export async function startServer(opts: {
       const after = projectDecision(afterMd, id, '')
       return { ...result, candidates: detectDecisionChange(before, after) }
     },
-    [METHODS.listCompanies]: () => attachCompanyAssessments(workspace, store.listCompanies()),
+    [METHODS.listCompanies]: () => attachCompanyAssessments(workspace, store.listCompanies() as CompanyView[]),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.decisionGet]: (params) => readDecisionFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
@@ -1313,7 +1313,7 @@ export async function startServer(opts: {
     },
     [METHODS.updateApplicationStatus]: (params) => {
       const { id, status } = updateApplicationStatusParams(params)
-      const app = updateApplicationStatus(workspace, id, status as Parameters<typeof updateApplicationStatus>[1])
+      const app = updateApplicationStatus(workspace, id, status as ApplicationStatus)
       broadcast({ event: EVENTS.applicationsChanged })
       return applicationView(app)
     },

@@ -1,4 +1,5 @@
-import type { AIReference, EvidenceRef, GapDisplayRow, ResumeRewriteContext } from '../ir/schema.ts'
+import type { AIReference, EvidenceRef, ResumeRewriteContext } from '../ir/schema.ts'
+import type { GapDisplayRow } from './decision-draft.ts'
 
 /**
  * Resume Rewrite Context 适配（Career Decision Loop v0.1 Step 4）：

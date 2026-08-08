@@ -101,7 +101,7 @@ test('Validator：education 值域外值 → reject；缺失锚点 → reject；
 
   const badCap = validateJDAnalysisProposal({
     ...validProposal,
-    capabilities: [{ responsibility: '', priority: 'must', category: 'weird', capabilities: [], evidencePatterns: [], questions: [] }],
+    capabilities: [{ responsibility: '', priority: 'must', category: 'weird' as never, capabilities: [], evidencePatterns: [], questions: [] }],
   })
   assert.equal(badCap.filter((i) => i.path.startsWith('capabilities[0]')).length, 3)
 })

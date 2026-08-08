@@ -6,7 +6,7 @@
  * preferred → 无 hard 维度；related/inferred → NEEDS_CONFIRMATION（归一化不猜）。
  * 契约：references/jd-constraint-match-contract.md（v0.2 冻结）。
  */
-import type { ConstraintMatchMode, PersonEducation } from '../ir/schema.ts'
+import type { ConstraintMatchMode } from '../ir/schema.ts'
 
 export const DEGREE_ENUM = ['高中', '大专', '本科', '硕士', '博士'] as const
 
@@ -92,7 +92,7 @@ export function parseJdConstraint(md: string): JDConstraintIR {
         } else if (kinds.some((k) => k === 'unparseable')) {
           ir.education = { rawValues, normalizationStatus: 'NEEDS_CONFIRMATION', confidence: edu.confidence, source: edu.source, matchMode: mode }
         } else {
-          const degrees = kinds.flatMap((k) => (k === 'preferred' ? [] : k.degrees))
+          const degrees = kinds.flatMap((k) => (k === 'preferred' || k === 'unparseable' ? [] : k.degrees))
           const unique = [...new Set(degrees)]
           if (unique.length > 0) {
             ir.education = { rawValues, normalizedDegrees: unique, normalizationStatus: 'NORMALIZED', confidence: edu.confidence, source: edu.source, matchMode: mode }
@@ -120,9 +120,4 @@ export function parseJdConstraint(md: string): JDConstraintIR {
     ir.experience = { rawValue: experience.value, confidence: experience.confidence, source: experience.source }
   }
   return ir
-}
-
-/** 档案教育事实 → 参与匹配的 confirmed 学历集合（pending/rejected 不参与——契约 §4） */
-export function confirmedDegrees(personEducation: PersonEducation[] | undefined): { degree: string; entry: PersonEducation }[] {
-  return (personEducation ?? []).filter((e) => e.status === 'confirmed' && DEGREE_RANK[e.degree] !== undefined)
 }

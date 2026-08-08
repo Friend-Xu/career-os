@@ -19,7 +19,7 @@ import type { JDAnalysisProposal, PersonSkill } from '../ir/schema.ts'
  * 无要求 → NOT_DECLARED / partial-相关不误推理（Skill Representation v0.1 边界）。
  */
 
-function setup(jobId: string, company: string, title: string, jdText: string): ReturnType<typeof initWorkspace> {
+function setup(_jobId: string, company: string, title: string, jdText: string): ReturnType<typeof initWorkspace> {
   const root = mkdtempSync(join(tmpdir(), 'cos-jdar-'))
   const ws = initWorkspace(root)
   ws.write('knowledge/skills.md', '# 技能词表\n\n## 机械设计\n\n- 别名：结构设计\n')

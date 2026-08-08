@@ -164,6 +164,14 @@ export interface JDAnalysisProposal {
   generatedAt: string
 }
 
+/** JD 分析 Proposal 校验结果（契约 v0.1：reject = 不写入 Artifact；warn = 写入但记录）。
+ *  Producer = Validator（runtime/jd-analysis-validator.ts 实现），schema 持有契约定义。 */
+export interface JDAnalysisValidationIssue {
+  path: string
+  reason: string
+  severity: 'reject' | 'warn'
+}
+
 // ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
 
 /**

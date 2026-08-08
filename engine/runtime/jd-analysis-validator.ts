@@ -6,14 +6,9 @@
  * （学历门槛不能由岗位名支撑——Claim Strength ≤ Evidence Strength 系统层）。
  * 校验结果按字段级分发：reject = 不写入 Artifact（Writer 跳过）；warn = 写入但记录。
  */
-import type { JDAnalysisProposal } from '../ir/schema.ts'
+import type { JDAnalysisProposal, JDAnalysisValidationIssue } from '../ir/schema.ts'
+export type { JDAnalysisValidationIssue }
 import { DEGREE_ENUM } from './jd-constraint.ts'
-
-export interface JDAnalysisValidationIssue {
-  path: string
-  reason: string
-  severity: 'reject' | 'warn'
-}
 
 /** 岗位名/标题类锚点——不能支撑门槛/理解字段（Anti-Hallucination） */
 const ANTI_HALLUCINATION_SOURCES = ['岗位名称', '岗位名', '岗位标题', '标题', '职位名称', '职位名']

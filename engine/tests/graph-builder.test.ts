@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildGraph } from '../storage/graph-builder.ts'
-import type { DecisionPayload, DecisionRecord, RiskLevel } from '../ir/schema.ts'
+import type { Confidence, DecisionPayload, DecisionRecord, RiskLevel } from '../ir/schema.ts'
 
 function decision(payload?: DecisionPayload, over: Partial<DecisionRecord> = {}): Parameters<typeof buildGraph>[0]['decisions'][number] {
   return {
@@ -12,6 +12,10 @@ function decision(payload?: DecisionPayload, over: Partial<DecisionRecord> = {})
       skill: 'city-advisor',
       direction: '机器人结构设计',
       directionMatch: 82,
+      directionConfidence: 'medium' as Confidence,
+      city: '苏州',
+      cityScore: 76,
+      salaryFeasible: true,
       riskLevel: 'medium' as RiskLevel,
       keyRisk: 'k',
       status: 'complete',

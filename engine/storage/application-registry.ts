@@ -42,7 +42,7 @@ export function transitionApplicationStatus(current: ApplicationStatus, next: Ap
 
 /** 记录 → RPC 视图（allowedTransitions = 状态机合法推进选项——UI 只展示合法跃迁，不复制状态机） */
 export function applicationView(record: ApplicationRecord): ApplicationView {
-  return { ...record, allowedTransitions: APPLICATION_TRANSITIONS[record.status] }
+  return { ...record, allowedTransitions: [...APPLICATION_TRANSITIONS[record.status]] }
 }
 
 /** 系统 ID 生成：application_{YYYYMMDD}_{NNNNN}（当日最大序号 +1——按序号非数量，
