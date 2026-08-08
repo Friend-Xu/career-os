@@ -28,6 +28,13 @@ import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 import { resolveCompanyReference } from '../data/company-ref'
 import type { InfoNode } from '../types'
 
+/** 决策标题公司名匹配（同 job-workspace/agent-page——jd-analysis 决策 title 含公司名） */
+function decisionCompanyInTitle(d: { title: string }, company: string): boolean {
+  if (d.title.includes(company)) return true
+  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
+  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
+}
+
 /**
  * 类型色与风险色（绿/黄/红）完全错开，避免红色节点被误读为高风险。
  * person 紫 / decision 蓝 / direction 橙 / city 青 / company 粉 / role 金 / skill 浅蓝
@@ -497,6 +504,9 @@ export function InfoPoolPage() {
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
   const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
+  const jobs = useAppStore((s) => s.jobs)
+  const applications = useAppStore((s) => s.applications)
+  const createApplication = useAppStore((s) => s.createApplication)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const engineStatus = useAppStore((s) => s.engineStatus)
   const health = useAppStore((s) => s.health)
@@ -726,8 +736,31 @@ export function InfoPoolPage() {
               <MenuItem
                 onClick={() => {
                   setMenu(null)
-                  setPage('applications')
-                  push('info', `「${menuCompany.name}」· 投递写入将在阶段 3 接入`)
+                  // ADR-019 Step 4.3：仅「有岗位分析决策」的公司可发起投递（决策 → 行动链）
+                  const decision = decisions.find(
+                    (d) => d.skill === 'jd-analysis' && decisionCompanyInTitle(d, menuCompany.name),
+                  )
+                  if (!decision) {
+                    push('warning', `「${menuCompany.name}」暂无岗位分析决策——先分析该公司的 JD 生成决策，才能发起投递`)
+                    return
+                  }
+                  const job = jobs.find((j) => decisionCompanyInTitle(decision, j.company))
+                  if (!job) {
+                    push('warning', `「${menuCompany.name}」的决策未关联岗位档案（JD 池无匹配）`)
+                    return
+                  }
+                  if (applications.some((a) => a.jobId === job.id)) {
+                    push('info', '该岗位已有投递记录——到投递管理推进状态')
+                    setPage('applications')
+                    return
+                  }
+                  void createApplication({ jobId: job.id, decisionId: decision.id }).then(
+                    () => {
+                      push('success', `已发起投递流程：${job.company} · ${job.title}（准备投递）`)
+                      setPage('applications')
+                    },
+                    (err) => push('warning', `发起投递失败：${err instanceof Error ? err.message : String(err)}`),
+                  )
                 }}
               >
                 加入投递

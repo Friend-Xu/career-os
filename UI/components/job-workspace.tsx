@@ -134,7 +134,8 @@ function companyInTitle(d: { title: string }, company: string): boolean {
 }
 
 /** 岗位工作区状态（从数据派生）：分析/建档/投递/面试
- *  - 建档自动占位投递「已评估」→ applied 判定：状态推进到「已投递」才算投出
+ *  - ADR-019：投递记录由用户「开始投递流程」创建（PREPARING 起）——applied 判定：
+ *    状态推进到 SUBMITTED（已投递）才算投出
  *  - 占位公司（validation invalid）= 待尽调，不视为已尽调 */
 function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string }[], company: CompanyWithValidation | undefined, appliedStatus?: string) {
   // 已分析判定：该公司的 jd-analysis 决策（公司名匹配，title 匹配过宽会误判）
@@ -142,8 +143,8 @@ function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string
     (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
   )
   const dueDiligence = company !== undefined && company.validation?.status !== 'invalid'
-  const applied = Boolean(appliedStatus) && appliedStatus !== '已评估'
-  const interviewing = appliedStatus === '面试中'
+  const applied = appliedStatus === 'SUBMITTED' || appliedStatus === 'COMMUNICATING' || appliedStatus === 'INTERVIEWING' || appliedStatus === 'OFFERED'
+  const interviewing = appliedStatus === 'INTERVIEWING'
   return { analyzed, dueDiligence, applied, interviewing }
 }
 
@@ -222,10 +223,11 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     setPage('resumes')
   }
   const advanceApply = (): void => {
-    // 建档已自动占位「已评估」；此处推进到「已投递」（前置：分析 + 尽调完成）
+    // 投递记录由决策页「开始投递流程」创建；此处推进到 SUBMITTED（用户确认投出）
     if (!app) return
-    updateApplicationStatus(app.id, '已投递')
-    push('success', '已推进投递（已投递）——到投递管理推进后续状态')
+    updateApplicationStatus(app.id, 'SUBMITTED')
+      .then(() => push('success', '已推进投递（已投递）——到投递管理推进后续状态'))
+      .catch((err) => push('warning', `推进失败：${err instanceof Error ? err.message : String(err)}`))
   }
   const interviewPrep = (): void => {
     startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`)
@@ -331,7 +333,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 优化简历
               </Button>
             )}
-            {st.analyzed && st.dueDiligence && app?.status === '已评估' && (
+            {st.analyzed && st.dueDiligence && app && (app.status === 'PREPARING' || app.status === 'READY') && (
               <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
                 onClick={advanceApply}
                 sx={{ fontSize: 12 }}>

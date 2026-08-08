@@ -122,7 +122,7 @@ function TodaySection() {
   const companies = useAppStore((s) => s.companies)
   const person = useAppStore((s) => s.currentPerson())
 
-  const personApps = applications.filter((a) => a.personId === person.id)
+  const personApps = applications.filter((a) => a.personId === (person.personId ?? ''))
   const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
 
   const latestDirection =
@@ -145,9 +145,8 @@ function TodaySection() {
     (j) => !personDecisions.some((d) => d.skill === 'jd-analysis' && d.title.includes(j.company)),
   )
   if (toAnalyze.length > 0) actions.push({ label: `${toAnalyze.length} 个 JD 等待分析`, page: 'jobs', jobId: toAnalyze[0].id })
-  const toFollow = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
-  if (toFollow.length > 0) actions.push({ label: `${toFollow.length} 个投递待跟进`, page: 'applications' })
-  const toApply = personApps.filter((a) => a.status === '已评估')
+  // FollowUpState 规则未启用（ADR-019 Decision 9：不冻结业务阈值）——待跟进统计不造假
+  const toApply = personApps.filter((a) => a.status === 'PREPARING' || a.status === 'READY')
   if (toApply.length > 0) actions.push({ label: `${toApply.length} 个岗位待投递`, page: 'applications' })
 
   const kpis = [

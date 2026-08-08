@@ -1,11 +1,21 @@
 /**
- * 投递空间侧栏：状态过滤（含待跟进统计与计数）。
+ * 投递空间侧栏：8 态过滤（ADR-019 Step 4.2——生命周期投影，无「已评估」列）。
  */
 import { Box, Stack, Typography } from '@mui/material'
 import { useAppStore } from '../../../store/app-store'
-import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { COLORS } from '../../../data/constants'
+import type { ApplicationStatus } from '../../../types'
 
-const COLUMNS = ['已评估', '已投递', '已联系', '已回复', '面试中', '已录取', '已拒绝'] as const
+const COLUMNS: { status: ApplicationStatus; label: string }[] = [
+  { status: 'PREPARING', label: '准备投递' },
+  { status: 'READY', label: '待提交' },
+  { status: 'SUBMITTED', label: '已投递' },
+  { status: 'COMMUNICATING', label: '沟通中' },
+  { status: 'INTERVIEWING', label: '面试中' },
+  { status: 'OFFERED', label: 'Offer' },
+  { status: 'REJECTED', label: '已拒绝' },
+  { status: 'WITHDRAWN', label: '已撤回' },
+]
 
 export function ApplicationsSidebar() {
   const applications = useAppStore((s) => s.applications)
@@ -13,8 +23,7 @@ export function ApplicationsSidebar() {
   const setApplicationsFilter = useAppStore((s) => s.setApplicationsFilter)
   const person = useAppStore((s) => s.currentPerson())
 
-  const personApps = applications.filter((a) => a.personId === person.id)
-  const urgent = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
+  const personApps = applications.filter((a) => a.personId === (person.personId ?? ''))
   const countOf = (s: string): number =>
     s === '全部' ? personApps.length : personApps.filter((a) => a.status === s).length
 
@@ -36,24 +45,7 @@ export function ApplicationsSidebar() {
           {personApps.length}
         </Typography>
       </Stack>
-      {urgent.length > 0 && (
-        <Box
-          sx={{
-            mx: 1,
-            mb: 0.5,
-            px: 1.25,
-            py: 0.75,
-            borderRadius: '6px',
-            bgcolor: 'rgba(230,180,80,0.12)',
-            border: '1px solid rgba(230,180,80,0.25)',
-          }}
-        >
-          <Typography sx={{ fontSize: 11.5, color: RISK_COLOR.medium, fontWeight: 600 }}>
-            {urgent.length} 条待跟进
-          </Typography>
-        </Box>
-      )}
-      {(['全部', ...COLUMNS] as const).map((s) => {
+      {(['全部', ...COLUMNS.map((c) => c.label)] as const).map((s) => {
         const active = applicationsFilter === s
         const n = countOf(s)
         return (

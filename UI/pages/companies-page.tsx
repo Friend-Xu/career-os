@@ -616,11 +616,12 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
             fullWidth
             onClick={() => {
               markCompanyContacted(selected.id)
-              push('success', `已标记「${selected.name}」为已联系 · 投递管理已同步`)
-              setPage('applications')
+              // ADR-019 Decision 5：公司关系（contacted）≠ 投递沟通（COMMUNICATING）——
+              // 不同步；投递记录的沟通状态在投递管理推进
+              push('success', `已标记「${selected.name}」为已联系（公司关系）`)
             }}
           >
-            标记已联系 → 投递管理
+            标记已联系
           </Button>
         </Stack>
 

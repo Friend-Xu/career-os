@@ -7,6 +7,7 @@
  */
 import type {
   AgentRuntimeEvent,
+  ApplicationRecord,
   CompanyRecord,
   ConstraintMatchRow,
   DecisionAggregate,
@@ -311,6 +312,31 @@ export class EngineClient {
   /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态不做匹配分） */
   jobCoverage(jobId: string): Promise<ResponsibilityCoverage[]> {
     return this.rpc<ResponsibilityCoverage[]>(METHODS.jobCoverage, { id: jobId })
+  }
+
+  /** 全量投递记录（ADR-019：用户行动事实资产，Engine Registry 唯一事实源） */
+  listApplications(): Promise<ApplicationRecord[]> {
+    return this.rpc<ApplicationRecord[]>(METHODS.listApplications)
+  }
+
+  /** 创建投递记录（用户「开始投递流程」→ PREPARING；createdBy 恒为 'user'） */
+  createApplication(params: { jobId: string; personId: string; decisionId?: string }): Promise<ApplicationRecord> {
+    return this.rpc<ApplicationRecord>(METHODS.createApplication, { ...params, createdBy: 'user' })
+  }
+
+  /** 推进投递状态（用户确认；引擎侧状态跃迁校验） */
+  updateApplicationStatus(id: string, status: ApplicationRecord['status']): Promise<ApplicationRecord> {
+    return this.rpc<ApplicationRecord>(METHODS.updateApplicationStatus, { id, status })
+  }
+
+  /** 删除投递记录（仅 PREPARING 可物理删除；其余应推进 WITHDRAWN） */
+  deleteApplication(id: string): Promise<unknown> {
+    return this.rpc<unknown>(METHODS.deleteApplication, { id })
+  }
+
+  /** 关联决策（Application → Decision 单向引用） */
+  linkApplicationDecision(id: string, decisionId: string): Promise<ApplicationRecord> {
+    return this.rpc<ApplicationRecord>(METHODS.linkApplicationDecision, { id, decisionId })
   }
 
   /** 全量证据条目（M2：evidence/ 目录扫描 + 校验标记） */

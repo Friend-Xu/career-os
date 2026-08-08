@@ -4,12 +4,11 @@ import { useToastStore } from './toast-store'
 import { useAttentionStore } from './attention-store'
 import type {
   Application,
-  ApplicationStatus,
+  ApplicationRecord,
   ChatMessage,
   Company,
   DecisionRecord,
   DecisionStage,
-  FollowupUrgency,
   HealthReport,
   MainWidthMode,
   NavPageId,
@@ -22,7 +21,6 @@ import type {
   StageStatus,
 } from '../types'
 import {
-  APPLICATIONS,
   COMPANIES,
   DECISIONS,
   PERSONS,
@@ -151,9 +149,8 @@ interface AppState {
   agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string }; permissionMode: string };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
+  /** 投递记录（ADR-019：用户行动事实资产，引擎 applications/list 实时派生，不持久化——Engine Registry 是唯一事实源） */
   applications: Application[];
-  /** 显式删除过投递的 jobId（建档自动占位不回补；persist） */
-  deletedAppJobIds: string[];
   /** 简历版本（初始 mock；「选择 JD 派生」新建版本写入，持久化） */
   resumes: ResumeVersion[];
   decisions: DecisionView[];
@@ -336,11 +333,12 @@ interface AppState {
   reportRewriteFeedback: (fb: { action: 'apply' | 'reject'; reason?: RewriteFeedbackReason }) => void;
   /** 简历导出 PDF：引擎 Edge headless 渲染；未连接 → 抛错（页面降级 window.print） */
   exportResume: (html: string) => Promise<{ pdf: string; fileName: string }>;
-  updateApplicationStatus: (id: number, status: Application['status']) => void;
-  /** 新增投递记录（手动录入；id 自动分配，persist 持久化） */
-  addApplication: (app: Omit<Application, 'id'>) => void;
-  /** 删除投递记录（误操作撤销） */
-  deleteApplication: (id: number) => void;
+  /** 推进投递状态（用户确认；引擎侧状态跃迁校验 + SUBMITTED 登记 submittedAt/displayFallback；离线抛错） */
+  updateApplicationStatus: (id: string, status: Application['status']) => Promise<void>;
+  /** 创建投递记录（用户「开始投递流程」→ PREPARING；createdBy 恒为 'user'，Agent 禁止创建） */
+  createApplication: (params: { jobId: string; decisionId?: string }) => Promise<ApplicationRecord>;
+  /** 删除投递记录（仅 PREPARING 可物理删除；其余推进 WITHDRAWN） */
+  deleteApplication: (id: string) => Promise<void>;
   /** 新建简历版本（选择 JD 派生的壳版本：挂 targetCompany/Position，模块复制模板作为编辑起点） */
   createResumeVersion: (params: { name: string; targetCompany?: string; targetPosition?: string }) => string | undefined;
   /** 局部修改决策记录：引擎写回 md → 自动重扫广播；引擎离线抛错（组件 toast） */
@@ -422,7 +420,7 @@ export const useAppStore = create<AppState>()(
       now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
-      applications: APPLICATIONS,
+      applications: [],
       deletedAppJobIds: [],
       resumes: RESUMES,
       decisions: DECISIONS,
@@ -1008,35 +1006,26 @@ export const useAppStore = create<AppState>()(
       }
     }),
 
-  updateApplicationStatus: (id, status) => {
+  updateApplicationStatus: async (id, status) => {
+    if (!engine) throw new Error('引擎未连接')
+    const updated = await engine.updateApplicationStatus(id, status)
     set((state) => ({
-      applications: state.applications.map((a) =>
-        a.id === id ? { ...a, status } : a,
-      ),
+      applications: state.applications.map((a) => (a.id === id ? updated : a)),
     }))
   },
 
-  addApplication: (app) => {
-    set((state) => ({
-      applications: [
-        { ...app, id: Math.max(0, ...state.applications.map((a) => a.id)) + 1 },
-        ...state.applications,
-      ],
-    }))
+  createApplication: async ({ jobId, decisionId }) => {
+    if (!engine) throw new Error('引擎未连接')
+    const personId = get().currentPerson().personId ?? ''
+    const app = await engine.createApplication({ jobId, personId, ...(decisionId ? { decisionId } : {}) })
+    set((state) => ({ applications: [app, ...state.applications] }))
+    return app
   },
 
-  deleteApplication: (id) => {
-    set((state) => {
-      const target = state.applications.find((a) => a.id === id)
-      // 显式删除 → 该 job 建档占位不回补（pullJobs 补账跳过）
-      const deletedAppJobIds = target?.jobId && !state.deletedAppJobIds.includes(target.jobId)
-        ? [...state.deletedAppJobIds, target.jobId]
-        : state.deletedAppJobIds
-      return {
-        applications: state.applications.filter((a) => a.id !== id),
-        deletedAppJobIds,
-      }
-    })
+  deleteApplication: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.deleteApplication(id)
+    set((state) => ({ applications: state.applications.filter((a) => a.id !== id) }))
   },
 
   createResumeVersion: ({ name, targetCompany, targetPosition }) => {
@@ -1090,26 +1079,8 @@ export const useAppStore = create<AppState>()(
 
   createJob: async (params) => {
     if (!engine) throw new Error('引擎未连接')
-    const job = await engine.createJob(params)
-    // 三模块联动：建档 → 投递空间自动占位「已评估」（同 job 去重；公司占位由引擎建档联带）
-    const { currentPersonId, applications } = get()
-    if (!applications.some((a) => a.jobId === job.id)) {
-      set((state) => ({
-        applications: [
-          {
-            id: Math.max(0, ...state.applications.map((a) => a.id)) + 1,
-            personId: currentPersonId,
-            company: job.company,
-            position: job.title,
-            jobId: job.id,
-            status: '已评估',
-            urgency: 'waiting',
-          },
-          ...state.applications,
-        ],
-      }))
-    }
-    return job
+    // ADR-019 Decision 2：JD 建档不产生投递记录——Application 创建 = 用户显式「开始投递流程」
+    return engine.createJob(params)
   },
 
   matchJob: async (jobId, personName) => {
@@ -1508,8 +1479,6 @@ export const useAppStore = create<AppState>()(
         sessions: s.sessions,
         currentSessionId: s.currentSessionId,
         initSessionId: s.initSessionId,
-        applications: s.applications,
-        deletedAppJobIds: s.deletedAppJobIds,
         resumes: s.resumes,
         decisions: s.decisions,
         companies: s.companies,
@@ -1950,32 +1919,23 @@ async function pullDecisions(): Promise<void> {
 }
 
 /** 岗位列表（M1：引擎实时派生；jobsChanged 事件驱动重拉）
- *  三模块联动补账：无投递占位且未被显式删除的 JD → 自动补「已评估」占位记录 */
+ *  ADR-019：建档不补投递记录——投递是用户行动事件，由「开始投递流程」创建 */
 async function pullJobs(): Promise<void> {
   if (!engine) return
   try {
     const list = await engine.listJobs()
-    const { currentPersonId, applications, deletedAppJobIds } = useAppStore.getState()
-    const missing = list.filter(
-      (j) => !applications.some((a) => a.jobId === j.id) && !deletedAppJobIds.includes(j.id),
-    )
-    let apps = applications
-    if (missing.length > 0) {
-      const maxId = Math.max(0, ...applications.map((a) => a.id))
-      apps = [
-        ...missing.map((j, i) => ({
-          id: maxId + 1 + i,
-          personId: currentPersonId,
-          company: j.company,
-          position: j.title,
-          jobId: j.id,
-          status: '已评估' as ApplicationStatus,
-          urgency: 'waiting' as FollowupUrgency,
-        })),
-        ...applications,
-      ]
-    }
-    useAppStore.setState({ jobs: list, applications: apps })
+    useAppStore.setState({ jobs: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 投递记录（ADR-019 Step 4.1：Engine Registry 唯一事实源——applicationsChanged 事件驱动重拉） */
+async function pullApplications(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listApplications()
+    useAppStore.setState({ applications: list })
   } catch {
     // offline：保持现有数据
   }
@@ -2243,6 +2203,7 @@ export function connectEngine(): void {
       void pullKnowledge()
       void pullHealth()
       void pullJobs()
+      void pullApplications()
       void pullEvidence()
       void pullClaims()
       void pullResumes()
@@ -2268,6 +2229,9 @@ export function connectEngine(): void {
     void pullJobs()
     // 门槛匹配缓存失效：JD 分析写入门槛段后重算（下次打开岗位时重拉）
     useAppStore.setState({ constraintRows: {} })
+  })
+  engine.on(EVENTS.applicationsChanged, () => {
+    void pullApplications()
   })
   engine.on(EVENTS.evidenceChanged, () => {
     void pullEvidence()

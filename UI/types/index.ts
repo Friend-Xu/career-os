@@ -13,12 +13,12 @@ import type {
   CompanyRecord,
   PoolNode,
   PoolEdge,
-  Application,
+  ApplicationRecord,
   Session as EngineSession,
   ChatMessage as EngineChatMessage,
   RiskLevel,
   ApplicationStatus,
-  FollowupUrgency,
+  FollowUpState,
   ToolCallInfo,
   ToolCallStatus,
   GapResult,
@@ -37,12 +37,13 @@ export type { DecisionRecord };
 export type { CompanyRecord as Company };
 export type { PoolNode as InfoNode };
 export type { PoolEdge as InfoEdge };
-export type { Application };
+export type { ApplicationRecord as Application };
+export type { ApplicationRecord };
 export type { GapResult };
 export type { HealthReport };
 export type { RiskLevel };
 export type { ApplicationStatus };
-export type { FollowupUrgency };
+export type { FollowUpState };
 export type { AgentError };
 export type { AgentRuntimeEvent };
 export type { EvidenceItem };

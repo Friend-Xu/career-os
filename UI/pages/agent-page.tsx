@@ -77,10 +77,43 @@ function ContextCapsule() {
   )
 }
 
+/** 决策标题公司名匹配（同 job-workspace——jd-analysis 决策 title 含公司名，匹配过宽会误判） */
+function decisionCompanyInTitle(d: { title: string }, company: string): boolean {
+  if (d.title.includes(company)) return true
+  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
+  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
+}
+
 function ReportCard({ record }: { record: DecisionRecord }) {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
+  const jobs = useAppStore((s) => s.jobs)
+  const applications = useAppStore((s) => s.applications)
+  const createApplication = useAppStore((s) => s.createApplication)
+
+  // ADR-019 Step 4.3：决策 → 行动入口。仅 JD 分析类决策（标题含公司名）可关联岗位发起投递
+  const linkedJob = jobs.find((j) => decisionCompanyInTitle(record, j.company))
+  const existingApp = linkedJob ? applications.find((a) => a.jobId === linkedJob.id) : undefined
+
+  const handleStartApply = () => {
+    if (!linkedJob) {
+      push('warning', '该决策未关联岗位——仅岗位分析类决策可发起投递')
+      return
+    }
+    if (existingApp) {
+      push('info', '该岗位已有投递记录——到投递管理推进状态')
+      setPage('applications')
+      return
+    }
+    void createApplication({ jobId: linkedJob.id, decisionId: record.id }).then(
+      () => {
+        push('success', `已发起投递流程：${linkedJob.company} · ${linkedJob.title}（准备投递）`)
+        setPage('applications')
+      },
+      (err) => push('warning', `发起投递失败：${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
 
   return (
     <Box
@@ -203,10 +236,11 @@ function ReportCard({ record }: { record: DecisionRecord }) {
         <Button
           size="small"
           startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-          onClick={() => setPage('applications')}
+          onClick={handleStartApply}
+          disabled={!linkedJob}
           sx={{ fontSize: 12.5 }}
         >
-          加入投递
+          {existingApp ? '查看投递' : '开始投递'}
         </Button>
         <Button
           size="small"

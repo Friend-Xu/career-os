@@ -14,65 +14,85 @@ import {
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined'
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban'
 import ViewListIcon from '@mui/icons-material/ViewList'
-import ErrorIcon from '@mui/icons-material/Error'
-import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import ScheduleIcon from '@mui/icons-material/Schedule'
-import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined'
-import { useMemo, useState, type ComponentType } from 'react'
+import { useMemo, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
-import { resolveCompanyReference } from '../data/company-ref'
-import type { Application, ApplicationStatus, FollowupUrgency } from '../types'
-
-const COLUMNS: ApplicationStatus[] = [
-  '已评估',
-  '已投递',
-  '已联系',
-  '已回复',
-  '面试中',
-  '已录取',
-  '已拒绝',
-]
-
-const URGENCY_META: Record<
-  FollowupUrgency,
-  { label: string; color: string; icon: ComponentType<{ sx?: object }> }
-> = {
-  urgent: { label: '紧急', color: COLORS.riskHigh, icon: ErrorIcon },
-  overdue: { label: '逾期', color: COLORS.riskMedium, icon: WarningAmberIcon },
-  waiting: { label: '等待中', color: COLORS.accent, icon: ScheduleIcon },
-  cooled: { label: '已冷却', color: COLORS.textMuted, icon: CircleOutlinedIcon },
-}
+import type { Application, ApplicationStatus } from '../types'
 
 /**
- * 投递卡片：公司/岗位/紧急度/状态。
- * - 关联 JD → 「JD ✓」chip（已评估挂钩 JD 分析）；无 JD → 「未挂 JD」（旧记录/裸记录）
- * - 点击卡片（有 JD）→ JD 工作区；删除按钮撤销误操作
+ * 投递管理（ADR-019 Step 4：Application = 用户行动事实，Engine Registry 唯一事实源）。
+ * - 8 列看板 = 生命周期投影（PREPARING→READY→SUBMITTED→COMMUNICATING→INTERVIEWING→OFFERED，
+ *   REJECTED/WITHDRAWN 终态），无「已评估」列（建档占位已废弃）
+ * - 卡片岗位信息从 jobId 解析活数据；Job 删除后 displayFallback 展示「岗位已失效」
+ * - 创建入口在 Decision 页（「开始投递流程」），此处只管理状态推进
+ */
+
+const COLUMNS: { status: ApplicationStatus; label: string }[] = [
+  { status: 'PREPARING', label: '准备投递' },
+  { status: 'READY', label: '待提交' },
+  { status: 'SUBMITTED', label: '已投递' },
+  { status: 'COMMUNICATING', label: '沟通中' },
+  { status: 'INTERVIEWING', label: '面试中' },
+  { status: 'OFFERED', label: 'Offer' },
+  { status: 'REJECTED', label: '已拒绝' },
+  { status: 'WITHDRAWN', label: '已撤回' },
+]
+
+const STATUS_LABEL: Record<ApplicationStatus, string> = Object.fromEntries(
+  COLUMNS.map((c) => [c.status, c.label]),
+) as Record<ApplicationStatus, string>
+
+/** 状态色（UI 投影——不解释，仅语义色区分） */
+const STATUS_COLOR: Record<ApplicationStatus, string> = {
+  PREPARING: COLORS.textSecondary,
+  READY: COLORS.accent,
+  SUBMITTED: COLORS.accent,
+  COMMUNICATING: COLORS.riskLow,
+  INTERVIEWING: COLORS.riskLow,
+  OFFERED: COLORS.riskLow,
+  REJECTED: COLORS.riskHigh,
+  WITHDRAWN: COLORS.textMuted,
+}
+
+/** 投递卡片：岗位（jobId 解析活数据）/ 状态推进 / 提交时间。
+ * - 岗位信息只引用不复制：job 活着显示活数据，Job 删除后 displayFallback（「岗位已失效」）
+ * - 仅 PREPARING 可删除（撤销误操作）——行动历史不可删除，其余推进 WITHDRAWN
  */
 function KanbanCard({ app }: { app: Application }) {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const deleteApp = useAppStore((s) => s.deleteApplication)
   const push = useToastStore((s) => s.push)
   const jobs = useAppStore((s) => s.jobs)
-  const companies = useAppStore((s) => s.companies)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
   const setPage = useAppStore((s) => s.setPage)
-  const u = URGENCY_META[app.urgency]
-  const UrgencyIcon = u.icon
 
   const job = app.jobId ? jobs.find((j) => j.id === app.jobId) : undefined
-  const company = resolveCompanyReference(companies, app.company)
+  // 岗位唯一事实源 = Job；Job 删除后 displayFallback（历史展示）
+  const company = job?.company ?? app.displayFallback?.company ?? ''
+  const position = job?.title ?? app.displayFallback?.position ?? ''
 
-  const changeStatus = (status: ApplicationStatus) => {
-    update(app.id, status)
-    push('info', `${app.company} → ${status}`)
+  const changeStatus = async (status: ApplicationStatus) => {
+    try {
+      await update(app.id, status)
+      push('info', `${company} → ${STATUS_LABEL[status]}`)
+    } catch (err) {
+      push('warning', `状态推进失败：${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   const openWorkspace = () => {
     if (!job) return
     setSelectedJobId(job.id)
     setPage('jobs')
+  }
+
+  const handleDelete = () => {
+    if (!window.confirm(`删除投递记录「${company} · ${position}」？仅准备中记录可删除，不可恢复。`)) return
+    void deleteApp(app.id).then(
+      () => push('info', `已删除投递：${company} · ${position}`),
+      (err) => push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`),
+    )
   }
 
   return (
@@ -92,88 +112,64 @@ function KanbanCard({ app }: { app: Application }) {
     >
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'flex-start', mb: 0.5 }}>
         <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1, lineHeight: 1.35 }}>
-          {app.company}
+          {company || '（无岗位信息）'}
         </Typography>
-        <Box sx={{ display: 'grid', placeItems: 'center' }} title={u.label}>
-          <UrgencyIcon sx={{ fontSize: 14, color: u.color }} />
-        </Box>
-        <Tooltip title="删除投递记录">
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation()
-              deleteApp(app.id)
-              push('info', `已删除投递：${app.company} · ${app.position}`)
-            }}
-            sx={{ p: 0.25, color: COLORS.textMuted, '&:hover': { color: COLORS.riskHigh } }}
-          >
-            <DeleteOutlinedIcon sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Tooltip>
+        {app.status === 'PREPARING' ? (
+          <Tooltip title="删除投递记录（仅准备中可删除）">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDelete()
+              }}
+              sx={{ p: 0.25, color: COLORS.textMuted, '&:hover': { color: COLORS.riskHigh } }}
+            >
+              <DeleteOutlinedIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Tooltip>
+        ) : (
+          <Box sx={{ width: 24 }} />
+        )}
       </Stack>
       <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mb: 0.5 }} noWrap>
-        {app.position}
+        {position || '—'}
       </Typography>
-      {(company || job) && (
-        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.75 }} noWrap>
-          {company && (
-            <>
-              {company.matchScore > 0 && (
-                <Box component="span" sx={{ color: COLORS.accent, fontWeight: 600 }}>
-                  {company.matchScore}%
-                </Box>
-              )}
-              {company.city && <Box component="span"> · {company.city}</Box>}
-              {company.headcount && <Box component="span"> · {company.headcount}</Box>}
-              {company.industry && <Box component="span"> · {company.industry}</Box>}
-            </>
-          )}
-          {!company && job?.location && <Box component="span">{job.location}</Box>}
+      {app.submittedAt && (
+        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5, fontFamily: COLORS.mono }}>
+          提交于 {app.submittedAt.slice(0, 10)}
         </Typography>
       )}
-      {app.notes && (
-        <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 0.75 }} noWrap>
-          {app.notes}
-        </Typography>
-      )}
-      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={0.5}>
-        <Chip
-          size="small"
-          label={u.label}
-          sx={{
-            height: 18,
-            fontSize: 11.5,
-            bgcolor: alpha(u.color, 0.1),
-            color: u.color,
-            border: `1px solid ${alpha(u.color, 0.2)}`,
-          }}
-        />
+      <Chip
+        size="small"
+        label={STATUS_LABEL[app.status]}
+        sx={{
+          height: 18,
+          fontSize: 11.5,
+          bgcolor: alpha(STATUS_COLOR[app.status], 0.1),
+          color: STATUS_COLOR[app.status],
+          border: `1px solid ${alpha(STATUS_COLOR[app.status], 0.2)}`,
+          mb: 0.5,
+        }}
+      />
+      {/* 引用信息行（紧凑文本，非 chip——150px 卡片内多个 chip 必然拥挤） */}
+      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minHeight: 16 }}>
         {job ? (
-          <Chip
-            size="small"
-            label={`JD ✓${company && company.matchScore > 0 ? ` · ${company.matchScore}%` : ''}`}
-            sx={{
-              height: 18,
-              fontSize: 11,
-              bgcolor: alpha(COLORS.riskLow, 0.1),
-              color: COLORS.riskLow,
-              border: `1px solid ${alpha(COLORS.riskLow, 0.25)}`,
-            }}
-          />
+          <Typography sx={{ fontSize: 11, color: COLORS.riskLow, flexShrink: 0 }}>JD ✓</Typography>
         ) : (
-          <Chip
-            size="small"
-            label="未挂 JD"
-            sx={{ height: 18, fontSize: 11, bgcolor: COLORS.bgHover, color: COLORS.textMuted }}
-          />
-        )}
-        {app.followupDue && (
-          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, fontFamily: COLORS.mono }}>
-            {app.followupDue.slice(5)}
+          <Typography sx={{ fontSize: 11, color: COLORS.textMuted, flexShrink: 0 }} noWrap>
+            岗位已失效
           </Typography>
         )}
+        {app.decisionId && (
+          <>
+            <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>·</Typography>
+            <Typography sx={{ fontSize: 11, color: COLORS.textSecondary, flexShrink: 0 }} noWrap>
+              决策 ✓
+            </Typography>
+          </>
+        )}
         {job && (
-          <Typography sx={{ fontSize: 11.5, color: COLORS.accent, ml: 'auto' }}>
+          <Typography sx={{ fontSize: 11, color: COLORS.accent, ml: 'auto', flexShrink: 0 }}>
             工作区 →
           </Typography>
         )}
@@ -183,7 +179,7 @@ function KanbanCard({ app }: { app: Application }) {
         size="small"
         value={app.status}
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => changeStatus(e.target.value as ApplicationStatus)}
+        onChange={(e) => void changeStatus(e.target.value as ApplicationStatus)}
         sx={{
           mt: 1,
           width: '100%',
@@ -194,9 +190,9 @@ function KanbanCard({ app }: { app: Application }) {
           '& .MuiSelect-select': { py: 0.25, px: 1 },
         }}
       >
-        {COLUMNS.map((s) => (
-          <MenuItem key={s} value={s} sx={{ fontSize: 12 }}>
-            {s}
+        {COLUMNS.map((c) => (
+          <MenuItem key={c.status} value={c.status} sx={{ fontSize: 12 }}>
+            {c.label}
           </MenuItem>
         ))}
       </Select>
@@ -207,14 +203,12 @@ function KanbanCard({ app }: { app: Application }) {
 export function ApplicationsPage() {
   const [tab, setTab] = useState(0)
   const applications = useAppStore((s) => s.applications)
-  const update = useAppStore((s) => s.updateApplicationStatus)
-  const startAnalysis = useAppStore((s) => s.startAnalysis)
   const applicationsFilter = useAppStore((s) => s.applicationsFilter)
   const person = useAppStore((s) => s.currentPerson())
   const setPage = useAppStore((s) => s.setPage)
-  const push = useToastStore((s) => s.push)
 
-  const personApps = applications.filter((a) => a.personId === person.id)
+  const personId = person.personId ?? ''
+  const personApps = applications.filter((a) => a.personId === personId)
 
   const filtered =
     applicationsFilter === '全部'
@@ -224,7 +218,7 @@ export function ApplicationsPage() {
   const byStatus = useMemo(() => {
     const map: Record<string, Application[]> = {}
     COLUMNS.forEach((c) => {
-      map[c] = []
+      map[c.status] = []
     })
     filtered.forEach((a) => {
       (map[a.status] ??= []).push(a)
@@ -232,26 +226,26 @@ export function ApplicationsPage() {
     return map
   }, [filtered])
 
-  const urgent = personApps.filter((a) => a.urgency === 'urgent' || a.urgency === 'overdue')
-
-  // 空态：无投递 → 引导从 JD 池建档发起（投递入口在 JD 池，此处只管理状态）
+  // 空态：无投递 → 引导从决策发起（投递入口在 Decision 页，此处只管理状态）
   if (personApps.length === 0) {
     return (
       <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 3 }}>
         <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
           <Typography sx={{ fontSize: 14, fontWeight: 600 }}>投递还是空的</Typography>
           <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, lineHeight: 1.7 }}>
-            去 JD 池粘贴招聘要求建档，
+            完成岗位分析与决策后，
             <br />
-            建档即自动进入「已评估」，状态在这里推进
+            在决策记录中发起「开始投递流程」，
+            <br />
+            行动记录在这里推进
           </Typography>
           <Button
             size="small"
             variant="contained"
-            onClick={() => setPage('jobs')}
+            onClick={() => setPage('workbench')}
             sx={{ fontSize: 12.5, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}
           >
-            去 JD 池 →
+            去看决策 →
           </Button>
         </Stack>
       </Box>
@@ -263,22 +257,9 @@ export function ApplicationsPage() {
       <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1.5}>
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>投递管理</Typography>
         <Chip size="small" label={`${personApps.length} 条`} sx={{ height: 22, fontSize: 12 }} />
-        {urgent.length > 0 && (
-          <Chip
-            size="small"
-            label={`${urgent.length} 条待跟进`}
-            sx={{
-              height: 22,
-              fontSize: 12,
-              bgcolor: 'rgba(230,180,80,0.12)',
-              color: COLORS.riskMedium,
-              border: '1px solid rgba(230,180,80,0.25)',
-            }}
-          />
-        )}
         <Box sx={{ flex: 1 }} />
         <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-          JD 建档自动进入 · 已评估 = 建档占位，状态在此推进
+          行动记录由决策发起 · 状态由你推进
         </Typography>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 30 }}>
           <Tab icon={<ViewKanbanIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="看板" sx={{ minHeight: 30 }} />
@@ -287,42 +268,6 @@ export function ApplicationsPage() {
       </Stack>
 
       {/* 状态过滤在侧栏（ApplicationsSidebar）——此处只消费过滤结果 */}
-
-      {/* AI follow-up suggestion strip */}
-      {urgent[0] && (
-        <Box
-          sx={{
-            px: 2,
-            py: 1.25,
-            borderRadius: '8px',
-            bgcolor: COLORS.accentMuted,
-            border: '1px solid rgba(144,129,228,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-          }}
-        >
-          <Typography sx={{ fontSize: 12, flex: 1 }}>
-            <Box component="span" sx={{ color: COLORS.accent, fontWeight: 600 }}>
-              AI 建议跟进 ·{' '}
-            </Box>
-            {urgent[0].company}「{urgent[0].position}」— 可发送礼貌催询，提及上次沟通要点
-          </Typography>
-          <Button
-            size="small"
-            variant="outlined"
-            sx={{ fontSize: 12, flexShrink: 0 }}
-            onClick={() => {
-              startAnalysis(
-                `请为「${urgent[0].company} · ${urgent[0].position}」生成投递跟进话术：礼貌催询，提及上次沟通要点，控制在 200 字内`,
-              )
-              push('info', '已预置「生成话术」上下文')
-            }}
-          >
-            生成话术
-          </Button>
-        </Box>
-      )}
 
       {tab === 0 ? (
         <Box
@@ -336,7 +281,7 @@ export function ApplicationsPage() {
         >
           {COLUMNS.map((col) => (
             <Box
-              key={col}
+              key={col.status}
               sx={{
                 minWidth: 150,
                 width: 150,
@@ -359,7 +304,7 @@ export function ApplicationsPage() {
                   borderBottom: `1px solid ${COLORS.border}`,
                 }}
               >
-                <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{col}</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{col.label}</Typography>
                 <Typography
                   sx={{
                     fontSize: 12,
@@ -370,11 +315,11 @@ export function ApplicationsPage() {
                     borderRadius: '4px',
                   }}
                 >
-                  {byStatus[col]?.length ?? 0}
+                  {byStatus[col.status]?.length ?? 0}
                 </Typography>
               </Stack>
               <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-                {(byStatus[col] ?? []).map((app) => (
+                {(byStatus[col.status] ?? []).map((app) => (
                   <KanbanCard key={app.id} app={app} />
                 ))}
               </Box>
@@ -395,7 +340,7 @@ export function ApplicationsPage() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: '1.2fr 1.4fr 0.8fr 0.7fr 0.7fr 1fr',
+              gridTemplateColumns: '1.2fr 1.4fr 0.8fr 0.9fr 0.9fr',
               px: 2,
               py: 1,
               borderBottom: `1px solid ${COLORS.border}`,
@@ -404,21 +349,20 @@ export function ApplicationsPage() {
               bgcolor: COLORS.bgElevated,
             }}
           >
-            {['公司', '岗位', '状态', '紧急度', '跟进日', '备注'].map((h) => (
+            {['公司', '岗位', '状态', '提交时间', '决策'].map((h) => (
               <Typography key={h} sx={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 600 }}>
                 {h}
               </Typography>
             ))}
           </Box>
           {filtered.map((a) => {
-            const u = URGENCY_META[a.urgency]
-            const UrgencyIcon = u.icon
+            const jobView = a.jobId ? useAppStore.getState().jobs.find((j) => j.id === a.jobId) : undefined
             return (
               <Box
                 key={a.id}
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: '1.2fr 1.4fr 0.8fr 0.7fr 0.7fr 1fr',
+                  gridTemplateColumns: '1.2fr 1.4fr 0.8fr 0.9fr 0.9fr',
                   px: 2,
                   py: 1.25,
                   borderBottom: `1px solid ${COLORS.border}`,
@@ -426,40 +370,40 @@ export function ApplicationsPage() {
                   '&:hover': { bgcolor: COLORS.bgHover },
                 }}
               >
-                <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{a.company}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 500 }}>
+                  {jobView?.company ?? a.displayFallback?.company ?? a.jobId}
+                </Typography>
                 <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }} noWrap>
-                  {a.position}
+                  {jobView?.title ?? a.displayFallback?.position ?? '（岗位已失效）'}
                 </Typography>
                 <Select
                   size="small"
                   value={a.status}
                   onChange={(e) => {
                     const st = e.target.value as ApplicationStatus
-                    update(a.id, st)
-                    push('info', `${a.company} → ${st}`)
+                    void useAppStore.getState().updateApplicationStatus(a.id, st).catch((err) =>
+                      useToastStore.getState().push('warning', `状态推进失败：${err instanceof Error ? err.message : String(err)}`),
+                    )
                   }}
                   sx={{
                     fontSize: 12,
                     height: 26,
+                    color: STATUS_COLOR[a.status],
                     '& .MuiOutlinedInput-notchedOutline': { borderColor: COLORS.border },
                     '& .MuiSelect-select': { py: 0.25 },
                   }}
                 >
-                  {COLUMNS.map((s) => (
-                    <MenuItem key={s} value={s} sx={{ fontSize: 12 }}>
-                      {s}
+                  {COLUMNS.map((c) => (
+                    <MenuItem key={c.status} value={c.status} sx={{ fontSize: 12 }}>
+                      {c.label}
                     </MenuItem>
                   ))}
                 </Select>
-                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                  <UrgencyIcon sx={{ fontSize: 13, color: u.color }} />
-                  <Typography sx={{ fontSize: 12, color: u.color }}>{u.label}</Typography>
-                </Stack>
                 <Typography sx={{ fontSize: 12, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
-                  {a.followupDue?.slice(5) ?? '—'}
+                  {a.submittedAt?.slice(0, 10) ?? '—'}
                 </Typography>
                 <Typography sx={{ fontSize: 12, color: COLORS.textMuted }} noWrap>
-                  {a.notes ?? '—'}
+                  {a.decisionId ?? '—'}
                 </Typography>
               </Box>
             )

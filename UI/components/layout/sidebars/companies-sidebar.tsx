@@ -31,6 +31,7 @@ export function CompaniesSidebar() {
   const setSelectedCompanyId = useAppStore((s) => s.setSelectedCompanyId)
   const deleteCompany = useAppStore((s) => s.deleteCompany)
   const applications = useAppStore((s) => s.applications)
+  const jobs = useAppStore((s) => s.jobs)
   const decisions = useAppStore((s) => s.decisions)
   const resumes = useAppStore((s) => s.resumes)
   const push = useToastStore((s) => s.push)
@@ -189,7 +190,10 @@ export function CompaniesSidebar() {
                       title="删除公司档案"
                       onClick={(e) => {
                         e.stopPropagation()
-                        const appN = applications.filter((a) => resolveCompanyReference(companies, a.company)?.id === c.id).length
+                        const appN = applications.filter((a) => {
+                          const jobCompany = a.jobId ? jobs.find((j) => j.id === a.jobId)?.company : undefined
+                          return jobCompany ? resolveCompanyReference(companies, jobCompany)?.id === c.id : false
+                        }).length
                         const decN = decisions.filter((d) => d.title.includes(c.name)).length
                         const resN = resumes.filter((r) => r.targetCompany === c.name).length
                         const link = [appN && `投递 ${appN}`, decN && `决策 ${decN}`, resN && `简历版本 ${resN}`]
