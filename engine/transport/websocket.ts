@@ -91,6 +91,7 @@ import { exportResumePdf, serializeExportRecord } from '../export/resume-export.
 import { buildCareerContext } from '../context/career-context.ts'
 import { computeEvidenceCoverage } from '../runtime/evidence-coverage.ts'
 import { computeResumeAlignment } from '../runtime/resume-alignment.ts'
+import { computeOpportunities } from '../runtime/opportunity.ts'
 import { acceptProposalFile, rejectProposalFile, scanProposals } from '../storage/proposal-watcher.ts'
 import {
   acceptPortfolioProposal,
@@ -1458,6 +1459,24 @@ export async function startServer(opts: {
         evidenceItems: scanEvidence(workspace).map((e) => e.record),
         resumeDocument: document,
         claims: scanClaims(workspace).map((c) => c.record),
+      })
+    },
+    [METHODS.workingCopyOpportunities]: (params) => {
+      const p = params as Record<string, unknown>
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const jobId = typeof p?.jobId === 'string' ? p.jobId : ''
+      if (!wcId || !jobId) throw new Error('wcId/jobId 必填')
+      const wc = scanWorkingCopies(workspace).find((w) => w.id === wcId)
+      if (!wc) throw new Error(`工作副本不存在：${wcId}`)
+      const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+      if (!job) throw new Error(`岗位不存在：${jobId}`)
+      const document = workingCopyToDocument(wc, workspace)
+      return computeOpportunities({
+        job: job.record,
+        evidenceItems: scanEvidence(workspace).map((e) => e.record),
+        claims: scanClaims(workspace).map((c) => c.record),
+        resumeDocument: document,
+        wc,
       })
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({

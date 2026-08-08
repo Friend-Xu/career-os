@@ -160,6 +160,8 @@ export const METHODS = {
   workingCopyPromote: 'working-copies/promote',
   /** 工作副本对齐投影（params: { wcId, jobId } → ResumeAlignmentProjection——P2.4：优化输入 = 当前创作对象，非版本；不落盘） */
   workingCopyAlignment: 'working-copies/alignment',
+  /** 工作副本机会投影（params: { wcId, jobId } → Opportunity[]——P3.2：一等对象「为什么值得改」；alignment/material 两类，纯投影不落盘） */
+  workingCopyOpportunities: 'working-copies/opportunities',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */

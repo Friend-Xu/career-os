@@ -27,8 +27,8 @@ export interface ResponsibilityCoverage {
   expectations: EvidenceExpectationCoverage[]
 }
 
-/** 双向文本包含（MVP 责任关联近似；中文短文本命中率高，允许误关联） */
-function relates(contribution: string, statement: string): boolean {
+/** 双向文本包含（MVP 责任关联近似；中文短文本命中率高，允许误关联）——opportunity 弱命中判定复用 */
+export function relates(contribution: string, statement: string): boolean {
   if (!contribution || !statement) return false
   return contribution.includes(statement) || statement.includes(contribution)
 }
