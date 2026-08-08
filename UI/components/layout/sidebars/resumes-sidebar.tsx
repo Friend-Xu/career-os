@@ -11,10 +11,10 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import HistoryIcon from '@mui/icons-material/History'
 import CollectionsIcon from '@mui/icons-material/Collections'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
-import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
+import { COLORS, RISK_COLOR } from '../../../data/constants'
 import type { ResumeWorkspaceView } from '../../../store/app-store'
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
@@ -30,14 +30,13 @@ const VALIDATION_LABEL: Record<string, string> = {
   invalid: '✗ 无效',
 }
 
-/** 空间图标（编辑=主图标；优化/历史/素材 = 任务语义图标） */
-const SPACE_ICON: Record<ResumeWorkspaceView, typeof AutoAwesomeIcon> = {
-  dashboard: DescriptionOutlinedIcon,
-  edit: DescriptionOutlinedIcon,
-  optimize: AutoAwesomeIcon,
-  history: HistoryIcon,
-  library: CollectionsIcon,
-}
+/** 空间卡片（与工作台侧栏同构——icon + 标题 + 描述 + 边框选中；Dashboard 是落地页不占 tab） */
+const SPACES: { key: ResumeWorkspaceView; label: string; desc: string; icon: ReactNode }[] = [
+  { key: 'edit', label: '编辑', desc: '修改内容 · AI 润色', icon: <DescriptionOutlinedIcon sx={{ fontSize: 15 }} /> },
+  { key: 'optimize', label: '优化', desc: '对齐岗位要求', icon: <AutoAwesomeIcon sx={{ fontSize: 15 }} /> },
+  { key: 'history', label: '历史', desc: '版本演化与对比', icon: <HistoryIcon sx={{ fontSize: 15 }} /> },
+  { key: 'library', label: '素材', desc: '事实与表达资产', icon: <CollectionsIcon sx={{ fontSize: 15 }} /> },
+]
 
 export function ResumesSidebar() {
   const person = useAppStore((s) => s.currentPerson())
@@ -64,46 +63,48 @@ export function ResumesSidebar() {
     return v ? new Set(v.sections.flatMap((s) => s.bullets.map((b) => b.claimId))).size : 0
   }
 
-  /** 四空间导航（Dashboard 是落地页不占 tab——ADR-021 §1） */
-  const NAV: { key: ResumeWorkspaceView; label: string }[] = [
-    { key: 'edit', label: '编辑' },
-    { key: 'optimize', label: '优化' },
-    { key: 'history', label: '历史' },
-    { key: 'library', label: '素材' },
-  ]
-
+  /** 四空间卡片导航（与工作台「驾驶舱」同构——统一风格；ADR-021 §1） */
   return (
     <Stack sx={{ p: 1.25 }}>
-      {/* 四空间导航 */}
-      <Stack direction="row" spacing={0.5} sx={{ mb: 1, px: 0.5 }}>
-        {NAV.map((n) => {
-          const Icon = SPACE_ICON[n.key]
-          const active = resumeWorkspaceView === n.key
-          return (
-            <Box
-              key={n.key}
-              onClick={() => setResumeWorkspaceView(n.key)}
-              sx={{
-                flex: 1,
-                textAlign: 'center',
-                py: 0.7,
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                bgcolor: active ? alpha(COLORS.accent, 0.12) : 'transparent',
-                color: active ? COLORS.accent : COLORS.textSecondary,
-                '&:hover': { bgcolor: active ? alpha(COLORS.accent, 0.12) : COLORS.bgHover },
-              }}
-            >
-              <Stack direction="row" spacing={0.4} sx={{ alignItems: 'center', justifyContent: 'center' }}>
-                <Icon sx={{ fontSize: 13 }} />
-                <span>{n.label}</span>
-              </Stack>
-            </Box>
-          )
-        })}
-      </Stack>
+      <Typography
+        sx={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: COLORS.textMuted,
+          letterSpacing: '0.05em',
+          px: 1,
+          mb: 0.5,
+        }}
+      >
+        简历工作台
+      </Typography>
+      {SPACES.map((v) => {
+        const active = resumeWorkspaceView === v.key
+        return (
+          <Stack
+            key={v.key}
+            onClick={() => setResumeWorkspaceView(v.key)}
+            sx={{
+              mb: 0.5,
+              px: 1.25,
+              py: 1,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+              bgcolor: active ? COLORS.accentMuted : COLORS.bg,
+              '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover },
+            }}
+          >
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', color: active ? COLORS.accent : COLORS.textMuted }}>{v.icon}</Box>
+              <Typography sx={{ fontSize: 12.5, fontWeight: active ? 600 : 500, color: active ? COLORS.accent : COLORS.text }}>
+                {v.label}
+              </Typography>
+            </Stack>
+            <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>{v.desc}</Typography>
+          </Stack>
+        )
+      })}
 
       {/* ── 编辑：草稿列表（Unbound Draft——可编辑可导出，不参与溯源投影）── */}
       {resumeWorkspaceView === 'edit' && (
