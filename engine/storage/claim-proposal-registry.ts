@@ -23,7 +23,7 @@ export const CLAIM_PROPOSAL_SPEC: ArtifactSpec = {
   passthroughFields: [],
 }
 
-export type ClaimProposalSource = 'star_reconstructor' | 'user_edit' | 'interview_agent'
+export type ClaimProposalSource = 'star_reconstructor' | 'user_edit' | 'interview_agent' | 'opportunity_bridge'
 export type ClaimProposalStatus = 'pending' | 'approved' | 'rejected' | 'invalid'
 
 /** 派生元数据（Engine 推导，Producer 不提供）——Evidence → Provenance → Claim 链 */
@@ -62,7 +62,7 @@ export class ClaimProposalError extends Error {
   }
 }
 
-const SOURCES: ClaimProposalSource[] = ['star_reconstructor', 'user_edit', 'interview_agent']
+const SOURCES: ClaimProposalSource[] = ['star_reconstructor', 'user_edit', 'interview_agent', 'opportunity_bridge']
 const SECTIONS = ['summary', 'experience', 'projects', 'skills', 'education']
 
 /** statement 中的数字 token（锚点比对用——数字须能在证据文本找到，防 AI 编造指标） */

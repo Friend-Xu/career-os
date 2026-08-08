@@ -20,7 +20,7 @@ import { scanEvidence } from './evidence-watcher.ts'
 import { scanJobs } from './job-watcher.ts'
 import { scanClaims } from './claim-watcher.ts'
 import { scanWorkingCopies, workingCopyToDocument, serializeWorkingCopy } from './working-copy-registry.ts'
-import { anchorCheck, evidenceText } from './claim-proposal-registry.ts'
+import { anchorCheck, evidenceText, type ClaimProposalInput } from './claim-proposal-registry.ts'
 import { computeOpportunities, type Opportunity } from '../runtime/opportunity.ts'
 import { computeResumeAlignment, type AlignmentState } from '../runtime/resume-alignment.ts'
 
@@ -685,6 +685,70 @@ export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = 
     serializeWorkingCopy({ ...next, revision: afterRevision, updatedAt: now.toISOString() }),
   )
   return { status: 'applied', transactionId: tx.id, newRevision: afterRevision }
+}
+
+// ─── P5.2：Asset Bridge（契约 claim-asset-bridge-contract-v0.1，FROZEN——连接 Expression/Asset Loop）──
+
+export interface AssetBridgeInput {
+  opportunityId: string // Opportunity 是 authoritative source——responsibility/expectationId 均由 Engine resolve（校准 3）
+  wcId: string
+  evidenceCandidates: string[] // 用户选定（素材库）；无证据不资产化
+}
+
+/**
+ * 装配（纯函数域——resolve opportunity + Bridge 特有校验；无写盘，Agent 构造 statement 后经 P1.1 登记）。
+ * activation targets（实现前模型修正）：anchor.state = unsupported_claim 且 refs.evidenceIds 非空（红线型——
+ * evdHit ✓ 被治理红线降级，资产化后恢复 covered）；原生型（!evdHit，refs 空）资产化无意义——绑定不改 evdHit。
+ */
+export function assembleAssetBridge(ws: Workspace, input: AssetBridgeInput, statement: string, explanation: string): ClaimProposalInput {
+  const found = findOpportunity(ws, input.wcId, input.opportunityId)
+  if (!found) throw new OpportunityProposalError(`OPPORTUNITY_REF——机会不存在或与工作副本不匹配：${input.opportunityId}`)
+  const { opportunity, jobId } = found
+  if (opportunity.anchor.state !== 'unsupported_claim' || opportunity.refs.evidenceIds.length === 0) {
+    throw new OpportunityProposalError(
+      `资产化 v0.1 仅支持红线型 unsupported_claim（state=${opportunity.anchor.state}，evidenceRefs=${opportunity.refs.evidenceIds.length}）`,
+    )
+  }
+  if (input.evidenceCandidates.length === 0) throw new OpportunityProposalError('evidenceCandidates 为空——无证据不资产化')
+  // expectationId 复用（校准 2：只复制不生成——防同责任多锚导致 Diagnosis 不收敛）
+  const job = scanJobs(ws).find((j) => j.record.id === jobId)?.record
+  const respId = opportunity.anchor.responsibilityId
+  const expectationId = job && respId ? job.responsibilities.find((r) => r.id === respId)?.evidenceExpectations[0]?.patternId : undefined
+  return {
+    source: 'opportunity_bridge',
+    evidenceRefs: input.evidenceCandidates,
+    proposedClaim: { statement, ...(expectationId ? { expectationId } : {}) },
+    explanation,
+  }
+}
+
+export type BindClaimResult = {
+  status: 'bound' | 'conflict' | 'failed'
+  claimId: string
+  wcRevisionBefore: number
+  wcRevisionAfter?: number // status = bound（before + 1）
+}
+
+/** 绑定（校准 1：Claim 创建 ≠ 自动绑定成功——Claim 是资产事实、WC 是表达载体，两生命周期不构成假原子）。
+ *  conflict（目标块不存在/漂移）不撤销 Claim——可重试；failed 为引擎异常路径（写盘失败抛错冒烟，不吞） */
+export function bindClaimToBlock(ws: Workspace, wcId: string, blockId: string, claimId: string, now: Date = new Date()): BindClaimResult {
+  const claim = scanClaims(ws).find((c) => c.record.id === claimId)
+  if (!claim) throw new OpportunityProposalError(`Claim 不存在：${claimId}`)
+  const wc = scanWorkingCopies(ws).find((w) => w.id === wcId)
+  if (!wc) throw new OpportunityProposalError(`工作副本不存在：${wcId}`)
+  const target = wc.sections.flatMap((s) => s.blocks).find((b) => b.id === blockId)
+  if (!target) return { status: 'conflict', claimId, wcRevisionBefore: wc.revision }
+  const next: WorkingCopy = {
+    ...wc,
+    sections: wc.sections.map((s) => ({
+      ...s,
+      blocks: s.blocks.map((b) => (b.id === blockId ? { ...b, provenanceLinks: [...new Set([...(b.provenanceLinks ?? []), claimId])] } : b)),
+    })),
+    revision: wc.revision + 1,
+    updatedAt: now.toISOString(),
+  }
+  ws.write(`resumes/working-copies/${wc.id}.md`, serializeWorkingCopy(next))
+  return { status: 'bound', claimId, wcRevisionBefore: wc.revision, wcRevisionAfter: wc.revision + 1 }
 }
 
 // ─── P4.1：OpportunityHistory（契约 opportunity-history-contract-v0.1，FROZEN）──
