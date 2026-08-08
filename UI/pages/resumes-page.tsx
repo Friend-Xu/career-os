@@ -3,6 +3,9 @@ import {
   Button,
   Chip,
   Collapse,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Stack,
   TextField,
@@ -90,6 +93,8 @@ export function ResumesPage() {
   const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
   const resumes = useAppStore((s) => s.resumes)
   const updateResumeModules = useAppStore((s) => s.updateResumeModules)
+  const careerContext = useAppStore((s) => s.careerContext)
+  const evidenceItems = useAppStore((s) => s.evidence)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
   const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
@@ -114,6 +119,8 @@ export function ResumesPage() {
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
   const [deriveOpen, setDeriveOpen] = useState(false)
+  /** P1.2：从经历资产添加（assetOpen = 目标模块 id——用户主动应用表达资产进草稿） */
+  const [assetOpen, setAssetOpen] = useState<string | null>(null)
   /** R1：表达检查清单展开态（质量条「查看详情」——逐项诊断非评分结论） */
   const [showChecks, setShowChecks] = useState(false)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
@@ -314,6 +321,24 @@ export function ResumesPage() {
     commitModules(copy.map((m, i) => ({ ...m, order: i })))
   }
 
+  /** P1.2：可用表达资产（CareerContext 过滤 legacy + usable——可消费才可加入简历） */
+  const usableClaims = useMemo(() => (careerContext?.claims ?? []).filter((c) => c.usable), [careerContext])
+  const titleOfEvidence = (id: string) => evidenceItems.find((e) => e.id === id)?.event.title ?? id
+  const isExperienceModule = (title: string) => /工作经历|项目经验|项目经历|实习经历/.test(title)
+  /** 用户主动应用：Claim → Working Copy 插入（不自动插入——User apply 边界） */
+  const insertClaim = (claimId: string) => {
+    if (!assetOpen) return
+    const claim = usableClaims.find((c) => c.id === claimId)
+    if (!claim) return
+    commitModules(
+      modules.map((m) =>
+        m.id === assetOpen ? { ...m, content: `${m.content}${m.content ? '\n' : ''}- ${claim.statement}` } : m,
+      ),
+    )
+    setAssetOpen(null)
+    push('success', '已加入简历（表达来自经历资产）')
+  }
+
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* 版本切换在侧栏「版本」——此处不重复提供入口 */}
@@ -457,6 +482,16 @@ export function ResumesPage() {
                     {idx + 1}
                   </Typography>
                   <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{m.title}</Typography>
+                  {isExperienceModule(m.title) && usableClaims.length > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => setAssetOpen(m.id)}
+                      title="从经历资产添加表达"
+                      sx={{ minWidth: 0, px: 0.75, fontSize: 12, color: COLORS.accent }}
+                    >
+                      + 资产
+                    </Button>
+                  )}
                   <Button size="small" disabled={idx === 0} onClick={() => moveModule(idx, -1)} sx={{ minWidth: 0, px: 0.75, fontSize: 12 }}>
                     ↑
                   </Button>
@@ -966,6 +1001,41 @@ export function ResumesPage() {
             )}
         </Box>
       )}
+
+      {/* P1.2：从经历资产添加——可用表达列表（用户主动应用，不自动插入） */}
+      <Dialog open={assetOpen !== null} onClose={() => setAssetOpen(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>从经历资产添加</DialogTitle>
+        <DialogContent>
+          {usableClaims.length === 0 ? (
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+              暂无可用表达——先在素材空间确认待确认表达（AI 从你的经历生成的建议）
+            </Typography>
+          ) : (
+            <Stack spacing={1}>
+              {usableClaims.map((c) => (
+                <Box
+                  key={c.id}
+                  onClick={() => insertClaim(c.id)}
+                  sx={{
+                    p: 1.25,
+                    borderRadius: '8px',
+                    border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+                    boxShadow: COLORS.cardShadow,
+                    cursor: 'pointer',
+                    transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
+                    '&:hover': { borderColor: COLORS.accent, bgcolor: COLORS.accentMuted },
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12.5, lineHeight: 1.6 }}>{c.statement}</Typography>
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25 }}>
+                    依据：{c.provenance.evidenceIds.map(titleOfEvidence).join('、')}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ResumeDeriveDialog open={deriveOpen} onClose={() => setDeriveOpen(false)} />
     </Box>

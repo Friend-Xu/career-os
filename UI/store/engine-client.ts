@@ -31,6 +31,7 @@ import type {
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
+import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { ExtractionResult } from '../../engine/runtime/document/pdf-import.ts'
 import type { PortfolioProject, PortfolioProposal, PortfolioStatus } from '../../engine/ir/portfolio.ts'
@@ -355,6 +356,26 @@ export class EngineClient {
   /** 岗位上下文 Claim Coverage（M3-0：responsibility → 关联 trusted evidence → 可消费 Claims） */
   claimCoverage(jobId: string): Promise<ClaimCoverageRow[]> {
     return this.rpc<ClaimCoverageRow[]>(METHODS.claimCoverage, { id: jobId })
+  }
+
+  /** Claim 提案创建（P1.1：只登记不生成——evidenceRefs + proposedClaim 由调用方提供） */
+  createClaimProposal(input: ClaimProposalInput): Promise<ClaimProposal> {
+    return this.rpc<ClaimProposal>(METHODS.claimProposalCreate, input)
+  }
+
+  /** 全量 Claim 提案（P1.1：claim-proposals/ 扫描） */
+  listClaimProposals(): Promise<ClaimProposal[]> {
+    return this.rpc<ClaimProposal[]>(METHODS.claimProposalList)
+  }
+
+  /** 接受 Claim 提案（P1.1：二次校验 → registerClaim → 返回 { claimId }） */
+  approveClaimProposal(id: string): Promise<{ claimId: string }> {
+    return this.rpc<{ claimId: string }>(METHODS.claimProposalApprove, { id })
+  }
+
+  /** 拒绝 Claim 提案（P1.1：单向不 reopen，审计保留） */
+  rejectClaimProposal(id: string, reason?: string): Promise<ClaimProposal> {
+    return this.rpc<ClaimProposal>(METHODS.claimProposalReject, { id, ...(reason && reason.trim() ? { reason } : {}) })
   }
 
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */

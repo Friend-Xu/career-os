@@ -32,6 +32,7 @@ import {
 } from '../data/mock-data'
 import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
@@ -175,6 +176,8 @@ interface AppState {
   constraintRows: Record<string, ConstraintMatchRow[]>;
   /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable——可消费性引擎推导） */
   claims: (CareerClaim & { usable: boolean })[];
+  /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
+  claimProposals: ClaimProposal[];
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
   claimCoverage: Record<string, ClaimCoverageRow[]>;
   /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
@@ -383,6 +386,10 @@ interface AppState {
   acceptProposal: (id: string, reason?: string) => Promise<ResumeDocument>;
   /** 拒绝提案（M3.5.6：pending → rejected，可选原因；单向不 reopen） */
   rejectProposal: (id: string, reason?: string) => Promise<ResumeProposal>;
+  /** 确认 Claim 提案（P1.1：二次校验 → 登记为表达资产 → { claimId }） */
+  approveClaimProposal: (id: string) => Promise<{ claimId: string }>;
+  /** 拒绝 Claim 提案（P1.1：丢弃，审计保留） */
+  rejectClaimProposal: (id: string) => Promise<ClaimProposal>;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -445,6 +452,8 @@ export const useAppStore = create<AppState>()(
       constraintRows: {},
       /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable） */
       claims: [],
+      /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
+      claimProposals: [],
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
       claimCoverage: {},
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
@@ -1182,6 +1191,24 @@ export const useAppStore = create<AppState>()(
     if (!engine) throw new Error('引擎未连接')
     const p = await engine.rejectProposal(id, reason)
     void pullProposals()
+    return p
+  },
+
+  /** 确认 Claim 提案（P1.1：二次校验 → 登记为表达资产；引擎广播后重拉两视图） */
+  approveClaimProposal: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    const result = await engine.approveClaimProposal(id)
+    void pullClaimProposals()
+    void pullClaims()
+    void pullCareerContext()
+    return result
+  },
+
+  /** 拒绝 Claim 提案（P1.1：待确认表达丢弃，审计保留） */
+  rejectClaimProposal: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    const p = await engine.rejectClaimProposal(id)
+    void pullClaimProposals()
     return p
   },
 
@@ -2021,6 +2048,17 @@ async function pullClaims(): Promise<void> {
   }
 }
 
+/** Claim 提案（P1.1）：claim-proposals/list 全量拉取；claimProposalsChanged 事件驱动重拉 */
+async function pullClaimProposals(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listClaimProposals()
+    useAppStore.setState({ claimProposals: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 简历版本（M3.5）：resumes/list 全量拉取；resumesChanged 事件驱动重拉 */
 async function pullResumes(): Promise<void> {
   if (!engine) return
@@ -2264,6 +2302,7 @@ export function connectEngine(): void {
       void pullApplications()
       void pullEvidence()
       void pullClaims()
+      void pullClaimProposals()
       void pullResumes()
       void pullCareerContext()
       void pullProposals()
@@ -2301,6 +2340,7 @@ export function connectEngine(): void {
     // Claim 表达候选缓存失效：Claim 变更后清空，下次打开岗位时重拉
     useAppStore.setState({ claimCoverage: {} })
   })
+  engine.on(EVENTS.claimProposalsChanged, () => void pullClaimProposals())
   engine.on(EVENTS.resumesChanged, () => {
     void pullResumes()
     void pullCareerContext() // 版本变化影响 Context 投影

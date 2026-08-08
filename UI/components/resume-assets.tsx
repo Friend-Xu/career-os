@@ -2,22 +2,80 @@
  * Resume Assets（M3.5.5）：AI Read Projection Viewer——CareerContext 只读投影。
  * 不做资产管理（无写操作）：Claims（type/usable/usedByResume/provenance）、
  * Evidence（状态）、Exports（ExportRecord 历史）。数据来自引擎投影，UI 不重新 query。
+ * P1.2：新增「待确认表达」区（ClaimProposal 用户确认入口——确认后登记为表达资产；
+ * 用户语言展示，不暴露 ClaimProposal/生命周期系统概念）。
  */
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useAppStore } from '../store/app-store'
+import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 
 export function ResumeAssets() {
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
+  const claimProposals = useAppStore((s) => s.claimProposals)
+  const approveClaimProposal = useAppStore((s) => s.approveClaimProposal)
+  const rejectClaimProposal = useAppStore((s) => s.rejectClaimProposal)
+  const push = useToastStore((s) => s.push)
   const claims = careerContext?.claims ?? []
   const exports = careerContext?.exports ?? []
+  const pendingProposals = claimProposals.filter((p) => p.status === 'pending')
+
+  const titleOf = (id: string) => evidenceItems.find((e) => e.id === id)?.event.title ?? id
+  const confirmProposal = async (id: string) => {
+    try {
+      await approveClaimProposal(id)
+      push('success', '已确认——该表达已加入素材库')
+    } catch (e) {
+      push('warning', e instanceof Error ? e.message : '确认失败')
+    }
+  }
+  const rejectProposal = async (id: string) => {
+    try {
+      await rejectClaimProposal(id)
+      push('info', '已丢弃该表达建议')
+    } catch (e) {
+      push('warning', e instanceof Error ? e.message : '操作失败')
+    }
+  }
 
   return (
     <Stack spacing={2}>
-      {/* Claims */}
+      {/* 待确认表达（P1.2：ClaimProposal 用户确认入口——AI 提案，用户决定，Engine 登记） */}
+      {pendingProposals.length > 0 && (
+        <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${alpha(COLORS.accent, 0.4)}`, bgcolor: alpha(COLORS.accent, 0.04) }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1, color: COLORS.accent }}>
+            待确认表达（{pendingProposals.length}）
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 1 }}>
+            AI 从你的经历生成的表达建议——确认后成为可复用表达资产，可加入简历
+          </Typography>
+          <Stack spacing={1}>
+            {pendingProposals.map((p) => (
+              <Box key={p.id} sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+                <Typography sx={{ fontSize: 12.5, color: COLORS.text, lineHeight: 1.6, mb: 0.5 }}>
+                  {p.proposedClaim.statement}
+                </Typography>
+                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 1 }}>
+                  依据：{p.evidenceRefs.map(titleOf).join('、')}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" variant="contained" onClick={() => void confirmProposal(p.id)} sx={{ fontSize: 11.5 }}>
+                    确认加入表达资产
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => void rejectProposal(p.id)} sx={{ fontSize: 11.5, color: COLORS.textMuted, borderColor: alpha(COLORS.border, 0.8) }}>
+                    丢弃
+                  </Button>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      {/* Claims（已确认表达资产） */}
       <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>表述（可消费表达资产）</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>已确认表达（可加入简历）</Typography>
         {claims.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无表述——从可信事实生成后出现于此</Typography>
         ) : (
