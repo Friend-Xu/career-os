@@ -20,7 +20,7 @@ import { scanEvidence } from './evidence-watcher.ts'
 import { scanJobs } from './job-watcher.ts'
 import { scanClaims } from './claim-watcher.ts'
 import { scanWorkingCopies, workingCopyToDocument, serializeWorkingCopy } from './working-copy-registry.ts'
-import { anchorCheck, evidenceText, type ClaimProposalInput } from './claim-proposal-registry.ts'
+import { anchorCheck, evidenceText, createClaimProposal, type ClaimProposal, type ClaimProposalInput } from './claim-proposal-registry.ts'
 import { computeOpportunities, type Opportunity } from '../runtime/opportunity.ts'
 import { computeResumeAlignment, type AlignmentState } from '../runtime/resume-alignment.ts'
 
@@ -729,6 +729,52 @@ export type BindClaimResult = {
   wcRevisionAfter?: number // status = bound（before + 1）
 }
 
+/** Claim Bridge Agent 输入上下文（P5.3——责任语句 + 候选证据详情；Agent 构造 statement 的消费结构，不读数据库） */
+export interface ClaimBridgeContext {
+  opportunity: Opportunity
+  responsibilityStatement: string
+  expectationId?: string
+  evidence: { id: string; eventTitle: string; content: string; contribution: string; impact?: string; validation?: string }[]
+}
+
+/** Bridge context 组装（Agent 读——经 claim-bridge-context CLI/RPC；证据详情投影与 ProposalBridgeContext 同构） */
+export function buildClaimBridgeContext(ws: Workspace, wcId: string, opportunityId: string, evidenceIds: string[]): ClaimBridgeContext {
+  const found = findOpportunity(ws, wcId, opportunityId)
+  if (!found) throw new OpportunityProposalError(`机会不存在或与工作副本不匹配：${opportunityId}`)
+  const { opportunity, jobId } = found
+  const job = scanJobs(ws).find((j) => j.record.id === jobId)?.record
+  const respId = opportunity.anchor.responsibilityId
+  const resp = job && respId ? job.responsibilities.find((r) => r.id === respId) : undefined
+  const evidenceById = new Map(scanEvidence(ws).map((p) => [p.record.id, p.record]))
+  const evidence = evidenceIds
+    .map((id) => evidenceById.get(id))
+    .filter((e): e is EvidenceItem => Boolean(e))
+    .map((e) => ({
+      id: e.id,
+      eventTitle: e.event.title,
+      content: evidenceText(e),
+      contribution: e.contribution,
+      ...(e.evidence.impact?.length ? { impact: e.evidence.impact.map((v) => v.content).join('；') } : {}),
+      ...(e.evidence.validation?.length ? { validation: e.evidence.validation.map((v) => v.content).join('；') } : {}),
+    }))
+  return {
+    opportunity,
+    responsibilityStatement: resp?.statement ?? '',
+    expectationId: resp?.evidenceExpectations[0]?.patternId,
+    evidence,
+  }
+}
+
+/** Bridge 提交（P5.3——Agent 构造 statement 后一步登记：装配校验 + P1.1 createClaimProposal） */
+export function submitClaimBridge(
+  ws: Workspace,
+  input: AssetBridgeInput & { statement: string; explanation: string },
+  now: Date = new Date(),
+): ClaimProposal {
+  const bridge = assembleAssetBridge(ws, input, input.statement, input.explanation)
+  return createClaimProposal(ws, { ...bridge, opportunityId: input.opportunityId }, now)
+}
+
 /** 绑定（校准 1：Claim 创建 ≠ 自动绑定成功——Claim 是资产事实、WC 是表达载体，两生命周期不构成假原子）。
  *  conflict（目标块不存在/漂移）不撤销 Claim——可重试；failed 为引擎异常路径（写盘失败抛错冒烟，不吞） */
 export function bindClaimToBlock(ws: Workspace, wcId: string, blockId: string, claimId: string, now: Date = new Date()): BindClaimResult {
@@ -738,11 +784,16 @@ export function bindClaimToBlock(ws: Workspace, wcId: string, blockId: string, c
   if (!wc) throw new OpportunityProposalError(`工作副本不存在：${wcId}`)
   const target = wc.sections.flatMap((s) => s.blocks).find((b) => b.id === blockId)
   if (!target) return { status: 'conflict', claimId, wcRevisionBefore: wc.revision }
+  const links = [...new Set([...(target.provenanceLinks ?? []), claimId])]
+  // 幂等（P5.2 评审回归）：锚已含 claimId → 不写盘、revision 不增加——高频路径防无意义版本膨胀
+  if (target.provenanceLinks && links.length === target.provenanceLinks.length) {
+    return { status: 'bound', claimId, wcRevisionBefore: wc.revision, wcRevisionAfter: wc.revision }
+  }
   const next: WorkingCopy = {
     ...wc,
     sections: wc.sections.map((s) => ({
       ...s,
-      blocks: s.blocks.map((b) => (b.id === blockId ? { ...b, provenanceLinks: [...new Set([...(b.provenanceLinks ?? []), claimId])] } : b)),
+      blocks: s.blocks.map((b) => (b.id === blockId ? { ...b, provenanceLinks: links } : b)),
     })),
     revision: wc.revision + 1,
     updatedAt: now.toISOString(),

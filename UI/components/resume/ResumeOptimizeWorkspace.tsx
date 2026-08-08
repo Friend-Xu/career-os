@@ -6,15 +6,16 @@
  * - 四态：已覆盖 / 表达缺口 / 证据不足声明（红线）/ 能力缺口
  * - R2.2 边界：只展示四态 + 可追溯引用；不做 AI 改写 / 提案创建（P3 Opportunity Loop）
  */
-import { Box, Chip, MenuItem, Select, Stack, Typography, Button, CircularProgress } from '@mui/material'
+import { Box, Chip, MenuItem, Select, Stack, Typography, Button, CircularProgress, Checkbox, FormControlLabel } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
 import { workingCopyLabel } from '../../utils/resume-label'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../../engine/storage/opportunity-proposal-registry.ts'
+import type { ClaimProposal } from '../../../engine/storage/claim-proposal-registry.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
   covered: { icon: '✓', label: '已覆盖', color: COLORS.riskLow },
@@ -47,6 +48,11 @@ export function ResumeOptimizeWorkspace() {
   const fetchWorkingCopyAlignment = useAppStore((s) => s.fetchWorkingCopyAlignment)
   const fetchWorkingCopyOpportunities = useAppStore((s) => s.fetchWorkingCopyOpportunities)
   const generateOpportunityProposals = useAppStore((s) => s.generateOpportunityProposals)
+  const generateAssetCandidate = useAppStore((s) => s.generateAssetCandidate)
+  const bindClaim = useAppStore((s) => s.bindClaim)
+  const approveClaimProposal = useAppStore((s) => s.approveClaimProposal)
+  const rejectClaimProposal = useAppStore((s) => s.rejectClaimProposal)
+  const claimProposals = useAppStore((s) => s.claimProposals)
   const [wcId, setWcId] = useState('')
   const [jobId, setJobId] = useState('')
   const [projection, setProjection] = useState<ResumeAlignmentProjection | null>(null)
@@ -57,6 +63,9 @@ export function ResumeOptimizeWorkspace() {
   const [genState, setGenState] = useState<{ oppId: string; phase: string } | null>(null)
   const [genTick, setGenTick] = useState(0)
   const [applyResult, setApplyResult] = useState<{ proposalId: string; text: string; tone: 'ok' | 'conflict' } | null>(null)
+  // P5.3 资产化面板：素材选择（用户主动——不自动扫描，ADR-027 边界）+ 生成状态
+  const [assetPanel, setAssetPanel] = useState<{ oppId: string; selected: string[]; generating: boolean } | null>(null)
+  const [bindResult, setBindResult] = useState<{ claimId: string; ok: boolean; text: string } | null>(null)
 
   const personWorkingCopies = workingCopies.filter((w) => w.owner === String(person.id))
   const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
@@ -217,6 +226,94 @@ export function ResumeOptimizeWorkspace() {
     } catch (e: unknown) {
       setGenState(null)
       setError(e instanceof Error ? e.message : '候选生成失败')
+    }
+  }
+
+  // ─── P5.3 资产化（评审约束：素材选择用户主动——不自动扫描 Evidence，ADR-027 边界）──
+  // 单用户个人工具：素材展示全部可信经历（不按 owner 隔离——历史数据归属迁移中）
+  const usableEvidence = evidenceItems.filter((e) => e.lifecycle !== 'legacy' && e.status === 'trusted')
+  const boundClaimIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const w of workingCopies) for (const sec of w.sections) for (const b of sec.blocks) for (const c of b.provenanceLinks ?? []) s.add(c)
+    return s
+  }, [workingCopies])
+  /** 资产提案本地增强：approve 返回的 claimId 关联（引擎 ClaimProposal 不持有——登记产物分离） */
+  const [claimPairs, setClaimPairs] = useState<Record<string, string>>({})
+
+  const toggleEvidence = (id: string) => {
+    setAssetPanel((p) => (p ? { ...p, selected: p.selected.includes(id) ? p.selected.filter((x) => x !== id) : [...p.selected, id] } : p))
+  }
+
+  const generateAsset = async (o: Opportunity) => {
+    if (!assetPanel || assetPanel.selected.length === 0) return
+    setAssetPanel((p) => (p ? { ...p, generating: true } : p))
+    try {
+      await generateAssetCandidate(o.id, wcId, assetPanel.selected, String(person.id))
+      // 完成信号 = 关联机会的 ClaimProposal 出现（CLI 提交不经事件广播——轮询必须走 RPC 拉取）
+      const deadline = Date.now() + 90_000
+      const poll = async (): Promise<void> => {
+        const list = await useAppStore.getState().listClaimProposals()
+        if (list.some((p) => p.opportunityId === o.id)) {
+          setAssetPanel((p) => (p ? { ...p, generating: false } : p))
+          setGenTick((t) => t + 1)
+          return
+        }
+        if (Date.now() > deadline) {
+          setAssetPanel((p) => (p ? { ...p, generating: false } : p))
+          return
+        }
+        setTimeout(() => void poll(), 2500)
+      }
+      void poll()
+    } catch (e: unknown) {
+      setAssetPanel((p) => (p ? { ...p, generating: false } : p))
+      setError(e instanceof Error ? e.message : '资产候选生成失败')
+    }
+  }
+
+  /** 采用资产候选（P1.1 通道：approve → Claim 登记；Claim 已生成 ≠ 已绑定——分开两步） */
+  const approveAsset = async (cp: ClaimProposal) => {
+    try {
+      const { claimId } = await approveClaimProposal(cp.id)
+      setClaimPairs((m) => ({ ...m, [cp.id]: claimId }))
+      setGenTick((t) => t + 1)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '采用失败')
+    }
+  }
+
+  const rejectAsset = async (cp: ClaimProposal) => {
+    try {
+      await rejectClaimProposal(cp.id)
+      setGenTick((t) => t + 1)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '拒绝失败')
+    }
+  }
+
+  /** 绑定到当前行（评审观察点：区分「资产已生成/等待绑定」vs「已绑定」） */
+  const bindAsset = async (o: Opportunity, cp: ClaimProposal) => {
+    const claimId = claimPairs[cp.id]
+    const blockId = o.applyTarget?.blockId
+    if (!claimId || !blockId) {
+      setBindResult({ claimId: cp.id, ok: false, text: '该机会无绑定落点——请用改写路径处理表达' })
+      return
+    }
+    try {
+      const r = await bindClaim(wcId, blockId, claimId)
+      setBindResult({
+        claimId: cp.id,
+        ok: r.status === 'bound',
+        text:
+          r.status === 'bound'
+            ? '已绑定——该表达已挂接职业资产'
+            : r.status === 'conflict'
+              ? '绑定冲突：目标行已变化——刷新后重试（资产已保留）'
+              : '绑定失败',
+      })
+      setGenTick((t) => t + 1)
+    } catch (e: unknown) {
+      setBindResult({ claimId: cp.id, ok: false, text: e instanceof Error ? e.message : '绑定失败' })
     }
   }
 
@@ -465,12 +562,32 @@ export function ResumeOptimizeWorkspace() {
                       <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
                         影响：{o.applyTarget ? TARGET_TEXT[o.applyTarget.action] : '形成表达资产（走素材通道）'}
                       </Typography>
+                      {/* P5.3 评审约束 ③：表达调整与资产补充是两个动作——不混合（防回退成简历魔改工具）。
+                          仅红线型（refs 非空——有匹配证据待绑定）显示资产化入口；原生型无证据资产化无意义 */}
+                      {o.anchor.state === 'unsupported_claim' && o.refs.evidenceIds.length > 0 && (
+                        <Button
+                          size="small"
+                          onClick={() => setAssetPanel((p) => (p?.oppId === o.id ? null : { oppId: o.id, selected: [], generating: false }))}
+                          sx={{
+                            ml: 'auto',
+                            fontSize: 11.5,
+                            textTransform: 'none',
+                            color: COLORS.riskHigh,
+                            border: `1px solid ${alpha(COLORS.riskHigh, 0.35)}`,
+                            borderRadius: '8px',
+                            px: 1.25,
+                            py: 0.25,
+                            '&:hover': { bgcolor: alpha(COLORS.riskHigh, 0.08) },
+                          }}
+                        >
+                          {assetPanel?.oppId === o.id ? '收起资产面板' : '补充职业资产'}
+                        </Button>
+                      )}
                       <Button
                         size="small"
                         disabled={genState?.oppId === o.id}
                         onClick={() => void generate(o)}
                         sx={{
-                          ml: 'auto',
                           fontSize: 11.5,
                           textTransform: 'none',
                           color: COLORS.accent,
@@ -482,9 +599,170 @@ export function ResumeOptimizeWorkspace() {
                         }}
                       >
                         {genState?.oppId === o.id ? <CircularProgress size={12} sx={{ mr: 0.75 }} /> : null}
-                        {genState?.oppId === o.id ? genState.phase : o.intent === 'activate_asset' ? '生成表达资产' : '生成改写方案'}
+                        {genState?.oppId === o.id ? genState.phase : o.intent === 'activate_asset' ? '生成表达资产' : '调整表达'}
                       </Button>
                     </Stack>
+                    {/* P5.3 资产化面板（评审约束：素材选择用户主动——不自动扫描 Evidence） */}
+                    {assetPanel?.oppId === o.id && (
+                      <Box
+                        sx={{
+                          mt: 1,
+                          p: 1.25,
+                          borderRadius: '8px',
+                          border: `1px solid ${alpha(COLORS.riskHigh, 0.25)}`,
+                          bgcolor: alpha(COLORS.riskHigh, 0.04),
+                        }}
+                      >
+                        <Typography sx={{ fontSize: 11.5, fontWeight: 600, mb: 0.5 }}>
+                          补充职业资产——表达已存在，缺少可信资产绑定
+                        </Typography>
+                        <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mb: 0.75, lineHeight: 1.5 }}>
+                          选择已有经历作为该表达的事实来源（系统不会自动搜索素材——由你决定）。
+                        </Typography>
+                        {usableEvidence.length === 0 ? (
+                          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, py: 1 }}>暂无可用素材——先补充职业经历（素材库）</Typography>
+                        ) : (
+                          <Stack spacing={0.25} sx={{ maxHeight: 130, overflowY: 'auto', mb: 0.75 }}>
+                            {usableEvidence.map((e) => (
+                              <FormControlLabel
+                                key={e.id}
+                                control={
+                                  <Checkbox
+                                    size="small"
+                                    checked={assetPanel.selected.includes(e.id)}
+                                    onChange={() => toggleEvidence(e.id)}
+                                    sx={{ '& .MuiSvgIcon-root': { fontSize: 16 } }}
+                                  />
+                                }
+                                label={
+                                  <Typography sx={{ fontSize: 11.5 }}>
+                                    {e.event.title}
+                                    <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                                      {' · '}
+                                      {e.role}
+                                    </Typography>
+                                  </Typography>
+                                }
+                                sx={{ '& .MuiFormControlLabel-label': { minWidth: 0 } }}
+                              />
+                            ))}
+                          </Stack>
+                        )}
+                        <Button
+                          size="small"
+                          disabled={assetPanel.selected.length === 0 || assetPanel.generating}
+                          onClick={() => void generateAsset(o)}
+                          sx={{
+                            fontSize: 11.5,
+                            textTransform: 'none',
+                            color: COLORS.riskHigh,
+                            border: `1px solid ${alpha(COLORS.riskHigh, 0.4)}`,
+                            borderRadius: '8px',
+                            px: 1.25,
+                            py: 0.25,
+                            '&:hover': { bgcolor: alpha(COLORS.riskHigh, 0.08) },
+                          }}
+                        >
+                          {assetPanel.generating ? <CircularProgress size={12} sx={{ mr: 0.75 }} /> : null}
+                          {assetPanel.generating ? '生成资产候选…' : `生成资产候选（已选 ${assetPanel.selected.length} 条经历）`}
+                        </Button>
+                        {/* 资产候选（P1.1 通道：AI 提供候选 → 用户采用 → Claim 登记 → 绑定） */}
+                        {claimProposals
+                          .filter((p) => p.opportunityId === o.id && p.source === 'opportunity_bridge')
+                          .map((cp) => {
+                            const claimId = claimPairs[cp.id]
+                            const bound = Boolean(claimId) && boundClaimIds.has(claimId)
+                            return (
+                              <Box key={cp.id} sx={{ mt: 1, p: 1.25, borderRadius: '8px', border: `1px solid ${alpha(COLORS.border, 0.9)}`, bgcolor: alpha(COLORS.bgHover, 0.35) }}>
+                                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                                  <Typography sx={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>资产候选</Typography>
+                                  <Chip
+                                    size="small"
+                                    label={cp.status === 'approved' ? (bound ? '已绑定 ✓' : '资产已生成，等待绑定') : cp.status === 'rejected' ? '已拒绝' : '待决定'}
+                                    sx={{
+                                      height: 18,
+                                      fontSize: 10.5,
+                                      bgcolor:
+                                        cp.status === 'approved'
+                                          ? bound
+                                            ? alpha(COLORS.riskLow, 0.15)
+                                            : alpha(COLORS.riskMedium, 0.12)
+                                          : cp.status === 'rejected'
+                                            ? alpha(COLORS.textMuted, 0.12)
+                                            : alpha(COLORS.riskMedium, 0.12),
+                                      color:
+                                        cp.status === 'approved' ? (bound ? COLORS.riskLow : COLORS.riskMedium) : cp.status === 'rejected' ? COLORS.textMuted : COLORS.riskMedium,
+                                    }}
+                                  />
+                                </Stack>
+                                <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>{cp.proposedClaim.statement}</Typography>
+                                <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25, lineHeight: 1.5 }}>{cp.explanation}</Typography>
+                                <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25 }}>基于 {cp.evidenceRefs.length} 条已有经历</Typography>
+                                {cp.status === 'pending' && (
+                                  <Stack direction="row" spacing={1} sx={{ mt: 0.75 }}>
+                                    <Button
+                                      size="small"
+                                      onClick={() => void approveAsset(cp)}
+                                      sx={{
+                                        fontSize: 11.5,
+                                        textTransform: 'none',
+                                        color: COLORS.riskLow,
+                                        border: `1px solid ${alpha(COLORS.riskLow, 0.4)}`,
+                                        borderRadius: '8px',
+                                        px: 1.25,
+                                        py: 0.25,
+                                        '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
+                                      }}
+                                    >
+                                      采用
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      onClick={() => void rejectAsset(cp)}
+                                      sx={{
+                                        fontSize: 11.5,
+                                        textTransform: 'none',
+                                        color: COLORS.textMuted,
+                                        border: `1px solid ${alpha(COLORS.border, 1)}`,
+                                        borderRadius: '8px',
+                                        px: 1.25,
+                                        py: 0.25,
+                                        '&:hover': { bgcolor: alpha(COLORS.bgHover, 0.6) },
+                                      }}
+                                    >
+                                      拒绝
+                                    </Button>
+                                  </Stack>
+                                )}
+                                {cp.status === 'approved' && !bound && (
+                                  <Button
+                                    size="small"
+                                    onClick={() => void bindAsset(o, cp)}
+                                    sx={{
+                                      mt: 0.75,
+                                      fontSize: 11.5,
+                                      textTransform: 'none',
+                                      color: COLORS.riskLow,
+                                      border: `1px solid ${alpha(COLORS.riskLow, 0.4)}`,
+                                      borderRadius: '8px',
+                                      px: 1.25,
+                                      py: 0.25,
+                                      '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
+                                    }}
+                                  >
+                                    绑定到当前行
+                                  </Button>
+                                )}
+                                {bindResult?.claimId === cp.id && (
+                                  <Typography sx={{ fontSize: 11, color: bindResult.ok ? COLORS.riskLow : COLORS.riskHigh, mt: 0.5 }}>
+                                    {bindResult.text}
+                                  </Typography>
+                                )}
+                              </Box>
+                            )
+                          })}
+                      </Box>
+                    )}
                     {/* 候选 diff（P3.7——契约：围绕 Proposal 不围绕文本；依据用户化；reject 保留） */}
                     {proposals.filter((p) => p.opportunityId === o.id).map((p) => {
                       const ch = p.changes[0]

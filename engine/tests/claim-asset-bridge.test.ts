@@ -305,3 +305,27 @@ test('reject 路径：用户拒绝 ClaimProposal → 无 Claim 登记、无绑�
   const wcNow = scanWorkingCopies(ws).find((w) => w.id === wc.id)!
   assert.deepEqual(wcNow.sections[0].blocks[0].provenanceLinks, [])
 })
+
+test('duplicate bind（P5.2 评审回归）：同 claim 重复绑定 → 幂等成功，revision 不重复增加', () => {
+  const { ws } = setupBase()
+  const wc = setupRedlineOpportunity(ws)
+  const bridge = assembleAssetBridge(
+    ws,
+    { opportunityId: 'alignment:job_test:ai-1', wcId: wc.id, evidenceCandidates: ['evidence_20260809_00001'] },
+    '负责机械结构设计，完成强度校核',
+    '',
+  )
+  const cp = createClaimProposal(ws, bridge, new Date('2026-08-09T10:15:00Z'))
+  const { claimId } = approveClaimProposal(ws, cp.id, new Date('2026-08-09T10:20:00Z'))
+
+  const first = bindClaimToBlock(ws, wc.id, 'blk_1', claimId, new Date('2026-08-09T10:25:00Z'))
+  assert.equal(first.status, 'bound')
+  assert.equal(first.wcRevisionAfter, 3)
+  // 重复绑定同 claim：锚已含 → 不追加重复、revision 不增加（幂等）
+  const second = bindClaimToBlock(ws, wc.id, 'blk_1', claimId, new Date('2026-08-09T10:30:00Z'))
+  assert.equal(second.status, 'bound')
+  assert.equal(second.wcRevisionAfter, 3) // revision 不再 +1
+  const wcNow = scanWorkingCopies(ws).find((w) => w.id === wc.id)!
+  assert.deepEqual(wcNow.sections[0].blocks[0].provenanceLinks, [claimId]) // 无重复
+  assert.equal(wcNow.revision, 3)
+})

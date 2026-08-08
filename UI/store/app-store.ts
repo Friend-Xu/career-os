@@ -410,6 +410,8 @@ interface AppState {
   fetchWorkingCopyOpportunities: (wcId: string, jobId: string) => Promise<Opportunity[]>;
   /** 机会 Proposal 全量（P3.3） */
   listOpportunityProposals: () => Promise<OpportunityProposal[]>;
+  /** Claim 提案全量（P5.3：RPC 拉取——CLI 提交不经事件广播，轮询完成信号必须走 RPC） */
+  listClaimProposals: () => Promise<ClaimProposal[]>;
   /** 生成改写候选（P3.6：机会 → agent 任务 → 候选登记） */
   generateOpportunityProposals: (opportunityId: string, wcId: string, personId: string) => Promise<string>;
   /** 采用机会 Proposal（P3.7：pending → approved——approve ≠ apply） */
@@ -420,6 +422,15 @@ interface AppState {
   applyOpportunityProposal: (id: string) => Promise<
     { status: 'applied'; transactionId: string; newRevision: number } | { status: 'conflict'; transactionId: string; reason: string; expectedRevision: number; currentRevision: number }
   >;
+  /** 生成资产化候选（P5.3：机会 → agent 任务 → ClaimProposal 登记 pending——AI 提供候选，用户决定资产） */
+  generateAssetCandidate: (opportunityId: string, wcId: string, evidenceIds: string[], personId: string) => Promise<string>;
+  /** 绑定 Claim 到工作副本块（P5.3：approve 后——Claim 已生成 ≠ 已绑定；conflict 可重试；幂等） */
+  bindClaim: (wcId: string, blockId: string, claimId: string) => Promise<{
+    status: 'bound' | 'conflict' | 'failed'
+    claimId: string
+    wcRevisionBefore: number
+    wcRevisionAfter?: number
+  }>;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -1245,6 +1256,39 @@ export const useAppStore = create<AppState>()(
     return p
   },
 
+  /** 生成资产化候选（P5.3：Agent 基于机会责任 + 用户选定证据构造 statement → claim-bridge-submit 登记） */
+  generateAssetCandidate: async (opportunityId: string, wcId: string, evidenceIds: string[], personId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    const task = `你是 Career OS 的职业资产表达助手。当前任务：为机会 ${opportunityId} 生成表达资产候选（Claim 建议）。
+
+背景：系统发现简历中某行表达缺少可信职业资产绑定（unsupported_claim——红线型：岗位期望有证据匹配，但表达未绑定 Claim）。
+
+步骤：
+1. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --claim-bridge-context ${opportunityId} ${wcId} ${evidenceIds.join(',')}\`（从项目根；用项目内便携 node，环境隔离）读取上下文 JSON（含 responsibilityStatement、evidence 回源全文、expectationId）
+2. 基于 responsibilityStatement 与证据原文构造 1 条表达资产候选 statement（表达职业能力、忠于证据——数字/程度/角色均须来自证据原文，不得编造或升级能力级别）
+3. 用 Write 写候选 JSON 到项目根 .local/claim-bridge-candidate-${opportunityId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json：{"opportunityId": "${opportunityId}", "wcId": "${wcId}", "evidenceCandidates": [${evidenceIds.map((e) => `"${e}"`).join(', ')}], "statement": "…", "explanation": "为什么这样表达（一句，用户语言）"}
+4. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --claim-bridge-submit .local/claim-bridge-candidate-${opportunityId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json\` 提交。失败读错误（numeric_anchor/capability_anchor/证据校验），修正重试最多 1 次。
+5. 输出一句话总结：候选提案 id 或失败原因。
+
+硬约束：不得编造证据外的事实与数字；能力级别（主导/负责/参与）不得高于证据原文；除候选 JSON 外不得修改任何文件。`
+    const res = await engine.startAgent({
+      task,
+      personId,
+      allowedTools: ['Bash', 'Write', 'Read', 'Glob'],
+      permissionMode: 'bypassPermissions',
+      maxTurns: 15,
+    })
+    return res.taskId
+  },
+
+  /** 绑定 Claim 到工作副本块（P5.3：approve 后——Claim 已生成 ≠ 已绑定；conflict 可重试；幂等） */
+  bindClaim: async (wcId: string, blockId: string, claimId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    const result = await engine.claimBind(wcId, blockId, claimId)
+    void pullWorkingCopies()
+    return result
+  },
+
   /** 工作副本 upsert（P2.3：revision 协商——conflict 抛错，UI 提示「内容已在其他端更新」） */
   upsertWorkingCopy: async (input) => {
     if (!engine) throw new Error('引擎未连接')
@@ -1285,6 +1329,13 @@ export const useAppStore = create<AppState>()(
   listOpportunityProposals: async () => {
     if (!engine) throw new Error('引擎未连接')
     return engine.listOpportunityProposals()
+  },
+
+  listClaimProposals: async () => {
+    if (!engine) throw new Error('引擎未连接')
+    const list = await engine.listClaimProposals()
+    useAppStore.setState({ claimProposals: list })
+    return list
   },
 
   /** 生成改写候选（P3.6：机会 → agent 任务 → 候选登记；任务状态由 agent.event 流呈现） */

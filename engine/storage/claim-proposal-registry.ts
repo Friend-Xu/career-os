@@ -46,6 +46,7 @@ export interface ClaimProposal {
   status: ClaimProposalStatus
   createdAt: string
   decidedAt?: string
+  opportunityId?: string // P5.3——Bridge 提案携带机会关联（UI 卡片归属 + 审计追溯；旧提案无）
 }
 
 export interface ClaimProposalInput {
@@ -53,6 +54,7 @@ export interface ClaimProposalInput {
   evidenceRefs: string[]
   proposedClaim: { statement: string; section?: string; expectationId?: string }
   explanation: string
+  opportunityId?: string // P5.3——机会 → Claim 资产化桥（Asset Bridge）关联
 }
 
 export class ClaimProposalError extends Error {
@@ -145,6 +147,7 @@ export function createClaimProposal(ws: Workspace, input: ClaimProposalInput, no
     provenanceSummary: deriveProvenance(items),
     status: 'pending',
     createdAt: now.toISOString(),
+    ...(input.opportunityId ? { opportunityId: input.opportunityId } : {}),
   }
   ws.write(`claim-proposals/${id}.md`, serializeClaimProposal(proposal))
   return proposal
@@ -156,6 +159,7 @@ function serializeClaimProposal(p: ClaimProposal): string {
     `created_at: ${p.createdAt.slice(0, 10)}`,
     `source: ${p.source}`,
     `status: ${p.status}`,
+    ...(p.opportunityId ? [`opportunity_id: ${p.opportunityId}`] : []),
     ...(p.decidedAt ? [`decided_at: ${p.decidedAt}`] : []),
   ]
   const fields = [
@@ -198,6 +202,7 @@ export function parseClaimProposalMarkdown(md: string, sourceFile: string): Clai
     status,
     createdAt: meta.created_at ? new Date(`${meta.created_at}T00:00:00Z`).toISOString() : new Date(0).toISOString(),
     ...(meta.decided_at ? { decidedAt: meta.decided_at } : {}),
+    ...(meta.opportunity_id ? { opportunityId: meta.opportunity_id } : {}),
   }
 }
 

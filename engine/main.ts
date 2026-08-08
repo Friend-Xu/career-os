@@ -27,7 +27,7 @@ import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
 import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
-import { buildBridgeContext, submitOpportunityProposal, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
+import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
 import { readFileSync } from 'node:fs'
 
 async function main(args: string[]): Promise<void> {
@@ -129,6 +129,26 @@ async function main(args: string[]): Promise<void> {
       if (!file) throw new Error('--opportunity-submit 需要 {json文件}')
       const input = JSON.parse(readFileSync(file, 'utf8')) as OpportunityProposalInput
       console.log(JSON.stringify(submitOpportunityProposal(ws, input), null, 2))
+      return
+    }
+
+    // ─── Claim Bridge（--claim-bridge-context {opportunityId} {wcId} {evidenceIds} / --claim-bridge-submit {file}）：
+    //      P5.3 Agent 消费通道（与 opportunity Bridge 同模式——Agent 构造 statement，Engine 装配校验 + P1.1 登记）
+    if (args.includes('--claim-bridge-context')) {
+      const idx = args.indexOf('--claim-bridge-context')
+      const opportunityId = args[idx + 1]
+      const wcId = args[idx + 2]
+      const evidenceIds = (args[idx + 3] ?? '').split(',').filter(Boolean)
+      if (!opportunityId || !wcId) throw new Error('--claim-bridge-context 需要 {opportunityId} {wcId} {evidenceIds(逗号分隔)}')
+      console.log(JSON.stringify(buildClaimBridgeContext(ws, wcId, opportunityId, evidenceIds), null, 2))
+      return
+    }
+    if (args.includes('--claim-bridge-submit')) {
+      const idx = args.indexOf('--claim-bridge-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--claim-bridge-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as Parameters<typeof submitClaimBridge>[1]
+      console.log(JSON.stringify(submitClaimBridge(ws, input), null, 2))
       return
     }
 

@@ -79,9 +79,12 @@ import {
 import {
   approveOpportunityProposal,
   applyOpportunityProposal,
+  bindClaimToBlock,
   buildBridgeContext,
+  buildClaimBridgeContext,
   rejectOpportunityProposal,
   scanOpportunityProposals,
+  submitClaimBridge,
   submitOpportunityProposal,
 } from '../storage/opportunity-proposal-registry.ts'
 import {
@@ -1529,6 +1532,40 @@ export async function startServer(opts: {
       const result = applyOpportunityProposal(workspace, jobIdParams(params))
       if (result.status === 'applied') {
         // 不变量 3：apply 后重新诊断——信号通知客户端重拉机会投影（闭环）
+        broadcast({ event: EVENTS.workingCopiesChanged })
+        broadcast({ event: EVENTS.opportunitiesChanged })
+      }
+      return result
+    },
+    [METHODS.claimBridgeContext]: (params) => {
+      const p = params as Record<string, unknown>
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const opportunityId = typeof p?.opportunityId === 'string' ? p.opportunityId : ''
+      const evidenceIds = Array.isArray(p?.evidenceIds) ? p.evidenceIds.filter((x): x is string => typeof x === 'string') : []
+      if (!wcId || !opportunityId) throw new Error('opportunityId/wcId 必填')
+      return buildClaimBridgeContext(workspace, wcId, opportunityId, evidenceIds)
+    },
+    [METHODS.claimBridgeSubmit]: (params) => {
+      const p = params as Record<string, unknown>
+      const opportunityId = typeof p?.opportunityId === 'string' ? p.opportunityId : ''
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const evidenceCandidates = Array.isArray(p?.evidenceCandidates) ? p.evidenceCandidates.filter((x): x is string => typeof x === 'string') : []
+      const statement = typeof p?.statement === 'string' ? p.statement : ''
+      const explanation = typeof p?.explanation === 'string' ? p.explanation : ''
+      if (!opportunityId || !wcId) throw new Error('opportunityId/wcId 必填')
+      const proposal = submitClaimBridge(workspace, { opportunityId, wcId, evidenceCandidates, statement, explanation })
+      broadcast({ event: EVENTS.claimProposalsChanged })
+      return proposal
+    },
+    [METHODS.claimBind]: (params) => {
+      const p = params as Record<string, unknown>
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const blockId = typeof p?.blockId === 'string' ? p.blockId : ''
+      const claimId = typeof p?.claimId === 'string' ? p.claimId : ''
+      if (!wcId || !blockId || !claimId) throw new Error('wcId/blockId/claimId 必填')
+      const result = bindClaimToBlock(workspace, wcId, blockId, claimId)
+      if (result.status === 'bound') {
+        // 绑定后重诊断：块有 claim 锚 → covered（resolved 达成）——信号通知客户端重拉
         broadcast({ event: EVENTS.workingCopiesChanged })
         broadcast({ event: EVENTS.opportunitiesChanged })
       }

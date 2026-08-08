@@ -427,6 +427,27 @@ export class EngineClient {
     return this.rpc(METHODS.opportunityProposalApply, { id })
   }
 
+  /** Claim Bridge 提交（P5.3：装配校验 + P1.1 登记 pending——Agent 构造 statement 后的登记通道） */
+  claimBridgeSubmit(params: {
+    opportunityId: string
+    wcId: string
+    evidenceCandidates: string[]
+    statement: string
+    explanation: string
+  }): Promise<ClaimProposal> {
+    return this.rpc<ClaimProposal>(METHODS.claimBridgeSubmit, params)
+  }
+
+  /** 绑定 Claim 到工作副本块（P5.3：Claim 创建 ≠ 自动绑定成功；conflict 可重试；幂等） */
+  claimBind(wcId: string, blockId: string, claimId: string): Promise<{
+    status: 'bound' | 'conflict' | 'failed'
+    claimId: string
+    wcRevisionBefore: number
+    wcRevisionAfter?: number
+  }> {
+    return this.rpc(METHODS.claimBind, { wcId, blockId, claimId })
+  }
+
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */
   listResumes(): Promise<ResumeDocument[]> {
     return this.rpc<ResumeDocument[]>(METHODS.listResumes)

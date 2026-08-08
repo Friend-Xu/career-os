@@ -175,6 +175,16 @@ export const METHODS = {
   /** 应用机会 Proposal（params: { id } → ApplyResult：applied/conflict——P3.4：approved 后事务执行；
    *  revision check 快照漂移 → conflict（正常协作冲突非错误）；应用后 revision+1 + 广播 workingCopiesChanged + opportunitiesChanged） */
   opportunityProposalApply: 'opportunity-proposals/apply',
+  /** Claim Bridge 上下文（params: { opportunityId, wcId, evidenceIds[] } → ClaimBridgeContext——P5.3：
+   *  责任语句 + 候选证据详情，Agent 构造 statement 的消费结构；activation 校验 = 红线型 unsupported_claim） */
+  claimBridgeContext: 'claim-bridge/context',
+  /** Claim Bridge 提交（params: { opportunityId, wcId, evidenceCandidates[], statement, explanation } → ClaimProposal——
+   *  P5.3：装配校验（无证据不资产化/expectationId 复用）+ P1.1 createClaimProposal 登记 pending） */
+  claimBridgeSubmit: 'claim-bridge/submit',
+  /** 绑定 Claim 到工作副本块（params: { wcId, blockId, claimId } → BindClaimResult——P5.3：
+   *  Claim 创建 ≠ 自动绑定成功（两生命周期不构成假原子）；conflict 不撤销 Claim 可重试；幂等不重复 +1；
+   *  绑定后广播 workingCopiesChanged + opportunitiesChanged（重诊断 covered——resolved 达成）） */
+  claimBind: 'claim-bind',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
