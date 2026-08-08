@@ -5,8 +5,7 @@
  * - 历史：引擎版本列表（状态色/目标岗位/派生链/validation/claims 数——Artifact 语义）
  * - 素材：资产概览（Claims/Evidence/Exports 计数——CareerContext 投影）
  */
-import { Box, IconButton, Stack, Typography } from '@mui/material'
-import DeleteIcon from '@mui/icons-material/Delete'
+import { Box, Stack, Typography } from '@mui/material'
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
@@ -14,7 +13,6 @@ import HistoryIcon from '@mui/icons-material/History'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
-import { useToastStore } from '../../../store/toast-store'
 import { COLORS, RISK_COLOR } from '../../../data/constants'
 import { resumeVersionLabel } from '../../../utils/resume-label'
 import type { ResumeWorkspaceView } from '../../../store/app-store'
@@ -43,10 +41,9 @@ const SPACES: { key: ResumeWorkspaceView; label: string; desc: string; icon: Rea
 
 export function ResumesSidebar() {
   const person = useAppStore((s) => s.currentPerson())
-  const resumes = useAppStore((s) => s.resumes)
-  const activeResumeId = useAppStore((s) => s.activeResumeId)
-  const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
-  const deleteResumeVersion = useAppStore((s) => s.deleteResumeVersion)
+  const workingCopies = useAppStore((s) => s.workingCopies)
+  const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
+  const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
   const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
   const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const selectResume = useAppStore((s) => s.selectResume)
@@ -54,13 +51,8 @@ export function ResumesSidebar() {
   const resumeVersions = useAppStore((s) => s.resumeVersions)
   const jobs = useAppStore((s) => s.jobs)
   const careerContext = useAppStore((s) => s.careerContext)
-  const push = useToastStore((s) => s.push)
 
-  const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
-  const sortedDrafts = useMemo(
-    () => [...personResumes].sort((a, b) => Number(b.name.includes('原始简历')) - Number(a.name.includes('原始简历'))),
-    [personResumes],
-  )
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
   const versions = useMemo(() => [...resumeVersions].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt)), [resumeVersions])
   const claimsOf = (id: string): number => {
     const v = resumeVersions.find((r) => r.id === id)
@@ -110,38 +102,37 @@ export function ResumesSidebar() {
         )
       })}
 
-      {/* ── 编辑：草稿列表（Unbound Draft——可编辑可导出，不参与溯源投影）── */}
+      {/* ── 编辑：工作副本列表（P2.3——用户创作对象，unbound 合法）── */}
       {resumeWorkspaceView === 'edit' && (
         <>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5, px: 1 }}>
             <DescriptionOutlinedIcon sx={{ fontSize: 14, color: COLORS.textMuted }} />
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>草稿</Typography>
-            <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>{personResumes.length}</Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>工作副本</Typography>
+            <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>{personWorkingCopies.length}</Typography>
           </Stack>
-          {sortedDrafts.length === 0 ? (
+          {personWorkingCopies.length === 0 ? (
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
-              暂无草稿——编辑产物是普通草稿（未资产化，不进入版本空间）
+              暂无工作副本——从现有简历初始化，或 AI 生成后自动登记
             </Typography>
           ) : (
-            sortedDrafts.map((r) => {
-              const active = r.id === activeResumeId
-              const target = [r.targetPosition, r.targetCompany].filter(Boolean).join(' · ')
+            personWorkingCopies.map((w) => {
+              const active = w.id === activeWorkingCopyId
+              const boundBlocks = w.sections.reduce((n, s) => n + s.blocks.filter((b) => b.provenanceLinks && b.provenanceLinks.length > 0).length, 0)
+              const totalBlocks = w.sections.reduce((n, s) => n + s.blocks.length, 0)
               return (
-                <Stack key={r.id} onClick={() => setActiveResumeId(r.id)} sx={{ mb: 0.5, px: 1.25, py: 1, borderRadius: '8px', cursor: 'pointer', border: `1px solid ${active ? COLORS.accent : COLORS.border}`, bgcolor: active ? COLORS.accentMuted : COLORS.bg, '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover }, '&:hover .card-delete': { opacity: 1 } }}>
+                <Stack key={w.id} onClick={() => setActiveWorkingCopy(w.id)} sx={{ mb: 0.5, px: 1.25, py: 1, borderRadius: '8px', cursor: 'pointer', border: `1px solid ${active ? COLORS.accent : COLORS.border}`, bgcolor: active ? COLORS.accentMuted : COLORS.bg, '&:hover': { bgcolor: active ? COLORS.accentMuted : COLORS.bgHover } }}>
                   <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                     <Typography sx={{ fontSize: 12.5, fontWeight: active ? 600 : 500, color: active ? COLORS.accent : COLORS.text, flex: 1, minWidth: 0 }} noWrap>
-                      {r.name}
+                      {w.id.slice(-10)}
                     </Typography>
-                    <Box className="card-delete" onClick={(e) => e.stopPropagation()} sx={{ opacity: 0, flexShrink: 0 }}>
-                      <IconButton size="small" title="删除草稿" onClick={() => { if (!window.confirm(`删除草稿「${r.name}」？不可恢复。`)) return; deleteResumeVersion(r.id); push('info', `已删除草稿：${r.name}`) }} sx={{ p: 0.25 }}>
-                        <DeleteIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
-                      </IconButton>
-                    </Box>
+                    <Typography sx={{ fontSize: 11, color: w.status === 'promoted' ? COLORS.textMuted : COLORS.accent, flexShrink: 0 }}>
+                      {w.status === 'promoted' ? '已发布' : '编辑中'}
+                    </Typography>
                   </Stack>
                   <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
-                    {r.updatedAt.slice(5)}
-                    {target ? ` · ${target}` : ''}
-                    {' · 未资产化'}
+                    {w.updatedAt.slice(5, 16).replace('T', ' ')}
+                    {' · '}
+                    {boundBlocks === totalBlocks && totalBlocks > 0 ? `${totalBlocks} 行均有来源` : `${boundBlocks}/${totalBlocks} 行有来源`}
                   </Typography>
                 </Stack>
               )

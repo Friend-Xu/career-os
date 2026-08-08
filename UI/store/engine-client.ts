@@ -32,7 +32,9 @@ import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-cover
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
+import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ExtractionResult } from '../../engine/runtime/document/pdf-import.ts'
 import type { PortfolioProject, PortfolioProposal, PortfolioStatus } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engine/ir/interview.ts'
@@ -376,6 +378,21 @@ export class EngineClient {
   /** 拒绝 Claim 提案（P1.1：单向不 reopen，审计保留） */
   rejectClaimProposal(id: string, reason?: string): Promise<ClaimProposal> {
     return this.rpc<ClaimProposal>(METHODS.claimProposalReject, { id, ...(reason && reason.trim() ? { reason } : {}) })
+  }
+
+  /** 全量工作副本（P2.2：resumes/working-copies/ 扫描——用户创作对象） */
+  listWorkingCopies(): Promise<WorkingCopy[]> {
+    return this.rpc<WorkingCopy[]>(METHODS.workingCopyList)
+  }
+
+  /** 工作副本 upsert（P2.2：revision 协商——engine > local → conflict 询问合并） */
+  upsertWorkingCopy(input: WorkingCopyInput): Promise<{ status: 'ok' | 'conflict' | 'created'; copy: WorkingCopy }> {
+    return this.rpc<{ status: 'ok' | 'conflict' | 'created'; copy: WorkingCopy }>(METHODS.workingCopyUpsert, input)
+  }
+
+  /** 创建版本（P2.2：promote → ResumeDocument Candidate——unbound 段 warning 不阻止） */
+  promoteWorkingCopy(id: string): Promise<ResumeDocument> {
+    return this.rpc<ResumeDocument>(METHODS.workingCopyPromote, { id })
   }
 
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */

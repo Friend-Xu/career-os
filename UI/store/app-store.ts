@@ -32,7 +32,9 @@ import {
 } from '../data/mock-data'
 import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
+import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
+import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
@@ -178,6 +180,10 @@ interface AppState {
   claims: (CareerClaim & { usable: boolean })[];
   /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
   claimProposals: ClaimProposal[];
+  /** 工作副本（ADR-023 P2.2）：resumes/working-copies/ 引擎实时派生（用户创作对象——编辑空间数据源） */
+  workingCopies: WorkingCopy[];
+  /** 当前编辑对象（P2.3：编辑空间读写的工作副本 id） */
+  activeWorkingCopyId: string | null;
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
   claimCoverage: Record<string, ClaimCoverageRow[]>;
   /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
@@ -390,6 +396,12 @@ interface AppState {
   approveClaimProposal: (id: string) => Promise<{ claimId: string }>;
   /** 拒绝 Claim 提案（P1.1：丢弃，审计保留） */
   rejectClaimProposal: (id: string) => Promise<ClaimProposal>;
+  /** 工作副本 upsert（P2.3：revision 协商——conflict 抛错，调用方提示合并） */
+  upsertWorkingCopy: (input: WorkingCopyInput) => Promise<void>;
+  /** 创建版本（P2.3：promote → ResumeDocument Candidate） */
+  promoteWorkingCopy: (id: string) => Promise<ResumeDocument>;
+  /** 切换当前编辑对象（P2.3） */
+  setActiveWorkingCopy: (id: string | null) => void;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -454,6 +466,9 @@ export const useAppStore = create<AppState>()(
       claims: [],
       /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
       claimProposals: [],
+      /** 工作副本（P2.2）：用户创作对象（working-copies/） */
+      workingCopies: [],
+      activeWorkingCopyId: null,
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
       claimCoverage: {},
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
@@ -1211,6 +1226,30 @@ export const useAppStore = create<AppState>()(
     void pullClaimProposals()
     return p
   },
+
+  /** 工作副本 upsert（P2.3：revision 协商——conflict 抛错，UI 提示「内容已在其他端更新」） */
+  upsertWorkingCopy: async (input) => {
+    if (!engine) throw new Error('引擎未连接')
+    const result = await engine.upsertWorkingCopy(input)
+    if (result.status === 'conflict') {
+      throw new Error('内容已在其他端更新，请刷新后重试')
+    }
+    useAppStore.setState((s) => ({
+      workingCopies: s.workingCopies.map((w) => (w.id === result.copy.id ? result.copy : w)),
+    }))
+  },
+
+  /** 创建版本（P2.3：promote → 版本空间可见） */
+  promoteWorkingCopy: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    const doc = await engine.promoteWorkingCopy(id)
+    void pullWorkingCopies()
+    void pullResumes()
+    void pullCareerContext()
+    return doc
+  },
+
+  setActiveWorkingCopy: (id) => set({ activeWorkingCopyId: id }),
 
   /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */
   acceptPortfolioProposal: async (id, reason) => {
@@ -2059,6 +2098,17 @@ async function pullClaimProposals(): Promise<void> {
   }
 }
 
+/** 工作副本（P2.2）：working-copies/list 全量拉取；workingCopiesChanged 事件驱动重拉 */
+async function pullWorkingCopies(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listWorkingCopies()
+    useAppStore.setState({ workingCopies: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 简历版本（M3.5）：resumes/list 全量拉取；resumesChanged 事件驱动重拉 */
 async function pullResumes(): Promise<void> {
   if (!engine) return
@@ -2303,6 +2353,7 @@ export function connectEngine(): void {
       void pullEvidence()
       void pullClaims()
       void pullClaimProposals()
+      void pullWorkingCopies()
       void pullResumes()
       void pullCareerContext()
       void pullProposals()
@@ -2341,6 +2392,10 @@ export function connectEngine(): void {
     useAppStore.setState({ claimCoverage: {} })
   })
   engine.on(EVENTS.claimProposalsChanged, () => void pullClaimProposals())
+  engine.on(EVENTS.workingCopiesChanged, () => {
+    void pullWorkingCopies()
+    void pullResumes() // promote 可能产生版本
+  })
   engine.on(EVENTS.resumesChanged, () => {
     void pullResumes()
     void pullCareerContext() // 版本变化影响 Context 投影

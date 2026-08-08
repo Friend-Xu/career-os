@@ -14,25 +14,29 @@ import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { alpha, COLORS } from '../../data/constants'
 import { computeResumeQuality } from '../../utils/resume-quality'
+import { sectionsToModules } from '../../utils/resume-working-copy'
 
 export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
   const person = useAppStore((s) => s.currentPerson())
-  const resumes = useAppStore((s) => s.resumes)
-  const activeResumeId = useAppStore((s) => s.activeResumeId)
+  const workingCopies = useAppStore((s) => s.workingCopies)
+  const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
   const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
+  const jobs = useAppStore((s) => s.jobs)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
 
-  const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
-  const current = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
+  // P2.3：当前编辑对象 = 工作副本（引擎侧创作对象）
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
+  const current = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
 
   // 已有数据投影（不新增计算）：质量规则 / 引擎计数
-  const quality = current ? computeResumeQuality(current.modules) : null
+  const quality = current ? computeResumeQuality(sectionsToModules(current.sections)) : null
   const evidenceCount = evidenceItems.filter((e) => e.lifecycle !== 'legacy').length
   const claimCount = careerContext?.claims.length ?? 0
-  const target = current ? [current.targetPosition, current.targetCompany].filter(Boolean).join(' · ') : ''
+  const targetJob = current?.targetContext?.jobId ? jobs.find((j) => j.id === current.targetContext?.jobId) : undefined
+  const target = targetJob ? `${targetJob.company} · ${targetJob.title}` : ''
 
   if (!current) {
     return (
@@ -95,7 +99,7 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
             <DescriptionOutlinedIcon sx={{ fontSize: 16, color: COLORS.accent }} />
             <Typography sx={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
-              {current.name}
+              {current.id.slice(-10)}
             </Typography>
             {target && (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }} noWrap>
@@ -123,7 +127,7 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.25, mb: 1.5 }}>
           {[
             { label: '内容完整度', value: `${quality}%`, hint: '结构完整 · 含量化指标 · 无明显空泛表述（表达诊断，非评分结论）' },
-            { label: '目标岗位', value: current.targetPosition || '未绑定', hint: target || '未绑定岗位——可基于 JD 派生建立关联' },
+            { label: '目标岗位', value: targetJob?.title || '未绑定', hint: target || '未绑定岗位——可基于 JD 派生建立关联' },
             { label: '可用经历', value: `${evidenceCount} 条`, hint: '已登记的事实资产（有效）——简历内容的证据来源' },
             { label: '已有表达', value: `${claimCount} 条`, hint: '表达 = 已整理为简历可用内容的职业经历描述' },
           ].map((k) => (

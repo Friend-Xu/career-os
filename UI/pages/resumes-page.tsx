@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
+import SaveAltIcon from '@mui/icons-material/SaveAlt'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CloseIcon from '@mui/icons-material/Close'
 import UndoIcon from '@mui/icons-material/Undo'
@@ -20,6 +21,7 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
+import { modulesToSections, sectionsToModules } from '../utils/resume-working-copy'
 import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
@@ -83,8 +85,6 @@ export function ResumesPage() {
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
   const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
-  const activeResumeId = useAppStore((s) => s.activeResumeId)
-  const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const engineStatus = useAppStore((s) => s.engineStatus)
   const rewrite = useAppStore((s) => s.rewrite)
   const startRewrite = useAppStore((s) => s.startRewrite)
@@ -92,16 +92,41 @@ export function ResumesPage() {
   const resetRewrite = useAppStore((s) => s.resetRewrite)
   const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
   const resumes = useAppStore((s) => s.resumes)
-  const updateResumeModules = useAppStore((s) => s.updateResumeModules)
+  const workingCopies = useAppStore((s) => s.workingCopies)
+  const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
+  const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
+  const upsertWorkingCopy = useAppStore((s) => s.upsertWorkingCopy)
+  const promoteWorkingCopy = useAppStore((s) => s.promoteWorkingCopy)
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
-  const resume = personResumes.find((r) => r.id === activeResumeId) ?? personResumes[0]
-  const [modules, setModules] = useState<ResumeModule[]>(resume?.modules ?? [])
-  /** 模块变更统一出口：本地 state（输入流畅）+ store 写回（切页不丢——修复编辑内容丢失） */
+  /** P2.3：编辑对象 = 工作副本（引擎侧用户创作对象）——localStorage 草稿降为初始化来源 */
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
+  const workingCopy = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
+  const resume = personResumes[0]
+  const [modules, setModules] = useState<ResumeModule[]>([])
+  /** P2.3：block 绑定保留（text → claim links——编辑重建 blocks 时合并，不丢锚） */
+  const linksByText = useRef<Map<string, string[]>>(new Map())
+
+  /** 模块变更统一出口：本地 state（输入流畅）+ 防抖 upsert 到引擎 working-copies（revision 协商） */
   const commitModules = (next: ResumeModule[]) => {
     setModules(next)
-    if (resume) updateResumeModules(resume.id, next)
+    if (workingCopy) {
+      // 重建 blocks 时按文本合并既有绑定（新行 unbound；已有行保留 provenanceLinks）
+      const sections = modulesToSections(next).map((s) => ({
+        ...s,
+        blocks: s.blocks.map((b) => {
+          const links = linksByText.current.get(b.text)
+          return links ? { ...b, provenanceLinks: links } : b
+        }),
+      }))
+      void upsertWorkingCopy({
+        id: workingCopy.id,
+        owner: String(person.id),
+        sections,
+        revision: workingCopy.revision,
+      }).catch((e: unknown) => push('warning', e instanceof Error ? e.message : '保存失败'))
+    }
   }
   /** 选中状态 → 「✨ 改写」按钮位置（选区右下） */
   const [selButton, setSelButton] = useState<{
@@ -172,12 +197,12 @@ export function ResumesPage() {
     setFallbackOpen(false)
   }
 
-  // R001：切换简历（模块上下文变化）→ 清理浮层与进行中的改写请求
+  // R001：切换工作副本（模块上下文变化）→ 清理浮层与进行中的改写请求
   useEffect(() => {
     closeAll()
     invalidateRewrite()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeResumeId])
+  }, [activeWorkingCopyId])
 
   // 点击按钮/卡片之外 → 关闭改写浮层（非模态，不吞点击；R001 场景 B：关闭即取消请求）
   useEffect(() => {
@@ -192,23 +217,29 @@ export function ResumesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardOpen])
 
-  // 切人时：activeResumeId 不在当前人名下 → 回退到当前人第一份
+  // 切人时：activeWorkingCopyId 不在当前人名下 → 回退到当前人第一个工作副本
   useEffect(() => {
-    if (personResumes.length > 0 && !personResumes.some((r) => r.id === activeResumeId)) {
-      setActiveResumeId(personResumes[0].id)
+    if (personWorkingCopies.length > 0 && !personWorkingCopies.some((w) => w.id === activeWorkingCopyId)) {
+      setActiveWorkingCopy(personWorkingCopies[0].id)
     }
-  }, [person.id, personResumes, activeResumeId, setActiveResumeId])
+  }, [person.id, personWorkingCopies, activeWorkingCopyId, setActiveWorkingCopy])
 
-  // 版本切换由二级栏「版本 / 血缘」驱动（store），此处同步模块内容
+  // P2.3：工作副本切换 → 同步模块内容（sections → modules；编辑写回走 commitModules 防抖 upsert）
   useEffect(() => {
-    const r = personResumes.find((x) => x.id === activeResumeId)
-    if (r) {
-      setModules(r.modules.map((m) => ({ ...m })))
+    if (workingCopy) {
+      const map = new Map<string, string[]>()
+      for (const s of workingCopy.sections) {
+        for (const b of s.blocks) {
+          if (b.provenanceLinks && b.provenanceLinks.length > 0) map.set(b.text, b.provenanceLinks)
+        }
+      }
+      linksByText.current = map
+      setModules(sectionsToModules(workingCopy.sections))
       setRevert(null)
       closeAll()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeResumeId])
+  }, [activeWorkingCopyId])
 
   const qualityScore = useMemo(() => computeResumeQuality(modules), [modules])
   const qualityChecks = useMemo(() => computeQualityChecks(modules), [modules])
@@ -325,14 +356,16 @@ export function ResumesPage() {
   const usableClaims = useMemo(() => (careerContext?.claims ?? []).filter((c) => c.usable), [careerContext])
   const titleOfEvidence = (id: string) => evidenceItems.find((e) => e.id === id)?.event.title ?? id
   const isExperienceModule = (title: string) => /工作经历|项目经验|项目经历|实习经历/.test(title)
-  /** 用户主动应用：Claim → Working Copy 插入（不自动插入——User apply 边界） */
+  /** 用户主动应用：Claim → Working Copy 插入（不自动插入——User apply 边界；插入行带 claim 锚） */
   const insertClaim = (claimId: string) => {
     if (!assetOpen) return
     const claim = usableClaims.find((c) => c.id === claimId)
     if (!claim) return
+    const line = `- ${claim.statement}`
+    linksByText.current.set(line, [claimId])
     commitModules(
       modules.map((m) =>
-        m.id === assetOpen ? { ...m, content: `${m.content}${m.content ? '\n' : ''}- ${claim.statement}` } : m,
+        m.id === assetOpen ? { ...m, content: `${m.content}${m.content ? '\n' : ''}${line}` } : m,
       ),
     )
     setAssetOpen(null)
@@ -372,29 +405,48 @@ export function ResumesPage() {
       )}
 
       {resumeWorkspaceView === 'edit' && (
-        !resume ? (
+        !workingCopy ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
           <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
-            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>「{person.name}」暂无简历</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>「{person.name}」暂无工作副本</Typography>
             <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted }}>
-              从 AI 面板发起首个简历生成，或使用「基于 JD 派生」定制版本
+              从现有简历初始化创作对象，或从 AI 面板发起首个简历生成
             </Typography>
-            <Button
-              size="small"
-              variant="contained"
-              disabled={person.initStatus === 'pending'}
-              title={person.initStatus === 'pending' ? '完成基础档案后可生成简历' : undefined}
-              onClick={() => {
-                startAnalysis(`请为「${person.name}」生成简历：基于画像模块化输出，含量化指标与方向关键词`, {
-                  taskType: 'resume_generation',
-                  outputTarget: 'artifact',
-                })
-                push('info', '已预置「生成简历」上下文')
-              }}
-              sx={{ fontSize: 12.5 }}
-            >
-              生成简历
-            </Button>
+            <Stack direction="row" spacing={1}>
+              {resume && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={async () => {
+                    try {
+                      await upsertWorkingCopy({ owner: String(person.id), sections: modulesToSections(resume.modules.map((m, i) => ({ ...m, order: i }))), revision: 0 })
+                      push('success', '已创建工作副本（内容来自现有简历）')
+                    } catch (e) {
+                      push('warning', e instanceof Error ? e.message : '创建工作副本失败')
+                    }
+                  }}
+                  sx={{ fontSize: 12.5 }}
+                >
+                  从现有简历初始化
+                </Button>
+              )}
+              <Button
+                size="small"
+                variant={resume ? 'outlined' : 'contained'}
+                disabled={person.initStatus === 'pending'}
+                title={person.initStatus === 'pending' ? '完成基础档案后可生成简历' : undefined}
+                onClick={() => {
+                  startAnalysis(`请为「${person.name}」生成简历：基于画像模块化输出，含量化指标与方向关键词`, {
+                    taskType: 'resume_generation',
+                    outputTarget: 'artifact',
+                  })
+                  push('info', '已预置「生成简历」上下文')
+                }}
+                sx={{ fontSize: 12.5 }}
+              >
+                生成简历
+              </Button>
+            </Stack>
           </Stack>
         </Box>
       ) : (
@@ -415,6 +467,22 @@ export function ResumesPage() {
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, flex: 1 }}>
               编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
             </Typography>
+            <Button
+              size="small"
+              startIcon={<SaveAltIcon sx={{ fontSize: 14 }} />}
+              onClick={async () => {
+                if (!workingCopy) return
+                try {
+                  const doc = await promoteWorkingCopy(workingCopy.id)
+                  push('success', `已创建版本 ${doc.id.slice(-6)}（未资产化内容已标注，可查看历史空间）`)
+                } catch (e) {
+                  push('warning', e instanceof Error ? e.message : '创建版本失败')
+                }
+              }}
+              sx={{ fontSize: 12 }}
+            >
+              创建版本
+            </Button>
             <Button size="small" startIcon={<FileDownloadIcon sx={{ fontSize: 14 }} />} onClick={exportPdf} sx={{ fontSize: 12 }}>
               导出 PDF
             </Button>
@@ -482,6 +550,21 @@ export function ResumesPage() {
                     {idx + 1}
                   </Typography>
                   <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{m.title}</Typography>
+                  {(() => {
+                    const sec = workingCopy?.sections.find((x) => x.id === m.id)
+                    const bound = sec?.blocks.filter((b) => b.provenanceLinks && b.provenanceLinks.length > 0).length ?? 0
+                    const total = sec?.blocks.length ?? 0
+                    if (!sec || total === 0) return null
+                    const all = bound === total
+                    return (
+                      <Typography
+                        sx={{ fontSize: 10.5, flexShrink: 0, mr: 0.5, color: all ? COLORS.riskLow : bound > 0 ? COLORS.riskMedium : COLORS.textMuted }}
+                        title={all ? '内容均有事实来源' : '部分内容尚未关联证明材料——可先确认素材空间的待确认表达'}
+                      >
+                        {all ? '✓ 有事实来源' : bound > 0 ? `△ ${bound}/${total} 有来源` : '⚠ 未关联证明材料'}
+                      </Typography>
+                    )
+                  })()}
                   {isExperienceModule(m.title) && usableClaims.length > 0 && (
                     <Button
                       size="small"
