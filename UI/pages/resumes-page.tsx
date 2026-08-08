@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
   IconButton,
   Stack,
   TextField,
@@ -21,7 +22,7 @@ import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
 import { ResumeDashboard } from '../components/resume/ResumeDashboard'
 import { ResumeOptimizeEmpty } from '../components/resume/ResumeOptimizeEmpty'
-import { computeResumeQuality } from '../utils/resume-quality'
+import { computeResumeQuality, computeQualityChecks } from '../utils/resume-quality'
 
 /** 改写策略模板：候选基于选中原文生成（离线降级，规则驱动而非真实 LLM）。 */
 const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
@@ -108,6 +109,8 @@ export function ResumesPage() {
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
   const [deriveOpen, setDeriveOpen] = useState(false)
+  /** R1：表达检查清单展开态（质量条「查看详情」——逐项诊断非评分结论） */
+  const [showChecks, setShowChecks] = useState(false)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const btnRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
@@ -173,6 +176,7 @@ export function ResumesPage() {
   }, [activeResumeId])
 
   const qualityScore = useMemo(() => computeResumeQuality(modules), [modules])
+  const qualityChecks = useMemo(() => computeQualityChecks(modules), [modules])
 
   /** 划词/键盘选中 → 显示「✨ 改写」按钮（选区右下，不直接弹候选）。 */
   const onSelect = (el: HTMLTextAreaElement, moduleId: string) => {
@@ -575,7 +579,7 @@ export function ResumesPage() {
         </Box>
       </Box>
 
-      {/* Quality bar */}
+      {/* Quality bar（R1：质量条 + 展开式表达检查清单——逐项诊断，非评分结论） */}
       <Stack
         direction="row"
         spacing={2}
@@ -612,7 +616,40 @@ export function ResumesPage() {
         <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
           含量化指标 · 模块完整 · 无明显空泛表述
         </Typography>
+        <Button
+          size="small"
+          onClick={() => setShowChecks((v) => !v)}
+          sx={{ fontSize: 12, color: COLORS.accent, minWidth: 0, px: 1 }}
+        >
+          {showChecks ? '收起详情' : '查看详情'}
+        </Button>
       </Stack>
+      <Collapse in={showChecks}>
+        <Box sx={{ px: 2, py: 1.25, borderTop: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+          <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.75, letterSpacing: '0.04em' }}>
+            表达检查（逐项诊断——不构成评分结论）
+          </Typography>
+          <Stack spacing={0.5}>
+            {qualityChecks.map((c) => {
+              const color =
+                c.status === 'ok' ? COLORS.riskLow : c.status === 'partial' ? COLORS.riskMedium : COLORS.riskHigh
+              const icon = c.status === 'ok' ? '✓' : c.status === 'partial' ? '△' : '✕'
+              return (
+                <Stack key={c.category} direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
+                  <Typography
+                    sx={{ fontSize: 12, color, flexShrink: 0, fontFamily: COLORS.mono, minWidth: 84 }}
+                  >
+                    {icon} {c.label}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.5, flex: 1 }}>
+                    {c.hint}
+                  </Typography>
+                </Stack>
+              )
+            })}
+          </Stack>
+        </Box>
+      </Collapse>
         </>
         )
       )}
