@@ -78,6 +78,7 @@ import {
 } from '../storage/claim-proposal-registry.ts'
 import {
   approveOpportunityProposal,
+  applyOpportunityProposal,
   buildBridgeContext,
   rejectOpportunityProposal,
   scanOpportunityProposals,
@@ -1523,6 +1524,15 @@ export async function startServer(opts: {
       const proposal = rejectOpportunityProposal(workspace, jobIdParams(params), typeof p?.reason === 'string' ? p.reason : undefined)
       broadcast({ event: EVENTS.opportunityProposalsChanged })
       return proposal
+    },
+    [METHODS.opportunityProposalApply]: (params) => {
+      const result = applyOpportunityProposal(workspace, jobIdParams(params))
+      if (result.status === 'applied') {
+        // 不变量 3：apply 后重新诊断——信号通知客户端重拉机会投影（闭环）
+        broadcast({ event: EVENTS.workingCopiesChanged })
+        broadcast({ event: EVENTS.opportunitiesChanged })
+      }
+      return result
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
       ...r.record,

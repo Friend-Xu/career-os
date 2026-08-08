@@ -16,7 +16,7 @@ import { nextArtifactId, splitFrontmatter, type ArtifactSpec } from './artifact-
 import { scanEvidence } from './evidence-watcher.ts'
 import { scanJobs } from './job-watcher.ts'
 import { scanClaims } from './claim-watcher.ts'
-import { scanWorkingCopies, workingCopyToDocument } from './working-copy-registry.ts'
+import { scanWorkingCopies, workingCopyToDocument, serializeWorkingCopy } from './working-copy-registry.ts'
 import { anchorCheck, evidenceText } from './claim-proposal-registry.ts'
 import { computeOpportunities, type Opportunity } from '../runtime/opportunity.ts'
 
@@ -31,7 +31,8 @@ export const OPPORTUNITY_PROPOSAL_SPEC: ArtifactSpec = {
 export type OpportunityProposalStatus = 'pending' | 'approved' | 'rejected'
 
 export interface ProposalChange {
-  blockId?: string // rewrite/delete = 目标块；insert 缺省（追加到编辑上下文段）
+  blockId?: string // rewrite/delete = 目标块；insert 缺省
+  sectionId?: string // insert 定位口（契约 ApplyTransaction §2——Agent 可提供；v0.1 缺省 = 引擎默认段）
   before: string
   after: string
   operation: 'rewrite' | 'insert' | 'delete'
@@ -250,6 +251,7 @@ function serializeOpportunityProposal(p: OpportunityProposal): string {
     parts.push(
       `## 变更 ${i + 1}\n\n| 字段 | 值 |\n|------|-----|\n` +
         `| block_id | ${c.blockId ?? ''} |\n` +
+        `| section_id | ${c.sectionId ?? ''} |\n` +
         `| operation | ${c.operation} |\n` +
         `| before | ${c.before} |\n` +
         `| after | ${c.after} |\n`,
@@ -272,10 +274,11 @@ export function parseOpportunityProposalMarkdown(md: string, sourceFile: string)
   for (const m of body.matchAll(/##\s*变更 (\d+)([\s\S]*?)(?=\n##\s|$)/g)) {
     const section = m[2]
     const blockId = section.match(/\|\s*block_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
+    const sectionId = section.match(/\|\s*section_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
     const operation = section.match(/\|\s*operation\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() as ProposalChange['operation']
     const before = section.match(/\|\s*before\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
     const after = section.match(/\|\s*after\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
-    changes.push({ ...(blockId ? { blockId } : {}), before, after, operation })
+    changes.push({ ...(blockId ? { blockId } : {}), ...(sectionId ? { sectionId } : {}), before, after, operation })
   }
   return {
     id,
@@ -326,4 +329,190 @@ export function rejectOpportunityProposal(ws: Workspace, id: string, _reason?: s
   const proposal = parseOpportunityProposalMarkdown(ws.read(file), `${id}.md`)
   if (proposal.status !== 'pending') throw new OpportunityProposalError(`仅 pending 可 reject（当前 ${proposal.status}）`)
   return updateStatus(ws, id, 'rejected', now)
+}
+
+// ─── P3.4：ApplyTransaction（契约 apply-transaction-contract-v0.1，FROZEN）──
+
+export const APPLY_TX_SPEC: ArtifactSpec = {
+  type: 'apply_transaction',
+  dir: 'apply-transactions',
+  idPrefix: 'apply_tx_',
+  marker: /##\s*变更 1/,
+  passthroughFields: [],
+}
+
+export interface ApplyTransaction {
+  id: string
+  proposalId: string
+  wcId: string
+  beforeRevision: number
+  afterRevision: number
+  changes: ProposalChange[]
+  status: 'applied' | 'failed' | 'conflict'
+  createdAt: string
+  appliedAt?: string
+  conflict?: { reason: 'WORKING_COPY_CHANGED'; expectedRevision: number; currentRevision: number }
+}
+
+export type ApplyResult =
+  | { status: 'applied'; transactionId: string; newRevision: number }
+  | { status: 'conflict'; transactionId: string; reason: 'WORKING_COPY_CHANGED'; expectedRevision: number; currentRevision: number }
+
+/** 应用 changes（纯函数——构造新 sections；原子性靠一次写盘） */
+function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
+  const sections = wc.sections.map((s) => ({ ...s, blocks: [...s.blocks] }))
+  for (const c of changes) {
+    if (c.operation === 'rewrite' || c.operation === 'delete') {
+      const sec = sections.find((s) => s.blocks.some((b) => b.id === c.blockId))
+      if (!sec) throw new OpportunityProposalError(`${c.operation} 目标块不存在：${c.blockId}`)
+      if (c.operation === 'rewrite') {
+        const i = sec.blocks.findIndex((b) => b.id === c.blockId)
+        sec.blocks[i] = { ...sec.blocks[i], text: c.after }
+      } else {
+        sec.blocks = sec.blocks.filter((b) => b.id !== c.blockId)
+      }
+    } else if (c.operation === 'insert') {
+      const target = c.sectionId ? sections.find((s) => s.id === c.sectionId) : sections[0]
+      if (!target) throw new OpportunityProposalError(`insert 目标段不存在：${c.sectionId ?? '(默认段)'}`)
+      const maxSeq = target.blocks.reduce((m, b) => {
+        const n = /^blk_(\d+)$/.exec(b.id)
+        return n ? Math.max(m, Number(n[1])) : m
+      }, 0)
+      target.blocks.push({ id: `blk_${maxSeq + 1}`, text: c.after, provenanceLinks: [] })
+    }
+  }
+  return { ...wc, sections }
+}
+
+function registerTransaction(
+  ws: Workspace,
+  t: Omit<ApplyTransaction, 'id' | 'createdAt'>,
+  now: Date,
+): ApplyTransaction {
+  const tx: ApplyTransaction = { id: nextArtifactId(ws, APPLY_TX_SPEC, now), createdAt: now.toISOString(), ...t }
+  ws.write(`apply-transactions/${tx.id}.md`, serializeApplyTransaction(tx))
+  return tx
+}
+
+function serializeApplyTransaction(tx: ApplyTransaction): string {
+  const meta = [
+    `id: ${tx.id}`,
+    `created_at: ${tx.createdAt}`,
+    `proposal_id: ${tx.proposalId}`,
+    `wc_id: ${tx.wcId}`,
+    `before_revision: ${tx.beforeRevision}`,
+    `after_revision: ${tx.afterRevision}`,
+    `status: ${tx.status}`,
+    ...(tx.appliedAt ? [`applied_at: ${tx.appliedAt}`] : []),
+  ]
+  const parts = [
+    `---\n${meta.join('\n')}\n---`,
+    `# 应用事务：${tx.proposalId}`,
+    ...(tx.conflict
+      ? [`## 冲突信息\n\n- reason: ${tx.conflict.reason}\n- expected_revision: ${tx.conflict.expectedRevision}\n- current_revision: ${tx.conflict.currentRevision}`]
+      : []),
+  ]
+  tx.changes.forEach((c, i) => {
+    parts.push(
+      `## 变更 ${i + 1}\n\n| 字段 | 值 |\n|------|-----|\n` +
+        `| block_id | ${c.blockId ?? ''} |\n` +
+        `| section_id | ${c.sectionId ?? ''} |\n` +
+        `| operation | ${c.operation} |\n` +
+        `| before | ${c.before} |\n` +
+        `| after | ${c.after} |\n`,
+    )
+  })
+  return parts.join('\n\n')
+}
+
+/** 全量扫描（apply-transactions/ 目录） */
+export function scanApplyTransactions(ws: Workspace): ApplyTransaction[] {
+  if (!ws.exists('apply-transactions')) return []
+  return ws.listMarkdown('apply-transactions').sort().map((f) => parseApplyTransactionMarkdown(ws.read(`apply-transactions/${f}`), f))
+}
+
+export function parseApplyTransactionMarkdown(md: string, sourceFile: string): ApplyTransaction {
+  const { meta, body } = splitFrontmatter(md)
+  const id = meta.id ?? sourceFile.replace(/\.md$/, '')
+  const changes: ProposalChange[] = []
+  for (const m of body.matchAll(/##\s*变更 (\d+)([\s\S]*?)(?=\n##\s|$)/g)) {
+    const section = m[2]
+    const blockId = section.match(/\|\s*block_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
+    const sectionId = section.match(/\|\s*section_id\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim()
+    const operation = section.match(/\|\s*operation\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() as ProposalChange['operation']
+    const before = section.match(/\|\s*before\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
+    const after = section.match(/\|\s*after\s*\|\s*([^|]*)\s*\|/)?.[1]?.trim() ?? ''
+    changes.push({ ...(blockId ? { blockId } : {}), ...(sectionId ? { sectionId } : {}), before, after, operation })
+  }
+  return {
+    id,
+    proposalId: meta.proposal_id ?? '',
+    wcId: meta.wc_id ?? '',
+    beforeRevision: Number(meta.before_revision ?? 0),
+    afterRevision: Number(meta.after_revision ?? 0),
+    changes,
+    status: (meta.status as ApplyTransaction['status']) ?? 'failed',
+    createdAt: meta.created_at ?? '',
+    ...(meta.applied_at ? { appliedAt: meta.applied_at } : {}),
+    ...(body.includes('WORKING_COPY_CHANGED')
+      ? {
+          conflict: {
+            reason: 'WORKING_COPY_CHANGED' as const,
+            expectedRevision: Number(body.match(/expected_revision:\s*(\d+)/)?.[1] ?? 0),
+            currentRevision: Number(body.match(/current_revision:\s*(\d+)/)?.[1] ?? 0),
+          },
+        }
+      : {}),
+  }
+}
+
+/** apply：approved → revision check → 应用 changes（原子写盘）→ 事务登记 → revision+1。
+ *  conflict 是正常协作冲突不是失败（不抛错）——返回 expected/current 供 UI 提示重新分析 */
+export function applyOpportunityProposal(ws: Workspace, id: string, now: Date = new Date()): ApplyResult {
+  const file = `opportunity-proposals/${id}.md`
+  if (!ws.exists(file)) throw new OpportunityProposalError(`提案不存在：${id}`)
+  const proposal = parseOpportunityProposalMarkdown(ws.read(file), `${id}.md`)
+  if (proposal.status !== 'approved') throw new OpportunityProposalError(`仅 approved 可 apply（当前 ${proposal.status}）`)
+
+  const wc = scanWorkingCopies(ws).find((w) => w.id === proposal.wcId)
+  if (!wc) throw new OpportunityProposalError(`工作副本不存在：${proposal.wcId}`)
+
+  // 不变量 2：revision check——快照漂移 → conflict（不覆盖用户新内容）
+  const expected = proposal.validation.sourceSnapshot.wcRevision
+  if (expected !== wc.revision) {
+    const tx = registerTransaction(
+      ws,
+      {
+        proposalId: proposal.id,
+        wcId: wc.id,
+        beforeRevision: wc.revision,
+        afterRevision: wc.revision,
+        changes: proposal.changes,
+        status: 'conflict',
+        conflict: { reason: 'WORKING_COPY_CHANGED', expectedRevision: expected, currentRevision: wc.revision },
+      },
+      now,
+    )
+    return {
+      status: 'conflict',
+      transactionId: tx.id,
+      reason: 'WORKING_COPY_CHANGED',
+      expectedRevision: expected,
+      currentRevision: wc.revision,
+    }
+  }
+
+  // 不变量 1：apply 不重新生成——直接采用 Proposal.changes
+  const next = applyChanges(wc, proposal.changes)
+  const afterRevision = wc.revision + 1
+  ws.write(
+    `resumes/working-copies/${wc.id}.md`,
+    serializeWorkingCopy({ ...next, revision: afterRevision, updatedAt: now.toISOString() }),
+  )
+  const tx = registerTransaction(
+    ws,
+    { proposalId: proposal.id, wcId: wc.id, beforeRevision: wc.revision, afterRevision, changes: proposal.changes, status: 'applied', appliedAt: now.toISOString() },
+    now,
+  )
+  return { status: 'applied', transactionId: tx.id, newRevision: afterRevision }
 }

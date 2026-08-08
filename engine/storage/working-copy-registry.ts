@@ -81,7 +81,8 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
       if (claimsM) {
         current.blocks.push({ id: `blk_${current.blocks.length + 1}`, text: claimsM[1].trim(), provenanceLinks: claimsM[2].split(',').map((c) => c.trim()) })
       } else {
-        current.blocks.push({ id: `blk_${current.blocks.length + 1}`, text: raw })
+        // 契约 ApplyTransaction §2：不制造第三种 undefined 态——unbound 块显式 provenanceLinks = []
+        current.blocks.push({ id: `blk_${current.blocks.length + 1}`, text: raw, provenanceLinks: [] })
       }
     }
   }

@@ -172,6 +172,9 @@ export const METHODS = {
   opportunityProposalApprove: 'opportunity-proposals/approve',
   /** 拒绝机会 Proposal（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
   opportunityProposalReject: 'opportunity-proposals/reject',
+  /** 应用机会 Proposal（params: { id } → ApplyResult：applied/conflict——P3.4：approved 后事务执行；
+   *  revision check 快照漂移 → conflict（正常协作冲突非错误）；应用后 revision+1 + 广播 workingCopiesChanged + opportunitiesChanged） */
+  opportunityProposalApply: 'opportunity-proposals/apply',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
@@ -267,6 +270,9 @@ export const EVENTS = {
   claimProposalsChanged: 'data.claim-proposals.changed',
   /** opportunity-proposals/ 目录变更后推送（不含数据，客户端用 opportunity-proposals/list 拉快照；P3.3） */
   opportunityProposalsChanged: 'data.opportunity-proposals.changed',
+  /** 机会投影失效信号（P3.4 apply 后推送——客户端重拉 working-copies/opportunities；
+   *  事件语义独立于 workingCopiesChanged：未来 Opportunity 不只依赖 WC） */
+  opportunitiesChanged: 'data.opportunities.changed',
   /** resumes/working-copies/ 目录变更后推送（不含数据，客户端用 working-copies/list 拉快照；ADR-023 P2.2） */
   workingCopiesChanged: 'data.working-copies.changed',
   /** resumes/ 目录变更后推送（不含数据，客户端用 resumes/list 拉快照；M3.5） */

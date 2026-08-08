@@ -77,7 +77,8 @@ test('parse/serialize 往返：sections/blocks/claims 标注/lifecycle 完整', 
   assert.equal(parsed.sections[1]!.title, '工作经历')
   assert.equal(parsed.sections[1]!.blocks.length, 2)
   assert.deepEqual(parsed.sections[1]!.blocks[0]!.provenanceLinks, ['claim_20260808_00001'])
-  assert.equal(parsed.sections[1]!.blocks[1]!.provenanceLinks, undefined, 'unbound 块无 claims 标注')
+  // 契约 ApplyTransaction §2：不制造第三种 undefined 态——unbound 块显式 []
+  assert.deepEqual(parsed.sections[1]!.blocks[1]!.provenanceLinks, [], 'unbound 块显式空锚数组')
 })
 
 test('upsert：新建 → created + revision=1；push → revision+1', () => {
