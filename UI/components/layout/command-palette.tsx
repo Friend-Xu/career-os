@@ -37,7 +37,7 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase()
     const items: ResultItem[] = [
       { id: 'nav-wb', label: '工作台', group: '导航', page: 'workbench' },
-      { id: 'nav-agent', label: '决策 Agent', group: '导航', page: 'agent' },
+      { id: 'nav-agent', label: '决策助手', group: '导航', page: 'agent' },
       { id: 'nav-pool', label: '信息池', group: '导航', page: 'infopool' },
       { id: 'nav-jd', label: 'JD', group: '导航', page: 'jobs' },
       { id: 'nav-co', label: '公司探索', group: '导航', page: 'companies' },

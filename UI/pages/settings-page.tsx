@@ -63,7 +63,7 @@ export function SettingsPage() {
       await saveAgentSettings({
         documentVision: { model: docModel.trim() || 'glm-4.6v-flash', apiKey: docKey.trim() },
       })
-      push('success', docKey.trim() ? 'Document Extraction 已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
+      push('success', docKey.trim() ? '文档提取设置已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
     } catch (err) {
       push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -108,14 +108,14 @@ export function SettingsPage() {
   /** 工具授权：bypassPermissions = 全部自动放行；其余（ask/acceptEdits）= 逐个确认 */
   const autoApprove = permissionMode === 'bypassPermissions'
   const modeLabel = {
-    bypassPermissions: 'bypassPermissions —— 所有工具自动放行',
-    acceptEdits: 'acceptEdits —— 基础工具自动放行，其余逐个确认',
-    ask: 'ask —— 逐个确认',
-  }[permissionMode] ?? `unknown（${permissionMode}）`
+    bypassPermissions: '自动放行全部工具',
+    acceptEdits: '基础工具自动放行，其余逐个确认',
+    ask: '逐个确认',
+  }[permissionMode] ?? `未知模式（${permissionMode}）`
   const savePermissionMode = async (on: boolean) => {
     try {
       await saveAgentSettings({ permissionMode: on ? 'bypassPermissions' : 'ask' })
-      push('success', on ? '已开启自动授权（Agent 工具全部自动放行）' : '已关闭自动授权（工具调用需逐个确认）')
+      push('success', on ? '已开启自动授权（AI 工具全部自动放行）' : '已关闭自动授权（工具调用需逐个确认）')
     } catch (err) {
       push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -312,7 +312,7 @@ export function SettingsPage() {
             <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
                 <Typography sx={{ fontSize: 13 }}>流式输出</Typography>
-                <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>Agent 对话实时渲染</Typography>
+                <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>AI 对话实时渲染</Typography>
               </Box>
               <Switch defaultChecked size="small" />
             </Stack>
@@ -331,13 +331,13 @@ export function SettingsPage() {
         <Divider sx={{ my: 3 }} />
 
         {/* Agent 工具授权：工具调用权限模式（config.json agent.permissionMode；默认全部授权） */}
-        <Section title="Agent 工具授权">
+        <Section title="AI 工具授权">
           <Stack spacing={1.5}>
             <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
                 <Typography sx={{ fontSize: 13 }}>自动授权所有工具</Typography>
                 <Typography sx={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 440, lineHeight: 1.6 }}>
-                  开启后 Agent 调用工具（搜索 / 读文件 / 写文件 / 执行命令）不再逐个询问，方向探索等长任务更流畅。
+                  开启后 AI 助手调用工具（搜索 / 读文件 / 写文件 / 执行命令）不再逐个询问，方向探索等长任务更流畅。
                   关闭后每个工具调用需在弹窗中确认。
                 </Typography>
               </Box>
@@ -353,7 +353,7 @@ export function SettingsPage() {
         <Divider sx={{ my: 3 }} />
 
         {/* Document Extraction：PDF 简历视觉提取（config.json document.vision，与 LLM key 同保护） */}
-        <Section title="Document Extraction">
+        <Section title="文档提取">
           <Stack spacing={1.5}>
             <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
               PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由免费视觉模型（glm-4.6v-flash）逐页识别。
@@ -672,7 +672,7 @@ function ProviderCard({
             </Box>
           )}
           <Box>
-            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.5 }}>API Key</Typography>
+            <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, mb: 0.5 }}>API 密钥</Typography>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
               <TextField
                 size="small"
@@ -795,7 +795,7 @@ function AddProviderDialog({
         />
         <TextField
           size="small"
-          label="API 地址（Base URL）"
+          label="API 地址（基础链接）"
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder="https://api.example.com/anthropic"
@@ -803,7 +803,7 @@ function AddProviderDialog({
         />
         <TextField
           size="small"
-          label="API Key"
+          label="API 密钥"
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}

@@ -7,7 +7,7 @@ import { useAppStore } from '../../../store/app-store'
 import { COLORS } from '../../../data/constants'
 
 const VIEWS = [
-  { key: 'assets', label: 'Assets 概览' },
+  { key: 'assets', label: '资产总览' },
   { key: 'proposals', label: '提案中心' },
   { key: 'evolution', label: '演化时间线' },
 ] as const

@@ -25,23 +25,23 @@ interface NavItem {
 
 const MAIN_NAV: NavItem[] = [
   { id: 'workbench', label: '工作台', icon: HomeOutlinedIcon, shortcut: '⌘1' },
-  { id: 'agent', label: '决策 Agent', icon: AutoAwesomeOutlinedIcon, shortcut: '⌘2' },
+  { id: 'agent', label: '决策助手', icon: AutoAwesomeOutlinedIcon, shortcut: '⌘2' },
   { id: 'infopool', label: '信息池', icon: HubOutlinedIcon, shortcut: '⌘3' },
   { id: 'jobs', label: 'JD', icon: WorkIcon, shortcut: '⌘4' },
   { id: 'companies', label: '公司探索', icon: ApartmentOutlinedIcon, shortcut: '⌘5' },
   { id: 'applications', label: '投递管理', icon: ViewKanbanOutlinedIcon, shortcut: '⌘6' },
-  { id: 'artifacts', label: 'Artifact Studio', icon: FolderCopyOutlinedIcon, shortcut: '⌘7' },
+  { id: 'artifacts', label: '求职资产', icon: FolderCopyOutlinedIcon, shortcut: '⌘7' },
   { id: 'resumes', label: '简历中心', icon: DescriptionOutlinedIcon, shortcut: '⌘8' },
 ]
 
 const SHORT_LABEL: Record<NavPageId, string> = {
   workbench: '工作台',
-  agent: 'Agent',
+  agent: '助手',
   infopool: '信息池',
   companies: '公司',
   jobs: 'JD',
   applications: '投递',
-  artifacts: 'Artifacts',
+  artifacts: '资产',
   resumes: '简历',
   settings: '设置',
 }

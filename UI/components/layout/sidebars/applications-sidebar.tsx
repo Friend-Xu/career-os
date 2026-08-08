@@ -12,7 +12,7 @@ const COLUMNS: { status: ApplicationStatus; label: string }[] = [
   { status: 'SUBMITTED', label: '已投递' },
   { status: 'COMMUNICATING', label: '沟通中' },
   { status: 'INTERVIEWING', label: '面试中' },
-  { status: 'OFFERED', label: 'Offer' },
+  { status: 'OFFERED', label: '已录用' },
   { status: 'REJECTED', label: '已拒绝' },
   { status: 'WITHDRAWN', label: '已撤回' },
 ]

@@ -9,9 +9,9 @@ import type { ArtifactSummary } from '../ir/artifact-summary.ts'
 export const PORTFOLIO_SUMMARY_ID = 'portfolio'
 
 const STATE_LABEL: Record<PortfolioStatus, string> = {
-  draft: 'Draft',
-  reviewed: 'Reviewed',
-  published: 'Published',
+  draft: '草稿',
+  reviewed: '已评审',
+  published: '已发布',
 }
 
 const AGGREGATE_ORDER: PortfolioStatus[] = ['published', 'reviewed', 'draft']

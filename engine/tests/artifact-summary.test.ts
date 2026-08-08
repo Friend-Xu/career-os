@@ -152,7 +152,7 @@ test('resume summary：空 → draft / 0 / 0 / 0 / 无 updatedAt', () => {
   const s = buildResumeSummary([], [])
   assert.equal(s.id, 'resume')
   assert.equal(s.type, 'resume')
-  assert.deepEqual(s.state, { value: 'draft', label: 'Draft' })
+  assert.deepEqual(s.state, { value: 'draft', label: '草稿' })
   assert.deepEqual(s.counts, { items: 0, pendingProposals: 0, references: 0 })
   assert.equal(s.updatedAt, undefined)
 })
@@ -162,7 +162,7 @@ test('resume summary：版本状态 + bullets 总数 + pending 计数 + generate
     [resumeDoc()],
     [resumeProposal(), resumeProposal({ id: 'proposal_2', status: 'accepted' })],
   )
-  assert.deepEqual(s.state, { value: 'review', label: 'Review' })
+  assert.deepEqual(s.state, { value: 'review', label: '评审中' })
   assert.deepEqual(s.counts, { items: 3, pendingProposals: 1, references: 0 })
   assert.equal(s.updatedAt, '2026-08-05T10:00:00Z')
 })
@@ -173,7 +173,7 @@ test('resume summary：多版本取最新（文件名升序最后 = 时间戳最
      resumeDoc({ id: 'resume_20260805_00001', status: 'exported', generatedAt: '2026-08-05T00:00:00Z' })],
     [],
   )
-  assert.deepEqual(s.state, { value: 'exported', label: 'Exported' })
+  assert.deepEqual(s.state, { value: 'exported', label: '已导出' })
   assert.equal(s.updatedAt, '2026-08-05T00:00:00Z')
 })
 
@@ -184,7 +184,7 @@ test('portfolio summary：published 优先聚合 + projects 数 + pending', () =
     [project({ id: 'p1', status: 'reviewed' }), project({ id: 'p2', status: 'published' }), project({ id: 'p3' })],
     [pp(), pp({ id: 'pp_2', status: 'rejected' })],
   )
-  assert.deepEqual(s.state, { value: 'published', label: 'Published' })
+  assert.deepEqual(s.state, { value: 'published', label: '已发布' })
   assert.deepEqual(s.counts, { items: 3, pendingProposals: 1, references: 0 })
 })
 
@@ -206,7 +206,7 @@ test('interview summary：ready 优先 + QA 数 + pending', () => {
     [qa({ id: 'q1', status: 'ready' }), qa({ id: 'q2', status: 'reviewed' }), qa({ id: 'q3' })],
     [ip()],
   )
-  assert.deepEqual(s.state, { value: 'ready', label: 'Ready' })
+  assert.deepEqual(s.state, { value: 'ready', label: '就绪' })
   assert.deepEqual(s.counts, { items: 3, pendingProposals: 1, references: 0 })
 })
 
@@ -214,7 +214,7 @@ test('interview summary：ready 优先 + QA 数 + pending', () => {
 
 test('cover-letter summary：units 总数 + sourceRefs 总数（唯一发出引用的 Artifact）', () => {
   const s = buildCoverLetterSummary([letter(), letter({ id: 'cl_2', units: [] })], [clp()])
-  assert.deepEqual(s.state, { value: 'draft', label: 'Draft' })
+  assert.deepEqual(s.state, { value: 'draft', label: '草稿' })
   assert.deepEqual(s.counts, { items: 2, pendingProposals: 1, references: 3 })
 })
 
@@ -257,7 +257,7 @@ test('聚合：空目录 → 四类 summary 全空态', () => {
   assert.equal(all.length, 4)
   assert.deepEqual(all.map((s) => s.type), ['resume', 'portfolio', 'interview', 'cover-letter'])
   for (const s of all) {
-    assert.deepEqual(s.state, { value: 'draft', label: 'Draft' })
+    assert.deepEqual(s.state, { value: 'draft', label: '草稿' })
     assert.deepEqual(s.counts, { items: 0, pendingProposals: 0, references: 0 })
     assert.equal(s.updatedAt, undefined)
   }
@@ -274,7 +274,7 @@ test('聚合：单 Artifact 损坏不污染其它', () => {
   const resume = all.find((s) => s.type === 'resume')
   assert.ok(resume)
   assert.equal(resume.type, 'resume')
-  assert.deepEqual(resume.state, { value: 'draft', label: 'Draft' })
+  assert.deepEqual(resume.state, { value: 'draft', label: '草稿' })
   assert.deepEqual(resume.counts, { items: 0, pendingProposals: 0, references: 0 })
   // portfolio 卡自身也正常返回（损坏文件 parse 容错结构完整，计入 items）
   const portfolio = all.find((s) => s.type === 'portfolio')

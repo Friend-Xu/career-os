@@ -20,9 +20,9 @@ const STATUS_STYLE: Record<string, { color: string; label: string }> = {
 }
 
 const VALIDATION_LABEL: Record<string, string> = {
-  valid: '✓ Valid',
-  warning: '△ Warning',
-  invalid: '✗ Invalid',
+  valid: '✓ 有效',
+  warning: '△ 警告',
+  invalid: '✗ 无效',
 }
 
 export function ResumesSidebar() {
@@ -132,7 +132,7 @@ export function ResumesSidebar() {
           </Stack>
           {versions.length === 0 ? (
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
-              暂无资产版本——AI 产出 Draft 后自动登记（Claim 驱动，可追溯）
+              暂无资产版本——AI 产出草稿后自动登记（表述驱动，可追溯）
             </Typography>
           ) : (
             versions.map((r) => {
@@ -154,7 +154,7 @@ export function ResumesSidebar() {
                     {r.lineage?.parentResumeId ? `派生自 ${r.lineage.parentResumeId.slice(-6)}（${r.lineage.derivationType}）` : `⚡ ${r.lineage?.derivationType ?? 'jd_generate'}`}
                     {r.targetJobId ? ` · ${r.targetJobId.slice(-8)}` : ''}
                     {' · '}
-                    {claimsOf(r.id)} claims
+                    {claimsOf(r.id)} 条表述
                   </Typography>
                 </Stack>
               )
@@ -172,19 +172,19 @@ export function ResumesSidebar() {
           </Stack>
           <Stack spacing={0.5} sx={{ px: 1 }}>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Claims（可消费表达）</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>表述（可消费表达）</Typography>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
                 共 {(careerContext?.claims ?? []).length} 条 · 可消费 {(careerContext?.claims ?? []).filter((c) => c.usable).length} 条
               </Typography>
             </Box>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Evidence（事实资产）</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>事实资产</Typography>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-                Active {useAppStore.getState().evidence.filter((e) => e.lifecycle !== 'legacy').length} 条 · Historical {useAppStore.getState().evidence.filter((e) => e.lifecycle === 'legacy').length} 条
+                有效 {useAppStore.getState().evidence.filter((e) => e.lifecycle !== 'legacy').length} 条 · 历史 {useAppStore.getState().evidence.filter((e) => e.lifecycle === 'legacy').length} 条
               </Typography>
             </Box>
             <Box sx={{ px: 1.25, py: 1, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Exports（导出历史）</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>导出历史</Typography>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
                 {(careerContext?.exports ?? []).length} 次 · {(careerContext?.exports ?? []).map((e) => `${e.resumeId.slice(-6)}(${e.format})`).join('、') || '无'}
               </Typography>

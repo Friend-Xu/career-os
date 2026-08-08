@@ -8,6 +8,15 @@
 import type { PortfolioProject } from '../ir/portfolio.ts'
 import type { ArtifactTimelineEvent, TimelineEntry } from '../ir/artifact-timeline.ts'
 
+const STATUS_LABEL: Record<string, string> = {
+  draft: '草稿',
+  reviewed: '已评审',
+  published: '已发布',
+}
+
+/** 状态值 → 展示标签（历史数据可能含早期非标值，展示层保留原文） */
+const stateLabel = (s: string): string => STATUS_LABEL[s] ?? s
+
 export function buildPortfolioTimeline(projects: PortfolioProject[]): TimelineEntry[] {
   const items: TimelineEntry[] = []
   for (const p of projects) {
@@ -21,7 +30,7 @@ export function buildPortfolioTimeline(projects: PortfolioProject[]): TimelineEn
             artifactType: 'portfolio',
             artifactId: p.id,
             event: 'created',
-            title: 'Created',
+            title: '建档',
             at: p.createdAt,
           },
         })
@@ -36,14 +45,14 @@ export function buildPortfolioTimeline(projects: PortfolioProject[]): TimelineEn
         at: t.at,
       }
       if (t.from === '') {
-        items.push({ order: i, event: { ...base, event: 'created', title: 'Created' } })
+        items.push({ order: i, event: { ...base, event: 'created', title: '建档' } })
       } else if (t.via) {
         items.push({
           order: i,
-          event: { ...base, event: 'expression_changed', title: 'Expression changed', source: { type: 'proposal', id: t.via } },
+          event: { ...base, event: 'expression_changed', title: '表达变更', source: { type: 'proposal', id: t.via } },
         })
       } else {
-        items.push({ order: i, event: { ...base, event: 'state_transition', title: 'State changed', detail: `${t.from} → ${t.to}` } })
+        items.push({ order: i, event: { ...base, event: 'state_transition', title: '状态变更', detail: `${stateLabel(t.from)} → ${stateLabel(t.to)}` } })
       }
     })
   }

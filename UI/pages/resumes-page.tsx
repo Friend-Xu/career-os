@@ -666,7 +666,7 @@ export function ResumesPage() {
             <AutoAwesomeIcon sx={{ fontSize: 14, color: COLORS.accent }} />
             <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>请求改写</Typography>
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              {engineStatus === 'connected' ? 'Agent 生成候选' : '规则建议（引擎离线）'}
+              {engineStatus === 'connected' ? 'AI 助手生成候选' : '规则建议（引擎离线）'}
             </Typography>
             <IconButton
               size="small"

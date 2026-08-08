@@ -12,10 +12,10 @@ import { useAppStore } from '../store/app-store'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 
 const ARTIFACT_LABEL: Record<string, string> = {
-  resume: 'Resume',
-  portfolio: 'Portfolio',
-  interview: 'Interview',
-  'cover-letter': 'Cover Letter',
+  resume: '简历',
+  portfolio: '作品集',
+  interview: '面试问答',
+  'cover-letter': '求职信',
 }
 
 /** locator 展示串：portfolio · project_xxx.pf_001（resume 无 scopeId） */
@@ -43,7 +43,7 @@ function SourceRow({ s }: { s: TraceSource }) {
       {s.resolved ? (
         <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mt: 0.5 }}>{s.factStatement}</Typography>
       ) : (
-        <Typography sx={{ fontSize: 11.5, color: RISK_COLOR.high, mt: 0.5 }}>Reason: {s.error}</Typography>
+        <Typography sx={{ fontSize: 11.5, color: RISK_COLOR.high, mt: 0.5 }}>原因：{s.error}</Typography>
       )}
     </Box>
   )

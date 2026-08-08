@@ -13,10 +13,10 @@ import { alpha, COLORS } from '../data/constants'
 const ARTIFACT_ORDER: ArtifactType[] = ['resume', 'portfolio', 'interview', 'cover-letter']
 
 const TYPE_LABEL: Record<ArtifactType, string> = {
-  resume: 'Resume',
-  portfolio: 'Portfolio',
-  interview: 'Interview',
-  'cover-letter': 'Cover Letter',
+  resume: '简历',
+  portfolio: '作品集',
+  interview: '面试问答',
+  'cover-letter': '求职信',
 }
 
 /** 事件语义色（UI 投影——建档/推进/表达变化/投递） */
@@ -53,7 +53,7 @@ function EventRow({ e }: { e: ArtifactTimelineEvent }) {
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: COLORS.text }}>{e.title}</Typography>
           {e.source && (
             <Typography sx={{ fontSize: 11, color: COLORS.accent, fontWeight: 500 }}>
-              via proposal {e.source.id}
+              via 提案 {e.source.id}
             </Typography>
           )}
           <Typography sx={{ ml: 'auto', fontSize: 11, color: COLORS.textMuted, fontVariantNumeric: 'tabular-nums' }}>
@@ -82,8 +82,8 @@ export function EvolutionTimeline() {
         <Typography sx={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>暂无演化事件</Typography>
         <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mt: 0.75 }}>
           {engineStatus === 'connected'
-            ? 'Artifact 建档与演化（状态推进 / 表达改写 / 投递）会按时间投影到这里'
-            : '引擎离线（Evolution Timeline 不可用）'}
+            ? '求职资产建档与演化（状态推进 / 表达改写 / 投递）会按时间投影到这里'
+            : '引擎离线（演化时间线不可用）'}
         </Typography>
       </Box>
     )

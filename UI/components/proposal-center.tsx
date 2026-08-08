@@ -27,10 +27,10 @@ interface ProposalListItem {
 }
 
 const TYPE_LABEL: Record<ArtifactType, string> = {
-  resume: 'Resume',
-  portfolio: 'Portfolio',
-  interview: 'Interview',
-  'cover-letter': 'Cover Letter',
+  resume: '简历',
+  portfolio: '作品集',
+  interview: '面试问答',
+  'cover-letter': '求职信',
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -41,10 +41,10 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 
 const TYPE_FILTERS: { value: 'all' | ArtifactType; label: string }[] = [
   { value: 'all', label: '全部' },
-  { value: 'resume', label: 'Resume' },
-  { value: 'portfolio', label: 'Portfolio' },
-  { value: 'interview', label: 'Interview' },
-  { value: 'cover-letter', label: 'Cover Letter' },
+  { value: 'resume', label: '简历' },
+  { value: 'portfolio', label: '作品集' },
+  { value: 'interview', label: '面试问答' },
+  { value: 'cover-letter', label: '求职信' },
 ]
 
 const STATUS_FILTERS: { value: 'all' | 'pending' | 'accepted' | 'rejected'; label: string }[] = [
@@ -185,8 +185,8 @@ export function ProposalCenter() {
         <Typography sx={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>暂无 AI 提案</Typography>
         <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, mt: 0.75 }}>
           {engineStatus === 'connected'
-            ? 'AI 按各 Artifact 契约写提案文件后自动出现在这里（统一评审中心）'
-            : '引擎离线（Proposal Center 不可用）'}
+            ? 'AI 按各资产契约写提案文件后自动出现在这里（统一评审中心）'
+            : '引擎离线（提案中心不可用）'}
         </Typography>
       </Box>
     )
@@ -274,7 +274,7 @@ export function ProposalCenter() {
                         onClick={() => setTraceOpen({ clId: rawCl.clId, unitId: rawCl.changes[i].unitId })}
                         sx={{ fontSize: 11, p: 0, minWidth: 0, color: COLORS.accent, textTransform: 'none' }}
                       >
-                        View Sources
+                        查看来源
                       </Button>
                     </Box>
                   )}

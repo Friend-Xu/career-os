@@ -470,7 +470,7 @@ export function PersonCreateDialog() {
                   <Typography
                     sx={{ fontSize: 11.5, color: COLORS.textMuted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
-                    {resumeFileName ? `已选择：${resumeFileName}` : 'txt / md / pdf——AI 将从中提取候选'}
+                    {resumeFileName ? `已选择：${resumeFileName}` : '文本 / Markdown / PDF——AI 将从中提取候选'}
                   </Typography>
                   <Button
                     size="small"

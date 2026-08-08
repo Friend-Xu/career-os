@@ -109,20 +109,20 @@ test('resume：operations 映射——created / state_transition / expression_ch
     }),
   ]).map((t) => t.event)
   assert.deepEqual(events.map((e) => [e.event, e.title]), [
-    ['created', 'Created'],
-    ['state_transition', 'State changed'],
-    ['expression_changed', 'Expression changed'],
+    ['created', '建档'],
+    ['state_transition', '状态变更'],
+    ['expression_changed', '表达变更'],
   ])
   assert.equal(events[2].source?.id, 'proposal_20260801_00001')
-  assert.equal(events[1].detail, 'draft → review')
+  assert.equal(events[1].detail, '草稿 → 评审中')
 })
 
 test('resume：无 operations → generatedAt 投影 created；rejected 操作跳过', () => {
   const withOps = buildResumeTimeline([resumeDoc()]).map((t) => t.event)
   assert.deepEqual(withOps.map((e) => [e.event, e.detail]), [
     ['created', undefined],
-    ['state_transition', 'draft → review'],
-    ['state_transition', 'review → exported'],
+    ['state_transition', '草稿 → 评审中'],
+    ['state_transition', '评审中 → 已导出'],
   ])
   const noOps = buildResumeTimeline([resumeDoc({ operations: undefined })]).map((t) => t.event)
   assert.equal(noOps.length, 1)
@@ -135,8 +135,8 @@ test('portfolio：created / state_transition / expression_changed(via → source
   const events = buildPortfolioTimeline([project()]).map((t) => t.event)
   assert.deepEqual(events.map((e) => [e.event, e.detail, e.source?.id]), [
     ['created', undefined, undefined],
-    ['state_transition', 'draft → reviewed', undefined],
-    ['state_transition', 'reviewed → published', undefined],
+    ['state_transition', '草稿 → 已评审', undefined],
+    ['state_transition', '已评审 → 已发布', undefined],
     ['expression_changed', undefined, 'pp_20260805_00001'],
   ])
 })
@@ -151,8 +151,8 @@ test('interview：transitions 映射同 Portfolio', () => {
   const events = buildInterviewTimeline([qa()]).map((t) => t.event)
   assert.deepEqual(events.map((e) => [e.event, e.detail]), [
     ['created', undefined],
-    ['state_transition', 'draft → reviewed'],
-    ['state_transition', 'reviewed → ready'],
+    ['state_transition', '草稿 → 已评审'],
+    ['state_transition', '已评审 → 就绪'],
   ])
 })
 
@@ -160,7 +160,7 @@ test('cover-letter：transitions + delivery 事件', () => {
   const events = buildCoverLetterTimeline([letter()]).map((t) => t.event)
   assert.deepEqual(events.map((e) => [e.event, e.detail, e.source?.id]), [
     ['created', undefined, undefined],
-    ['state_transition', 'draft → reviewed', undefined],
+    ['state_transition', '草稿 → 已评审', undefined],
     ['expression_changed', undefined, 'clp_20260805_00001'],
     ['delivery', '示例公司', undefined],
   ])

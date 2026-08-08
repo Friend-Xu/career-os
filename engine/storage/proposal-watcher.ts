@@ -244,10 +244,10 @@ export function validateProposal(p: ResumeProposal, ctx: ProposalContext): Resum
   for (const c of p.changes) {
     const claim = claimsById.get(c.targetClaimId)
     if (!claim) {
-      issues.push({ code: 'CLAIM_NOT_FOUND', message: `Claim 不存在：${c.targetClaimId}`, target: c.targetClaimId })
+      issues.push({ code: 'CLAIM_NOT_FOUND', message: `表述不存在：${c.targetClaimId}`, target: c.targetClaimId })
       continue
     }
-    if (!canUseClaim(claim, evidenceById)) issues.push({ code: 'CLAIM_NOT_USABLE', message: 'Claim 不可消费（证据未 trusted）', target: c.targetClaimId })
+    if (!canUseClaim(claim, evidenceById)) issues.push({ code: 'CLAIM_NOT_USABLE', message: '表述不可消费（证据未通过可信校验）', target: c.targetClaimId })
     if (c.expectationId && expectations.size > 0 && !expectations.has(c.expectationId)) {
       issues.push({ code: 'EXPECTATION_NOT_FOUND', message: `期望锚点不存在：${c.expectationId}`, target: c.targetClaimId })
     }

@@ -9,10 +9,10 @@ import type { ArtifactSummary } from '../ir/artifact-summary.ts'
 export const RESUME_SUMMARY_ID = 'resume'
 
 const STATE_LABEL: Record<ResumeStatus, string> = {
-  draft: 'Draft',
-  review: 'Review',
-  exported: 'Exported',
-  archived: 'Archived',
+  draft: '草稿',
+  review: '评审中',
+  exported: '已导出',
+  archived: '已归档',
 }
 
 export function buildResumeSummary(

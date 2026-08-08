@@ -47,8 +47,8 @@ function toFormValues(d: DecisionRecord): Record<string, string> {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  skill: '技能归属（skill）',
-  direction: '方向（direction）',
+  skill: '技能归属',
+  direction: '方向',
   direction_match: '方向匹配度',
   direction_confidence: '匹配置信度',
   city: '城市',
@@ -78,7 +78,7 @@ function ValidationBanner({ validation }: { validation: Validation }) {
       <Icon sx={{ fontSize: 16, color, mt: 0.25, flexShrink: 0 }} />
       <Stack spacing={0.5}>
         <Typography sx={{ fontSize: 12.5, fontWeight: 600, color }}>
-          {invalid ? '待人工处理（invalid）' : '数据降级（degraded）'}
+          {invalid ? '待人工处理（数据无效）' : '数据降级（部分字段缺失）'}
         </Typography>
         {validation.issues.map((i, idx) => (
           <Typography key={idx} sx={{ fontSize: 12, color: COLORS.textSecondary }}>

@@ -80,7 +80,7 @@ function InitializationBanner() {
       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
           <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent, letterSpacing: '0.06em', mb: 0.75 }}>
-            INITIALIZING · 「{person.name}」正在建立职业档案（{resumeChannel ? '简历通道' : '访谈通道'}）
+            初始化中 · 「{person.name}」正在建立职业档案（{resumeChannel ? '简历通道' : '访谈通道'}）
           </Typography>
           <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
             正在了解你的经历 · AI 只提取候选事实，你确认后才会写入档案
@@ -171,7 +171,7 @@ function TodaySection() {
           }}
         >
           <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent, letterSpacing: '0.06em', mb: 1 }}>
-            TODAY · 需要处理
+            今日 · 需要处理
           </Typography>
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
             {actions.map((a) => (

@@ -10,9 +10,9 @@ import type { ArtifactSummary } from '../ir/artifact-summary.ts'
 export const COVER_LETTER_SUMMARY_ID = 'cover-letter'
 
 const STATE_LABEL: Record<CoverLetterStatus, string> = {
-  draft: 'Draft',
-  reviewed: 'Reviewed',
-  ready: 'Ready',
+  draft: '草稿',
+  reviewed: '已评审',
+  ready: '就绪',
 }
 
 const AGGREGATE_ORDER: CoverLetterStatus[] = ['ready', 'reviewed', 'draft']

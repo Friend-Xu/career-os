@@ -380,7 +380,7 @@ function MapView() {
         <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center', maxWidth: 320 }}>
           <Typography sx={{ fontSize: 14, fontWeight: 600 }}>地图未配置</Typography>
           <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, lineHeight: 1.7 }}>
-            高德地图需要 Key 与安全密钥，
+            高德地图需要密钥与安全密钥，
             <br />
             在设置页「地图服务」配置后启用
           </Typography>

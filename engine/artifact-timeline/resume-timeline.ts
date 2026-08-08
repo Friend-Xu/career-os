@@ -20,7 +20,7 @@ export function buildResumeTimeline(resumes: ResumeDocument[]): TimelineEntry[] 
           artifactType: 'resume',
           artifactId: r.id,
           event: 'created',
-          title: 'Created',
+          title: '建档',
           at: r.generatedAt || r.id,
         },
       })
@@ -37,16 +37,16 @@ export function buildResumeTimeline(resumes: ResumeDocument[]): TimelineEntry[] 
       switch (op.action) {
       case 'create':
       case 'clone':
-        items.push({ order: i, event: { ...base, event: 'created', title: 'Created' } })
+        items.push({ order: i, event: { ...base, event: 'created', title: '建档' } })
         break
       case 'submit_review':
-        items.push({ order: i, event: { ...base, event: 'state_transition', title: 'State changed', detail: 'draft → review' } })
+        items.push({ order: i, event: { ...base, event: 'state_transition', title: '状态变更', detail: '草稿 → 评审中' } })
         break
       case 'export':
-        items.push({ order: i, event: { ...base, event: 'state_transition', title: 'State changed', detail: 'review → exported' } })
+        items.push({ order: i, event: { ...base, event: 'state_transition', title: '状态变更', detail: '评审中 → 已导出' } })
         break
       case 'archive':
-        items.push({ order: i, event: { ...base, event: 'state_transition', title: 'State changed', detail: '→ archived' } })
+        items.push({ order: i, event: { ...base, event: 'state_transition', title: '状态变更', detail: '→ 已归档' } })
         break
       case 'apply_proposal':
         items.push({
@@ -54,7 +54,7 @@ export function buildResumeTimeline(resumes: ResumeDocument[]): TimelineEntry[] 
           event: {
             ...base,
             event: 'expression_changed',
-            title: 'Expression changed',
+            title: '表达变更',
             ...(op.note ? { source: { type: 'proposal' as const, id: op.note } } : {}),
           },
         })

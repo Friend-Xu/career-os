@@ -172,10 +172,10 @@ export function assembleResumeFromDraft(input: AssembleInput): AssembleResult {
       continue
     }
     if (!canUseClaim(claim, evidenceById)) {
-      issues.push({ code: 'CLAIM_NOT_USABLE', message: `Claim 不可消费（证据未 trusted）`, target: ref.claimId })
+      issues.push({ code: 'CLAIM_NOT_USABLE', message: `表述不可消费（证据未通过可信校验）`, target: ref.claimId })
     }
     if (selectorCandidates.length > 0 && !selectorCandidates.includes(ref.claimId)) {
-      issues.push({ code: 'CLAIM_NOT_IN_SELECTOR', message: 'Claim 不在该岗位表达候选集（claims/select）', target: ref.claimId })
+      issues.push({ code: 'CLAIM_NOT_IN_SELECTOR', message: '表述不在该岗位表达候选集（claims/select）', target: ref.claimId })
     }
     let sentence = claim.statement
     if (ref.sentenceOverride) {

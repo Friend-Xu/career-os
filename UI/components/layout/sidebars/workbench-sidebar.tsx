@@ -13,7 +13,7 @@ import { COLORS } from '../../../data/constants'
 import { useAppStore } from '../../../store/app-store'
 
 const VIEWS: { id: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile'; label: string; desc: string; icon: ReactNode }[] = [
-  { id: 'dashboard', label: 'Dashboard', desc: '驾驶舱总览', icon: <DashboardIcon sx={{ fontSize: 15 }} /> },
+  { id: 'dashboard', label: '驾驶舱', desc: '驾驶舱总览', icon: <DashboardIcon sx={{ fontSize: 15 }} /> },
   { id: 'profile', label: '职业画像', desc: '系统对你的理解状态', icon: <Person2OutlinedIcon sx={{ fontSize: 15 }} /> },
   { id: 'directions', label: '方向', desc: '按方向聚合的决策时间线', icon: <ExploreIcon sx={{ fontSize: 15 }} /> },
   { id: 'cities', label: '城市', desc: '城市评估与对比', icon: <LocationCityIcon sx={{ fontSize: 15 }} /> },

@@ -471,7 +471,7 @@ function MessageBubble({
             }}
           >
             <Typography sx={{ fontSize: 12, fontWeight: 600, color: RISK_COLOR.high, mb: 0.5 }}>
-              Agent 运行错误 · {msg.error.code}
+              AI 助手运行错误 · {msg.error.code}
             </Typography>
             <Typography sx={{ fontSize: 13, lineHeight: 1.6, color: COLORS.text, whiteSpace: 'pre-wrap' }}>
               {msg.error.message}
@@ -777,7 +777,7 @@ export function AgentPage() {
           sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
         >
           <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', flex: 1 }}>
-            {session?.title ?? '决策 Agent'}
+            {session?.title ?? '决策助手'}
           </Typography>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             {/* 会话切换在侧栏（AgentSidebar）——此处只留演示入口 */}
@@ -860,7 +860,7 @@ export function AgentPage() {
               <Box sx={{ textAlign: 'center', mt: 10 }}>
                 <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 1 }}>开始深度决策对话</Typography>
                 <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 3 }}>
-                  Agent 会读取 profile / decision / company DB，输出建议并确认式写入决策记录
+                  助手会读取画像 / 决策 / 公司数据，输出建议并确认式写入决策记录
                 </Typography>
                 <Stack spacing={1} sx={{ alignItems: 'center' }}>
                   <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, letterSpacing: '0.05em' }}>

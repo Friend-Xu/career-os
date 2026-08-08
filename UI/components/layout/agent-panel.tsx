@@ -96,8 +96,8 @@ export function AgentPanel() {
         }}
       >
         <AutoAwesomeIcon sx={{ fontSize: 16, color: COLORS.accent }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>AI Agent</Typography>
-        <Tooltip title="展开到全屏决策 Agent">
+        <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>AI 助手</Typography>
+        <Tooltip title="展开到全屏决策助手">
           <IconButton size="small" onClick={expandToFull} sx={{ color: COLORS.textSecondary }}>
             <OpenInFullIcon sx={{ fontSize: 16 }} />
           </IconButton>
@@ -178,7 +178,7 @@ export function AgentPanel() {
                 }}
               >
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>
-                  {msg.role === 'user' ? '你' : 'Agent'}
+                  {msg.role === 'user' ? '你' : '助手'}
                 </Typography>
                 {msg.role === 'user' ? (
                   <Typography
@@ -277,7 +277,7 @@ export function AgentPanel() {
             }}
           />
           {taskRunning && (
-            <Tooltip title="停止当前 Agent 任务">
+            <Tooltip title="停止当前任务">
               <IconButton
                 size="small"
                 aria-label="停止当前 Agent 任务"

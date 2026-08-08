@@ -9,9 +9,9 @@ import type { ArtifactSummary } from '../ir/artifact-summary.ts'
 export const INTERVIEW_SUMMARY_ID = 'interview'
 
 const STATE_LABEL: Record<InterviewStatus, string> = {
-  draft: 'Draft',
-  reviewed: 'Reviewed',
-  ready: 'Ready',
+  draft: '草稿',
+  reviewed: '已评审',
+  ready: '就绪',
 }
 
 const AGGREGATE_ORDER: InterviewStatus[] = ['ready', 'reviewed', 'draft']

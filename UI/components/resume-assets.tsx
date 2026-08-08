@@ -17,9 +17,9 @@ export function ResumeAssets() {
     <Stack spacing={2}>
       {/* Claims */}
       <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>Claims（可消费表达资产）</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>表述（可消费表达资产）</Typography>
         {claims.length === 0 ? (
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无 Claim——从 trusted Evidence 生成后出现于此</Typography>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无表述——从可信事实生成后出现于此</Typography>
         ) : (
           <Stack spacing={1}>
             {claims.map((c) => {
@@ -46,13 +46,13 @@ export function ResumeAssets() {
 
       {/* Evidence */}
       <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>Evidence（事实资产）</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>事实资产</Typography>
         {evidenceItems.length === 0 ? (
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无 Evidence——通过主动沉淀或 JD 驱动收集</Typography>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无事实——通过主动沉淀或 JD 驱动收集</Typography>
         ) : (
           <Stack spacing={1}>
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              Active · {evidenceItems.filter((e) => e.lifecycle !== 'legacy').length}
+              有效 · {evidenceItems.filter((e) => e.lifecycle !== 'legacy').length}
             </Typography>
             {evidenceItems.filter((e) => e.lifecycle !== 'legacy').map((e) => (
               <Box key={e.id} sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
@@ -71,7 +71,7 @@ export function ResumeAssets() {
               return (
                 <>
                   <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 1 }}>
-                    Historical（legacy·开发期/历史，不进新表达）· {legacy.length}
+                    历史（旧版·开发期/历史，不进新表达）· {legacy.length}
                   </Typography>
                   {legacy.map((e) => (
                     <Box key={e.id} sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${COLORS.border}`, bgcolor: alpha(COLORS.textMuted, 0.04) }}>
@@ -79,7 +79,7 @@ export function ResumeAssets() {
                         <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, flex: 1, minWidth: 0 }} noWrap>
                           {e.event.title}
                         </Typography>
-                        <Chip size="small" label="legacy" sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.textMuted, 0.1), color: COLORS.textMuted }} />
+                        <Chip size="small" label="旧版" sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.textMuted, 0.1), color: COLORS.textMuted }} />
                       </Stack>
                       <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, opacity: 0.8 }}>{e.contribution}</Typography>
                     </Box>
@@ -93,7 +93,7 @@ export function ResumeAssets() {
 
       {/* Exports */}
       <Box sx={{ p: 2, borderRadius: '10px', border: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>Exports（导出历史）</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>导出历史</Typography>
         {exports.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>暂无导出记录——版本导出成功后才生成 ExportRecord</Typography>
         ) : (

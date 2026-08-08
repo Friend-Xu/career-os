@@ -27,10 +27,10 @@ interface ArtifactMeta {
 
 /** 类级元信息（UI 本地投影——四卡结构一致，items 用各自 Fact Layer 语义标签） */
 const ARTIFACT_META: Record<ArtifactType, ArtifactMeta> = {
-  resume: { label: 'Resume', itemLabel: 'Statements', icon: DescriptionOutlinedIcon },
-  portfolio: { label: 'Portfolio', itemLabel: 'Projects', icon: Inventory2OutlinedIcon },
-  interview: { label: 'Interview', itemLabel: 'Questions', icon: ForumOutlinedIcon },
-  'cover-letter': { label: 'Cover Letter', itemLabel: 'Units', icon: MailOutlinedIcon },
+  resume: { label: '简历', itemLabel: '表述', icon: DescriptionOutlinedIcon },
+  portfolio: { label: '作品集', itemLabel: '项目', icon: Inventory2OutlinedIcon },
+  interview: { label: '面试问答', itemLabel: '问答', icon: ForumOutlinedIcon },
+  'cover-letter': { label: '求职信', itemLabel: '单元', icon: MailOutlinedIcon },
 }
 
 /** Evolution State 语义色（UI 投影——推进中/终态/空） */
@@ -47,11 +47,11 @@ const STATE_COLOR: Record<string, string> = {
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const min = Math.floor(diff / 60000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
+  if (min < 1) return '刚刚'
+  if (min < 60) return `${min} 分钟前`
   const h = Math.floor(min / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+  if (h < 24) return `${h} 小时前`
+  return `${Math.floor(h / 24)} 天前`
 }
 
 function SummaryRow({ label, value }: { label: string; value: number }) {
@@ -83,10 +83,10 @@ function AssetsSection() {
       <Box sx={{ mt: 2 }}>
         <Typography sx={{ fontSize: 13, color: COLORS.textSecondary }}>
           {engineStatus === 'connected'
-            ? '暂无 Artifact 数据'
+            ? '暂无求职资产数据'
             : engineStatus === 'connecting'
               ? '连接引擎中…'
-              : '引擎离线（Assets 视图不可用）'}
+              : '引擎离线（资产视图不可用）'}
         </Typography>
       </Box>
     )
@@ -170,11 +170,11 @@ function AssetsSection() {
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 2 }}>
                   <SummaryRow label={meta.itemLabel} value={s.counts.items} />
-                  <SummaryRow label="Pending" value={s.counts.pendingProposals} />
-                  <SummaryRow label="References" value={s.counts.references} />
+                  <SummaryRow label="待确认" value={s.counts.pendingProposals} />
+                  <SummaryRow label="引用" value={s.counts.references} />
                   {s.updatedAt && (
                     <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mt: 0.5 }}>
-                      Updated {relativeTime(s.updatedAt)}
+                      更新于 {relativeTime(s.updatedAt)}
                     </Typography>
                   )}
                 </Box>
@@ -192,9 +192,9 @@ export function ArtifactsPage() {
 
   return (
     <Box sx={{ p: 3, maxWidth: 1080 }}>
-      <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Artifact Studio</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>求职资产</Typography>
       <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mt: 0.5 }}>
-        四 Artifact 治理（Engine Context → UI View Model → Cards；只读投影）
+        简历 / 作品集 / 面试问答 / 求职信——AI 协作产物的状态与治理（只读投影）
       </Typography>
 
       {artifactsView === 'proposals' && <ProposalCenter />}
