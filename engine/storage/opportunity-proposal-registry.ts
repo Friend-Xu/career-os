@@ -68,11 +68,11 @@ export interface OpportunityProposalInput {
   changes: ProposalChange[]
 }
 
-/** Bridge 输入上下文（契约 §2.1——Engine 组装，Agent 只消费此结构，不读数据库） */
+/** Bridge 输入上下文（契约 §2.1——Engine 组装，Agent 只消费此结构，不读数据库；EvidenceContextProjection v0.2） */
 export interface ProposalBridgeContext {
   opportunity: Opportunity
   responsibilityStatement: string
-  evidence: { id: string; eventTitle: string; contribution: string }[]
+  evidence: { id: string; eventTitle: string; content: string; contribution: string; impact?: string; validation?: string }[]
   currentBlockText?: string
 }
 
@@ -169,7 +169,14 @@ export function buildBridgeContext(ws: Workspace, wcId: string, opportunityId: s
   const evidence = opportunity.refs.evidenceIds
     .map((id) => evidenceById.get(id))
     .filter((e): e is EvidenceItem => Boolean(e))
-    .map((e) => ({ id: e.id, eventTitle: e.event.title, contribution: e.contribution }))
+    .map((e) => ({
+      id: e.id,
+      eventTitle: e.event.title,
+      content: evidenceText(e),
+      contribution: e.contribution,
+      ...(e.evidence.impact?.length ? { impact: e.evidence.impact.map((v) => v.content).join('；') } : {}),
+      ...(e.evidence.validation?.length ? { validation: e.evidence.validation.map((v) => v.content).join('；') } : {}),
+    }))
   const currentBlockText =
     opportunity.applyTarget?.blockId
       ? wc.sections.flatMap((s) => s.blocks).find((b) => b.id === opportunity.applyTarget!.blockId)?.text

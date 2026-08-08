@@ -27,6 +27,8 @@ import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
 import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
+import { buildBridgeContext, submitOpportunityProposal, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
+import { readFileSync } from 'node:fs'
 
 async function main(args: string[]): Promise<void> {
   try {
@@ -107,6 +109,26 @@ async function main(args: string[]): Promise<void> {
       const personId = args[idx + 2]
       if (!decisionId || !personId) throw new Error('--resume-context 需要 {decisionId} {personId}')
       console.log(JSON.stringify(computeResumeRewriteContext(ws, decisionId, personId), null, 2))
+      return
+    }
+
+    // ─── Opportunity Bridge（--opportunity-context {opportunityId} {wcId} / --opportunity-submit {file}）：
+    //      P3.3 Agent 消费通道（与 --resume-context 同模式——Agent 用 Bash 调 CLI，Engine 组装/校验；
+    //      WS RPC 同一计算源；invalid 提交 throw → 错误信息给 Agent 看拦截原因）
+    if (args.includes('--opportunity-context')) {
+      const idx = args.indexOf('--opportunity-context')
+      const opportunityId = args[idx + 1]
+      const wcId = args[idx + 2]
+      if (!opportunityId || !wcId) throw new Error('--opportunity-context 需要 {opportunityId} {wcId}')
+      console.log(JSON.stringify(buildBridgeContext(ws, wcId, opportunityId), null, 2))
+      return
+    }
+    if (args.includes('--opportunity-submit')) {
+      const idx = args.indexOf('--opportunity-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--opportunity-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as OpportunityProposalInput
+      console.log(JSON.stringify(submitOpportunityProposal(ws, input), null, 2))
       return
     }
 

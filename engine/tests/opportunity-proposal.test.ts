@@ -111,12 +111,14 @@ function validChanges() {
   return [{ blockId: 'blk_1', before: '参与机械结构设计相关工作', after: '负责机械结构设计，完成强度校核，使装配效率提升 30%', operation: 'rewrite' as const }]
 }
 
-test('context 组装：责任语句 + 证据回源 + 当前块文本（弱命中 rewrite）', () => {
+test('context 组装：责任语句 + 证据回源（v0.2 维度全文本）+ 当前块文本（弱命中 rewrite）', () => {
   const { ws, wcId, opportunityId } = setup()
   const ctx = buildBridgeContext(ws, wcId, opportunityId)
   assert.equal(ctx.responsibilityStatement, '机械结构设计')
   assert.equal(ctx.evidence.length, 1)
   assert.equal(ctx.evidence[0].contribution, '负责机械结构设计，完成强度校核')
+  assert.equal(ctx.evidence[0].impact, '使装配效率提升 30%')
+  assert.match(ctx.evidence[0].content, /使装配效率提升 30%/)
   assert.equal(ctx.currentBlockText, '参与机械结构设计相关工作')
   assert.equal(ctx.opportunity.applyTarget?.action, 'rewrite')
   assert.match(ctx.opportunity.suggestedAction, /生成候选表达/)
