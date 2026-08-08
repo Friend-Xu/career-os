@@ -412,6 +412,21 @@ export class EngineClient {
     return this.rpc<OpportunityProposal[]>(METHODS.opportunityProposalList)
   }
 
+  /** 采用机会 Proposal（P3.3：pending → approved——approve ≠ apply，Apply 在 P3.8） */
+  approveOpportunityProposal(id: string): Promise<OpportunityProposal> {
+    return this.rpc<OpportunityProposal>(METHODS.opportunityProposalApprove, { id })
+  }
+
+  /** 拒绝机会 Proposal（P3.3：pending → rejected——单向不 reopen，审计保留） */
+  rejectOpportunityProposal(id: string, reason?: string): Promise<OpportunityProposal> {
+    return this.rpc<OpportunityProposal>(METHODS.opportunityProposalReject, { id, reason })
+  }
+
+  /** 应用机会 Proposal（P3.4：approved → apply——revision check → 原子写盘 → 重诊断信号） */
+  applyOpportunityProposal(id: string): Promise<{ status: 'applied'; transactionId: string; newRevision: number } | { status: 'conflict'; transactionId: string; reason: string; expectedRevision: number; currentRevision: number }> {
+    return this.rpc(METHODS.opportunityProposalApply, { id })
+  }
+
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */
   listResumes(): Promise<ResumeDocument[]> {
     return this.rpc<ResumeDocument[]>(METHODS.listResumes)

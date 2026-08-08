@@ -412,6 +412,10 @@ interface AppState {
   listOpportunityProposals: () => Promise<OpportunityProposal[]>;
   /** 生成改写候选（P3.6：机会 → agent 任务 → 候选登记） */
   generateOpportunityProposals: (opportunityId: string, wcId: string, personId: string) => Promise<string>;
+  /** 采用机会 Proposal（P3.7：pending → approved——approve ≠ apply） */
+  approveOpportunityProposal: (id: string) => Promise<OpportunityProposal>;
+  /** 拒绝机会 Proposal（P3.7：pending → rejected——单向不 reopen） */
+  rejectOpportunityProposal: (id: string, reason?: string) => Promise<OpportunityProposal>;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -1300,6 +1304,18 @@ export const useAppStore = create<AppState>()(
       maxTurns: 15,
     })
     return res.taskId
+  },
+
+  /** 采用机会 Proposal（P3.7：pending → approved——approve ≠ apply） */
+  approveOpportunityProposal: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.approveOpportunityProposal(id)
+  },
+
+  /** 拒绝机会 Proposal（P3.7：pending → rejected——单向不 reopen，审计保留） */
+  rejectOpportunityProposal: async (id, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.rejectOpportunityProposal(id, reason)
   },
 
   /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */

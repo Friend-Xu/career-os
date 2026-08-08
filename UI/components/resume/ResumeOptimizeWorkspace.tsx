@@ -13,6 +13,7 @@ import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../../engine/runtime/opportunity.ts'
+import type { OpportunityProposal } from '../../../engine/storage/opportunity-proposal-registry.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
   covered: { icon: '✓', label: '已覆盖', color: COLORS.riskLow },
@@ -51,6 +52,7 @@ export function ResumeOptimizeWorkspace() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null)
+  const [proposals, setProposals] = useState<OpportunityProposal[]>([])
   const [genState, setGenState] = useState<{ oppId: string; phase: string } | null>(null)
   const [genTick, setGenTick] = useState(0)
 
@@ -96,8 +98,42 @@ export function ResumeOptimizeWorkspace() {
     }
   }, [wcId, jobId, engineStatus, fetchWorkingCopyOpportunities, genTick])
 
+  /** 机会 Proposal（P3.7：候选 diff——生成完成/采用/拒绝后重拉；业务状态轮询，不监听 agent 执行态） */
+  useEffect(() => {
+    if (engineStatus !== 'connected') return
+    let cancelled = false
+    useAppStore
+      .getState()
+      .listOpportunityProposals()
+      .then((ps) => {
+        if (!cancelled) setProposals(ps)
+      })
+      .catch(() => {
+        if (!cancelled) setProposals([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [engineStatus, genTick])
+
   const titleOf = (eid: string) => evidenceItems.find((e) => e.id === eid)?.event.title ?? eid
   const selectedJob = jobs.find((j) => j.id === jobId)
+
+  /** 候选「依据」用户化（P3.7：来源 = 证据事件标题——不显示 evidence id） */
+  const proposalBasis = (o: Opportunity): string => {
+    const titles = o.refs.evidenceIds.map(titleOf)
+    return titles.length > 0 ? `来源：${titles.join('；')}` : '来源：暂无直接证据（需补充）'
+  }
+
+  const decide = async (p: OpportunityProposal, action: 'approve' | 'reject') => {
+    try {
+      if (action === 'approve') await useAppStore.getState().approveOpportunityProposal(p.id)
+      else await useAppStore.getState().rejectOpportunityProposal(p.id)
+      setGenTick((t) => t + 1)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '操作失败')
+    }
+  }
 
   /** 机会卡片标题（P3.5：用户语言——不暴露 state 内部名） */
   const opportunityTitle = useCallback(
@@ -407,6 +443,89 @@ export function ResumeOptimizeWorkspace() {
                         {genState?.oppId === o.id ? genState.phase : o.intent === 'activate_asset' ? '生成表达资产' : '生成改写方案'}
                       </Button>
                     </Stack>
+                    {/* 候选 diff（P3.7——契约：围绕 Proposal 不围绕文本；依据用户化；reject 保留） */}
+                    {proposals.filter((p) => p.opportunityId === o.id).map((p) => {
+                      const ch = p.changes[0]
+                      return (
+                        <Box
+                          key={p.id}
+                          sx={{
+                            mt: 1,
+                            p: 1.25,
+                            borderRadius: '8px',
+                            border: `1px solid ${alpha(COLORS.border, 0.9)}`,
+                            bgcolor: alpha(COLORS.bgHover, 0.35),
+                          }}
+                        >
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.75 }}>
+                            <Typography sx={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>候选方案</Typography>
+                            <Chip
+                              size="small"
+                              label={p.status === 'approved' ? '已采用' : p.status === 'rejected' ? '已拒绝' : '待决定'}
+                              sx={{
+                                height: 18,
+                                fontSize: 10.5,
+                                bgcolor:
+                                  p.status === 'approved'
+                                    ? alpha(COLORS.riskLow, 0.15)
+                                    : p.status === 'rejected'
+                                      ? alpha(COLORS.textMuted, 0.12)
+                                      : alpha(COLORS.riskMedium, 0.12),
+                                color: p.status === 'approved' ? COLORS.riskLow : p.status === 'rejected' ? COLORS.textMuted : COLORS.riskMedium,
+                              }}
+                            />
+                          </Stack>
+                          {ch && (
+                            <>
+                              <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                                原表达{ch.operation === 'insert' ? '（新增）' : ''}：{ch.before || '（无）'}
+                              </Typography>
+                              <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>↓</Typography>
+                              <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>
+                                {ch.operation === 'delete' ? '删除该表达' : ch.after}
+                              </Typography>
+                              <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.5 }}>{proposalBasis(o)}</Typography>
+                            </>
+                          )}
+                          {p.status === 'pending' && (
+                            <Stack direction="row" spacing={1} sx={{ mt: 0.75 }}>
+                              <Button
+                                size="small"
+                                onClick={() => void decide(p, 'approve')}
+                                sx={{
+                                  fontSize: 11.5,
+                                  textTransform: 'none',
+                                  color: COLORS.riskLow,
+                                  border: `1px solid ${alpha(COLORS.riskLow, 0.4)}`,
+                                  borderRadius: '8px',
+                                  px: 1.25,
+                                  py: 0.25,
+                                  '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
+                                }}
+                              >
+                                采用
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => void decide(p, 'reject')}
+                                sx={{
+                                  fontSize: 11.5,
+                                  textTransform: 'none',
+                                  color: COLORS.textMuted,
+                                  border: `1px solid ${alpha(COLORS.border, 1)}`,
+                                  borderRadius: '8px',
+                                  px: 1.25,
+                                  py: 0.25,
+                                  '&:hover': { bgcolor: alpha(COLORS.bgHover, 0.6) },
+                                }}
+                              >
+                                拒绝
+                              </Button>
+                            </Stack>
+                          )}
+                        </Box>
+                      )
+                    })}
                   </Box>
                 )
               })}
