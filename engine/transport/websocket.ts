@@ -22,6 +22,8 @@ import { parseJdConstraint } from '../runtime/jd-constraint.ts'
 import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
 import { buildDecisionCandidate, constraintRefOf, resolveGapDisplay } from '../runtime/decision-draft.ts'
 import { buildResumeRewriteContext, parseNarrativeSections } from '../runtime/resume-context.ts'
+import { parseCompanyFacts } from '../runtime/company-fact-parser.ts'
+import { computeCompanyAssessment } from '../runtime/company-assessment.ts'
 import { writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
 import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
@@ -81,7 +83,7 @@ import type { CoverLetterStatus } from '../ir/cover-letter.ts'
 import { buildArtifactSummaries } from '../artifact-summary/index.ts'
 import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
 import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
-import { deleteCompanyFile, readCompanyFile, type ProjectionStore } from '../storage/projection.ts'
+import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
@@ -152,6 +154,17 @@ export function listContexts(workspace: Workspace, store: BridgeStore): Decision
 }
 
 /** knowledge/gap 处理器派生：roleId 找 Role + person 找画像技能声明 → computeGap（纯派生，不落盘） */
+/** 公司档案 md → CompanyAssessment 附加（Projection Artifact，不写回 markdown）：
+ *  无 `## 公司事实` 段 → null（未评估 ≠ 0 分）；有段 → 确定性计分。
+ *  契约 company-assessment-contract-v0.1 §7/§8——storage 不 import runtime，组装在 transport 层。 */
+export function attachCompanyAssessments(workspace: Workspace, views: CompanyView[]): CompanyView[] {
+  return views.map((v) => {
+    const md = workspace.read(`companies/${v.id}.md`)
+    const { facts } = parseCompanyFacts(md, v.id)
+    return { ...v, assessment: facts.length === 0 ? null : computeCompanyAssessment(facts) }
+  })
+}
+
 export function computeKnowledgeGap(workspace: Workspace, params: { person: string; roleId: string }): GapResult {
   const { skills, roles } = scanKnowledge(workspace)
   const role = roles.find((r) => r.id === params.roleId)
@@ -992,7 +1005,7 @@ export async function startServer(opts: {
       const after = projectDecision(afterMd, id, '')
       return { ...result, candidates: detectDecisionChange(before, after) }
     },
-    [METHODS.listCompanies]: () => store.listCompanies(),
+    [METHODS.listCompanies]: () => attachCompanyAssessments(workspace, store.listCompanies()),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.decisionGet]: (params) => readDecisionFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),

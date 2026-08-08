@@ -583,6 +583,8 @@ export interface CompanyRecord {
   headcount?: string
   /** 别名（业务名/简称——同一主体的其他称呼；Agent 提议、引擎校验登记；消费端 canonical/alias 精确解析，禁止模糊匹配） */
   aliases?: string[]
+  /** 职业价值评估（Projection Artifact——transport 层附加，不写回 markdown；无 `## 公司事实` 段 → null，未评估 ≠ 0 分） */
+  assessment?: CompanyAssessment | null
 }
 
 // ─── Company Intelligence Layer v0.1：公司事实 → 职业价值评分（契约 references/company-assessment-contract-v0.1.md）──
