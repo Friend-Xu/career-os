@@ -37,8 +37,9 @@ function readPid() {
 function pidAlive(pid) {
   if (!pid) return false
   try {
-    execSync(`tasklist /FI "PID eq ${pid}" /FO CSV`, { encoding: 'utf8' })
-    return true
+    const out = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV`, { encoding: 'utf8' })
+    // tasklist 对不存在的 PID 仍返回退出码 0——必须检查输出内容（中文系统输出"信息: 没有运行的任务"）
+    return out.includes(String(pid))
   } catch {
     return false
   }
