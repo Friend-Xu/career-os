@@ -30,6 +30,7 @@ import {
 import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
+import { buildContextSystemPrompt } from '../agent/context/prompt.ts'
 
 /** TaskRejected → RPC error message（RPC 通道仅 code+message——reason/refs 编码进 message，UI 按前缀识别） */
 function taskRejectedMessage(rejected: AgentTaskRejected): string {
@@ -1185,15 +1186,17 @@ export async function startServer(opts: {
       const person = p.personId
         ? (store.listPersons() as Person[]).find((x) => x.personId === p.personId)
         : undefined
-      // 技能身份注入：人设 + 当前分析对象 + 协议引导拼在任务前（不注入会因缺上下文导致身份漂移）
+      // 技能身份注入：人设 + 当前分析对象 + 协议引导拼在任务前（不注入会因缺上下文导致身份漂移）；
+      // Task Context（Commit C）：bundle 作为 identity 之后的一个 section 拼入同一 context 通道
       const identity = buildSkillIdentity(
         config.paths.skills,
         workspace.paths.root,
         person ? { name: person.name, personId: person.personId ?? p.personId! } : undefined,
       )
+      const taskContext = bundle ? buildContextSystemPrompt(p.taskType!, bundle) : ''
       return {
         taskId: agentRuntime.start(
-          { ...p, context: [identity, p.context].filter(Boolean).join('\n\n') },
+          { ...p, context: [identity, taskContext, p.context].filter(Boolean).join('\n\n') },
           {
             permissionMode: config.agent.permissionMode,
             allowedTools: config.agent.allowedTools,

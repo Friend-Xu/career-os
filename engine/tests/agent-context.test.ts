@@ -8,6 +8,7 @@ import { createJobFile } from '../storage/job-watcher.ts'
 import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
+import { buildContextSystemPrompt } from '../agent/context/prompt.ts'
 import type { CompanyRecord, DecisionRecord } from '../ir/schema.ts'
 import type { AgentTaskRequest } from '../ir/agent-task.ts'
 
@@ -127,4 +128,23 @@ test('assembler：组合 Reference Manifest + generatedAt', () => {
   )
   assert.equal(filled.references.length, 1)
   assert.equal(filled.references[0].id, JOB_ID)
+})
+
+test('prompt：非空 bundle → taskType + 引用清单 + 规则（显式上下文 ≠ 自读）', () => {
+  const bundle = assembleContextBundle(
+    [{ type: 'job', id: JOB_ID, label: '示例智造 机械设计工程师', snapshot: { kind: 'timestamp', value: '2026-08-08' }, provenance: { kind: 'jd-analysis', label: '岗位分析' } }],
+    FIXED_NOW,
+  )
+  const prompt = buildContextSystemPrompt('job_analysis', bundle)
+  assert.ok(prompt.includes('job_analysis'))
+  assert.ok(prompt.includes('示例智造 机械设计工程师'))
+  assert.ok(prompt.includes('更新于 2026-08-08'))
+  assert.ok(prompt.includes('岗位分析'))
+  assert.ok(prompt.includes('显式依据，不得替换为其他对象'))
+  assert.ok(prompt.includes('自读不属于显式上下文'))
+})
+
+test('prompt：空 bundle（开放探索）→ 不注入 context section', () => {
+  const bundle = assembleContextBundle([], FIXED_NOW)
+  assert.equal(buildContextSystemPrompt('explanation', bundle), '')
 })
