@@ -30,6 +30,8 @@ import type {
 } from '../../engine/ir/schema.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
+import type { Opportunity } from '../../engine/runtime/opportunity.ts'
+import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -398,6 +400,16 @@ export class EngineClient {
   /** 工作副本对齐投影（P2.4：优化输入 = 当前创作对象，非版本；纯投影不落盘） */
   fetchWorkingCopyAlignment(wcId: string, jobId: string): Promise<ResumeAlignmentProjection> {
     return this.rpc<ResumeAlignmentProjection>(METHODS.workingCopyAlignment, { wcId, jobId })
+  }
+
+  /** 工作副本机会投影（P3.2：一等对象「为什么值得改」——纯投影不落盘） */
+  fetchWorkingCopyOpportunities(wcId: string, jobId: string): Promise<Opportunity[]> {
+    return this.rpc<Opportunity[]>(METHODS.workingCopyOpportunities, { wcId, jobId })
+  }
+
+  /** 机会 Proposal 全量（P3.3：opportunity-proposals/ 登记通道——按机会过滤由消费端做） */
+  listOpportunityProposals(): Promise<OpportunityProposal[]> {
+    return this.rpc<OpportunityProposal[]>(METHODS.opportunityProposalList)
   }
 
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */

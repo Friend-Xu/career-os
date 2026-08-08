@@ -46,6 +46,8 @@ import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
+import type { Opportunity } from '../../engine/runtime/opportunity.ts'
+import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -404,6 +406,12 @@ interface AppState {
   setActiveWorkingCopy: (id: string | null) => void;
   /** 工作副本对齐投影（P2.4：优化输入 = 当前创作对象——非版本选择） */
   fetchWorkingCopyAlignment: (wcId: string, jobId: string) => Promise<ResumeAlignmentProjection>;
+  /** 工作副本机会投影（P3.2：一等对象「为什么值得改」） */
+  fetchWorkingCopyOpportunities: (wcId: string, jobId: string) => Promise<Opportunity[]>;
+  /** 机会 Proposal 全量（P3.3） */
+  listOpportunityProposals: () => Promise<OpportunityProposal[]>;
+  /** 生成改写候选（P3.6：机会 → agent 任务 → 候选登记） */
+  generateOpportunityProposals: (opportunityId: string, wcId: string, personId: string) => Promise<string>;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -1257,6 +1265,41 @@ export const useAppStore = create<AppState>()(
   fetchWorkingCopyAlignment: async (wcId, jobId) => {
     if (!engine) throw new Error('引擎未连接')
     return engine.fetchWorkingCopyAlignment(wcId, jobId)
+  },
+
+  /** 工作副本机会投影（P3.2——一等对象「为什么值得改」；纯投影不落盘） */
+  fetchWorkingCopyOpportunities: async (wcId, jobId) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.fetchWorkingCopyOpportunities(wcId, jobId)
+  },
+
+  /** 机会 Proposal 全量（P3.3） */
+  listOpportunityProposals: async () => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.listOpportunityProposals()
+  },
+
+  /** 生成改写候选（P3.6：机会 → agent 任务 → 候选登记；任务状态由 agent.event 流呈现） */
+  generateOpportunityProposals: async (opportunityId: string, wcId: string, personId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    const task = `你是 Career OS 的简历表达改写助手。当前任务：为机会 ${opportunityId} 生成改写候选。
+
+步骤：
+1. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --opportunity-context ${opportunityId} ${wcId}\`（从项目根；用项目内便携 node，环境隔离）读取上下文 JSON（opportunity 含 suggestedAction、responsibilityStatement、evidence 回源、currentBlockText）
+2. 依据 opportunity.suggestedAction 与 evidence 生成 1-2 个候选（changes 数组：{"blockId": "rewrite/delete 填块 id；insert 省略", "before": "改前文本；insert 空串", "after": "改后文本；delete 空串", "operation": "insert|rewrite|delete"}）。若 suggestedAction 是「补充证据或删除」，不要直接 delete——优先保留用户内容的方案（如改准确、降低声明强度）。
+3. 用 Write 写候选 JSON 到项目根 .local/opportunity-candidate-${opportunityId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json：{"opportunityId": "${opportunityId}", "wcId": "${wcId}", "changes": [...]}
+4. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --opportunity-submit .local/opportunity-candidate-${opportunityId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json\` 提交。失败读错误（numeric_anchor/capability_anchor/EMPTY_EDIT），修正重试最多 1 次。
+5. 输出一句话总结：候选提案 id 或失败原因。
+
+硬约束：不得编造 evidence 外的事实与数字；能力级别（主导/负责/参与）不得高于 evidence 原文；除候选 JSON 外不得修改任何文件。`
+    const res = await engine.startAgent({
+      task,
+      personId,
+      allowedTools: ['Bash', 'Write', 'Read', 'Glob'],
+      permissionMode: 'bypassPermissions',
+      maxTurns: 15,
+    })
+    return res.taskId
   },
 
   /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */

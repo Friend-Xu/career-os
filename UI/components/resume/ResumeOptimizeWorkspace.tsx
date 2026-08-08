@@ -6,18 +6,33 @@
  * - 四态：已覆盖 / 表达缺口 / 证据不足声明（红线）/ 能力缺口
  * - R2.2 边界：只展示四态 + 可追溯引用；不做 AI 改写 / 提案创建（P3 Opportunity Loop）
  */
-import { Box, Chip, MenuItem, Select, Stack, Typography } from '@mui/material'
+import { Box, Chip, MenuItem, Select, Stack, Typography, Button, CircularProgress } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
+import type { Opportunity } from '../../../engine/runtime/opportunity.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
   covered: { icon: '✓', label: '已覆盖', color: COLORS.riskLow },
   expressive_gap: { icon: '△', label: '表达缺口', color: COLORS.riskMedium },
   unsupported_claim: { icon: '⚠', label: '证据不足声明', color: COLORS.riskHigh },
   capability_gap: { icon: '○', label: '能力缺口', color: COLORS.textMuted },
+}
+
+/** P3.5 UI Contract：机会用户语言映射——不暴露内部治理字段（claim/evidence/state） */
+const OPPORTUNITY_META: Record<string, { icon: string; tag: string; color: string }> = {
+  'improve_value': { icon: '🔴', tag: '提升表达覆盖', color: COLORS.riskMedium },
+  'reduce_risk': { icon: '🔴', tag: '可信度检查', color: COLORS.riskHigh },
+  'activate_asset': { icon: '🟡', tag: '可利用经历', color: COLORS.riskLow },
+}
+
+/** 影响范围（applyTarget 用户语言——不显示 blockId 系统标识） */
+const TARGET_TEXT: Record<string, string> = {
+  insert: '新增一条表达',
+  rewrite: '改写已有表达',
+  delete: '处理已有表达',
 }
 
 export function ResumeOptimizeWorkspace() {
@@ -28,11 +43,16 @@ export function ResumeOptimizeWorkspace() {
   const evidenceItems = useAppStore((s) => s.evidence)
   const engineStatus = useAppStore((s) => s.engineStatus)
   const fetchWorkingCopyAlignment = useAppStore((s) => s.fetchWorkingCopyAlignment)
+  const fetchWorkingCopyOpportunities = useAppStore((s) => s.fetchWorkingCopyOpportunities)
+  const generateOpportunityProposals = useAppStore((s) => s.generateOpportunityProposals)
   const [wcId, setWcId] = useState('')
   const [jobId, setJobId] = useState('')
   const [projection, setProjection] = useState<ResumeAlignmentProjection | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null)
+  const [genState, setGenState] = useState<{ oppId: string; phase: string } | null>(null)
+  const [genTick, setGenTick] = useState(0)
 
   const personWorkingCopies = workingCopies.filter((w) => w.owner === String(person.id))
   const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
@@ -60,8 +80,83 @@ export function ResumeOptimizeWorkspace() {
     }
   }, [wcId, jobId, engineStatus, fetchWorkingCopyAlignment])
 
+  /** 机会投影（P3.6：一等对象「为什么值得改」——选择变化/生成完成后重拉） */
+  useEffect(() => {
+    if (!wcId || !jobId || engineStatus !== 'connected') return
+    let cancelled = false
+    fetchWorkingCopyOpportunities(wcId, jobId)
+      .then((ops) => {
+        if (!cancelled) setOpportunities(ops)
+      })
+      .catch(() => {
+        if (!cancelled) setOpportunities(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [wcId, jobId, engineStatus, fetchWorkingCopyOpportunities, genTick])
+
   const titleOf = (eid: string) => evidenceItems.find((e) => e.id === eid)?.event.title ?? eid
   const selectedJob = jobs.find((j) => j.id === jobId)
+
+  /** 机会卡片标题（P3.5：用户语言——不暴露 state 内部名） */
+  const opportunityTitle = useCallback(
+    (o: Opportunity): string => {
+      if (o.intent === 'improve_value') {
+        const stmt =
+          o.anchor.kind === 'alignment'
+            ? jobs.find((j) => j.id === o.anchor.jobId)?.responsibilities.find((r) => r.id === o.anchor.responsibilityId)?.statement
+            : undefined
+        return `提升「${stmt ?? '岗位要求'}」的表达覆盖`
+      }
+      if (o.intent === 'reduce_risk') return '这段经历缺少当前岗位方向的支撑依据'
+      return '岗位相关的经历尚未形成表达资产'
+    },
+    [jobs],
+  )
+
+  const opportunityReason = useCallback(
+    (o: Opportunity): string => {
+      if (o.intent === 'reduce_risk') {
+        const stmt =
+          o.anchor.kind === 'alignment'
+            ? jobs.find((j) => j.id === o.anchor.jobId)?.responsibilities.find((r) => r.id === o.anchor.responsibilityId)?.statement
+            : undefined
+        return `简历中有表达与「${stmt ?? '岗位要求'}」相关，但缺少当前岗位方向的支撑依据——建议补充证据或调整表达。`
+      }
+      if (o.intent === 'activate_asset') {
+        return `已有 ${o.refs.evidenceIds.length} 条经历与岗位相关，但尚未成为可引用的表达资产。`
+      }
+      return `${o.refs.evidenceIds.length} 条相关经历已有，但当前简历未体现——可在不新增事实的前提下补齐表达。`
+    },
+    [jobs],
+  )
+
+  const generate = async (o: Opportunity) => {
+    setGenState({ oppId: o.id, phase: '生成改写方案中…' })
+    try {
+      await generateOpportunityProposals(o.id, wcId, String(person.id))
+      // 任务完成后轮询候选（agent 提交经引擎登记——以提案出现为完成信号）
+      const deadline = Date.now() + 90_000
+      const poll = async (): Promise<void> => {
+        const proposals = await useAppStore.getState().listOpportunityProposals()
+        if (proposals.some((p) => p.opportunityId === o.id)) {
+          setGenState(null)
+          setGenTick((t) => t + 1)
+          return
+        }
+        if (Date.now() > deadline) {
+          setGenState(null)
+          return
+        }
+        setTimeout(() => void poll(), 2500)
+      }
+      void poll()
+    } catch (e: unknown) {
+      setGenState(null)
+      setError(e instanceof Error ? e.message : '候选生成失败')
+    }
+  }
 
   return (
     <Box sx={{ p: 2, maxWidth: 860, mx: 'auto' }}>
@@ -243,6 +338,81 @@ export function ResumeOptimizeWorkspace() {
             })}
           </Stack>
         )
+      )}
+
+      {/* 发现机会（P3.6——契约 opportunity-ui-contract：系统发现「值得考虑的变化」，用户语言四段卡片） */}
+      {wcId && jobId && (
+        <Box sx={{ mt: 3 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 700 }}>发现机会</Typography>
+            <Chip
+              size="small"
+              label={`${opportunities?.length ?? 0} 项值得考虑的变化`}
+              sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
+            />
+          </Stack>
+          {!opportunities || opportunities.length === 0 ? (
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: '10px',
+                border: `1px dashed ${alpha(COLORS.border, 0.9)}`,
+                textAlign: 'center',
+              }}
+            >
+              <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>当前工作副本与目标岗位无待处理变化</Typography>
+            </Box>
+          ) : (
+            <Stack spacing={1}>
+              {opportunities.map((o) => {
+                const meta = OPPORTUNITY_META[o.intent] ?? { icon: '•', tag: o.intent, color: COLORS.textMuted }
+                return (
+                  <Box
+                    key={o.id}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: '10px',
+                      border: `1px solid ${alpha(meta.color, 0.3)}`,
+                      bgcolor: 'transparent',
+                      boxShadow: COLORS.cardShadow,
+                    }}
+                  >
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
+                      <Typography sx={{ fontSize: 12, flexShrink: 0 }}>{meta.icon}</Typography>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0 }}>{opportunityTitle(o)}</Typography>
+                      <Chip size="small" label={meta.tag} sx={{ height: 20, fontSize: 11, bgcolor: alpha(meta.color, 0.12), color: meta.color }} />
+                    </Stack>
+                    <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{opportunityReason(o)}</Typography>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.75, flexWrap: 'wrap', gap: 0.5 }}>
+                      <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                        影响：{o.applyTarget ? TARGET_TEXT[o.applyTarget.action] : '形成表达资产（走素材通道）'}
+                      </Typography>
+                      <Button
+                        size="small"
+                        disabled={genState?.oppId === o.id}
+                        onClick={() => void generate(o)}
+                        sx={{
+                          ml: 'auto',
+                          fontSize: 11.5,
+                          textTransform: 'none',
+                          color: COLORS.accent,
+                          border: `1px solid ${alpha(COLORS.accent, 0.35)}`,
+                          borderRadius: '8px',
+                          px: 1.25,
+                          py: 0.25,
+                          '&:hover': { bgcolor: alpha(COLORS.accent, 0.08) },
+                        }}
+                      >
+                        {genState?.oppId === o.id ? <CircularProgress size={12} sx={{ mr: 0.75 }} /> : null}
+                        {genState?.oppId === o.id ? genState.phase : o.intent === 'activate_asset' ? '生成表达资产' : '生成改写方案'}
+                      </Button>
+                    </Stack>
+                  </Box>
+                )
+              })}
+            </Stack>
+          )}
+        </Box>
       )}
     </Box>
   )
