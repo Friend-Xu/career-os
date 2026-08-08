@@ -228,7 +228,11 @@ function ReportCard({ record }: { record: DecisionRecord }) {
           size="small"
           startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
           onClick={() => {
-            startAnalysis(`请重新评估决策「${record.title}」：更新匹配度、风险与结论`)
+            startAnalysis(`请重新评估决策「${record.title}」：更新匹配度、风险与结论`, {
+              taskType: 'decision_reassessment',
+              contextRefs: [{ type: 'decision', id: record.id }],
+              outputTarget: 'decision',
+            })
             push('info', '已预置「重新评估」上下文')
           }}
           sx={{ fontSize: 12.5 }}

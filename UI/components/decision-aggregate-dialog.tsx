@@ -331,7 +331,12 @@ export function DecisionAggregateDialog({
             variant="contained"
             fullWidth
             onClick={() => {
-              startAnalysis(`请复盘决策「${aggregate.context.question}」：回顾预期与结果，输出复盘结论`)
+              // decision 引用 = 关联决策 id（DecisionRecord 可解析；context.id 是 decision-contexts 文件 id 不可解析）
+              const decisionId = aggregate.context.relatedDecisions[0] ?? aggregate.records[0]?.id
+              startAnalysis(`请复盘决策「${aggregate.context.question}」：回顾预期与结果，输出复盘结论`, {
+                taskType: 'decision_review',
+                contextRefs: decisionId ? [{ type: 'decision', id: decisionId }] : [],
+              })
               push('info', `复盘产出请写入 decision-contexts/ 的 ## 复盘 段落（结论 + 复盘日期）`)
               onClose()
             }}

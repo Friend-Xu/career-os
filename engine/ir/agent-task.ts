@@ -76,12 +76,12 @@ export interface ContextReference {
   id: string
 }
 
-/** UI → Engine 的瞬态请求契约（发送时冻结，不落盘） */
+/** UI → Engine 的瞬态请求契约（发送时冻结，不落盘）；trigger 缺省 = 'user_action'（引擎组装时补） */
 export interface AgentTaskRequest {
   taskType: AgentTaskType
   contextRefs?: ContextReference[]
   outputTarget?: OutputTarget
-  trigger: TaskTrigger
+  trigger?: TaskTrigger
 }
 
 /** Engine 解析后的引用（snapshot = 解析时登记的当前标识，非 optimistic lock） */

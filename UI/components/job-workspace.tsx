@@ -164,6 +164,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
   const applications = useAppStore((s) => s.applications)
+  const resumes = useAppStore((s) => s.resumes)
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
@@ -210,15 +211,33 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const cRows = constraintRows[job.id] ?? null
 
   const analyze = (): void => {
-    startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`)
+    startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`, {
+      taskType: 'job_analysis',
+      contextRefs: [{ type: 'job', id: job.id }],
+      outputTarget: 'decision',
+    })
     push('info', '已预置「JD 分析」上下文')
   }
   const dueDiligence = (): void => {
-    startAnalysis(`请对「${job.company}」开展公司尽调：规模/市占率/业务构成/风险/入职建议，输出公司档案`)
+    startAnalysis(`请对「${job.company}」开展公司尽调：规模/市占率/业务构成/风险/入职建议，输出公司档案`, {
+      taskType: 'company_research',
+      // company 引用：resolveCompanyReference 已解析当前岗位的公司档案（公司未建档 → 缺引用 → 引擎拒绝，先建档再尽调）
+      contextRefs: company ? [{ type: 'company', id: company.id }] : [],
+    })
     push('info', '已预置「公司尽调」上下文')
   }
   const optimizeResume = (): void => {
-    startAnalysis(`请针对岗位「${job.company} · ${job.title}」的 JD 优化我的简历：拆解 JD 关键词，逐模块改写，输出修改建议`)
+    const latestResume = [...resumes]
+      .filter((r) => r.personId === person.id)
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0]
+    startAnalysis(`请针对岗位「${job.company} · ${job.title}」的 JD 优化我的简历：拆解 JD 关键词，逐模块改写，输出修改建议`, {
+      taskType: 'resume_adaptation',
+      contextRefs: [
+        { type: 'job', id: job.id },
+        ...(latestResume ? [{ type: 'resume' as const, id: latestResume.id }] : []),
+      ],
+      outputTarget: 'artifact',
+    })
     push('info', '已预置「简历优化」上下文')
     setPage('resumes')
   }
@@ -230,7 +249,10 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       .catch((err) => push('warning', `推进失败：${err instanceof Error ? err.message : String(err)}`))
   }
   const interviewPrep = (): void => {
-    startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`)
+    startAnalysis(`请为「${job.company} · ${job.title}」准备面试：公司背景/岗位要求回顾/项目陈述组织/预测面试问题`, {
+      taskType: 'interview_preparation',
+      contextRefs: [{ type: 'job', id: job.id }],
+    })
     push('info', '已预置「面试准备」上下文')
   }
   const collectEvidence = (): void => {
@@ -238,6 +260,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     startAnalysis(
       `请检查岗位「${job.company} · ${job.title}」的证明需求（岗位智能表的 Evidence Expectations）与我的证据库存：` +
         '找出缺口，用岗位的追问引导我沉淀相关经历（按 evidence 子模块契约写入 evidence/ 目录）。没有相关经历就诚实说明缺口。',
+      { taskType: 'explanation', contextRefs: [{ type: 'job', id: job.id }] },
     )
     push('info', '已预置「证据沉淀」上下文')
   }

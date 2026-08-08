@@ -36,7 +36,6 @@ export function AgentPanel() {
   const send = useAppStore((s) => s.sendAgentMessage)
   const addDecision = useAppStore((s) => s.addDecision)
   const expandToFull = useAppStore((s) => s.expandToFullAgent)
-  const contextFiles = useAppStore((s) => s.agentContextFiles)
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
@@ -151,25 +150,36 @@ export function AgentPanel() {
         </Box>
       </Box>
 
-      <Box sx={{ px: 1.5, py: 1.25 }}>
-        <Typography
-          sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.75, letterSpacing: '0.04em' }}
-        >
-          已加载上下文
-        </Typography>
-        <Stack spacing={0.5}>
-          {contextFiles.map((f) => (
-            <Stack key={f} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-              <CheckCircleOutlinedIcon sx={{ fontSize: 13, color: COLORS.riskLow }} />
-              <Typography
-                sx={{ fontSize: 12.5, fontFamily: COLORS.mono, color: COLORS.textSecondary }}
-              >
-                {f}
-              </Typography>
-            </Stack>
-          ))}
-        </Stack>
-      </Box>
+      {/* ADR-020 Commit F：本次分析依据 = contextBundle 投影（显式引用，UI 只投影不解释——
+          展示 Agent 使用了哪些明确引用；自读不属于依据清单；空 bundle（开放探索）不显示）。
+          原「已加载上下文」（agentContextFiles mock——Agent 能读什么的硬编码列表）已废弃，Step 4 移除 */}
+      {session?.contextBundle && session.contextBundle.references.length > 0 && (
+        <Box sx={{ px: 1.5, py: 1.25 }}>
+          <Typography
+            sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.75, letterSpacing: '0.04em' }}
+          >
+            本次分析依据
+          </Typography>
+          <Stack spacing={0.75}>
+            {session.contextBundle.references.map((r) => (
+              <Stack key={`${r.type}-${r.id}`} direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
+                <CheckCircleOutlinedIcon sx={{ fontSize: 13, color: COLORS.riskLow, mt: 0.25 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 12.5, color: COLORS.text, lineHeight: 1.4 }} noWrap>
+                    {r.label ?? r.id}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.4 }} noWrap>
+                    {r.snapshot
+                      ? `${r.snapshot.kind === 'version' ? `版本 ${r.snapshot.value}` : `更新于 ${r.snapshot.value}`} · `
+                      : ''}
+                    {r.provenance.label}
+                  </Typography>
+                </Box>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+      )}
 
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
         {totalMessages > recentMessages.length && (

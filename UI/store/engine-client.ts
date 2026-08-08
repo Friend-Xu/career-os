@@ -37,6 +37,7 @@ import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engi
 import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../engine/ir/cover-letter.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
+import type { AgentTaskType, ContextReference, OutputTarget, AgentContextBundle } from '../../engine/ir/agent-task.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts'
 import type { TraceabilityContext } from '../../engine/ir/traceability.ts'
@@ -612,6 +613,10 @@ export class EngineClient {
 
   startAgent(params: {
     task: string
+    /** ADR-020 TaskRequest：taskType/contextRefs/outputTarget 透传（引擎 Assembly 消费） */
+    taskType?: AgentTaskType
+    contextRefs?: ContextReference[]
+    outputTarget?: OutputTarget
     context?: string
     resumeSessionId?: string
     /** 当前分析对象（person_003）——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
@@ -622,8 +627,8 @@ export class EngineClient {
     model?: string
     apiKey?: string
     baseUrl?: string
-  }): Promise<{ taskId: string }> {
-    return this.rpc<{ taskId: string }>(METHODS.agentStart, params)
+  }): Promise<{ taskId: string; contextBundle?: AgentContextBundle }> {
+    return this.rpc<{ taskId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
   }
 
   /** Agent 设置（settings/get：来自 config.json） */

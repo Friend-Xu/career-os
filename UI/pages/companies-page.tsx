@@ -605,6 +605,7 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
             onClick={() => {
               startAnalysis(
                 `请对「${selected.name}」（${selected.city} · ${selected.industry}）开展公司尽调：背调、风险、竞争力与入职建议`,
+                { taskType: 'company_research', contextRefs: [{ type: 'company', id: selected.id }] },
               )
               push('info', '已预置「公司尽调」上下文')
             }}

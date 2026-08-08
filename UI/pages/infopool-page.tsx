@@ -711,7 +711,15 @@ export function InfoPoolPage() {
         <MenuItem
           onClick={() => {
             if (menu) {
-              startAnalysis(`请重新评估信息池节点「${menu.node.label}」：更新匹配度与风险`)
+              // ADR-020：节点类型 → taskType/引用（decision/company 节点带显式引用，其余开放探索）
+              const node = menu.node
+              const taskRequest =
+                node.type === 'decision'
+                  ? { taskType: 'decision_reassessment' as const, contextRefs: [{ type: 'decision' as const, id: node.id }] }
+                  : node.type === 'company'
+                    ? { taskType: 'company_research' as const, contextRefs: [{ type: 'company' as const, id: node.id }] }
+                    : { taskType: 'explanation' as const, contextRefs: [] }
+              startAnalysis(`请重新评估信息池节点「${node.label}」：更新匹配度与风险`, taskRequest)
               push('info', '已预置「重新评估」上下文')
             }
             setMenu(null)

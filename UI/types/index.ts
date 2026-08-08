@@ -28,6 +28,7 @@ import type {
   ClaimCoverageRow,
 } from '../../engine/ir/schema.ts';
 import type { ResumeDocument, ResumeBullet, ResumeSection } from '../../engine/ir/resume.ts';
+import type { AgentContextBundle } from '../../engine/ir/agent-task.ts';
 import type { ArtifactSummary, ArtifactType } from '../../engine/ir/artifact-summary.ts';
 import type { ArtifactTimelineEvent, ArtifactTimelineEventType } from '../../engine/ir/artifact-timeline.ts';
 import type { TraceabilityContext, TraceSource } from '../../engine/ir/traceability.ts';
@@ -125,8 +126,18 @@ export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   streaming?: boolean
 }
 
-/** UI 扩展 Session：messages 使用 UI ChatMessage（会话持久化于本地，刷新可恢复）；sdkSessionId = SDK 会话凭据（resume 用） */
-export type Session = Omit<EngineSession, 'messages'> & { messages: ChatMessage[]; sdkSessionId?: string }
+/**
+ * UI 扩展 Session：messages 使用 UI ChatMessage（会话持久化于本地，刷新可恢复）；
+ * sdkSessionId = SDK 会话凭据（resume 用）；contextBundle = ADR-020 显式上下文
+ * （执行期快照，随执行记录存活——UI 只投影不解释）；status = 最近一次任务的异常
+ * 终止标记（rejected/failed——正常流程不写，避免与 sessionTasks 双轨）
+ */
+export type Session = Omit<EngineSession, 'messages'> & {
+  messages: ChatMessage[]
+  sdkSessionId?: string
+  contextBundle?: AgentContextBundle
+  status?: 'rejected' | 'failed'
+}
 
 export type StageStatus = 'completed' | 'current' | 'pending' | 'skipped';
 

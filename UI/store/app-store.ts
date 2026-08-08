@@ -39,6 +39,7 @@ import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts
 import type { TraceabilityContext } from '../../engine/ir/traceability.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
+import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import {
   EVENTS,
@@ -199,6 +200,8 @@ interface AppState {
   agentDraft: string;
   agentContextFiles: string[];
   pendingPrompt: string | null;
+  /** ADR-020：预置动作携带的 TaskRequest（startAnalysis 暂存，发送时合并——trigger 固定 user_action） */
+  pendingTaskRequest?: AgentTaskRequest;
   personSwitchDialogOpen: boolean;
   pendingPersonId: number | null;
   personCreateDialogOpen: boolean;
@@ -258,13 +261,13 @@ interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   setAgentDraft: (draft: string) => void;
   setPendingPrompt: (prompt: string | null) => void;
-  startAnalysis: (prompt: string) => void;
+  startAnalysis: (prompt: string, taskRequest?: AgentTaskRequest) => void;
   /** 任务启动入口（工作台 Action）：新 Session（主题现场）+ 立即执行——按钮即意图，不等用户二次确认；
    *  type=任务识别（P2 状态条显示）；与 sendAgentMessage（聊天入口，当前现场）职责分离 */
-  startAgentTask: (prompt: string, opts?: { type?: string; title?: string }) => void;
+  startAgentTask: (prompt: string, opts?: { type?: string; title?: string; taskRequest?: AgentTaskRequest }) => void;
   expandToFullAgent: () => void;
   /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示） */
-  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string }) => void;
+  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest }) => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -456,6 +459,7 @@ export const useAppStore = create<AppState>()(
       agentDraft: '',
       agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
       pendingPrompt: null,
+      pendingTaskRequest: undefined,
       personSwitchDialogOpen: false,
       pendingPersonId: null,
       personCreateDialogOpen: false,
@@ -683,20 +687,20 @@ export const useAppStore = create<AppState>()(
 
   setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
 
-  startAnalysis: (prompt) => {
+  startAnalysis: (prompt, taskRequest) => {
     set({
       agentPanelOpen: true,
       agentDraft: prompt,
       pendingPrompt: prompt,
+      pendingTaskRequest: taskRequest,
       mainWidthMode: 'narrow',
     })
   },
-
   startAgentTask: (prompt, opts) => {
     // 新任务 = 新现场（不污染现有会话历史）；任务标题作 session 名，可回溯
     get().createSession(opts?.title ?? 'AI 任务')
     set({ agentPanelOpen: true, mainWidthMode: 'narrow' })
-    get().sendAgentMessage(prompt, { taskType: opts?.type })
+    get().sendAgentMessage(prompt, { taskType: opts?.type, taskRequest: opts?.taskRequest })
   },
 
   setInitSessionState: (state) => set({ initSessionState: state }),
@@ -811,7 +815,10 @@ export const useAppStore = create<AppState>()(
   },
 
   sendAgentMessage: (content, opts) => {
-    const { sessions, engineStatus } = get()
+    const { sessions, engineStatus, pendingTaskRequest } = get()
+    // ADR-020：发送合并预置 TaskRequest（startAnalysis 暂存；显式传参优先），发送后清空
+    const taskRequest = opts?.taskRequest ?? pendingTaskRequest
+    if (taskRequest) set({ pendingTaskRequest: undefined })
     // Person Capability Gate：当前人初始化中且非初始化会话 → 拒绝新消息（历史可看，发送前拦截）
     const currentPerson = get().currentPerson()
     const gateSessionId = get().currentSessionId
@@ -849,7 +856,7 @@ export const useAppStore = create<AppState>()(
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === sessionId)
-      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType)
+      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType, taskRequest)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
@@ -1702,7 +1709,13 @@ async function submitJDAnalysis(proposal: JDAnalysisProposal): Promise<void> {
 }
 
 /** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
-async function runAgentTask(sessionId: string, content: string, resumeSessionId?: string, taskType?: string): Promise<void> {
+async function runAgentTask(
+  sessionId: string,
+  content: string,
+  resumeSessionId?: string,
+  taskType?: string,
+  taskRequest?: AgentTaskRequest,
+): Promise<void> {
   if (!engine) return
   // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
   if (useAppStore.getState().sessionTasks[sessionId]) {
@@ -1710,8 +1723,9 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
     return
   }
   try {
-    const { taskId } = await engine.startAgent({
+    const res = await engine.startAgent({
       task: content,
+      ...(taskRequest ? { taskType: taskRequest.taskType, contextRefs: taskRequest.contextRefs, outputTarget: taskRequest.outputTarget } : {}),
       ...(useAppStore.getState().currentPerson().personId
         ? { personId: useAppStore.getState().currentPerson().personId }
         : {}),
@@ -1726,6 +1740,15 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
         ? { baseUrl: useAppStore.getState().agentSettings.baseUrl }
         : {}),
     })
+    // ADR-020：Bundle = 显式上下文（执行期快照）——存 Session（UI 只投影不解释），不塞 message
+    if (res.contextBundle) {
+      useAppStore.setState((s) => ({
+        sessions: s.sessions.map((x) =>
+          x.id === sessionId ? { ...x, contextBundle: res.contextBundle, status: undefined } : x,
+        ),
+      }))
+    }
+    const taskId = res.taskId
     const messageId = `msg-${Date.now()}`
     appendToSession(sessionId, {
       id: messageId,
@@ -1744,12 +1767,20 @@ async function runAgentTask(sessionId: string, content: string, resumeSessionId?
     }))
     ensureHeartbeat()
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // ADR-020 D1：Rejected Task ≠ Failed Session——不删除交互事实（用户输入是真实事件），
+    // 标记 session.status='rejected'（请求不满足系统契约未执行；failed = 执行失败，语义分离）
+    if (message.startsWith('TaskRejected:')) {
+      useAppStore.setState((s) => ({
+        sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, status: 'rejected' } : x)),
+      }))
+    }
     appendToSession(sessionId, {
       id: `msg-${Date.now()}`,
       role: 'assistant',
-      content: err instanceof Error ? err.message : String(err),
+      content: message,
       timestamp: new Date().toISOString(),
-      error: { code: 'unknown', message: err instanceof Error ? err.message : String(err), retryable: true },
+      error: { code: 'unknown', message, retryable: true },
     })
   }
 }
