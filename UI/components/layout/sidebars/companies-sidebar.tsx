@@ -178,9 +178,9 @@ export function CompaniesSidebar() {
                     {c.name}
                   </Typography>
                   {vColor && <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: vColor, flexShrink: 0 }} />}
-                  {c.matchScore > 0 && (
+                  {c.assessment?.status === 'EVALUATED' && (
                     <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.accent }}>
-                      {c.matchScore}
+                      {c.assessment.qualityScore}
                     </Typography>
                   )}
                   <Box className="card-delete" sx={{ opacity: 0, flexShrink: 0 }}>
