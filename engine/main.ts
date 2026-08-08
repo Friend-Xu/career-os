@@ -28,6 +28,7 @@ import { generateHealthReport } from './health/checker.ts'
 import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
+import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
 async function main(args: string[]): Promise<void> {
@@ -173,6 +174,26 @@ async function main(args: string[]): Promise<void> {
         }
       }
       console.log(`总体健康度：${report.overallScore}%（version ${report.version}）`)
+      return
+    }
+
+    // ─── 观察统计（--observation-stats）：P6 观察阶段只读投影——决策事件/迁移路径/资产化闭环分布 + 阈值达成
+    if (args.includes('--observation-stats')) {
+      const stats = computeObservationStats(ws)
+      console.log('Observation Stats')
+      console.log('━━━━━━━━━━━━━━━━')
+      console.log(`决策事件：${stats.historyCount} 条（阈值 30）`)
+      console.log(`机会分布：${Object.entries(stats.opportunityDistribution.state).map(([k, v]) => `${k}×${v}`).join('、') || '无'}`)
+      console.log(`意图分布：${Object.entries(stats.opportunityDistribution.intent).map(([k, v]) => `${k}×${v}`).join('、') || '无'}`)
+      console.log(`提案行为：采纳 ${stats.proposalBehavior.approved}（${stats.proposalBehavior.acceptRate}%）· 拒绝 ${stats.proposalBehavior.rejected}（${stats.proposalBehavior.rejectRate}%）· 冲突 ${stats.proposalBehavior.conflict}（${stats.proposalBehavior.conflictRate}%）`)
+      const cats = Object.entries(stats.resolutionPaths.category).map(([k, v]) => `${k}×${v}`).join('、') || '无'
+      console.log(`结果分布：${cats}`)
+      const trans = Object.entries(stats.resolutionPaths.transitions).map(([k, v]) => `${k}×${v}`).join('、') || '无'
+      console.log(`迁移路径：${trans}`)
+      console.log(`资产化：提案 ${stats.assetLoop.proposals} · 采用 ${stats.assetLoop.accepted}（阈值 10）`)
+      for (const m of stats.thresholds.met) console.log(`✓ ${m}`)
+      for (const u of stats.thresholds.unmet) console.log(`○ ${u}`)
+      console.log(stats.thresholds.met.length === 4 ? '模型升级评审准入——可启动 P7 契约冻结' : '样本不足——继续观察（闭环运行产生数据）')
       return
     }
 
