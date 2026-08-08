@@ -30,6 +30,7 @@ export interface WorkspacePaths {
   decisionContexts: string
   companies: string
   jobs: string
+  applications: string
   evidence: string
   claims: string
   resumes: string
@@ -59,6 +60,8 @@ export interface Workspace {
   delete(relPath: string): void
   /** 列出子目录下的 .md 文件（无目录则抛 WorkspaceError） */
   listMarkdown(subDir: string): string[]
+  /** 列出子目录下的 .json 文件（无目录则抛 WorkspaceError；Application Registry 用） */
+  listJson(subDir: string): string[]
   /** 列出子目录下的子目录名（无目录则抛 WorkspaceError） */
   listDirs(subDir: string): string[]
 }
@@ -71,6 +74,7 @@ export function buildPaths(root: string): WorkspacePaths {
     decisionContexts: join(root, 'decision-contexts'),
     companies: join(root, 'companies'),
     jobs: join(root, 'jobs'),
+    applications: join(root, 'applications'),
     evidence: join(root, 'evidence'),
     claims: join(root, 'claims'),
     resumes: join(root, 'resumes'),
@@ -117,6 +121,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.decisionContexts, { recursive: true })
     mkdirSync(paths.companies, { recursive: true })
     mkdirSync(paths.jobs, { recursive: true })
+    mkdirSync(paths.applications, { recursive: true })
     mkdirSync(paths.evidence, { recursive: true })
     mkdirSync(paths.claims, { recursive: true })
     mkdirSync(paths.resumes, { recursive: true })
@@ -175,6 +180,11 @@ export function initWorkspace(root: string): Workspace {
       const dir = join(root, subDir)
       if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
       return readdirSync(dir).filter((f) => f.endsWith('.md'))
+    },
+    listJson(subDir) {
+      const dir = join(root, subDir)
+      if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
+      return readdirSync(dir).filter((f) => f.endsWith('.json'))
     },
     listDirs(subDir) {
       const dir = join(root, subDir)

@@ -12,7 +12,7 @@
  * 缺失填 `-`，属常态 → degraded）。v2.1 额外要求 profile（语义 = 人名）。
  */
 import type {
-  Application,
+  ApplicationRecord,
   CompanyRecord,
   Confidence,
   DecisionRecord,
@@ -121,7 +121,7 @@ export function validateDecisionRecord(input: unknown, opts: { requireProfile?: 
 
   const version = protocolVersionOf(value)
   if (!isSupportedVersion(version)) {
-    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8）`, severity: 'error' })
+    checks.push({ path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8/2.9）`, severity: 'error' })
   }
   const required = opts.requireProfile ? DECISION_REQUIRED.v21 : DECISION_REQUIRED.v20
   for (const field of required) {
@@ -213,23 +213,31 @@ export function validatePoolEdge(input: unknown): Validated<PoolEdge> {
   return finalize(value as unknown as PoolEdge, checks)
 }
 
-const APPLICATION_STATUSES = ['已评估', '已投递', '已联系', '已回复', '面试中', '已录取', '已拒绝'] as const
-const URGENCIES = ['urgent', 'overdue', 'waiting', 'cooled'] as const
+export const APPLICATION_STATUSES = [
+  'PREPARING',
+  'READY',
+  'SUBMITTED',
+  'COMMUNICATING',
+  'INTERVIEWING',
+  'OFFERED',
+  'REJECTED',
+  'WITHDRAWN',
+] as const
 
-export function validateApplication(input: unknown): Validated<Application> {
+export function validateApplication(input: unknown): Validated<ApplicationRecord> {
   const value = isRecord(input) ? input : {}
   const checks: FieldCheck[] = []
-  if (typeof value.id !== 'number') checks.push(missing('id', value.id))
-  if (typeof value.personId !== 'number') checks.push(missing('personId', value.personId))
-  for (const field of ['company', 'position']) {
-    checkString(checks, field, value[field])
-  }
-  if (value.sourceDecision !== undefined && !expectString(value.sourceDecision)) {
-    checks.push(illegal('sourceDecision', value.sourceDecision, 'string'))
+  if (!expectString(value.id)) checks.push(missing('id', value.id))
+  if (!expectString(value.personId)) checks.push(missing('personId', value.personId))
+  if (!expectString(value.jobId)) checks.push(missing('jobId', value.jobId))
+  if (value.decisionId !== undefined && !expectString(value.decisionId)) {
+    checks.push(illegal('decisionId', value.decisionId, 'string'))
   }
   checkEnum(checks, 'status', value.status, APPLICATION_STATUSES)
-  checkEnum(checks, 'urgency', value.urgency, URGENCIES)
-  return finalize(value as unknown as Application, checks)
+  if (value.submittedAt !== undefined && !expectString(value.submittedAt)) {
+    checks.push(illegal('submittedAt', value.submittedAt, 'string'))
+  }
+  return finalize(value as unknown as ApplicationRecord, checks)
 }
 
 export function validateSession(input: unknown): Validated<Session> {
@@ -249,6 +257,7 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
   const value = isRecord(input) ? input : {}
   const version = protocolVersionOf(value)
   switch (version) {
+    case '2.9':
     case '2.8':
     case '2.3':
     case '2.2':
@@ -258,7 +267,7 @@ export function validateByProtocol(input: unknown): Validated<DecisionRecord> {
       return validateDecisionRecord(value)
     default:
       return finalize(value as unknown as DecisionRecord, [
-        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8）`, severity: 'error' },
+        { path: 'protocolVersion', reason: `不支持的协议版本 ${JSON.stringify(version)}（合法值：2.0/2.1/2.2/2.3/2.8/2.9）`, severity: 'error' },
       ])
   }
 }

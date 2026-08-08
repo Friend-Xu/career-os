@@ -1,7 +1,8 @@
 /**
  * SQLite Projection（第 3 步）：markdown 真相源的查询投影，一切查询走投影。
- * 5 张表（方案文档冻结，列级 schema 本步定稿）：
- *   persons_projection / decisions_projection / applications_projection /
+ * 4 张表（applications_projection 已删——ADR-019 投递记录是 Engine Registry
+ * applications/{id}.json，非 SQLite 投影）：
+ *   persons_projection / decisions_projection /
  *   sessions_projection / timeline_projection（人生决策时间线视图）
  * - syncFromDecisions：全量重建 decisions_projection + timeline_projection（单事务）
  *   + persons_projection upsert（profiles/ 扫描，id 稳定保留）
@@ -71,18 +72,6 @@ CREATE TABLE IF NOT EXISTS decisions_projection (
   payload TEXT,
   validation_status TEXT,
   validation_issues TEXT
-);
-CREATE TABLE IF NOT EXISTS applications_projection (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  person_id INTEGER NOT NULL,
-  company TEXT NOT NULL,
-  position TEXT NOT NULL,
-  source_decision TEXT,
-  status TEXT NOT NULL DEFAULT '已评估',
-  applied_at TEXT,
-  followup_due TEXT,
-  urgency TEXT NOT NULL DEFAULT 'waiting',
-  notes TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions_projection (
   id TEXT PRIMARY KEY,
@@ -270,7 +259,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
   // schema 演进：v1 决策列 NOT NULL 与 invalid 实体字段缺失矛盾（联调 smoke 发现），v2 放宽
   const version = db.pragma('user_version', { simple: true }) as number
   if (version < SCHEMA_VERSION) {
-    db.exec('DROP TABLE IF EXISTS timeline_projection; DROP TABLE IF EXISTS sessions_projection; DROP TABLE IF EXISTS applications_projection; DROP TABLE IF EXISTS decisions_projection; DROP TABLE IF EXISTS persons_projection;')
+    db.exec('DROP TABLE IF EXISTS timeline_projection; DROP TABLE IF EXISTS sessions_projection; DROP TABLE IF EXISTS decisions_projection; DROP TABLE IF EXISTS persons_projection;')
     db.exec(SCHEMA)
     db.pragma(`user_version = ${SCHEMA_VERSION}`)
   } else {

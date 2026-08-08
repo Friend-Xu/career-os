@@ -6,19 +6,22 @@
  * UI 无感知。仅 erasable syntax（Node 24 type-stripping 限制）。
  */
 
-export const ProtocolVersion = '2.8' as const
+export const ProtocolVersion = '2.9' as const
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Confidence = 'high' | 'medium' | 'low'
+/** Application 生命周期 8 态（ADR-019 Decision 4：废弃旧 7 态中文枚举——PREPARING 起，全部状态由用户推进） */
 export type ApplicationStatus =
-  | '已评估'
-  | '已投递'
-  | '已联系'
-  | '已回复'
-  | '面试中'
-  | '已录取'
-  | '已拒绝'
-export type FollowupUrgency = 'urgent' | 'overdue' | 'waiting' | 'cooled'
+  | 'PREPARING'     // 进入投递准备流程（原 DRAFT——不是「草稿」）
+  | 'READY'         // 准备就绪，待提交
+  | 'SUBMITTED'     // 用户确认投出（唯一真实投出事件）
+  | 'COMMUNICATING' // 公司主动联系 / 用户建立沟通
+  | 'INTERVIEWING'  // 进入面试流程
+  | 'OFFERED'       // Offer
+  | 'REJECTED'      // 结束
+  | 'WITHDRAWN'     // 主动停止
+/** 跟进投影（派生，不存事实；ADR-019 Decision 9——规则不冻结，v0.1 全 NONE） */
+export type FollowUpState = 'NEEDS_ATTENTION' | 'WAITING' | 'NONE'
 export type PoolNodeType = 'person' | 'decision' | 'direction' | 'city' | 'company' | 'role' | 'skill'
 export type EdgeStrength = 'high' | 'medium' | 'low'
 export type ChatRole = 'user' | 'assistant' | 'system'
@@ -707,19 +710,35 @@ export interface PoolEdge {
 }
 
 /** 投递记录（按人过滤；position = 岗位名） */
-export interface Application {
-  id: number
-  personId: number
+/**
+ * 投递行动记录（ADR-019 + Application Contract v0.1：用户行动事实，Engine Registration）。
+ * - 不拥有职业判断：禁止 matchScore/reason/gaps（属 Decision）——核心不变量
+ * - 岗位信息只引用 jobId，不复制；displayFallback 仅 Job 删除后历史展示用
+ * - Producer：User 创建/推进，Engine 登记 id/时间戳，Agent 禁止
+ */
+export interface ApplicationRecord {
+  id: string // application_{YYYYMMDD}_{NNNNN}（Engine Registration，Agent/UI 不写）
+  personId: string // 归属 person_id（person_001，按人过滤）
+  jobId: string // Job Reference（必填——Application 是岗位的行动记录）
+  decisionId?: string // Decision Reference（可选——从决策发起时挂）
+  status: ApplicationStatus
+  createdAt: string // 用户「开始投递流程」事件时间（Engine 登记，ISO）
+  submittedAt?: string // SUBMITTED 事件时间（用户确认投出时登记，ISO）
+  displayFallback?: ApplicationDisplayFallback // 投出时登记——仅 Job 删除后展示，不构成 Job 数据副本
+  notes?: string // 用户备注（自由文本）
+}
+
+/** 历史展示 fallback（ADR-019 Decision 7：允许 title/company，禁止 constraints/matchScore/analysis） */
+export interface ApplicationDisplayFallback {
   company: string
   position: string
-  /** 关联岗位（jobs/{id}.md，M1 起新投递走 Job 实体；旧记录无 jobId 兼容显示 company/position） */
-  jobId?: string
-  sourceDecision?: string
-  status: ApplicationStatus
-  appliedAt?: string
-  followupDue?: string
-  urgency: FollowupUrgency
-  notes?: string
+}
+
+/** 创建请求（Contract §7：createdBy 恒为 'user'——Agent 禁止创建） */
+export interface CreateApplicationRequest {
+  jobId: string
+  decisionId?: string
+  personId: string
 }
 
 /** 会话（SDK resume 用；messages 只存于运行时，不持久化） */
