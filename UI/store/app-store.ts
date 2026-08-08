@@ -402,6 +402,8 @@ interface AppState {
   promoteWorkingCopy: (id: string) => Promise<ResumeDocument>;
   /** 切换当前编辑对象（P2.3） */
   setActiveWorkingCopy: (id: string | null) => void;
+  /** 工作副本对齐投影（P2.4：优化输入 = 当前创作对象——非版本选择） */
+  fetchWorkingCopyAlignment: (wcId: string, jobId: string) => Promise<ResumeAlignmentProjection>;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -1250,6 +1252,12 @@ export const useAppStore = create<AppState>()(
   },
 
   setActiveWorkingCopy: (id) => set({ activeWorkingCopyId: id }),
+
+  /** 工作副本对齐投影（P2.4） */
+  fetchWorkingCopyAlignment: async (wcId, jobId) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.fetchWorkingCopyAlignment(wcId, jobId)
+  },
 
   /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */
   acceptPortfolioProposal: async (id, reason) => {

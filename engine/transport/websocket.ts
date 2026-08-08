@@ -80,6 +80,7 @@ import {
   promoteToDocumentCandidate,
   scanWorkingCopies,
   upsertWorkingCopy,
+  workingCopyToDocument,
   type WorkingCopyInput,
 } from '../storage/working-copy-registry.ts'
 import { scanResumes, transitionResumeStatusFile, cloneResumeFile, diffResumes, markResumeExported } from '../storage/resume-watcher.ts'
@@ -1441,6 +1442,23 @@ export async function startServer(opts: {
       broadcast({ event: EVENTS.workingCopiesChanged })
       broadcast({ event: EVENTS.resumesChanged })
       return document
+    },
+    [METHODS.workingCopyAlignment]: (params) => {
+      const p = params as Record<string, unknown>
+      const wcId = typeof p?.wcId === 'string' ? p.wcId : ''
+      const jobId = typeof p?.jobId === 'string' ? p.jobId : ''
+      if (!wcId || !jobId) throw new Error('wcId/jobId 必填')
+      const wc = scanWorkingCopies(workspace).find((w) => w.id === wcId)
+      if (!wc) throw new Error(`工作副本不存在：${wcId}`)
+      const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+      if (!job) throw new Error(`岗位不存在：${jobId}`)
+      const document = workingCopyToDocument(wc, workspace)
+      return computeResumeAlignment({
+        job: job.record,
+        evidenceItems: scanEvidence(workspace).map((e) => e.record),
+        resumeDocument: document,
+        claims: scanClaims(workspace).map((c) => c.record),
+      })
     },
     [METHODS.listResumes]: () => scanResumes(workspace).map((r) => ({
       ...r.record,

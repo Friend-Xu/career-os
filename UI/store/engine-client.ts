@@ -395,6 +395,11 @@ export class EngineClient {
     return this.rpc<ResumeDocument>(METHODS.workingCopyPromote, { id })
   }
 
+  /** 工作副本对齐投影（P2.4：优化输入 = 当前创作对象，非版本；纯投影不落盘） */
+  fetchWorkingCopyAlignment(wcId: string, jobId: string): Promise<ResumeAlignmentProjection> {
+    return this.rpc<ResumeAlignmentProjection>(METHODS.workingCopyAlignment, { wcId, jobId })
+  }
+
   /** 全量简历版本（M3.5：resumes/documents/ 扫描 + 校验标记） */
   listResumes(): Promise<ResumeDocument[]> {
     return this.rpc<ResumeDocument[]>(METHODS.listResumes)

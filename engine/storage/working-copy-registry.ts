@@ -160,12 +160,9 @@ function sectionTypeOf(title: string): ResumeSectionType | null {
   return null
 }
 
-/** promote：WorkingCopy → ResumeDocument Candidate（bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning） */
-export function promoteToDocumentCandidate(ws: Workspace, id: string, now: Date = new Date()): ResumeDocument {
-  const file = `resumes/working-copies/${id}.md`
-  if (!ws.exists(file)) throw new WorkingCopyError(`工作副本不存在：${id}`)
-  const wc = parseWorkingCopyMarkdown(ws.read(file), `${id}.md`)
-
+/** 纯组装：WorkingCopy → ResumeDocument Candidate（不写盘——promote 与 alignment 输入共用。
+ *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid） */
+export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date = new Date()): ResumeDocument {
   const claimsById = new Map(scanClaims(ws).map((c) => [c.record.id, c.record]))
   const issues: ResumeValidationIssue[] = []
   const sections: ResumeSection[] = []
@@ -201,7 +198,7 @@ export function promoteToDocumentCandidate(ws: Workspace, id: string, now: Date 
     issues,
   }
 
-  const document: ResumeDocument = {
+  return {
     id: nextArtifactId(ws, RESUME_SPEC, now),
     status: 'draft',
     person: wc.owner,
@@ -214,6 +211,14 @@ export function promoteToDocumentCandidate(ws: Workspace, id: string, now: Date 
     operations: [{ id: `operation_${now.getTime().toString(36)}`, actor: 'user', action: 'create', at: now.toISOString() }],
     validation,
   }
+}
+
+/** promote：WorkingCopy → ResumeDocument Candidate（写 documents/ + wc 状态 promoted） */
+export function promoteToDocumentCandidate(ws: Workspace, id: string, now: Date = new Date()): ResumeDocument {
+  const file = `resumes/working-copies/${id}.md`
+  if (!ws.exists(file)) throw new WorkingCopyError(`工作副本不存在：${id}`)
+  const wc = parseWorkingCopyMarkdown(ws.read(file), `${id}.md`)
+  const document = workingCopyToDocument(wc, ws, now)
 
   // 写 documents/（复用 resume-watcher 序列化）+ 更新 wc 状态（promoted——保留编辑态文件，记录已发布）
   ws.write(`resumes/documents/${document.id}.md`, serializeResumeDocument(document))

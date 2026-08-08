@@ -1,16 +1,16 @@
 /**
  * 优化空间（R2.2）：Resume Alignment Projection 消费视图——四态 Requirement Card。
  * 契约：docs/domain/resume-alignment-projection-v0.1.md（resumes/alignment RPC，纯投影不落盘）。
- * - 只消费引擎 ResumeDocument × 已建档 JD（不消费 mock 草稿——ADR-021 §7）
+ * P2.4：输入从「版本 × JD」迁移为「工作副本 × JD」——优化检查当前创作对象（ADR-023 §6），
+ * 非历史版本；诊断引擎不变（working-copies/alignment 复用 computeResumeAlignment）。
  * - 四态：已覆盖 / 表达缺口 / 证据不足声明（红线）/ 能力缺口
- * - R2.2 边界：只展示四态 + 可追溯引用；不做 AI 改写 / 提案创建（R2.3 Rewrite Bridge）
+ * - R2.2 边界：只展示四态 + 可追溯引用；不做 AI 改写 / 提案创建（P3 Opportunity Loop）
  */
 import { Box, Chip, MenuItem, Select, Stack, Typography } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
-import { resumeVersionLabel } from '../../utils/resume-label'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
@@ -21,23 +21,28 @@ const STATE_META: Record<AlignmentState, { icon: string; label: string; color: s
 }
 
 export function ResumeOptimizeWorkspace() {
-  const resumeVersions = useAppStore((s) => s.resumeVersions)
+  const workingCopies = useAppStore((s) => s.workingCopies)
+  const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
+  const person = useAppStore((s) => s.currentPerson())
   const jobs = useAppStore((s) => s.jobs)
   const evidenceItems = useAppStore((s) => s.evidence)
   const engineStatus = useAppStore((s) => s.engineStatus)
-  const fetchResumeAlignment = useAppStore((s) => s.fetchResumeAlignment)
-  const [versionId, setVersionId] = useState('')
+  const fetchWorkingCopyAlignment = useAppStore((s) => s.fetchWorkingCopyAlignment)
+  const [wcId, setWcId] = useState('')
   const [jobId, setJobId] = useState('')
   const [projection, setProjection] = useState<ResumeAlignmentProjection | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const personWorkingCopies = workingCopies.filter((w) => w.owner === String(person.id))
+  const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
+
   useEffect(() => {
-    if (!versionId || !jobId || engineStatus !== 'connected') return
+    if (!wcId || !jobId || engineStatus !== 'connected') return
     let cancelled = false
     setLoading(true)
     setError('')
-    fetchResumeAlignment(versionId, jobId)
+    fetchWorkingCopyAlignment(wcId, jobId)
       .then((p) => {
         if (!cancelled) setProjection(p)
       })
@@ -53,14 +58,14 @@ export function ResumeOptimizeWorkspace() {
     return () => {
       cancelled = true
     }
-  }, [versionId, jobId, engineStatus, fetchResumeAlignment])
+  }, [wcId, jobId, engineStatus, fetchWorkingCopyAlignment])
 
   const titleOf = (eid: string) => evidenceItems.find((e) => e.id === eid)?.event.title ?? eid
-  const versions = resumeVersions.filter((v) => v.status !== 'archived')
+  const selectedJob = jobs.find((j) => j.id === jobId)
 
   return (
     <Box sx={{ p: 2, maxWidth: 860, mx: 'auto' }}>
-      {/* 选择区：引擎版本 × 目标 JD（不消费 mock 草稿） */}
+      {/* 选择区：工作副本 × 目标 JD（P2.4——优化检查当前创作对象，非历史版本） */}
       <Box
         sx={{
           p: 1.5,
@@ -77,19 +82,19 @@ export function ResumeOptimizeWorkspace() {
           <Select
             size="small"
             displayEmpty
-            value={versionId}
+            value={wcId}
             onChange={(e) => {
-              setVersionId(e.target.value as string)
+              setWcId(e.target.value as string)
               setProjection(null)
             }}
             sx={{ minWidth: 190, '& .MuiSelect-select': { fontSize: 12.5, py: 0.75 } }}
           >
             <MenuItem value="" disabled>
-              选择简历版本
+              选择工作副本
             </MenuItem>
-            {versions.map((v) => (
-              <MenuItem key={v.id} value={v.id} sx={{ fontSize: 12.5 }}>
-                {resumeVersionLabel(v, jobs)}
+            {personWorkingCopies.map((w) => (
+              <MenuItem key={w.id} value={w.id} sx={{ fontSize: 12.5 }}>
+                {w.id.slice(-10)} · {w.status === 'promoted' ? '已发布' : '编辑中'}
               </MenuItem>
             ))}
           </Select>
@@ -116,10 +121,24 @@ export function ResumeOptimizeWorkspace() {
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>引擎离线——对齐计算不可用</Typography>
           )}
         </Stack>
+        {wc && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1, flexWrap: 'wrap', gap: 0.5 }}>
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>当前分析对象：</Typography>
+            <Chip
+              size="small"
+              label={`${wc.id.slice(-10)} · 更新 ${wc.updatedAt.slice(5, 16).replace('T', ' ')}`}
+              sx={{ height: 20, fontSize: 11, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
+            />
+            {selectedJob && (
+              <Chip size="small" label={`目标岗位 ${selectedJob.company} · ${selectedJob.title}`} sx={{ height: 20, fontSize: 11, bgcolor: COLORS.bgHover, color: COLORS.textSecondary }} />
+            )}
+            <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>诊断基于当前编辑内容（未资产化内容不参与证据投影）</Typography>
+          </Stack>
+        )}
       </Box>
 
       {/* 引导态：未选择 */}
-      {!versionId || !jobId ? (
+      {!wcId || !jobId ? (
         <Box
           sx={{
             p: 3,
@@ -129,7 +148,7 @@ export function ResumeOptimizeWorkspace() {
           }}
         >
           <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mb: 0.5 }}>
-            选择简历版本与目标岗位，查看岗位要求覆盖情况
+            选择工作副本与目标岗位，查看岗位要求覆盖情况
           </Typography>
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.6 }}>
             对齐分析基于已有事实——检查「要求是否被可信表达覆盖」，不预测招聘系统

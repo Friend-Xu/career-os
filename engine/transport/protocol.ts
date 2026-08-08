@@ -158,6 +158,8 @@ export const METHODS = {
   workingCopyUpsert: 'working-copies/upsert',
   /** 创建版本（params: { id } → ResumeDocument Candidate——promoteToDocumentCandidate；unbound 块 UNBOUND_BLOCK warning 不阻止） */
   workingCopyPromote: 'working-copies/promote',
+  /** 工作副本对齐投影（params: { wcId, jobId } → ResumeAlignmentProjection——P2.4：优化输入 = 当前创作对象，非版本；不落盘） */
+  workingCopyAlignment: 'working-copies/alignment',
   /** 全量简历版本（resumes/documents/ 扫描 + 校验标记；M3.5） */
   listResumes: 'resumes/list',
   /** 单个简历版本（params: { id } → ResumeDocument） */
