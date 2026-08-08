@@ -6,7 +6,6 @@ import type {
   DecisionStage,
   InfoEdge,
   InfoNode,
-  NextAction,
   Park,
   Person,
   PoolHealth,
@@ -201,16 +200,6 @@ export const DECISIONS: DecisionRecord[] = [
     protocolVersion: '2.1',
   },
 ]
-
-export const NEXT_ACTION: NextAction = {
-  title: '生成目标企业列表',
-  description: 'AI 推荐下一步：基于深圳 86 分 / 技能画像 / 薪资约束筛选目标企业',
-  completedStages: ['方向探索', '转行评估', '城市评估'],
-  priorities: ['深圳机器人产业园', '天穹智航', '弘毅机器人'],
-  prompt:
-    '基于我的技能画像和深圳城市评估结果（86分），帮我生成目标企业列表。优先考虑：①深圳机器人产业园入驻企业 ②天穹智航 ③弘毅机器人。请按匹配度排序并标注风险。',
-  stageId: 'company',
-}
 
 export const POOL_HEALTH: PoolHealth = {
   totalNodes: 342,

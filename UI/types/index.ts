@@ -240,12 +240,10 @@ export interface ApplicationStats {
 }
 
 export interface NextAction {
-  title: string;
-  description: string;
-  completedStages: string[];
-  priorities: string[];
-  prompt: string;
-  stageId: string;
+  label: string
+  page: NavPageId
+  jobId?: string
+  prompt?: string
 }
 
 export interface CommandItem {

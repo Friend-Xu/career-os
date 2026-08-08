@@ -198,7 +198,6 @@ interface AppState {
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
-  agentContextFiles: string[];
   pendingPrompt: string | null;
   /** ADR-020：预置动作携带的 TaskRequest（startAnalysis 暂存，发送时合并——trigger 固定 user_action） */
   pendingTaskRequest?: AgentTaskRequest;
@@ -457,7 +456,6 @@ export const useAppStore = create<AppState>()(
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
       agentDraft: '',
-      agentContextFiles: ['profile.md', 'decision.md', 'company DB'],
       pendingPrompt: null,
       pendingTaskRequest: undefined,
       personSwitchDialogOpen: false,

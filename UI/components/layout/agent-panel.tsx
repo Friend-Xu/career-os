@@ -20,11 +20,11 @@ import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../store/agent-phase'
 import type { StreamPhase } from '../../store/agent-phase'
-import { NEXT_ACTION } from '../../data/mock-data'
 import { COLORS, EASE, LAYOUT, RISK_COLOR, alpha } from '../../data/constants'
 import { MarkdownView } from '../markdown-view'
 import { QuestionCardView } from '../agent/question-card-view'
 import { useSessionScroll } from '../../hooks/use-session-scroll'
+import { useNextActions } from '../../utils/next-actions'
 import { belongsToPerson } from '../../utils/ownership'
 import type { DecisionRecord } from '../../types'
 
@@ -36,6 +36,10 @@ export function AgentPanel() {
   const send = useAppStore((s) => s.sendAgentMessage)
   const addDecision = useAppStore((s) => s.addDecision)
   const expandToFull = useAppStore((s) => s.expandToFullAgent)
+  const setPage = useAppStore((s) => s.setPage)
+  const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
+  const startAgentTask = useAppStore((s) => s.startAgentTask)
+  const nextActions = useNextActions()
   const sessions = useAppStore((s) => s.sessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const pendingPrompt = useAppStore((s) => s.pendingPrompt)
@@ -121,34 +125,50 @@ export function AgentPanel() {
         </Tooltip>
       </Stack>
 
-      <Box sx={{ p: 1.5, pb: 0 }}>
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: '8px',
-            bgcolor: COLORS.accentMuted,
-            border: `1px solid ${alpha(COLORS.accent, 0.25)}`,
-          }}
-        >
-          <Typography
+      {/* 建议·下一步 = Next Action Resolver 投影（与工作台「今日·需要处理」同源——
+          无派生建议时不显示，不造静态假数据） */}
+      {nextActions.length > 0 && (
+        <Box sx={{ p: 1.5, pb: 0 }}>
+          <Box
             sx={{
-              fontSize: 11.5,
-              color: COLORS.accent,
-              fontWeight: 600,
-              mb: 0.5,
-              letterSpacing: '0.03em',
+              p: 1.5,
+              borderRadius: '8px',
+              bgcolor: COLORS.accentMuted,
+              border: `1px solid ${alpha(COLORS.accent, 0.25)}`,
+              cursor: 'pointer',
+              '&:hover': { borderColor: alpha(COLORS.accent, 0.5) },
+            }}
+            onClick={() => {
+              const a = nextActions[0]
+              if (a.prompt) {
+                setPage(a.page)
+                startAgentTask(a.prompt, { title: a.label })
+                return
+              }
+              if (a.jobId) setSelectedJobId(a.jobId)
+              setPage(a.page)
             }}
           >
-            建议 · 下一步
-          </Typography>
-          <Typography sx={{ fontSize: 13, fontWeight: 500, mb: 0.5 }}>
-            {NEXT_ACTION.title}
-          </Typography>
-          <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.45 }}>
-            当前阶段上下文：公司筛选 · 深圳 86 分 / 技能画像
-          </Typography>
+            <Typography
+              sx={{
+                fontSize: 11.5,
+                color: COLORS.accent,
+                fontWeight: 600,
+                mb: 0.5,
+                letterSpacing: '0.03em',
+              }}
+            >
+              建议 · 下一步
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 500, mb: 0.5 }}>
+              {nextActions[0].label}
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+              {nextActions.length > 1 ? `还有 ${nextActions.length - 1} 项待处理` : '点击查看'}
+            </Typography>
+          </Box>
         </Box>
-      </Box>
+      )}
 
       {/* ADR-020 Commit F：本次分析依据 = contextBundle 投影（显式引用，UI 只投影不解释——
           展示 Agent 使用了哪些明确引用；自读不属于依据清单；空 bundle（开放探索）不显示）。
