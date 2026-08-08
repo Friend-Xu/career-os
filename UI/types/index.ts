@@ -14,6 +14,7 @@ import type {
   PoolNode,
   PoolEdge,
   ApplicationRecord,
+  ApplicationView,
   Session as EngineSession,
   ChatMessage as EngineChatMessage,
   RiskLevel,
@@ -39,6 +40,7 @@ export type { PoolNode as InfoNode };
 export type { PoolEdge as InfoEdge };
 export type { ApplicationRecord as Application };
 export type { ApplicationRecord };
+export type { ApplicationView };
 export type { GapResult };
 export type { HealthReport };
 export type { RiskLevel };

@@ -7,7 +7,7 @@
  * - 引用规则：只持 jobId（岗位唯一事实源），不复制岗位信息；SUBMITTED 时从 Job 登记
  *   displayFallback（仅 Job 删除后历史展示用）
  */
-import type { ApplicationRecord, ApplicationStatus, CreateApplicationRequest } from '../ir/schema.ts'
+import type { ApplicationRecord, ApplicationStatus, ApplicationView, CreateApplicationRequest } from '../ir/schema.ts'
 import { APPLICATION_STATUSES } from '../ir/validator.ts'
 import { scanJobs } from './job-watcher.ts'
 import type { Workspace } from './workspace.ts'
@@ -38,6 +38,11 @@ export function transitionApplicationStatus(current: ApplicationStatus, next: Ap
   if (!APPLICATION_TRANSITIONS[current].includes(next)) {
     throw new Error(`非法状态跃迁：${current} → ${next}`)
   }
+}
+
+/** 记录 → RPC 视图（allowedTransitions = 状态机合法推进选项——UI 只展示合法跃迁，不复制状态机） */
+export function applicationView(record: ApplicationRecord): ApplicationView {
+  return { ...record, allowedTransitions: APPLICATION_TRANSITIONS[record.status] }
 }
 
 /** 系统 ID 生成：application_{YYYYMMDD}_{NNNNN}（当日最大序号 +1——按序号非数量，

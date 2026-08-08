@@ -86,6 +86,7 @@ import { buildCoverLetterTraceability } from '../artifact-traceability/cover-let
 import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
 import {
+  applicationView,
   createApplication,
   deleteApplication,
   linkApplicationDecision,
@@ -1233,17 +1234,17 @@ export async function startServer(opts: {
       deleteJobFile(workspace, jobIdParams(params))
       return {}
     },
-    [METHODS.listApplications]: () => listApplications(workspace),
+    [METHODS.listApplications]: () => listApplications(workspace).map(applicationView),
     [METHODS.createApplication]: (params) => {
       const app = createApplication(workspace, createApplicationParams(params))
       broadcast({ event: EVENTS.applicationsChanged })
-      return app
+      return applicationView(app)
     },
     [METHODS.updateApplicationStatus]: (params) => {
       const { id, status } = updateApplicationStatusParams(params)
       const app = updateApplicationStatus(workspace, id, status as Parameters<typeof updateApplicationStatus>[1])
       broadcast({ event: EVENTS.applicationsChanged })
-      return app
+      return applicationView(app)
     },
     [METHODS.deleteApplication]: (params) => {
       deleteApplication(workspace, jobIdParams(params))
@@ -1256,7 +1257,7 @@ export async function startServer(opts: {
       if (typeof p.decisionId !== 'string' || p.decisionId.length === 0) throw new Error('params.decisionId 缺失')
       const app = linkApplicationDecision(workspace, id, p.decisionId)
       broadcast({ event: EVENTS.applicationsChanged })
-      return app
+      return applicationView(app)
     },
     [METHODS.jobCoverage]: (params) => {
       const id = jobIdParams(params)

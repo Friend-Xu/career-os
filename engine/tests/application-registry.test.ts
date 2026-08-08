@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
 import { createJobFile } from '../storage/job-watcher.ts'
 import {
+  applicationView,
   createApplication,
   deleteApplication,
   getApplication,
@@ -200,6 +201,21 @@ test('Case I：删除语义（Step 3.5）——仅 PREPARING 可物理删除，�
     assert.equal(listApplications(ws).length, 1)
     // WITHDRAWN（历史保留）可推进
     assert.equal(updateApplicationStatus(ws, submitted.id, 'WITHDRAWN').status, 'WITHDRAWN')
+  } finally {
+    teardown(ws)
+  }
+})
+
+test('Case J：applicationView 投影——allowedTransitions 来自状态机（UI 状态推进下拉的数据源）', () => {
+  const ws = setup()
+  try {
+    const app = createApplication(ws, { jobId: JOB_ID, personId: 'person_001' }, FIXED_NOW)
+    assert.deepEqual(applicationView(app).allowedTransitions, ['READY', 'SUBMITTED', 'WITHDRAWN'])
+    updateApplicationStatus(ws, app.id, 'SUBMITTED')
+    const advanced = updateApplicationStatus(ws, app.id, 'COMMUNICATING')
+    assert.deepEqual(applicationView(advanced).allowedTransitions, ['INTERVIEWING', 'REJECTED', 'WITHDRAWN'])
+    const terminal = updateApplicationStatus(ws, app.id, 'WITHDRAWN')
+    assert.deepEqual(applicationView(terminal).allowedTransitions, [])
   } finally {
     teardown(ws)
   }

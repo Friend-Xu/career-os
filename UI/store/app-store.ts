@@ -4,7 +4,7 @@ import { useToastStore } from './toast-store'
 import { useAttentionStore } from './attention-store'
 import type {
   Application,
-  ApplicationRecord,
+  ApplicationView,
   ChatMessage,
   Company,
   DecisionRecord,
@@ -149,8 +149,8 @@ interface AppState {
   agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string }; permissionMode: string };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
-  /** 投递记录（ADR-019：用户行动事实资产，引擎 applications/list 实时派生，不持久化——Engine Registry 是唯一事实源） */
-  applications: Application[];
+  /** 投递记录视图（ADR-019：用户行动事实资产，引擎 applications/list 实时派生，不持久化——Engine Registry 是唯一事实源；allowedTransitions 随 RPC 返回） */
+  applications: ApplicationView[];
   /** 简历版本（初始 mock；「选择 JD 派生」新建版本写入，持久化） */
   resumes: ResumeVersion[];
   decisions: DecisionView[];
@@ -336,7 +336,7 @@ interface AppState {
   /** 推进投递状态（用户确认；引擎侧状态跃迁校验 + SUBMITTED 登记 submittedAt/displayFallback；离线抛错） */
   updateApplicationStatus: (id: string, status: Application['status']) => Promise<void>;
   /** 创建投递记录（用户「开始投递流程」→ PREPARING；createdBy 恒为 'user'，Agent 禁止创建） */
-  createApplication: (params: { jobId: string; decisionId?: string }) => Promise<ApplicationRecord>;
+  createApplication: (params: { jobId: string; decisionId?: string }) => Promise<ApplicationView>;
   /** 删除投递记录（仅 PREPARING 可物理删除；其余推进 WITHDRAWN） */
   deleteApplication: (id: string) => Promise<void>;
   /** 新建简历版本（选择 JD 派生的壳版本：挂 targetCompany/Position，模块复制模板作为编辑起点） */

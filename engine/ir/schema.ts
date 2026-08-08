@@ -728,6 +728,11 @@ export interface ApplicationRecord {
   notes?: string // 用户备注（自由文本）
 }
 
+/** 投递记录视图（RPC 响应投影——allowedTransitions = 状态机合法推进选项，UI 状态推进下拉的数据源） */
+export interface ApplicationView extends ApplicationRecord {
+  allowedTransitions: ApplicationStatus[]
+}
+
 /** 历史展示 fallback（ADR-019 Decision 7：允许 title/company，禁止 constraints/matchScore/analysis） */
 export interface ApplicationDisplayFallback {
   company: string

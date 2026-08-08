@@ -18,7 +18,7 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
-import type { Application, ApplicationStatus } from '../types'
+import type { ApplicationStatus, ApplicationView } from '../types'
 
 /**
  * 投递管理（ADR-019 Step 4：Application = 用户行动事实，Engine Registry 唯一事实源）。
@@ -34,7 +34,7 @@ const COLUMNS: { status: ApplicationStatus; label: string }[] = [
   { status: 'SUBMITTED', label: '已投递' },
   { status: 'COMMUNICATING', label: '沟通中' },
   { status: 'INTERVIEWING', label: '面试中' },
-  { status: 'OFFERED', label: 'Offer' },
+  { status: 'OFFERED', label: '已录用' },
   { status: 'REJECTED', label: '已拒绝' },
   { status: 'WITHDRAWN', label: '已撤回' },
 ]
@@ -55,11 +55,13 @@ const STATUS_COLOR: Record<ApplicationStatus, string> = {
   WITHDRAWN: COLORS.textMuted,
 }
 
-/** 投递卡片：岗位（jobId 解析活数据）/ 状态推进 / 提交时间。
+/**
+ * 投递卡片：岗位（jobId 解析活数据）/ 状态推进 / 提交时间。
  * - 岗位信息只引用不复制：job 活着显示活数据，Job 删除后 displayFallback（「岗位已失效」）
  * - 仅 PREPARING 可删除（撤销误操作）——行动历史不可删除，其余推进 WITHDRAWN
+ * - 状态推进下拉只列引擎返回的 allowedTransitions（合法跃迁）——UI 不复制状态机，非法操作无处可点
  */
-function KanbanCard({ app }: { app: Application }) {
+function KanbanCard({ app }: { app: ApplicationView }) {
   const update = useAppStore((s) => s.updateApplicationStatus)
   const deleteApp = useAppStore((s) => s.deleteApplication)
   const push = useToastStore((s) => s.push)
@@ -190,9 +192,12 @@ function KanbanCard({ app }: { app: Application }) {
           '& .MuiSelect-select': { py: 0.25, px: 1 },
         }}
       >
-        {COLUMNS.map((c) => (
-          <MenuItem key={c.status} value={c.status} sx={{ fontSize: 12 }}>
-            {c.label}
+        <MenuItem key={app.status} value={app.status} disabled sx={{ fontSize: 12 }}>
+          {STATUS_LABEL[app.status]}（当前）
+        </MenuItem>
+        {app.allowedTransitions.map((s) => (
+          <MenuItem key={s} value={s} sx={{ fontSize: 12 }}>
+            {STATUS_LABEL[s]}
           </MenuItem>
         ))}
       </Select>
@@ -216,7 +221,7 @@ export function ApplicationsPage() {
       : personApps.filter((a) => a.status === applicationsFilter)
 
   const byStatus = useMemo(() => {
-    const map: Record<string, Application[]> = {}
+    const map: Record<string, ApplicationView[]> = {}
     COLUMNS.forEach((c) => {
       map[c.status] = []
     })
