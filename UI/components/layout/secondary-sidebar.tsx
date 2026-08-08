@@ -12,6 +12,7 @@ import { CompaniesSidebar } from './sidebars/companies-sidebar'
 import { JobsSidebar } from './sidebars/jobs-sidebar'
 import { ApplicationsSidebar } from './sidebars/applications-sidebar'
 import { ResumesSidebar } from './sidebars/resumes-sidebar'
+import { ArtifactsSidebar } from './sidebars/artifacts-sidebar'
 
 export function SecondarySidebar() {
   const page = useAppStore((s) => s.currentPage)
@@ -36,6 +37,7 @@ export function SecondarySidebar() {
       {page === 'jobs' && <JobsSidebar />}
       {page === 'applications' && <ApplicationsSidebar />}
       {page === 'resumes' && <ResumesSidebar />}
+      {page === 'artifacts' && <ArtifactsSidebar />}
       {page === 'settings' && null}
     </Box>
   )

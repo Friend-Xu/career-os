@@ -44,12 +44,6 @@ const STATE_COLOR: Record<string, string> = {
   ready: COLORS.riskLow,
 }
 
-const VIEWS = [
-  { key: 'assets', label: 'Assets 概览' },
-  { key: 'proposals', label: '提案中心' },
-  { key: 'evolution', label: '演化时间线' },
-] as const
-
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const min = Math.floor(diff / 60000)
@@ -195,7 +189,6 @@ function AssetsSection() {
 
 export function ArtifactsPage() {
   const artifactsView = useAppStore((s) => s.artifactsView)
-  const setArtifactsView = useAppStore((s) => s.setArtifactsView)
 
   return (
     <Box sx={{ p: 3, maxWidth: 1080 }}>
@@ -203,30 +196,6 @@ export function ArtifactsPage() {
       <Typography sx={{ fontSize: 13, color: COLORS.textSecondary, mt: 0.5 }}>
         四 Artifact 治理（Engine Context → UI View Model → Cards；只读投影）
       </Typography>
-
-      <Box sx={{ display: 'flex', gap: 0.5, mt: 2 }}>
-        {VIEWS.map((v) => (
-          <Box
-            key={v.key}
-            component="button"
-            onClick={() => setArtifactsView(v.key)}
-            sx={{
-              px: 1.5,
-              py: 0.75,
-              borderRadius: 2,
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: 'pointer',
-              border: 'none',
-              bgcolor: artifactsView === v.key ? alpha(COLORS.accent, 0.12) : COLORS.bgHover,
-              color: artifactsView === v.key ? COLORS.accent : COLORS.textSecondary,
-              '&:hover': { bgcolor: artifactsView === v.key ? alpha(COLORS.accent, 0.12) : COLORS.bgHover },
-            }}
-          >
-            {v.label}
-          </Box>
-        ))}
-      </Box>
 
       {artifactsView === 'proposals' && <ProposalCenter />}
       {artifactsView === 'evolution' && <EvolutionTimeline />}
