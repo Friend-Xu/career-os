@@ -195,6 +195,16 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
             >
               查看历史
             </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={person.initStatus === 'pending'}
+              title={person.initStatus === 'pending' ? '完成基础档案后可派生' : undefined}
+              onClick={onDerive}
+              sx={{ fontSize: 12.5 }}
+            >
+              基于 JD 派生
+            </Button>
           </Stack>
         </Box>
       </Box>

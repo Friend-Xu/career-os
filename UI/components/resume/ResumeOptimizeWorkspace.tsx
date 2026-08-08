@@ -10,6 +10,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS } from '../../data/constants'
+import { resumeVersionLabel } from '../../utils/resume-label'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
@@ -88,7 +89,7 @@ export function ResumeOptimizeWorkspace() {
             </MenuItem>
             {versions.map((v) => (
               <MenuItem key={v.id} value={v.id} sx={{ fontSize: 12.5 }}>
-                {v.id.slice(-8)} · {v.status}
+                {resumeVersionLabel(v, jobs)}
               </MenuItem>
             ))}
           </Select>

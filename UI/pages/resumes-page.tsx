@@ -80,7 +80,6 @@ export function ResumesPage() {
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
   const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
-  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const activeResumeId = useAppStore((s) => s.activeResumeId)
   const setActiveResumeId = useAppStore((s) => s.setActiveResumeId)
   const engineStatus = useAppStore((s) => s.engineStatus)
@@ -129,6 +128,29 @@ export function ResumesPage() {
   const closeAll = () => {
     setSelButton(null)
     setCardOpen(false)
+  }
+
+  /** 导出当前编辑对象（在线：引擎 Edge headless 渲染 PDF 直接下载；离线/失败 → window.print 降级） */
+  const exportPdf = () => {
+    const html = buildResumeHtml(person.name, resume?.name ?? '', modules)
+    void (async () => {
+      try {
+        const { pdf, fileName } = await useAppStore.getState().exportResume(html)
+        const blob = new Blob([Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0))], {
+          type: 'application/pdf',
+        })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        a.click()
+        URL.revokeObjectURL(url)
+        push('success', '已导出 PDF')
+      } catch {
+        push('info', '导出服务不可用，已打开打印（另存为 PDF）')
+        window.print()
+      }
+    })()
   }
 
   /** R001：请求失效触发源——关闭/清理统一入口（running 则取消 + 复位） */
@@ -294,71 +316,6 @@ export function ResumesPage() {
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ alignItems: 'center', px: 2, py: 1.25, borderBottom: `1px solid ${COLORS.border}` }}
-      >
-        <Typography
-          sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', cursor: 'pointer', '&:hover': { color: COLORS.accent } }}
-          title="回到工作台"
-          onClick={() => setResumeWorkspaceView('dashboard')}
-        >
-          简历工作台
-        </Typography>
-        {resume && (
-          <>
-            {/* 版本切换在侧栏（ResumesSidebar）——此处只显示当前版本目标 */}
-            {resume.targetCompany && (
-              <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-                → {resume.targetCompany} · {resume.targetPosition}
-              </Typography>
-            )}
-          </>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <Button
-          size="small"
-          startIcon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
-          disabled={person.initStatus === 'pending'}
-          title={person.initStatus === 'pending' ? '完成基础档案后可生成简历' : undefined}
-          onClick={() => setDeriveOpen(true)}
-          sx={{ fontSize: 12 }}
-        >
-          基于 JD 派生
-        </Button>
-        <Button
-          size="small"
-          startIcon={<FileDownloadIcon sx={{ fontSize: 14 }} />}
-          onClick={() => {
-            // 在线：引擎 spawn Edge headless 渲染 PDF 直接下载；离线/失败 → window.print 降级
-            const html = buildResumeHtml(person.name, resume?.name ?? '', modules)
-            void (async () => {
-              try {
-                const { pdf, fileName } = await useAppStore.getState().exportResume(html)
-                const blob = new Blob([Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0))], {
-                  type: 'application/pdf',
-                })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = fileName
-                a.click()
-                URL.revokeObjectURL(url)
-                push('success', '已导出 PDF')
-              } catch {
-                push('info', '导出服务不可用，已打开打印（另存为 PDF）')
-                window.print()
-              }
-            })()
-          }}
-          sx={{ fontSize: 12 }}
-        >
-          导出 PDF
-        </Button>
-      </Stack>
-
       {/* 版本切换在侧栏「版本」——此处不重复提供入口 */}
 
       {/* Dashboard（落地页，非第五空间——ADR-021 §1） */}
@@ -429,9 +386,14 @@ export function ResumesPage() {
           }}
           onScroll={closeAll}
         >
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted, mb: 1.5 }}>
-            编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
-          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, flex: 1 }}>
+              编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
+            </Typography>
+            <Button size="small" startIcon={<FileDownloadIcon sx={{ fontSize: 14 }} />} onClick={exportPdf} sx={{ fontSize: 12 }}>
+              导出 PDF
+            </Button>
+          </Stack>
           {revert && (
             <Box
               sx={{

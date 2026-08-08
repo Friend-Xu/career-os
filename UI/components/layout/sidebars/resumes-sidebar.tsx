@@ -7,6 +7,7 @@
  */
 import { Box, IconButton, Stack, Typography } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import HistoryIcon from '@mui/icons-material/History'
@@ -15,6 +16,7 @@ import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
 import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { resumeVersionLabel } from '../../../utils/resume-label'
 import type { ResumeWorkspaceView } from '../../../store/app-store'
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
@@ -30,8 +32,9 @@ const VALIDATION_LABEL: Record<string, string> = {
   invalid: '✗ 无效',
 }
 
-/** 空间卡片（与工作台侧栏同构——icon + 标题 + 描述 + 边框选中；Dashboard 是落地页不占 tab） */
+/** 空间卡片（与工作台侧栏同构——icon + 标题 + 描述 + 边框选中；工作台 = Dashboard 落地页） */
 const SPACES: { key: ResumeWorkspaceView; label: string; desc: string; icon: ReactNode }[] = [
+  { key: 'dashboard', label: '工作台', desc: '当前状态与下一步', icon: <DashboardOutlinedIcon sx={{ fontSize: 15 }} /> },
   { key: 'edit', label: '编辑', desc: '修改内容 · AI 润色', icon: <DescriptionOutlinedIcon sx={{ fontSize: 15 }} /> },
   { key: 'optimize', label: '优化', desc: '对齐岗位要求', icon: <AutoAwesomeIcon sx={{ fontSize: 15 }} /> },
   { key: 'history', label: '历史', desc: '版本演化与对比', icon: <HistoryIcon sx={{ fontSize: 15 }} /> },
@@ -49,6 +52,7 @@ export function ResumesSidebar() {
   const selectResume = useAppStore((s) => s.selectResume)
   const selectedResumeId = useAppStore((s) => s.selectedResumeId)
   const resumeVersions = useAppStore((s) => s.resumeVersions)
+  const jobs = useAppStore((s) => s.jobs)
   const careerContext = useAppStore((s) => s.careerContext)
   const push = useToastStore((s) => s.push)
 
@@ -184,15 +188,14 @@ export function ResumesSidebar() {
                   <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                     <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: st.color, flexShrink: 0 }} />
                     <Typography sx={{ fontSize: 12.5, fontWeight: active ? 600 : 500, color: active ? COLORS.accent : COLORS.text, flex: 1, minWidth: 0 }} noWrap>
-                      {r.id.slice(-6)} · {st.label}
+                      {resumeVersionLabel(r, jobs)}
                     </Typography>
                     <Typography sx={{ fontSize: 11, fontFamily: COLORS.mono, color: vStatus === 'valid' ? RISK_COLOR.low : vStatus === 'warning' ? RISK_COLOR.medium : RISK_COLOR.high }}>
                       {VALIDATION_LABEL[vStatus]}
                     </Typography>
                   </Stack>
                   <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
-                    {r.lineage?.parentResumeId ? `派生自 ${r.lineage.parentResumeId.slice(-6)}（${r.lineage.derivationType}）` : `⚡ ${r.lineage?.derivationType ?? 'jd_generate'}`}
-                    {r.targetJobId ? ` · ${r.targetJobId.slice(-8)}` : ''}
+                    {r.lineage?.parentResumeId ? `派生自 ${r.lineage.parentResumeId}（${r.lineage.derivationType}）` : `⚡ ${r.lineage?.derivationType ?? 'jd_generate'}`}
                     {' · '}
                     {claimsOf(r.id)} 条表述
                   </Typography>
