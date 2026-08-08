@@ -416,6 +416,10 @@ interface AppState {
   approveOpportunityProposal: (id: string) => Promise<OpportunityProposal>;
   /** 拒绝机会 Proposal（P3.7：pending → rejected——单向不 reopen） */
   rejectOpportunityProposal: (id: string, reason?: string) => Promise<OpportunityProposal>;
+  /** 应用到简历（P3.8：approved → apply——revision check → 原子写盘；conflict 返回协作冲突非错误） */
+  applyOpportunityProposal: (id: string) => Promise<
+    { status: 'applied'; transactionId: string; newRevision: number } | { status: 'conflict'; transactionId: string; reason: string; expectedRevision: number; currentRevision: number }
+  >;
   /** 接受 Portfolio 提案（M4-1：P-01~P-07 校验 → FactItem.statement 改写 + status=draft + transitions 追加） */
   acceptPortfolioProposal: (id: string, reason?: string) => Promise<PortfolioProject>;
   /** 拒绝 Portfolio 提案（M4-1：pending → rejected，单向不 reopen） */
@@ -1316,6 +1320,12 @@ export const useAppStore = create<AppState>()(
   rejectOpportunityProposal: async (id, reason) => {
     if (!engine) throw new Error('引擎未连接')
     return engine.rejectOpportunityProposal(id, reason)
+  },
+
+  /** 应用到简历（P3.8：approved → apply——revision check → 原子写盘；conflict 正常协作冲突非错误） */
+  applyOpportunityProposal: async (id) => {
+    if (!engine) throw new Error('引擎未连接')
+    return engine.applyOpportunityProposal(id)
   },
 
   /** 接受 Portfolio 提案（M4-1：引擎校验 + 确定性应用 + transitions 追加；广播后重拉） */

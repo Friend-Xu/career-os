@@ -137,6 +137,16 @@ test('rewrite：revision 一致 → applied，块文本替换 + 锚继承', () =
   assert.equal(wcNow.sections[0].blocks.length, 2)
 })
 
+test('块文本规范化：after 带行首「- 」前缀 → 应用后剥离（双破折号防护）', () => {
+  const { ws, wc, opportunityId } = setup()
+  const proposalId = submitApproved(ws, wc.id, opportunityId, [
+    { blockId: 'blk_1', before: '参与机械结构设计相关工作', after: '- 负责机械结构设计，完成强度校核', operation: 'rewrite' },
+  ])
+  applyOpportunityProposal(ws, proposalId, new Date('2026-08-09T10:10:00Z'))
+  const wcNow = scanWorkingCopies(ws).find((w) => w.id === wc.id)!
+  assert.equal(wcNow.sections[0].blocks[0].text, '负责机械结构设计，完成强度校核')
+})
+
 test('insert：revision 一致 → applied，新块追加（provenanceLinks = []）', () => {
   const { ws, wc, opportunityId } = setup()
   const proposalId = submitApproved(ws, wc.id, opportunityId, [

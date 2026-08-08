@@ -55,6 +55,7 @@ export function ResumeOptimizeWorkspace() {
   const [proposals, setProposals] = useState<OpportunityProposal[]>([])
   const [genState, setGenState] = useState<{ oppId: string; phase: string } | null>(null)
   const [genTick, setGenTick] = useState(0)
+  const [applyResult, setApplyResult] = useState<{ proposalId: string; text: string; tone: 'ok' | 'conflict' } | null>(null)
 
   const personWorkingCopies = workingCopies.filter((w) => w.owner === String(person.id))
   const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
@@ -80,7 +81,7 @@ export function ResumeOptimizeWorkspace() {
     return () => {
       cancelled = true
     }
-  }, [wcId, jobId, engineStatus, fetchWorkingCopyAlignment])
+  }, [wcId, jobId, engineStatus, fetchWorkingCopyAlignment, genTick])
 
   /** 机会投影（P3.6：一等对象「为什么值得改」——选择变化/生成完成后重拉） */
   useEffect(() => {
@@ -132,6 +133,30 @@ export function ResumeOptimizeWorkspace() {
       setGenTick((t) => t + 1)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败')
+    }
+  }
+
+  /** 应用到简历（P3.8——approve ≠ apply 的 UI 表达：采用后单独「写入工作副本」；冲突 = 版本过期非失败） */
+  const apply = async (p: OpportunityProposal) => {
+    try {
+      const res = await useAppStore.getState().applyOpportunityProposal(p.id)
+      if (res.status === 'applied') {
+        const ch = p.changes[0]
+        setApplyResult({
+          proposalId: p.id,
+          text: `已应用 1 个表达调整${ch && ch.operation !== 'insert' && ch.before ? `：「${ch.before.slice(0, 30)}」→「${ch.after.slice(0, 30)}」` : ''} · Revision +1（${res.newRevision - 1} → ${res.newRevision}）`,
+          tone: 'ok',
+        })
+      } else {
+        setApplyResult({
+          proposalId: p.id,
+          text: `此建议基于旧版本生成（当时 Revision ${res.expectedRevision}），当前简历已有新的修改（Revision ${res.currentRevision}）——请重新生成候选。`,
+          tone: 'conflict',
+        })
+      }
+      setGenTick((t) => t + 1)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '应用失败')
     }
   }
 
@@ -379,6 +404,22 @@ export function ResumeOptimizeWorkspace() {
       {/* 发现机会（P3.6——契约 opportunity-ui-contract：系统发现「值得考虑的变化」，用户语言四段卡片） */}
       {wcId && jobId && (
         <Box sx={{ mt: 3 }}>
+          {applyResult && (
+            <Box
+              sx={{
+                p: 1.25,
+                mb: 1,
+                borderRadius: '10px',
+                bgcolor: applyResult.tone === 'ok' ? alpha(COLORS.riskLow, 0.08) : alpha(COLORS.riskHigh, 0.07),
+                border: `1px solid ${alpha(applyResult.tone === 'ok' ? COLORS.riskLow : COLORS.riskHigh, 0.3)}`,
+              }}
+            >
+              <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>{applyResult.text}</Typography>
+              {applyResult.tone === 'conflict' && (
+                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mt: 0.5 }}>重新生成候选后即可应用新版本建议。</Typography>
+              )}
+            </Box>
+          )}
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
             <Typography sx={{ fontSize: 13, fontWeight: 700 }}>发现机会</Typography>
             <Chip
@@ -503,7 +544,7 @@ export function ResumeOptimizeWorkspace() {
                                   '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
                                 }}
                               >
-                                采用
+                                采用方案
                               </Button>
                               <Button
                                 size="small"
@@ -522,6 +563,25 @@ export function ResumeOptimizeWorkspace() {
                                 拒绝
                               </Button>
                             </Stack>
+                          )}
+                          {p.status === 'approved' && (
+                            <Button
+                              size="small"
+                              onClick={() => void apply(p)}
+                              sx={{
+                                mt: 0.75,
+                                fontSize: 11.5,
+                                textTransform: 'none',
+                                color: COLORS.riskLow,
+                                border: `1px solid ${alpha(COLORS.riskLow, 0.4)}`,
+                                borderRadius: '8px',
+                                px: 1.25,
+                                py: 0.25,
+                                '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
+                              }}
+                            >
+                              应用到简历
+                            </Button>
                           )}
                         </Box>
                       )

@@ -358,6 +358,11 @@ export type ApplyResult =
   | { status: 'applied'; transactionId: string; newRevision: number }
   | { status: 'conflict'; transactionId: string; reason: 'WORKING_COPY_CHANGED'; expectedRevision: number; currentRevision: number }
 
+/** 块文本规范化：剥离行首 `- `/`* ` 前缀（Agent 从 wc 原文读到带前缀行——块文本规范不含前缀，Engine 边界校验） */
+function normalizeBlockText(t: string): string {
+  return t.trim().replace(/^[-*]\s+/, '')
+}
+
 /** 应用 changes（纯函数——构造新 sections；原子性靠一次写盘） */
 function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
   const sections = wc.sections.map((s) => ({ ...s, blocks: [...s.blocks] }))
@@ -367,7 +372,7 @@ function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
       if (!sec) throw new OpportunityProposalError(`${c.operation} 目标块不存在：${c.blockId}`)
       if (c.operation === 'rewrite') {
         const i = sec.blocks.findIndex((b) => b.id === c.blockId)
-        sec.blocks[i] = { ...sec.blocks[i], text: c.after }
+        sec.blocks[i] = { ...sec.blocks[i], text: normalizeBlockText(c.after) }
       } else {
         sec.blocks = sec.blocks.filter((b) => b.id !== c.blockId)
       }
@@ -378,7 +383,7 @@ function applyChanges(wc: WorkingCopy, changes: ProposalChange[]): WorkingCopy {
         const n = /^blk_(\d+)$/.exec(b.id)
         return n ? Math.max(m, Number(n[1])) : m
       }, 0)
-      target.blocks.push({ id: `blk_${maxSeq + 1}`, text: c.after, provenanceLinks: [] })
+      target.blocks.push({ id: `blk_${maxSeq + 1}`, text: normalizeBlockText(c.after), provenanceLinks: [] })
     }
   }
   return { ...wc, sections }
