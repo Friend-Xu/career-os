@@ -208,6 +208,20 @@ export const METHODS = {
   listArtifactTimeline: 'artifacts/timeline',
   /** 表达单元溯源（M4-5.4 params: { artifact:'cover-letter', scopeId, unitId } → TraceabilityContext；只读定位——查看 ≠ 产生 Artifact state） */
   artifactTraceability: 'artifacts/traceability/context',
+  /** 全量投递记录（applications/ 扫描；ADR-019 Step 2/3——用户行动事实资产，Engine Registry） */
+  listApplications: 'applications/list',
+  /** 创建投递记录（params: { jobId, decisionId?, personId, createdBy } → ApplicationRecord；
+   *  createdBy 必须 'user'——Agent 禁止创建；status 初始 PREPARING，不自动 SUBMITTED） */
+  createApplication: 'applications/create',
+  /** 推进投递状态（params: { id, status } → ApplicationRecord；状态跃迁校验——禁止跳变；
+   *  SUBMITTED 登记 submittedAt + displayFallback；Agent 不得调用） */
+  updateApplicationStatus: 'applications/update-status',
+  /** 删除投递记录（params: { id } → {}；仅 PREPARING 可物理删除——行动历史不可消失，
+   *  其他状态拒绝，应推进 WITHDRAWN） */
+  deleteApplication: 'applications/delete',
+  /** 关联决策（params: { id, decisionId } → ApplicationRecord；Application 引用 Decision，
+   *  Decision 不持有 Application 集合——单向引用） */
+  linkApplicationDecision: 'applications/link-decision',
 } as const
 
 export const EVENTS = {
@@ -231,6 +245,8 @@ export const EVENTS = {
   coverLetterChanged: 'data.cover-letters.changed',
   /** companies/ 目录变更后推送（不含数据，客户端用 companies/list 拉快照） */
   companiesChanged: 'data.companies.changed',
+  /** applications/ 目录变更后推送（不含数据，客户端用 applications/list 拉快照；ADR-019） */
+  applicationsChanged: 'data.applications.changed',
   /** persons/ 目录变更后推送（不含数据，客户端用 persons/list 拉快照；P1 Person Aggregate 生命周期闭环） */
   personsChanged: 'data.persons.changed',
   poolChanged: 'data.pool.changed',

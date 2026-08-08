@@ -85,6 +85,14 @@ import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
 import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
 import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFields } from '../runtime/jd-extract.ts'
+import {
+  createApplication,
+  deleteApplication,
+  linkApplicationDecision,
+  listApplications,
+  updateApplicationStatus,
+  type CreateApplicationRequest,
+} from '../storage/application-registry.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
@@ -303,6 +311,30 @@ function jobIdParams(v: unknown): string {
     throw new Error('params.id 缺失')
   }
   return (v as Record<string, unknown>).id as string
+}
+
+/** applications/create 入参校验（RPC 边界）：createdBy 必须 'user'——Agent 禁止创建（Step 3.2） */
+function createApplicationParams(v: unknown): CreateApplicationRequest {
+  if (typeof v !== 'object' || v === null) throw new Error('applications/create 需要 params { jobId, personId, createdBy }')
+  const p = v as Record<string, unknown>
+  if (typeof p.jobId !== 'string' || p.jobId.length === 0) throw new Error('params.jobId 缺失（岗位引用）')
+  if (typeof p.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失（归属人）')
+  if (p.createdBy !== 'user') throw new Error(`params.createdBy 必须为 'user'（收到 ${JSON.stringify(p.createdBy)}——Agent 禁止创建 Application）`)
+  const out: CreateApplicationRequest = { jobId: p.jobId, personId: p.personId }
+  if (p.decisionId !== undefined) {
+    if (typeof p.decisionId !== 'string') throw new Error('params.decisionId 应为字符串')
+    out.decisionId = p.decisionId
+  }
+  return out
+}
+
+/** applications/update-status 入参校验（RPC 边界）：id + status 字符串 */
+function updateApplicationStatusParams(v: unknown): { id: string; status: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('applications/update-status 需要 params { id, status }')
+  const p = v as Record<string, unknown>
+  if (typeof p.id !== 'string' || p.id.length === 0) throw new Error('params.id 缺失')
+  if (typeof p.status !== 'string' || p.status.length === 0) throw new Error('params.status 缺失')
+  return { id: p.id, status: p.status }
 }
 
 /** decision/narrative-submit 入参校验（RPC 边界）：narrative 可选对象，各段可选字符串 */
@@ -1200,6 +1232,31 @@ export async function startServer(opts: {
     [METHODS.deleteJob]: (params) => {
       deleteJobFile(workspace, jobIdParams(params))
       return {}
+    },
+    [METHODS.listApplications]: () => listApplications(workspace),
+    [METHODS.createApplication]: (params) => {
+      const app = createApplication(workspace, createApplicationParams(params))
+      broadcast({ event: EVENTS.applicationsChanged })
+      return app
+    },
+    [METHODS.updateApplicationStatus]: (params) => {
+      const { id, status } = updateApplicationStatusParams(params)
+      const app = updateApplicationStatus(workspace, id, status as Parameters<typeof updateApplicationStatus>[1])
+      broadcast({ event: EVENTS.applicationsChanged })
+      return app
+    },
+    [METHODS.deleteApplication]: (params) => {
+      deleteApplication(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.applicationsChanged })
+      return {}
+    },
+    [METHODS.linkApplicationDecision]: (params) => {
+      const id = jobIdParams(params)
+      const p = params as Record<string, unknown>
+      if (typeof p.decisionId !== 'string' || p.decisionId.length === 0) throw new Error('params.decisionId 缺失')
+      const app = linkApplicationDecision(workspace, id, p.decisionId)
+      broadcast({ event: EVENTS.applicationsChanged })
+      return app
     },
     [METHODS.jobCoverage]: (params) => {
       const id = jobIdParams(params)
