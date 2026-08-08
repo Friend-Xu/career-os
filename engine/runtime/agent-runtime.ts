@@ -11,11 +11,26 @@
 import { createAgent, type AgentHandle, type AgentEvent } from '../agent/adapter/claude.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
+/** Agent Task & Context（ADR-020，ir 共享契约）——taskType/contextRefs/outputTarget/trigger */
+import type {
+  AgentTaskType,
+  ContextReference,
+  OutputTarget,
+  TaskTrigger,
+} from '../ir/agent-task.ts'
 
 export type { AgentRuntimeEvent }
 
 export interface AgentStartParams {
   task: string
+  /** 任务类型（ADR-020 Registry 9 型；缺省 = 旧调用无类型语义，v0.1 兼容） */
+  taskType?: AgentTaskType
+  /** 显式领域引用（Context Assembly 输入；缺省 = 空引用任务，开放探索） */
+  contextRefs?: ContextReference[]
+  /** 输出目标（Output Boundary：decision/artifact/none；缺省 none） */
+  outputTarget?: OutputTarget
+  /** v0.1 仅 'user_action' */
+  trigger?: TaskTrigger
   context?: string
   resumeSessionId?: string
   /** 当前分析对象（person_003）——系统事实，注入任务上下文；决策产物继承此归属（ADR-014） */

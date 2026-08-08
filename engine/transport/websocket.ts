@@ -16,6 +16,14 @@ import type { Logger } from '../logger.ts'
 import type { DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
+import {
+  AGENT_TASK_TYPES,
+  CONTEXT_REF_TYPES,
+  OUTPUT_TARGETS,
+  type AgentTaskType,
+  type ContextReference,
+  type OutputTarget,
+} from '../ir/agent-task.ts'
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
@@ -737,6 +745,35 @@ function agentStartParams(v: unknown): AgentStartParams {
   const p = v as Record<string, unknown>
   if (typeof p.task !== 'string' || p.task.length === 0) throw new Error('params.task 缺失（任务指令）')
   const out: AgentStartParams = { task: p.task }
+  // ADR-020 TaskRequest：taskType 枚举 / contextRefs 领域引用 / outputTarget / trigger（v0.1 边界校验）
+  if (p.taskType !== undefined) {
+    if (!AGENT_TASK_TYPES.includes(p.taskType as AgentTaskType)) {
+      throw new Error(`params.taskType 非法（合法：${AGENT_TASK_TYPES.join('/')}）`)
+    }
+    out.taskType = p.taskType as AgentTaskType
+  }
+  if (p.contextRefs !== undefined) {
+    if (!Array.isArray(p.contextRefs)) throw new Error('params.contextRefs 应为数组')
+    out.contextRefs = (p.contextRefs as unknown[]).map((ref) => {
+      if (typeof ref !== 'object' || ref === null) throw new Error('contextRefs 项应为 { type, id }')
+      const r = ref as Record<string, unknown>
+      if (!CONTEXT_REF_TYPES.includes(r.type as ContextReference['type'])) {
+        throw new Error(`contextRefs.type 非法（合法：${CONTEXT_REF_TYPES.join('/')}）`)
+      }
+      if (typeof r.id !== 'string' || r.id.length === 0) throw new Error('contextRefs.id 应为非空字符串')
+      return { type: r.type as ContextReference['type'], id: r.id }
+    })
+  }
+  if (p.outputTarget !== undefined) {
+    if (!OUTPUT_TARGETS.includes(p.outputTarget as OutputTarget)) {
+      throw new Error(`params.outputTarget 非法（合法：${OUTPUT_TARGETS.join('/')}）`)
+    }
+    out.outputTarget = p.outputTarget as OutputTarget
+  }
+  if (p.trigger !== undefined) {
+    if (p.trigger !== 'user_action') throw new Error('params.trigger 应为 user_action（v0.1 仅此）')
+    out.trigger = p.trigger
+  }
   if (p.personId !== undefined) {
     if (typeof p.personId !== 'string' || p.personId.length === 0) {
       throw new Error('params.personId 应为非空字符串（person_003）')
