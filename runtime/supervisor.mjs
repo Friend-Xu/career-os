@@ -10,24 +10,37 @@
  *   任一子进程退出 → shutdown（自动重启留 v2）
  *   强杀/崩溃无信号 → runtime.json 残留 → 下次启动 recovery 清理
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { findPortOccupier, killTree, queryCommandLine, spawnTracked } from './process-manager.mjs'
 import { createShutdown } from './shutdown-manager.mjs'
 import { belongsToProject, recover, PROJECT_ROOT } from './recovery.mjs'
 import { removeRuntimeState, writeRuntimeState } from './runtime-store.mjs'
 
+/**
+ * spawn 子进程用真实 node：内置便携版优先。
+ * 不能用 process.execPath——git-bash 下它可能是 shim（如 C:\Users\...\bin\node），
+ * CreateProcess 无法执行（ENOENT）。
+ */
+function nodeForSpawn() {
+  const portable = resolve(PROJECT_ROOT, '.local/node', process.platform === 'win32' ? 'node.exe' : 'node')
+  return existsSync(portable) ? portable : process.execPath
+}
+
+const NODE_EXE = nodeForSpawn()
+
 const PROCESSES = [
   {
     name: 'engine',
     cwd: resolve(PROJECT_ROOT, 'engine'),
-    command: { executable: process.execPath, args: ['main.ts'] },
+    command: { executable: NODE_EXE, args: ['main.ts'] },
     health: { ports: [5289] },
   },
   {
     name: 'frontend',
     cwd: resolve(PROJECT_ROOT, 'UI'),
-    command: { executable: process.execPath, args: ['node_modules/vite/bin/vite.js'] },
+    command: { executable: NODE_EXE, args: ['node_modules/vite/bin/vite.js'] },
     health: { ports: [5288] },
   },
 ]
@@ -84,6 +97,21 @@ function preflightPorts() {
   }
 }
 
+/**
+ * 依赖预检：clone 后 node_modules 不存在（gitignored 不入库）——自动执行安装引导。
+ * 首次安装需网络，打印明确日志；失败 fail fast 指向 install-deps 手动入口。
+ */
+function preflightDeps() {
+  const missing = PROCESSES.map((p) => resolve(p.cwd, 'node_modules/.package-lock.json')).filter((f) => !existsSync(f))
+  if (missing.length === 0) return
+  console.log('[runtime] 依赖未安装——首次运行正在安装（npm ci 按 package-lock.json 精确复现，需网络，约 1-3 分钟）...')
+  const r = spawnSync(NODE_EXE, [resolve(PROJECT_ROOT, 'scripts/install-deps.mjs')], { stdio: 'inherit' })
+  if (r.status !== 0) {
+    console.error('[runtime] 依赖安装失败——请手动执行 node scripts/install-deps.mjs 查看详细错误后重试')
+    process.exit(1)
+  }
+}
+
 function main() {
   const rec = recover()
   if (rec.result === 'already-running') {
@@ -94,6 +122,7 @@ function main() {
   if (rec.result === 'cleaned') console.log(`[runtime] 上次会话残留：已清理 ${rec.killed} 个进程`)
   if (rec.warnings.length > 0) for (const w of rec.warnings) console.warn(`[runtime] ${w}`)
 
+  preflightDeps()
   preflightPorts()
 
   const state = {

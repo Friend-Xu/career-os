@@ -4,14 +4,23 @@
  * 输出：Supervisor / 各进程 PID 存活 / 端口监听 / state 有效性。
  * 用户反馈"软件打不开"时第一步排查入口。
  */
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { findPortOccupier, isAlive, queryCommandLine } from './process-manager.mjs'
 import { loadRuntimeState } from './runtime-store.mjs'
-import { belongsToProject } from './recovery.mjs'
+import { belongsToProject, PROJECT_ROOT } from './recovery.mjs'
 
 const state = loadRuntimeState()
 
 console.log('Runtime Safety Check')
 console.log('===================')
+
+// 依赖预检：node_modules gitignored，clone 后缺失是打不开的第一原因
+const missingDeps = ['engine', 'UI'].filter((d) => !existsSync(resolve(PROJECT_ROOT, d, 'node_modules/.package-lock.json')))
+if (missingDeps.length > 0) {
+  console.log(`依赖: ${missingDeps.join('、')} 依赖未安装（node_modules/ 缺失）`)
+  console.log('  修复：node scripts/install-deps.mjs（或重新启动——supervisor 会自动安装）')
+}
 if (!state) {
   console.log('未运行（无 runtime.json —— 上次会话干净关闭或从未启动）')
   console.log('启动：StartWebUI.bat')
