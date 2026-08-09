@@ -53,8 +53,11 @@ JD/投递引用精确解析时可能命中占位档案显示「待尽调」—�
 
 ## 公司事实段（Company Intelligence Layer v0.1）
 
-尽调后**顺带采信号**写入 `## 公司事实` 段（4 列表格：类型 / 内容 / 来源 / 链接，链接可选）。
-完整规则见 `../../references/company-assessment-contract-v0.1.md` §7.1（CompanyFact Producer）：
+尽调后**必写** `## 公司事实` 段（4 列表格：类型 / 内容 / 来源 / 链接，链接可选）——把尽调
+搜索中已获取的信号**逐条过评估契约枚举**，命中即写行、枚举外跳过（工作流见 SKILL.md
+Step 6.5「事实段写法」；无可用信号 → 段留空 = 待评估，诚实状态，但必须经过「逐条过枚举」
+的判断，不是跳过不写）。完整规则见 `../../references/company-assessment-contract-v0.1.md`
+§7.1（CompanyFact Producer）：
 
 - 类型必须 ∈ `CERTIFICATION / FINANCING / PATENT / INDUSTRY_STATUS / GROWTH / OPPORTUNITY / RISK`
 - 内容必须 ∈ 评估契约 §4 规则表 value 枚举（枚举外 → 不计分，UI 标「待确认」）
