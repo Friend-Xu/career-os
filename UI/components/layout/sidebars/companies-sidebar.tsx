@@ -1,17 +1,19 @@
 /**
- * 公司空间侧栏：公司列表（搜索 + 城市/产业过滤），标题「公司空间」在列表上方。
+ * 公司空间侧栏：公司列表（搜索 + 城市/产业过滤 + 质量筛选排序，契约 company-screening-contract-v0.1）。
  * 视图切换（公司档案/地图探索）在主区顶部左侧（companies-page）。
  * 点击行 → 选中公司（selectedCompanyId 驱动两视图联动）；locateTarget 定位滚动；
  * hover 行尾删除按钮（确认后删公司档案文件，引擎广播重拉）。
+ * 排序语义 = 公司自身质量（Screening ≠ Recommendation，UI 固定「质量排序」文案）。
  */
-import { Box, Chip, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import { Box, Chip, IconButton, InputAdornment, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import SearchIcon from '@mui/icons-material/Search'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
-import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { COLORS, RISK_COLOR, alpha } from '../../../data/constants'
 import { resolveCompanyReference } from '../../../data/company-ref'
+import type { AssessmentStatus, CompanyDimension } from '../../../../engine/ir/schema.ts'
 
 const FILTERS = [
   { id: 'all', label: '全部' },
@@ -22,6 +24,27 @@ const FILTERS = [
   { id: 'robot', label: '机器人产业' },
   { id: 'contacted', label: '已联系' },
 ]
+
+const DIMENSION_LABELS: Record<CompanyDimension, string> = {
+  credibility: '可信度',
+  growth: '成长性',
+  technology: '技术壁垒',
+  opportunity: '职业机会',
+  stability: '稳定性',
+}
+
+const STATUS_FILTERS: { id: 'all' | AssessmentStatus; label: string }[] = [
+  { id: 'all', label: '全部状态' },
+  { id: 'EVALUATED', label: '已评估' },
+  { id: 'PARTIAL', label: '部分评估' },
+  { id: 'INSUFFICIENT_DATA', label: '数据不足' },
+]
+
+/** 风险信号 = factType=RISK 且 stability 负贡献（契约 §2——不绑定具体文本） */
+function hasRiskSignal(c: { assessment?: unknown }): boolean {
+  const a = c.assessment as { signals?: { factType: string; points: Partial<Record<CompanyDimension, number>> }[] } | null | undefined
+  return a?.signals?.some((s) => s.factType === 'RISK' && (s.points.stability ?? 0) < 0) ?? false
+}
 
 export function CompaniesSidebar() {
   const companies = useAppStore((s) => s.companies)
@@ -38,6 +61,11 @@ export function CompaniesSidebar() {
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
   const [search, setSearch] = useState('')
+  // 质量筛选（组件态——契约 §Boundary：筛选条件不持久化，刷新回默认）
+  const [sortByQuality, setSortByQuality] = useState(true)
+  const [riskOnly, setRiskOnly] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'all' | AssessmentStatus>('all')
+  const [dimensionFilter, setDimensionFilter] = useState<CompanyDimension[]>([])
 
   // 跨空间定位（信息池「更新尽调」菜单 → 选中档案 + 侧栏滚动到行）
   useEffect(() => {
@@ -64,13 +92,13 @@ export function CompaniesSidebar() {
       : companies
     switch (companiesFilter) {
     case 'sz':
-      return base.filter((c) => c.city === '深圳')
+      return base.filter((c) => (c.city ?? '').startsWith('深圳'))
     case 'sh':
-      return base.filter((c) => c.city === '上海')
+      return base.filter((c) => (c.city ?? '').startsWith('上海'))
     case 'hz':
-      return base.filter((c) => c.city === '杭州')
+      return base.filter((c) => (c.city ?? '').startsWith('杭州'))
     case 'bj':
-      return base.filter((c) => c.city === '北京')
+      return base.filter((c) => (c.city ?? '').startsWith('北京'))
     case 'robot':
       return base.filter((c) => c.industry?.includes('机器人'))
     case 'contacted':
@@ -79,6 +107,29 @@ export function CompaniesSidebar() {
       return base
     }
   }, [search, companiesFilter, companies])
+
+  // 质量筛选（契约 company-screening-contract-v0.1）：状态/风险/维度互选叠加；排序 = qualityScore desc + 名称 asc（null 恒排最后）
+  const visible = useMemo(() => {
+    let list = filtered
+    if (statusFilter !== 'all') list = list.filter((c) => (c.assessment?.status ?? null) === statusFilter)
+    if (riskOnly) list = list.filter(hasRiskSignal)
+    if (dimensionFilter.length > 0) {
+      list = list.filter((c) =>
+        dimensionFilter.every((d) => (c.assessment?.dimensions?.[d] ?? 0) > 0),
+      )
+    }
+    if (sortByQuality) {
+      list = [...list].sort((a, b) => {
+        const sa = a.assessment?.qualityScore ?? null
+        const sb = b.assessment?.qualityScore ?? null
+        if (sa == null && sb == null) return a.name.localeCompare(b.name)
+        if (sa == null) return 1
+        if (sb == null) return -1
+        return sb - sa || a.name.localeCompare(b.name)
+      })
+    }
+    return list
+  }, [filtered, sortByQuality, riskOnly, statusFilter, dimensionFilter])
 
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>
@@ -96,7 +147,7 @@ export function CompaniesSidebar() {
             公司空间
           </Typography>
           <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>
-            {companies.length}
+            {visible.length}/{companies.length}
           </Typography>
         </Stack>
         <TextField
@@ -136,14 +187,84 @@ export function CompaniesSidebar() {
             )
           })}
         </Stack>
+        {/* 质量筛选（契约 v0.1：排序 = 公司自身质量，Screening ≠ Recommendation） */}
+        <Stack direction="row" spacing={0.5} sx={{ mt: 0.75 }}>
+          <Chip
+            size="small"
+            label="质量排序"
+            onClick={() => setSortByQuality((v) => !v)}
+            sx={{
+              height: 20,
+              fontSize: 11,
+              bgcolor: sortByQuality ? COLORS.accentMuted : COLORS.bgHover,
+              color: sortByQuality ? COLORS.accent : COLORS.textSecondary,
+              border: `1px solid ${sortByQuality ? COLORS.accent : COLORS.border}`,
+              cursor: 'pointer',
+            }}
+          />
+          <Chip
+            size="small"
+            label="仅看风险"
+            onClick={() => setRiskOnly((v) => !v)}
+            sx={{
+              height: 20,
+              fontSize: 11,
+              bgcolor: riskOnly ? alpha(COLORS.riskHigh, 0.15) : COLORS.bgHover,
+              color: riskOnly ? COLORS.riskHigh : COLORS.textSecondary,
+              border: `1px solid ${riskOnly ? COLORS.riskHigh : COLORS.border}`,
+              cursor: 'pointer',
+            }}
+          />
+        </Stack>
+        <Stack direction="row" spacing={0.5} sx={{ mt: 0.75 }}>
+          <Select
+            size="small"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'all' | AssessmentStatus)}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              height: 24,
+              fontSize: 11,
+              '& .MuiSelect-select': { py: 0 },
+            }}
+          >
+            {STATUS_FILTERS.map((s) => (
+              <MenuItem key={s.id} value={s.id} sx={{ fontSize: 12 }}>
+                {s.label}
+              </MenuItem>
+            ))}
+          </Select>
+          <Select
+            size="small"
+            multiple
+            displayEmpty
+            value={dimensionFilter}
+            onChange={(e) => setDimensionFilter(e.target.value as CompanyDimension[])}
+            renderValue={(sel) => (sel.length === 0 ? '能力维度' : sel.map((d) => DIMENSION_LABELS[d]).join(' / '))}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              height: 24,
+              fontSize: 11,
+              '& .MuiSelect-select': { py: 0 },
+            }}
+          >
+            {(Object.keys(DIMENSION_LABELS) as CompanyDimension[]).map((d) => (
+              <MenuItem key={d} value={d} sx={{ fontSize: 12 }}>
+                {DIMENSION_LABELS[d]}
+              </MenuItem>
+            ))}
+          </Select>
+        </Stack>
       </Box>
       <Stack sx={{ flex: 1, overflow: 'auto', px: 1 }}>
-        {filtered.length === 0 ? (
+        {visible.length === 0 ? (
           <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
-            无匹配公司
+            没有符合当前筛选条件的公司
           </Typography>
         ) : (
-          filtered.map((c) => {
+          visible.map((c) => {
             const active = selectedCompanyId === c.id
             const v = c.validation
             const vColor =
