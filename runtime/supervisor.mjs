@@ -20,12 +20,13 @@ import { removeRuntimeState, writeRuntimeState } from './runtime-store.mjs'
 
 /**
  * spawn 子进程用真实 node：内置便携版优先。
- * 不能用 process.execPath——git-bash 下它可能是 shim（如 C:\Users\...\bin\node），
- * CreateProcess 无法执行（ENOENT）。
+ * fallback 必须用 'node' 字面量走 PATH+PATHEXT 搜索，不能用 process.execPath——
+ * git-bash 下 execPath 可能是无 .exe 扩展名的二进制（如 C:\Users\...\bin\node），
+ * CreateProcess 对无扩展名路径自动补 .exe 后缀（找不到即失败，ENOENT）。
  */
 function nodeForSpawn() {
   const portable = resolve(PROJECT_ROOT, '.local/node', process.platform === 'win32' ? 'node.exe' : 'node')
-  return existsSync(portable) ? portable : process.execPath
+  return existsSync(portable) ? portable : 'node'
 }
 
 const NODE_EXE = nodeForSpawn()

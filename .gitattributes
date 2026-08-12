@@ -1,0 +1,2 @@
+# cmd 要求 CRLF 行尾——LF-only 的 bat 会被 cmd 解析出错（'X 不是内部或外部命令' 等怪错）
+*.bat text eol=crlf

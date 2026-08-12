@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ConfigError, defaultConfig, loadConfig, parseCliArgs } from '../config.ts'
+import { resolve } from 'node:path'
+import { ConfigError, defaultConfig, loadConfig, parseCliArgs, REPO_ROOT } from '../config.ts'
 
 function tempConfigFile(content: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), 'cos-config-'))
@@ -57,6 +58,25 @@ test('env 覆盖：COS_PORT / COS_WORKSPACE / COS_MODEL', () => {
   assert.equal(config.paths.workspace, 'D:/tmp-ws')
   assert.equal(config.agent.model, 'claude-sonnet-4-6')
   clearEnv()
+  rmSync(join(path, '..'), { recursive: true, force: true })
+})
+
+test('config.json 相对 paths → 解析为相对 REPO_ROOT（项目迁移不失效）', () => {
+  const path = tempConfigFile({
+    paths: { workspace: 'workspace/career-advisor', skills: 'skills/career-advisor', logs: 'logs', db: 'workspace/career-advisor/.career-os.db' },
+  })
+  const { config } = loadConfig(['--config', path])
+  assert.equal(config.paths.workspace, resolve(REPO_ROOT, 'workspace/career-advisor'))
+  assert.equal(config.paths.skills, resolve(REPO_ROOT, 'skills/career-advisor'))
+  assert.equal(config.paths.logs, resolve(REPO_ROOT, 'logs'))
+  assert.equal(config.paths.db, resolve(REPO_ROOT, 'workspace/career-advisor/.career-os.db'))
+  rmSync(join(path, '..'), { recursive: true, force: true })
+})
+
+test('config.json 绝对 paths → 原样保留（数据放任意盘）', () => {
+  const path = tempConfigFile({ paths: { workspace: 'D:/elsewhere/ws' } })
+  const { config } = loadConfig(['--config', path])
+  assert.equal(config.paths.workspace, 'D:/elsewhere/ws')
   rmSync(join(path, '..'), { recursive: true, force: true })
 })
 

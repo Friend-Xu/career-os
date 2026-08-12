@@ -5,7 +5,7 @@
  * 首次启动生成完整 config.json + 逐字段打印说明（JSON 标准不支持注释，说明走启动日志）。
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -224,6 +224,12 @@ function assertPath(v: unknown, source: ConfigSource): string {
   return v
 }
 
+/** 相对路径按项目根解析（项目整体迁移后不失效）；绝对路径原样（数据可放任意盘） */
+function resolvePath(v: unknown, source: ConfigSource): string {
+  const p = assertPath(v, source)
+  return isAbsolute(p) ? p : resolve(REPO_ROOT, p)
+}
+
 function assertEnabled(v: unknown, source: ConfigSource): boolean {
   if (typeof v !== 'boolean') throw new ConfigError('watcher.enabled', v, 'true/false', source)
   return v
@@ -321,7 +327,7 @@ function applyEnv(config: EngineConfig): void {
   const port = process.env.COS_PORT
   if (port !== undefined) config.server.port = assertPort(port, 'env')
   const workspace = process.env.COS_WORKSPACE
-  if (workspace !== undefined) config.paths.workspace = assertPath(workspace, 'env')
+  if (workspace !== undefined) config.paths.workspace = resolvePath(workspace, 'env')
   const model = process.env.COS_MODEL
   if (model !== undefined) config.agent.model = assertModel(model, 'env')
 }
@@ -353,10 +359,10 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')
     }
     if (file.paths) {
-      if (file.paths.workspace !== undefined) config.paths.workspace = assertPath(file.paths.workspace, 'config.json')
-      if (file.paths.skills !== undefined) config.paths.skills = assertPath(file.paths.skills, 'config.json')
-      if (file.paths.logs !== undefined) config.paths.logs = assertPath(file.paths.logs, 'config.json')
-      if (file.paths.db !== undefined) config.paths.db = assertPath(file.paths.db, 'config.json')
+      if (file.paths.workspace !== undefined) config.paths.workspace = resolvePath(file.paths.workspace, 'config.json')
+      if (file.paths.skills !== undefined) config.paths.skills = resolvePath(file.paths.skills, 'config.json')
+      if (file.paths.logs !== undefined) config.paths.logs = resolvePath(file.paths.logs, 'config.json')
+      if (file.paths.db !== undefined) config.paths.db = resolvePath(file.paths.db, 'config.json')
     }
     if (file.watcher && file.watcher.enabled !== undefined) {
       config.watcher.enabled = assertEnabled(file.watcher.enabled, 'config.json')

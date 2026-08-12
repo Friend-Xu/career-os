@@ -10,6 +10,12 @@
     "baseUrl": "",
     "enabled": false
   },
+  "paths": {
+    "workspace": "workspace/career-advisor",
+    "skills": "skills/career-advisor",
+    "logs": "logs",
+    "db": "workspace/career-advisor/.career-os.db"
+  },
   "document": {
     "vision": {
       "provider": "zhipu",
