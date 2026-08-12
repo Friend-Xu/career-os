@@ -450,7 +450,7 @@ const SKILL_LEVEL_MAP: Record<string, number> = {
 }
 
 /** skill_inventory 技能名括号内工具词 → tools（确定性派生，非推理；Skill Representation v0.1）：
- *  「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」→ [SolidWorks, Creo, AutoCAD]；无括号 → 空 */
+ *  「电气制图与接线设计（SolidWorks/Creo/AutoCAD）」→ [SolidWorks, Creo, AutoCAD]；无括号 → 空 */
 function deriveTools(name: string): string[] {
   const m = name.match(/[（(]([^（）()]+)[)）]/)
   if (!m) return []

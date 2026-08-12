@@ -3,7 +3,7 @@
 > 冻结版（评审裁决：收敛——不做完整「职业语义翻译层」，只落 **Skill Representation
 > Layer v0.1**：能力主体/工具/别名的结构拆分；related/partial/推断归 Career Ontology
 > 层 v0.x 预留（长期命名——非纯翻译，含关系/迁移/推理/行业上下文），需 Evidence Boundary）。
-> 背景：Company-B JD 匹配 22 个 ✗ 实测暴露——「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」
+> 背景：Company-B JD 匹配 22 个 ✗ 实测暴露——「电气制图与接线设计（SolidWorks/Creo/AutoCAD）」
 > 声明无法命中 JD 工具词 SolidWorks。根因不是匹配算法 bug，而是 **PersonSkill 把
 > 能力主体+工具+领域压成一个 name 字符串**：两个职业世界（画像声明 / JD 语言）
 > 之间没有稳定表达载体。缺的不是翻译能力，是数据模型丢信息。
@@ -31,7 +31,7 @@ Career OS Skill Model
 
 ```ts
 PersonSkill {
-  name: "机械制图与三维建模（SolidWorks/Creo/AutoCAD）"   // 三重视信息压扁
+  name: "电气制图与接线设计（SolidWorks/Creo/AutoCAD）"   // 三重视信息压扁
   level: 4
 }
 ```
@@ -39,7 +39,7 @@ PersonSkill {
 实际包含三个维度：
 
 ```
-Capability: 机械制图与三维建模
+Capability: 电气制图与接线设计
 Tools:      SolidWorks / Creo / AutoCAD
 Domain:     机械设计
 ```
@@ -62,8 +62,8 @@ PersonSkill {
 括号派生规则（确定性事实，非推理）：
 
 ```
-"机械制图与三维建模（SolidWorks/Creo/AutoCAD）" → tools: ["SolidWorks", "Creo", "AutoCAD"]
-"静应力仿真（Creo）"                            → tools: ["Creo"]
+"电气制图与接线设计（SolidWorks/Creo/AutoCAD）" → tools: ["SolidWorks", "Creo", "AutoCAD"]
+"电气仿真（EPLAN）"                            → tools: ["Creo"]
 ```
 
 - 括号（中文/英文）内按 `/ 、 , ；` 分隔提取，词长 ≥2 且非纯数字
@@ -79,7 +79,7 @@ PersonSkill {
 | Consumer | JD Matcher / 差距分析 / 简历导出 | 消费统一 canonical representation |
 
 **tools 派生 = Engine Registration（系统事实）**——匹配结果的可解释来源
-（「SolidWorks ✓ 来自 机械制图与三维建模声明」），不是 Agent 提议。
+（「SolidWorks ✓ 来自 电气制图与接线设计声明」），不是 Agent 提议。
 
 ## 5. 消费规则（冻结级）
 
@@ -88,7 +88,7 @@ JD Matcher（computeGap）声明侧索引 = **声明名 + aliases + tools** 三�
 ```
 需求侧：SolidWorks（词表外精确名）
   ↓ 查声明侧索引
-声明命中：tools 键 "SolidWorks" → PersonSkill（机械制图与三维建模，level 4）
+声明命中：tools 键 "SolidWorks" → PersonSkill（电气制图与接线设计，level 4）
   ↓
 MATCHED（via: "SolidWorks"，UI 显示来源 = 声明名）
 ```
@@ -104,14 +104,14 @@ MATCHED（via: "SolidWorks"，UI 显示来源 = 声明名）
 以下全部需要 Evidence Boundary + 关系契约设计，**不混入本层 matcher**：
 
 - ❌ related：故障排查 ≈ 故障诊断（同义关系）
-- ❌ partial：方案设计 ⊂ 方案设计与样机调试（包含关系）
+- ❌ partial：方案设计 ⊂ 电气原理图设计（包含关系）
 - ❌ 迁移：医疗设备机械设计 → 自动化设备设计（行业迁移）
 - ❌ 推断：SolidWorks + 非标设备经验 → 可能具备方案设计能力（隐含能力推理）
 
 ## 7. 验收标准（冻结后）
 
-- skill_001「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」注册 → tools 派生
-  [SolidWorks, Creo, AutoCAD]；skill_007「静应力仿真（Creo）」→ [Creo]；无括号技能 → 空
+- skill_001「电气制图与接线设计（SolidWorks/Creo/AutoCAD）」注册 → tools 派生
+  [SolidWorks, Creo, AutoCAD]；skill_007「电气仿真（EPLAN）」→ [Creo]；无括号技能 → 空
 - Company-B JD 需求 SolidWorks → **MATCHED**（via SolidWorks，来源显示声明名），不再出现在未覆盖
 - 未声明技能（泵选型等）→ missing，UI 显示「未覆盖能力/未声明」+ 提示「不代表不具备」
 - soft 责任单元（团队协作等）不进匹配（Capability Matching Boundary 已有契约）

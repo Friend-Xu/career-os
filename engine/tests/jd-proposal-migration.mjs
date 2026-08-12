@@ -94,11 +94,11 @@ status: v1
 
 | skill_id | 技能 | level | usage_context |
 |----------|------|-------|---------------|
-| skill_001 | 机械制图与三维建模（SolidWorks/Creo/AutoCAD） | applied-professional | 结构设计 |
-| skill_002 | 机械原理与材料力学 | applied-intermediate | 设计基础 |
-| skill_003 | 尺寸链与公差分析 | applied-professional | 结构校核 |
-| skill_004 | 方案设计与样机调试 | applied-professional | 整机开发全流程 |
-| skill_005 | 装配干涉处理与故障诊断 | applied-professional | 现场问题解决 |
+| skill_001 | 电气制图与接线设计（SolidWorks/Creo/AutoCAD） | applied-professional | 结构设计 |
+| skill_002 | 电气控制原理 | applied-intermediate | 设计基础 |
+| skill_003 | 控制柜布局设计 | applied-professional | 结构校核 |
+| skill_004 | 电气原理图设计 | applied-professional | 整机开发全流程 |
+| skill_005 | PLC 程序调试 | applied-professional | 现场问题解决 |
 `)
 writeFileSync(join(wsDir, 'persons/person_001/snapshot/current/identity.md'), `## 分析摘要
 

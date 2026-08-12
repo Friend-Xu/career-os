@@ -151,18 +151,18 @@ status: v1
 
 | skill_id | 技能 | level | usage_context |
 |----------|------|-------|---------------|
-| skill_001 | 机械制图与三维建模（SolidWorks/Creo/AutoCAD） | applied-professional | 结构设计 |
-| skill_007 | 静应力仿真（Creo） | applied-basic | 基础仿真 |
-| skill_005 | 方案设计与样机调试 | applied-professional | 整机开发 |
+| skill_001 | 电气制图与接线设计（SolidWorks/Creo/AutoCAD） | applied-professional | 结构设计 |
+| skill_007 | 电气仿真（EPLAN） | applied-basic | 基础仿真 |
+| skill_005 | 电气原理图设计 | applied-professional | 整机开发 |
 `,
   })
   try {
     const ws = initWorkspace(dir)
     const p = scanPersons(ws)[0]!
     assert.deepEqual(p.skills, [
-      { skillId: 'skill_001', name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] },
-      { skillId: 'skill_007', name: '静应力仿真（Creo）', level: 2, tools: ['Creo'] },
-      { skillId: 'skill_005', name: '方案设计与样机调试', level: 4 },
+      { skillId: 'skill_001', name: '电气制图与接线设计（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] },
+      { skillId: 'skill_007', name: '电气仿真（EPLAN）', level: 2, tools: ['EPLAN'] },
+      { skillId: 'skill_005', name: '电气原理图设计', level: 4 },
     ])
   } finally {
     cleanup(dir)

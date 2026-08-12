@@ -201,7 +201,7 @@ test('C 跨领域：无约束 → 不产出门槛段 → Matcher NOT_DECLARED（
   }
 })
 
-test('C 跨领域：不误推理——画像「方案设计与样机调试/故障诊断」不因 partial/related 命中 JD「方案设计/故障排查」', () => {
+test('C 跨领域：不误推理——画像「电气原理图设计/故障诊断」不因 partial/related 命中 JD「方案设计/故障排查」', () => {
   const ws = setup(C_ID, '示例自动化', '机械设计工程师', '负责自动化设备机械结构设计，与电气团队协同完成整机交付。')
   try {
     writeJDAnalysis(ws, cProposal, validateJDAnalysisProposal(cProposal))
@@ -216,12 +216,12 @@ test('C 跨领域：不误推理——画像「方案设计与样机调试/故�
         .flatMap((r) => r.capabilities.map((name) => ({ name, essential: r.priority === 'must', source: 'JD' }))),
     }
     const personSkills: PersonSkill[] = [
-      { name: '方案设计与样机调试', level: 4 },
-      { name: '装配干涉处理与故障诊断', level: 4 },
-      { name: '静应力仿真（Creo）', level: 2, tools: ['Creo'] },
+      { name: '电气原理图设计', level: 4 },
+      { name: 'PLC 程序调试', level: 4 },
+      { name: '电气仿真（EPLAN）', level: 2, tools: ['Creo'] },
     ]
     const gap = computeGap({ role, person: '我', personSkills, skills: [] })
-    // Skill Representation v0.1 边界：partial（方案设计⊂方案设计与样机调试）/ related（故障排查≈故障诊断）
+    // Skill Representation v0.1 边界：partial（方案设计⊂电气原理图设计）/ related（故障排查≈故障诊断）
     // 不做语义推理——全部如实未声明（不误报为已具备）
     assert.deepEqual(gap.satisfied, [])
     assert.deepEqual(gap.transferable, [])

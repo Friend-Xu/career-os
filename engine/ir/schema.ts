@@ -668,7 +668,7 @@ export interface PersonSkill {
   skillId?: string
   /** 声明侧别名（Skill Representation v0.1 契约形态；v0.1 无数据源，来源登记后续，消费端已支持） */
   aliases?: string[]
-  /** 工具词（注册时 Engine 从 name 括号确定性派生：「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」→ SolidWorks/Creo/AutoCAD） */
+  /** 工具词（注册时 Engine 从 name 括号确定性派生：「电气制图与接线设计（SolidWorks/Creo/AutoCAD）」→ SolidWorks/Creo/AutoCAD） */
   tools?: string[]
 }
 

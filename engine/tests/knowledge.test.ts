@@ -278,10 +278,10 @@ test('computeGap：tools 工具词命中（Skill Representation v0.1）——JD 
       { name: '泵选型', essential: true, source: 'JD-Company-B' },
     ] }),
     person: '我',
-    personSkills: [{ name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] }],
+    personSkills: [{ name: '电气制图与接线设计（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] }],
     skills: [],
   })
-  assert.deepEqual(gap.satisfied, [{ name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }]) // via = 命中工具词（UI 显示来源）
+  assert.deepEqual(gap.satisfied, [{ name: '电气制图与接线设计（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }]) // via = 命中工具词（UI 显示来源）
   assert.deepEqual(gap.missing.map((m) => m.name), ['泵选型'])
 })
 
@@ -289,10 +289,10 @@ test('computeGap：aliases 声明别名进索引（声明侧别名键命中需�
   const gap = computeGap({
     role: roleOf({ skills: [{ name: '三维建模', essential: false, source: 'JD-y' }] }),
     person: '我',
-    personSkills: [{ name: '机械制图与三维建模', level: 4, aliases: ['三维建模'] }],
+    personSkills: [{ name: '电气制图与接线设计', level: 4, aliases: ['三维建模'] }],
     skills: [],
   })
-  assert.deepEqual(gap.satisfied, [{ name: '机械制图与三维建模', level: 4, via: '三维建模' }])
+  assert.deepEqual(gap.satisfied, [{ name: '电气制图与接线设计', level: 4, via: '三维建模' }])
 })
 
 // ─── 目录扫描 / 图谱 / RPC 接线 ───────────────────────────────────────────

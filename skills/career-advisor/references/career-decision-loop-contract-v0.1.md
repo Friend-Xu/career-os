@@ -115,8 +115,8 @@ interface EvidenceRef {
 ```
 
 - personEvidence 由**上游匹配行**携带（Engine 解析 PersonSnapshot 生成），Decision Layer 只透传引用
-- 显示语义：有引用 → 「来源：技能画像·机械制图与三维建模·已确认」；无引用 → 未声明（不代表不具备）
-- 禁止自由文本（「机械制图与三维建模（SolidWorks/Creo）」作为 personEvidence 字符串 = 无法回源，拒绝）
+- 显示语义：有引用 → 「来源：技能画像·电气制图与接线设计·已确认」；无引用 → 未声明（不代表不具备）
+- 禁止自由文本（「电气制图与接线设计（SolidWorks/Creo）」作为 personEvidence 字符串 = 无法回源，拒绝）
 
 ## 7. DecisionCandidate（Engine 输出）
 

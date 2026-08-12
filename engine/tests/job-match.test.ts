@@ -51,7 +51,7 @@ status: v2
 |----------|------|-------|---------------|---------------|------------|
 | skill_a | 办公软件 | applied-professional | 简历 | 日常办公 | high |
 | skill_b | 数据整理与文案 | applied-basic | 简历 | 报告整理 | high |
-| skill_c | 机械制图与三维建模（SolidWorks/Creo/AutoCAD） | applied-professional | 简历 | 结构设计 | high |
+| skill_c | 电气制图与接线设计（SolidWorks/Creo/AutoCAD） | applied-professional | 简历 | 结构设计 | high |
 `
 
 function setup(): ReturnType<typeof initWorkspace> {
@@ -135,7 +135,7 @@ test('jobs/match：工具词命中（Skill Representation v0.1）+ soft 责任�
     const gap = computeJobMatch(ws, '2026-08-07-Company-A 医疗-管理培训生', '我')
     assert.deepEqual(gap.satisfied, [
       { name: '办公软件', level: 4 },
-      { name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }, // JD 工具词命中声明 tools
+      { name: '电气制图与接线设计（SolidWorks/Creo/AutoCAD）', level: 4, via: 'SolidWorks' }, // JD 工具词命中声明 tools
     ])
     assert.deepEqual(gap.transferable, [])
     assert.deepEqual(gap.missing, []) // soft 团队协作被过滤，不进匹配
