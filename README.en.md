@@ -60,7 +60,7 @@ Walked the full chain in Career OS: transition feasibility (44% skill overlap â†
 ```bash
 git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
-node runtime/supervisor.mjs     # Windows: double-click StartWebUI.bat (bundled portable node, no system Node needed)
+node runtime/supervisor.mjs     # Windows: double-click StartWebUI.bat (bundled portable node is a required runtime dependency; missing it fails fast with install instructions)
 ```
 Stop: `node runtime/stop-all.mjs` or double-click stop-all.bat Â· Diagnose: `node runtime/doctor.mjs`.
 

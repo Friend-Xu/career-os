@@ -6,20 +6,15 @@ rem NOTE: avoid parentheses inside if blocks - a ")" inside an echo line closes 
 rem block early and corrupts parsing; use goto structure instead of nested blocks
 chcp 65001 >nul
 cd /d "%~dp0"
-rem embedded node (project-local, .local/node/node.exe); fall back to system node (24+) if missing
+rem embedded node is a required dependency (project-local, .local/node/node.exe);
+rem missing = broken install, fail fast with a clear message (no silent fallback)
 set "NODE=%~dp0.local\node\node.exe"
 if exist "%NODE%" goto run
-rem use `where node.exe` (not `where node`): system PATH may have a bash shim
-rem named "node" without .exe that cmd cannot execute
-where node.exe >nul 2>nul
-if not errorlevel 1 goto use_system
-echo [ERROR] Node.js 24+ not found.
-echo   Install: https://nodejs.org/ bundles npm
-echo   Or put a portable Node into %~dp0.local\node\
+echo [ERROR] Node.js environment missing: %NODE%
+echo   Install Node.js 24+ and place a portable copy (with npm) into %~dp0.local\node\
+echo   Or run: node scripts/install-deps.mjs  (system node 24+ required for bootstrap)
 pause
 exit /b 1
-:use_system
-set "NODE=node.exe"
 :run
 "%NODE%" "runtime/supervisor.mjs"
 pause

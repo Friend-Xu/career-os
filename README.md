@@ -69,7 +69,7 @@ git clone https://github.com/Friend-Xu/career-os.git
 cd career-os
 node runtime/supervisor.mjs     # Windows 也可双击 StartWebUI.bat
 ```
-依赖安装自动完成：首次运行若发现依赖缺失（`node_modules/` 不入库），supervisor 自动执行 `npm ci` 按 `package-lock.json` 精确复现（约 1-3 分钟，需网络）；也可手动执行 `node scripts/install-deps.mjs`。要求 Node 24+ 与 npm（若项目内置便携 node 存在则直接用，无需系统 Node）。
+依赖安装自动完成：首次运行若发现依赖缺失（`node_modules/` 不入库），supervisor 自动执行 `npm ci` 按 `package-lock.json` 精确复现（约 1-3 分钟，需网络）；也可手动执行 `node scripts/install-deps.mjs`。要求 Node 24+：**运行环境使用项目内置便携 Node（`.local/node/`，必需依赖——缺失时启动明确报错并提示安装，不静默回退）**；系统 Node 仅用于首次安装引导（`install-deps.mjs`）。
 
 关闭：`node runtime/stop-all.mjs` 或双击 stop-all.bat；诊断：`node runtime/doctor.mjs`。
 
@@ -87,7 +87,7 @@ claude --plugin-dir .
 
 ## 引擎与数据
 
-引擎（Node 24 原生 TS，`engine/`）解析 markdown 真相源并提供 WebSocket 桥（:5289）；UI（Vite，`UI/`）为可视化工作台（:5288）。项目内置便携 node（`.local/node/`，可选）——存在时优先使用，不存在则回退系统 Node（需 24+）。
+引擎（Node 24 原生 TS，`engine/`）解析 markdown 真相源并提供 WebSocket 桥（:5289）；UI（Vite，`UI/`）为可视化工作台（:5288）。项目内置便携 node（`.local/node/`，**必需运行依赖**）——缺失时启动明确报错并提示安装方式，不自动下载、不静默回退系统 Node。
 
 **端口与配置**：
 
