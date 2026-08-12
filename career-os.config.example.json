@@ -6,9 +6,18 @@
   "agent": {
     "permissionMode": "acceptEdits",
     "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob"],
-    "apiKey": "",
-    "baseUrl": "",
-    "enabled": false
+    "model": "",
+    "enabled": false,
+    "providers": [
+      {
+        "id": "example",
+        "label": "示例服务商",
+        "baseUrl": "https://api.example.com",
+        "apiKey": "",
+        "enabled": false,
+        "models": []
+      }
+    ]
   },
   "paths": {
     "workspace": "workspace/career-advisor",
