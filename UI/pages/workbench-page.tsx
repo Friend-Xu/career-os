@@ -437,7 +437,10 @@ function PoolHealthCard() {
         missingFields: stats.missing,
       }
     }
-    return POOL_HEALTH
+    // 引擎在线但空库 → 诚实空态（不拿 mock 冒充真实）；offline → mock 演示兜底
+    return engineStatus === 'connected'
+      ? { healthPercent: null, totalNodes: 0, isolatedNodes: 0, missingFields: 0 }
+      : POOL_HEALTH
   })()
 
   return (
@@ -466,12 +469,12 @@ function PoolHealthCard() {
             lineHeight: 1,
           }}
         >
-          {h.healthPercent}%
+          {h.healthPercent === null ? '—' : `${h.healthPercent}%`}
         </Typography>
       </Stack>
       <LinearProgress
         variant="determinate"
-        value={h.healthPercent}
+        value={h.healthPercent ?? 0}
         sx={{
           mb: 1.5,
           height: 6,

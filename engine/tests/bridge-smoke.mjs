@@ -173,7 +173,7 @@ const decisionMd = `# 李明 — 转行可行性分析：非标自动化 → 机
 | direction | 机器人结构设计 |
 | direction_match | 75% |
 | direction_confidence | 中 |
-| city | 苏州 |
+| city | City-X |
 | city_score | 8.2/10 |
 | salary_feasible | true |
 | risk_level | 中 |
@@ -200,7 +200,7 @@ writeFileSync(companyPath, `# 苏舟智机器人科技有限公司
 
 | 字段 | 值 |
 |------|-----|
-| city | 苏州 |
+| city | City-X |
 | industry | 机器人 |
 | match_score | 75% |
 | risk_level | 中 |
@@ -213,7 +213,7 @@ writeFileSync(companyPath, `# 苏舟智机器人科技有限公司
 
 ## 基本信息
 - 公司名称: 苏舟智机器人科技有限公司（化名）
-- 地点: 苏州工业园区
+- 地点: City-X
 `, 'utf8')
 
 const evt = await waitEvent('data.decisions.changed')
@@ -244,7 +244,7 @@ console.log('companies/list →', JSON.stringify(companies1))
 const company = companies1.find((c) => c.id === '苏舟智机器人')
 if (!company) fail('companies/list 未返回公司档案')
 if (company.validation) fail(`合法公司不应带 validation：${JSON.stringify(company.validation)}`)
-if (company.matchScore !== 75 || company.city !== '苏州' || company.contacted !== false) fail(`公司字段解析异常：${JSON.stringify(company)}`)
+if (company.matchScore !== 75 || company.city !== 'City-X' || company.contacted !== false) fail(`公司字段解析异常：${JSON.stringify(company)}`)
 if (!Array.isArray(company.tags) || company.tags.length !== 2) fail(`公司 tags 解析异常：${JSON.stringify(company.tags)}`)
 console.log('companies/list → 新记录：', JSON.stringify({ id: company.id, name: company.name, city: company.city, matchScore: company.matchScore, riskLevel: company.riskLevel, tags: company.tags }))
 
@@ -254,14 +254,14 @@ for (const n of graph2.nodes) byType[n.type] = (byType[n.type] ?? 0) + 1
 const edgeRels = {}
 for (const e of graph2.edges) edgeRels[e.relation] = (edgeRels[e.relation] ?? 0) + 1
 console.log('pool/graph →', graph2.nodes.length, '节点', JSON.stringify(byType), '/', graph2.edges.length, '边', JSON.stringify(edgeRels))
-for (const want of ['person:李明', `decision:${recId}`, 'direction:机器人结构设计', 'city:苏州', 'company:苏舟智机器人']) {
+for (const want of ['person:李明', `decision:${recId}`, 'direction:机器人结构设计', 'city:City-X', 'company:苏舟智机器人']) {
   if (!graph2.nodes.some((n) => n.id === want)) fail(`图谱缺节点 ${want}`)
 }
 const companyNode = graph2.nodes.find((n) => n.id === 'company:苏舟智机器人')
 if (companyNode.matchScore !== 75 || companyNode.riskLevel !== 'medium') fail(`company 节点 score/risk 异常：${JSON.stringify(companyNode)}`)
 const dirNode = graph2.nodes.find((n) => n.id === 'direction:机器人结构设计')
 if (dirNode.matchScore !== 75) fail(`direction 节点 matchScore 异常：${JSON.stringify(dirNode)}`)
-if (!graph2.edges.some((e) => e.source === `decision:${recId}` && e.target === 'city:苏州' && e.strength === 'high')) fail('city 边 strength 应为 high（cityScore=82）')
+if (!graph2.edges.some((e) => e.source === `decision:${recId}` && e.target === 'city:City-X' && e.strength === 'high')) fail('city 边 strength 应为 high（cityScore=82）')
 if (!graph2.edges.some((e) => e.source === `decision:${recId}` && e.target === 'direction:机器人结构设计' && e.strength === 'medium')) fail('direction 边 strength 应为 medium（directionMatch=75）')
 
 // ─── 写入 invalid 决策（v2.1 缺 profile）→ 列表带标记、图谱跳过 ─────────

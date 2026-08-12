@@ -71,7 +71,7 @@ function realNode() {
   return process.execPath
 }
 
-// ─── fixture workspace（person 画像含括号工具词 + 博流式 JD 原文）────────
+// ─── fixture workspace（person 画像含括号工具词 + Company-B式 JD 原文）────────
 mkdirSync(join(wsDir, 'persons/person_001/snapshot/current'), { recursive: true })
 mkdirSync(join(wsDir, 'jobs'), { recursive: true })
 mkdirSync(join(wsDir, 'decisions'), { recursive: true })
@@ -104,7 +104,7 @@ writeFileSync(join(wsDir, 'persons/person_001/snapshot/current/identity.md'), `#
 
 | 字段 | 值 |
 |------|-----|
-| education | 东华大学机械工程本科（2019-2023） |
+| education | University-A机械工程本科（2019-2023） |
 `)
 writeFileSync(join(wsDir, 'persons/person_001/snapshot/current/career_profile.md'), `## 分析摘要
 
@@ -122,7 +122,7 @@ const JD = `# 流体机械工程师 — 示例流体科技
 |------|-----|
 | company | 示例流体科技 |
 | title | 流体机械工程师 |
-| location | 杭州 |
+| location | City-Z |
 | salary | 9-13K·13薪 |
 | requirements | 本科以上学历优先考虑，机械设计、流体机械、过程装备与控制工程等相关专业优先考虑;熟练掌握Inventor、SolidWorks等至少一款三维设计软件，能独立完成建模、施工图绘制;熟悉容器、管道、法兰等相关标准，具备泵、阀、传感器等设备的独立选型能力;了解电气基础、上位机软件相关知识，具备一定的项目方案设计及优化能力，能快速对接客户需求并转化为技术方案;具备较强的现场技术指导能力、问题解决能力，沟通协调能力良好，工作认真负责、严谨细致，能适应偶尔现场出差;有流体系统集成、非标流体设备设计经验者优先;熟悉相关行业安全规范、具备设备调试经验者优先 |
 | created_at | 2026-08-08 |
@@ -133,7 +133,7 @@ const JD = `# 流体机械工程师 — 示例流体科技
 
 公司名称：示例流体科技
 流体机械工程师 9-13K·13薪
-杭州 经验不限 学历不限
+City-Z 经验不限 学历不限
 职位描述
 泵测试系统
 团队管理经验

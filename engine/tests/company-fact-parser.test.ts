@@ -9,13 +9,13 @@ import { computeCompanyAssessment, factIdOf } from '../runtime/company-assessmen
  * degraded 不丢 / 无事实段 → [] 不 crash / 段落边界（--- / 下一个 ## / EOF）截断正确。
  */
 
-const MD = `# 博流控制技术（浙江）有限公司
+const MD = `# Company-B 技术有限公司
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| city | 杭州 |
+| city | City-Z |
 
 ---
 
@@ -69,7 +69,7 @@ test('Case C：类型合法但内容枚举外 → UNKNOWN_VALUE 不计分（不�
 })
 
 test('Case D：无 `## 公司事实` 段 → 空数组不 crash（旧档案兼容）', () => {
-  const p = parseCompanyFacts('# 老档案\n\n## 分析摘要\n\n| 字段 | 值 |\n|---|---|\n| city | 杭州 |\n', 'company_001')
+  const p = parseCompanyFacts('# 老档案\n\n## 分析摘要\n\n| 字段 | 值 |\n|---|---|\n| city | City-Z |\n', 'company_001')
   assert.deepEqual(p, { facts: [], unknownRows: [] })
 })
 

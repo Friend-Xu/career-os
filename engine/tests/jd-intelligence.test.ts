@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import type { JobRecord, PersonSnapshot } from '../ir/schema.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 
+/** 通勤圈城市（合成 fixture；真实值在本地 gitignored config.json） */
+const CITIES = ['City-X', 'City-Y']
+
 function job(partial: Partial<JobRecord> = {}): JobRecord {
   return {
     id: partial.id ?? 'job_001',
@@ -29,7 +32,7 @@ function person(partial: Partial<PersonSnapshot> = {}): PersonSnapshot {
       { skillId: 'skill_b', name: '减速器设计', level: 2 },
     ],
     skillInventoryVersion: partial.skillInventoryVersion ?? 'v2',
-    preference: 'preference' in partial ? partial.preference : { salaryRange: '11-13K/月', city: '沪苏通勤圈' },
+    preference: 'preference' in partial ? partial.preference : { salaryRange: '11-13K/月', city: 'City-Circle' },
     eventCount: partial.eventCount ?? 1,
   }
 }
@@ -42,7 +45,7 @@ const skills = [
 ]
 
 test('Compatibility 五段式 → Contract：support/gap/risk/unknowns 映射完整', () => {
-  const result = analyzeJob({ job: job({ location: '苏州' }), person: person(), skills })
+  const result = analyzeJob({ job: job({ location: 'City-X' }), person: person(), skills, prefCities: CITIES })
 
   assert.equal(result.type, 'jd')
   assert.equal(result.options.length, 1)
@@ -53,7 +56,7 @@ test('Compatibility 五段式 → Contract：support/gap/risk/unknowns 映射完
   assert.deepEqual(opt.support, ['机械设计（声明 4 级）'])
   // gap：transferable（减速器设计有基础）+ missing（无）
   assert.deepEqual(opt.gap, ['减速器设计（有基础 2 级，需补强）'])
-  // risk：苏州在沪苏通勤圈内 → 无
+  // risk：City-X在通勤圈内 → 无
   assert.deepEqual(opt.risk, [])
   // unknowns：salary 未声明
   assert.deepEqual(result.unknowns, ['JD 未声明薪资（实际薪资以 offer 为准）'])
@@ -61,11 +64,11 @@ test('Compatibility 五段式 → Contract：support/gap/risk/unknowns 映射完
 })
 
 test('约束比对：location 圈外 → risk；location/salary 缺失 → unknowns', () => {
-  const outside = analyzeJob({ job: job({ location: '深圳' }), person: person(), skills })
-  assert.deepEqual(outside.options[0]!.risk, ['工作地点 深圳 不在沪苏通勤圈（偏好：沪苏通勤圈）'])
+  const outside = analyzeJob({ job: job({ location: 'City-W' }), person: person(), skills, prefCities: CITIES })
+  assert.deepEqual(outside.options[0]!.risk, ['工作地点 City-W 不在通勤圈（偏好：City-Circle）'])
   assert.equal(outside.unknowns.length, 1) // 仅薪资
 
-  const bare = analyzeJob({ job: job({ location: undefined, salary: undefined }), person: person(), skills })
+  const bare = analyzeJob({ job: job({ location: undefined, salary: undefined }), person: person(), skills, prefCities: CITIES })
   assert.deepEqual(bare.options[0]!.risk, [])
   assert.deepEqual(bare.unknowns, [
     'JD 未声明工作地点（实际以录用通知为准）',
@@ -74,14 +77,14 @@ test('约束比对：location 圈外 → risk；location/salary 缺失 → unkno
 })
 
 test('不产生 user_decision：结果只有可能性空间（options/unknowns），无 selected/推荐', () => {
-  const result = analyzeJob({ job: job({ location: '苏州', salary: '11-15K' }), person: person(), skills })
+  const result = analyzeJob({ job: job({ location: 'City-X', salary: '11-15K' }), person: person(), skills, prefCities: CITIES })
   assert.equal('userDecision' in result, false)
   assert.equal('conclusion' in result, false)
   assert.equal(result.options[0]!.status, 'candidate') // 恒候选——selected 只来自人
 })
 
 test('JD Decision Provenance：inputs 可反查 Person Aggregate（skill_id + version + constraint + knowledge）', () => {
-  const result = analyzeJob({ job: job({ location: '苏州' }), person: person(), skills })
+  const result = analyzeJob({ job: job({ location: 'City-X' }), person: person(), skills, prefCities: CITIES })
   assert.deepEqual(result.inputs, {
     evidenceRefs: [],
     skillRefs: [
@@ -95,7 +98,7 @@ test('JD Decision Provenance：inputs 可反查 Person Aggregate（skill_id + ve
 
 test('无技能/无偏好 person：support 空 + gap 全量 + 无 constraint 引用', () => {
   const bare = person({ skills: [], preference: undefined, skillInventoryVersion: undefined })
-  const result = analyzeJob({ job: job({ location: '苏州' }), person: bare, skills })
+  const result = analyzeJob({ job: job({ location: 'City-X' }), person: bare, skills, prefCities: CITIES })
   assert.deepEqual(result.options[0]!.support, [])
   assert.deepEqual(result.options[0]!.gap, ['机械设计', '减速器设计'])
   assert.deepEqual(result.inputs.skillRefs, [])

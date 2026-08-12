@@ -23,7 +23,7 @@ const FIXED_NOW = new Date('2026-08-08T12:00:00Z')
 function setup() {
   const root = mkdtempSync(join(tmpdir(), 'cos-ctx-'))
   const ws = initWorkspace(root)
-  createJobFile(ws, { company: '示例智造', title: '机械设计工程师', location: '杭州' }, FIXED_NOW)
+  createJobFile(ws, { company: '示例智造', title: '机械设计工程师', location: 'City-Z' }, FIXED_NOW)
   return ws
 }
 

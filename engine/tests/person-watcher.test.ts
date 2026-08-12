@@ -36,7 +36,7 @@ id: person_001
 | name | 我 |
 | education | 机械工程本科 |
 | graduation_year | （待采集） |
-| location | 苏州/深圳（可出差） |
+| location | City-X/City-W（可出差） |
 | years_experience | 5 |
 `
 
@@ -85,7 +85,7 @@ test('parsePersonManifest：缺 id/name/非法 status → undefined', () => {
 test('parseSnapshotTable：摘要表解析 + 待采集/占位过滤', () => {
   const t = parseSnapshotTable(identityMd)
   assert.equal(t.education, '机械工程本科')
-  assert.equal(t.location, '苏州/深圳（可出差）')
+  assert.equal(t.location, 'City-X/City-W（可出差）')
   assert.equal(t.graduation_year, undefined) // （待采集）过滤
   assert.equal(t.years_experience, '5')
 })

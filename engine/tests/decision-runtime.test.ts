@@ -96,14 +96,14 @@ test('同类型多条决策：decisionIds 收集 + updatedAt 取最近', () => {
 test('direction/city 随最新决策更新：非空值合并，部分更新不覆盖', () => {
   const history = runtime.computeHistory(
     [
-      record({ id: 'd-1', skill: 'career-path', direction: '机器人', city: '深圳', createdAt: '2026-08-01' }),
+      record({ id: 'd-1', skill: 'career-path', direction: '机器人', city: 'City-W', createdAt: '2026-08-01' }),
       record({ id: 'd-2', skill: 'direction-explore', direction: '机器人研发', createdAt: '2026-08-02' }),
     ],
     '我',
   )
   const g = history.groups[0]!
   assert.equal(g.direction, '机器人研发') // 最新决策更新 direction
-  assert.equal(g.city, '深圳') // 最新决策无 city，保留前值
+  assert.equal(g.city, 'City-W') // 最新决策无 city，保留前值
 })
 
 test('invalid 决策不进入历史；不影响同类型合法决策', () => {

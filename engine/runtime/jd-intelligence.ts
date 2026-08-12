@@ -16,14 +16,11 @@ import { computeGap } from './gap-calculator.ts'
 
 export type { JDIntelligenceResult, JDIntelligenceOption } from '../ir/schema.ts'
 
-/** 偏好城市（沪苏通勤圈，Phase 3 确认）；比对用包含匹配（苏州/上海任一命中即圈内） */
-const HUSU_CITIES = ['苏州', '上海']
-
-/** 约束比对：JD 地点 vs 偏好城市；数据缺口 → unknowns（薪资金额不解析——引擎不评分） */
-function locationAssessment(location: string | undefined, prefCity: string | undefined): { risk?: string; unknown?: string } {
+/** 约束比对：JD 地点 vs 偏好城市（通勤圈城市来自 config.prefCities——用户数据域，不硬编码）；数据缺口 → unknowns（薪资金额不解析——引擎不评分） */
+function locationAssessment(location: string | undefined, prefCity: string | undefined, prefCities: string[]): { risk?: string; unknown?: string } {
   if (!location) return { unknown: 'JD 未声明工作地点（实际以录用通知为准）' }
-  if (prefCity && !HUSU_CITIES.some((c) => location.includes(c))) {
-    return { risk: `工作地点 ${location} 不在沪苏通勤圈（偏好：${prefCity}）` }
+  if (prefCity && prefCities.length > 0 && !prefCities.some((c) => location.includes(c))) {
+    return { risk: `工作地点 ${location} 不在通勤圈（偏好：${prefCity}）` }
   }
   return {}
 }
@@ -54,6 +51,8 @@ export function analyzeJob(opts: {
   person: PersonSnapshot
   /** knowledge 词表（computeGap 别名归一化） */
   skills: Skill[]
+  /** 通勤圈城市（来自 config.prefCities；空 = 不启用圈约束） */
+  prefCities?: string[]
 }): JDIntelligenceResult {
   const { job, person, skills } = opts
   const gap = computeGap({ role: roleFromJob(job), person: person.name, personSkills: person.skills ?? [], skills })
@@ -64,7 +63,7 @@ export function analyzeJob(opts: {
     ...gap.missing.map((m) => m.name),
   ]
 
-  const loc = locationAssessment(job.location, person.preference?.city)
+  const loc = locationAssessment(job.location, person.preference?.city, opts.prefCities ?? [])
   const unknowns: string[] = []
   if (loc.unknown) unknowns.push(loc.unknown)
   if (!job.salary) unknowns.push('JD 未声明薪资（实际薪资以 offer 为准）')

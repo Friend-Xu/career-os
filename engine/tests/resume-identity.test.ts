@@ -25,7 +25,7 @@ const DRAFT = `# 简历（含身份信息）
 
 ### education | 教育背景
 
-- 东华大学 | 机械工程 | 本科
+- University-A | 机械工程 | 本科
 
 ### experience | 工作经历
 
@@ -81,7 +81,7 @@ test('M5.2 G6：parseDraftManifest 解析身份段（4 段 + label/body 切分�
   assert.equal(profile.entries[0].label, undefined)
   assert.equal(profile.entries[0].body, '机械工程本科，3 年医疗检测设备结构设计经验')
   const edu = value.identitySections![1]
-  assert.equal(edu.entries[0].label, '东华大学')
+  assert.equal(edu.entries[0].label, 'University-A')
   assert.equal(edu.entries[0].body, '机械工程 | 本科')
   const exp = value.identitySections![2]
   assert.equal(exp.entries[0].label, '某医疗器械公司')

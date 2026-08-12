@@ -1,13 +1,17 @@
 import { Box, Typography, Stack } from '@mui/material'
 import CircleIcon from '@mui/icons-material/Circle'
 import { COLORS, LAYOUT } from '../../data/constants'
-import { LAST_DECISION_WRITE, WORKSPACE_PATH, POOL_HEALTH } from '../../data/mock-data'
+import { WORKSPACE_PATH, POOL_HEALTH } from '../../data/mock-data'
 import { useAppStore } from '../../store/app-store'
 
 export function StatusBar() {
-  // 数据健康度：引擎 health RPC（契约 v1 单一计算源）；offline/未达 → mock 兜底
+  // 数据健康度：引擎 health RPC（契约 v1 单一计算源）；引擎在线但无报告 → 诚实空态「—」；offline → mock 演示兜底
   const health = useAppStore((s) => s.health)
-  const healthPercent = health ? health.overallScore : POOL_HEALTH.healthPercent
+  const engineStatus = useAppStore((s) => s.engineStatus)
+  const decisions = useAppStore((s) => s.decisions)
+  const healthPercent = health ? health.overallScore : engineStatus === 'connected' ? null : POOL_HEALTH.healthPercent
+  // 上次决策写入：取真实决策最新一条（decisions 头部为最新）；空 → 「暂无决策写入」
+  const lastWrite = decisions.length > 0 ? decisions[0]?.createdAt : null
   return (
     <Box
       component="footer"
@@ -33,13 +37,13 @@ export function StatusBar() {
       <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>|</Typography>
 
       <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-        数据健康度 {healthPercent}%
+        {healthPercent === null ? '数据健康度 —' : `数据健康度 ${healthPercent}%`}
       </Typography>
 
       <Box sx={{ flex: 1 }} />
 
       <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
-        上次决策写入 {LAST_DECISION_WRITE}
+        {lastWrite ? `上次决策写入 ${lastWrite}` : '暂无决策写入'}
       </Typography>
     </Box>
   )

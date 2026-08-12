@@ -17,13 +17,13 @@ export const silentLogger: Logger = {
   trace() {},
 }
 
-const companyMd = `# 澜山自动化
+const companyMd = `# Company-C 自动化
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| city | 苏州 |
+| city | City-X |
 | industry | 工业自动化/机器人 |
 | match_score | 85% |
 | risk_level | 低 |
@@ -36,15 +36,15 @@ const companyMd = `# 澜山自动化
 
 ## 公司档案摘要
 
-澜山自动化（300124.SZ）：国产工控自动化龙头，机器人业务位于苏州。
+Company-C 自动化（SYN-001）：合成工控自动化公司，机器人业务位于City-X。
 `
 
 test('解析合法公司档案：字段映射 + 值转换 + 无 validation', () => {
-  const { value, validation } = parseCompanyMarkdown(companyMd, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(companyMd, 'Company-C 自动化.md')
   assert.equal(validation, undefined)
-  assert.equal(value.id, '澜山自动化')
-  assert.equal(value.name, '澜山自动化') // name 取 H1
-  assert.equal(value.city, '苏州')
+  assert.equal(value.id, 'Company-C 自动化')
+  assert.equal(value.name, 'Company-C 自动化') // name 取 H1
+  assert.equal(value.city, 'City-X')
   assert.equal(value.industry, '工业自动化/机器人')
   assert.equal(value.matchScore, 85) // 85% → 85
   assert.equal(value.riskLevel, 'low') // 低 → low
@@ -60,7 +60,7 @@ test('match_score X/10 → 0-100；中高 → high；是 → true；全角逗号
     .replace('| risk_level | 低 |', '| risk_level | 中高 |')
     .replace('| contacted | 否 |', '| contacted | 是 |')
     .replace('| tags | 国产工控龙头, 伺服/变频器, 机器人 |', '| tags | 龙头，机器人 |')
-  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
   assert.equal(validation, undefined)
   assert.equal(value.matchScore, 85)
   assert.equal(value.riskLevel, 'high') // 中高 → high
@@ -69,17 +69,17 @@ test('match_score X/10 → 0-100；中高 → high；是 → true；全角逗号
 })
 
 test('无分析摘要表 → invalid', () => {
-  const { validation } = parseCompanyMarkdown('# 澜山自动化\n\n没有摘要表', '澜山自动化.md')
+  const { validation } = parseCompanyMarkdown('# Company-C 自动化\n\n没有摘要表', 'Company-C 自动化.md')
   assert.equal(validation?.status, 'invalid')
   assert.equal(validation?.issues[0]?.severity, 'error')
 })
 
 test('缺必填字段（city/contacted 未填）→ invalid，parkId 缺失合法', () => {
   const md = companyMd
-    .replace('| city | 苏州 |\n', '')
+    .replace('| city | City-X |\n', '')
     .replace('| contacted | 否 |\n', '')
     .replace('| park_id | 1 |\n', '')
-  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
   assert.equal(validation?.status, 'invalid')
   const paths = validation!.issues.map((i) => i.path)
   assert.ok(paths.includes('city') && paths.includes('contacted'))
@@ -89,7 +89,7 @@ test('缺必填字段（city/contacted 未填）→ invalid，parkId 缺失合�
 
 test('contacted 填 -（未联系）→ false，不判 invalid；其余字段 - 仍跳过', () => {
   const md = companyMd.replace('| contacted | 否 |', '| contacted | - |')
-  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
   assert.equal(validation, undefined)
   assert.equal(value.contacted, false)
 })
@@ -100,7 +100,7 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
     .replace('| match_score | 85% |', '| match_score | 很高 |')
     .replace('| contacted | 否 |', '| contacted | 也许 |')
     .replace('| park_id | 1 |', '| park_id | 一区 |')
-  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
   assert.equal(validation?.status, 'degraded')
   assert.ok(validation!.issues.every((i) => i.severity === 'warn'))
   assert.equal(value.riskLevel, '超高') // 保留原值
@@ -112,23 +112,23 @@ test('值域非法 → degraded（warn）保留原值展示，不崩', () => {
 test('aliases：摘要表 aliases 行 → CompanyRecord.aliases（逗号分隔拆分）', () => {
   const md = companyMd.replace(
     '| contacted | 否 |',
-    '| contacted | 否 |\n| aliases | 澜山, 澜山自动化股份 |',
+    '| contacted | 否 |\n| aliases | Company-C, Company-C 自动化股份 |',
   )
-  const { value, validation } = parseCompanyMarkdown(md, '澜山自动化.md')
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
   assert.equal(validation, undefined)
-  assert.deepEqual(value.aliases, ['澜山', '澜山自动化股份'])
+  assert.deepEqual(value.aliases, ['Company-C', 'Company-C 自动化股份'])
   // 无 aliases 行 → undefined
-  assert.equal(parseCompanyMarkdown(companyMd, '澜山自动化.md').value.aliases, undefined)
+  assert.equal(parseCompanyMarkdown(companyMd, 'Company-C 自动化.md').value.aliases, undefined)
 })
 
 test('resolveCompany：canonical exact → alias exact → undefined，禁止模糊匹配', () => {
-  const list = [parseCompanyMarkdown(companyMd, '澜山自动化.md').value]
-  assert.equal(resolveCompany(list, '澜山自动化')?.id, '澜山自动化') // canonical
-  assert.equal(resolveCompany(list, '澜山自动化股份')?.id, undefined) // 未登记 alias → 不命中
-  list[0]!.aliases = ['澜山', '澜山自动化股份']
-  assert.equal(resolveCompany(list, '澜山')?.id, '澜山自动化') // alias exact
-  assert.equal(resolveCompany(list, '澜山自动化股份')?.id, '澜山自动化')
-  assert.equal(resolveCompany(list, '澜山自动'), undefined) // substring 不命中（拒绝模糊）
+  const list = [parseCompanyMarkdown(companyMd, 'Company-C 自动化.md').value]
+  assert.equal(resolveCompany(list, 'Company-C 自动化')?.id, 'Company-C 自动化') // canonical
+  assert.equal(resolveCompany(list, 'Company-C 自动化股份')?.id, undefined) // 未登记 alias → 不命中
+  list[0]!.aliases = ['Company-C', 'Company-C 自动化股份']
+  assert.equal(resolveCompany(list, 'Company-C')?.id, 'Company-C 自动化') // alias exact
+  assert.equal(resolveCompany(list, 'Company-C 自动化股份')?.id, 'Company-C 自动化')
+  assert.equal(resolveCompany(list, 'Company-C自动'), undefined) // substring 不命中（拒绝模糊）
   assert.equal(resolveCompany(list, '山自动化'), undefined)
   assert.equal(resolveCompany(list, ''), undefined)
 })
@@ -137,13 +137,13 @@ test('Company Identity Split Regression：占位+全称双档案 → alias 认�
   const root = mkdtempSync(join(tmpdir(), 'cos-cid-'))
   const ws = initWorkspace(root)
   // 占位档案（简称，invalid=待尽调）——JD 建档自动创建
-  ws.write('companies/心玮医疗.md', `# 心玮医疗
+  ws.write('companies/Company-A 医疗.md', `# Company-A 医疗
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| city | 上海-奉贤区 |
+| city | City-Y |
 | industry | - |
 | match_score | - |
 | risk_level | - |
@@ -153,26 +153,26 @@ test('Company Identity Split Regression：占位+全称双档案 → alias 认�
 `)
   // 尽调档案（全称，合法 + alias 认领简称——身份归一化登记）
   ws.write(
-    'companies/上海心玮医疗科技股份有限公司.md',
+    'companies/Company-A 医疗科技股份有限公司.md',
     companyMd
-      .replace('# 澜山自动化', '# 上海心玮医疗科技股份有限公司')
-      .replace('| aliases | 澜山, 澜山自动化股份 |', '')
+      .replace('# Company-C 自动化', '# Company-A 医疗科技股份有限公司')
+      .replace('| aliases | Company-C, Company-C 自动化股份 |', '')
       .replace('| tags | 国产工控龙头, 伺服/变频器, 机器人 |', '| tags | 神经介入, 港股上市 |')
-      .replace('| city | 苏州 |', '| city | 上海 |')
+      .replace('| city | City-X |', '| city | City-Y |')
       .replace('| park_id | 1 |\n', '')
-      .replace('| contacted | 否 |', '| contacted | 否 |\n| aliases | 心玮医疗 |'),
+      .replace('| contacted | 否 |', '| contacted | 否 |\n| aliases | Company-A 医疗 |'),
   )
   ws.write(
-    'jobs/2026-08-07-心玮医疗-管理培训生.md',
-    `# 管理培训生 — 心玮医疗
+    'jobs/2026-08-07-Company-A 医疗-管理培训生.md',
+    `# 管理培训生 — Company-A 医疗
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| company | 心玮医疗 |
+| company | Company-A 医疗 |
 | title | 管理培训生 |
-| location | 上海-奉贤区 |
+| location | City-Y |
 | salary | 8-15k·15薪 |
 | created_at | 2026-08-07 |
 `,
@@ -180,11 +180,11 @@ test('Company Identity Split Regression：占位+全称双档案 → alias 认�
 
   const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
   const list = projection.listCompanies()
-  // 全称档案被 alias 认领冲突标记（占位档案也认领「心玮医疗」——存量双档案场景）
-  const full = list.find((c) => c.id === '上海心玮医疗科技股份有限公司')
+  // 全称档案被 alias 认领冲突标记（占位档案也认领「Company-A 医疗」——存量双档案场景）
+  const full = list.find((c) => c.id === 'Company-A 医疗科技股份有限公司')
   assert.ok(full, '尽调档案存在')
-  assert.deepEqual(full?.aliases, ['心玮医疗'])
-  const placeholder = list.find((c) => c.id === '心玮医疗')
+  assert.deepEqual(full?.aliases, ['Company-A 医疗'])
+  const placeholder = list.find((c) => c.id === 'Company-A 医疗')
   assert.ok(placeholder, '占位档案仍存在（存量容忍，不静默删除）')
   // 至少一方被 degraded 标记身份歧义（warn 不 invalid）
   const conflictWarn = list.some((c) => c.validation?.issues.some((i) => i.path === 'aliases'))
@@ -195,12 +195,12 @@ test('Company Identity Split Regression：占位+全称双档案 → alias 认�
     decisions: [],
     companies: list,
     profileNames: [],
-    roles: [{ id: '管理培训生-心玮医疗', name: '管理培训生', company: '心玮医疗', skills: [] }],
+    roles: [{ id: '管理培训生-Company-A 医疗', name: '管理培训生', company: 'Company-A 医疗', skills: [] }],
   })
-  const fullNode = graph.nodes.find((n) => n.id === 'company:上海心玮医疗科技股份有限公司')
+  const fullNode = graph.nodes.find((n) => n.id === 'company:Company-A 医疗科技股份有限公司')
   assert.ok(fullNode, '尽调档案入图')
   assert.ok(
-    graph.edges.some((e) => e.source === 'company:上海心玮医疗科技股份有限公司' && e.target === 'role:管理培训生-心玮医疗' && e.relation === '雇佣'),
+    graph.edges.some((e) => e.source === 'company:Company-A 医疗科技股份有限公司' && e.target === 'role:管理培训生-Company-A 医疗' && e.relation === '雇佣'),
     'role 经 alias 解析连到尽调档案',
   )
 
@@ -247,13 +247,13 @@ status: v1
 test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 invalid 公司', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-cmp-'))
   const ws = initWorkspace(root)
-  ws.write('companies/澜山自动化.md', companyMd)
+  ws.write('companies/Company-C 自动化.md', companyMd)
   ws.write('companies/无摘要公司.md', '# 无摘要公司\n\n没有摘要表')
 
   const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
   const list = projection.listCompanies()
   assert.equal(list.length, 2)
-  const ok = list.find((c) => c.id === '澜山自动化')
+  const ok = list.find((c) => c.id === 'Company-C 自动化')
   const bad = list.find((c) => c.id === '无摘要公司')
   assert.ok(ok && !ok.validation, '合法公司不应带 validation')
   assert.equal(ok?.matchScore, 85)
@@ -264,7 +264,7 @@ test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 in
     companies: list,
     profileNames: [],
   })
-  assert.ok(graph.nodes.some((n) => n.id === 'company:澜山自动化' && n.matchScore === 85 && n.riskLevel === 'low'))
+  assert.ok(graph.nodes.some((n) => n.id === 'company:Company-C 自动化' && n.matchScore === 85 && n.riskLevel === 'low'))
   assert.ok(!graph.nodes.some((n) => n.id === 'company:无摘要公司'), 'invalid 公司不应出现在图谱')
   projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
   rmSync(root, { recursive: true, force: true })

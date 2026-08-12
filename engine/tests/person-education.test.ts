@@ -33,16 +33,16 @@ function setup(): ReturnType<typeof initWorkspace> {
 // ─── payload 解析 ─────────────────────────────────────────────────────────
 
 test('parseEducationPayload：键值段全字段解析；缺学校 → undefined（结构化失败原文仍在）', () => {
-  const full = parseEducationPayload('学校=东华大学；专业=机械工程；学历=本科；起=2019；止=2023')
-  assert.deepEqual(full, { school: '东华大学', major: '机械工程', degree: '本科', startYear: 2019, endYear: 2023 })
-  const partial = parseEducationPayload('学校=东华大学；学历=本科')
-  assert.equal(partial!.school, '东华大学')
+  const full = parseEducationPayload('学校=University-A；专业=机械工程；学历=本科；起=2019；止=2023')
+  assert.deepEqual(full, { school: 'University-A', major: '机械工程', degree: '本科', startYear: 2019, endYear: 2023 })
+  const partial = parseEducationPayload('学校=University-A；学历=本科')
+  assert.equal(partial!.school, 'University-A')
   assert.equal(partial!.degree, '本科')
   assert.equal(partial!.major, undefined)
   assert.equal(parseEducationPayload(undefined), undefined)
   assert.equal(parseEducationPayload('专业=机械工程；学历=本科'), undefined) // 缺学校 → 无结构化
-  const noYear = parseEducationPayload('学校=东华大学；起=abc') // 非法年份丢弃，结构化仍在
-  assert.equal(noYear!.school, '东华大学')
+  const noYear = parseEducationPayload('学校=University-A；起=abc') // 非法年份丢弃，结构化仍在
+  assert.equal(noYear!.school, 'University-A')
   assert.equal(noYear!.startYear, undefined)
 })
 
@@ -54,7 +54,7 @@ test('appendCandidates：education 带 payload → candidates.md 6 列 + listCan
     const added = appendCandidates(ws, {
       personId: 'person_001',
       candidates: [
-        { category: 'education', content: '东华大学机械工程本科（2019-2023）', source: 'resume', payload: '学校=东华大学；专业=机械工程；学历=本科；起=2019；止=2023' },
+        { category: 'education', content: 'University-A机械工程本科（2019-2023）', source: 'resume', payload: '学校=University-A；专业=机械工程；学历=本科；起=2019；止=2023' },
         { category: 'experience', content: '某医疗器械公司 机械工程师', source: 'resume' },
       ],
     })
@@ -62,8 +62,8 @@ test('appendCandidates：education 带 payload → candidates.md 6 列 + listCan
     const all = listCandidates(ws, 'person_001')
     assert.equal(all.length, 2)
     const edu = all.find((c) => c.category === 'education')!
-    assert.equal(edu.payload, '学校=东华大学；专业=机械工程；学历=本科；起=2019；止=2023')
-    assert.deepEqual(edu.education, { school: '东华大学', major: '机械工程', degree: '本科', startYear: 2019, endYear: 2023 })
+    assert.equal(edu.payload, '学校=University-A；专业=机械工程；学历=本科；起=2019；止=2023')
+    assert.deepEqual(edu.education, { school: 'University-A', major: '机械工程', degree: '本科', startYear: 2019, endYear: 2023 })
     assert.equal(all.find((c) => c.category === 'experience')!.education, undefined)
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -75,11 +75,11 @@ test('listCandidates：5 列旧格式（无 payload）兼容回读', () => {
   try {
     ws.write(
       'persons/person_001/extraction/candidates.md',
-      ['# Extraction Candidates', '', '| id | status | category | content | source |', '|----|--------|----------|---------|--------|', '| c-001 | confirmed | 教育 | 东华大学 机械工程 本科（2019-2023） | resume |', ''].join('\n'),
+      ['# Extraction Candidates', '', '| id | status | category | content | source |', '|----|--------|----------|---------|--------|', '| c-001 | confirmed | 教育 | University-A 机械工程 本科（2019-2023） | resume |', ''].join('\n'),
     )
     const all = listCandidates(ws, 'person_001')
     assert.equal(all.length, 1)
-    assert.equal(all[0]!.content, '东华大学 机械工程 本科（2019-2023）')
+    assert.equal(all[0]!.content, 'University-A 机械工程 本科（2019-2023）')
     assert.equal(all[0]!.education, undefined)
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -94,7 +94,7 @@ test('resolveCandidate：education confirmed（含 payload）→ 登记 facts/ed
     appendCandidates(ws, {
       personId: 'person_001',
       candidates: [
-        { category: 'education', content: '东华大学机械工程本科（2019-2023）', source: 'resume', payload: '学校=东华大学；专业=机械工程；学历=本科；起=2019；止=2023' },
+        { category: 'education', content: 'University-A机械工程本科（2019-2023）', source: 'resume', payload: '学校=University-A；专业=机械工程；学历=本科；起=2019；止=2023' },
         { category: 'experience', content: '某医疗器械公司 机械工程师', source: 'resume' },
       ],
     })
@@ -105,7 +105,7 @@ test('resolveCandidate：education confirmed（含 payload）→ 登记 facts/ed
     assert.equal(edu.length, 1)
     assert.deepEqual(edu[0], {
       candidateId: 'c-001',
-      school: '东华大学',
+      school: 'University-A',
       major: '机械工程',
       degree: '本科',
       startYear: 2019,
@@ -128,7 +128,7 @@ test('resolveCandidate：幂等——同一候选重复确认不重复登记；�
     appendCandidates(ws, {
       personId: 'person_001',
       candidates: [
-        { category: 'education', content: '东华大学机械工程本科', source: 'user_reported', payload: '学校=东华大学；学历=本科' },
+        { category: 'education', content: 'University-A机械工程本科', source: 'user_reported', payload: '学校=University-A；学历=本科' },
         { category: 'education', content: '某校 硕士', source: 'user_reported' }, // 无 payload
       ],
     })
@@ -152,7 +152,7 @@ test('registerEducationFact：直接登记（存量迁移通道）+ 缺件（无
 
     registerEducationFact(ws, 'person_001', {
       candidateId: 'c-001',
-      school: '东华大学',
+      school: 'University-A',
       major: '机械工程',
       degree: '本科',
       startYear: 2019,
@@ -161,7 +161,7 @@ test('registerEducationFact：直接登记（存量迁移通道）+ 缺件（无
     })
     const edu = scanPersons(ws).find((p) => p.personId === 'person_001')!.education!
     assert.equal(edu.length, 1)
-    assert.equal(edu[0]!.school, '东华大学')
+    assert.equal(edu[0]!.school, 'University-A')
     assert.equal(edu[0]!.graduationYear, 2023)
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })

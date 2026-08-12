@@ -99,7 +99,7 @@ function jobFile(company, title, statement, patterns, questions) {
 |------|-----|
 | company | ${company} |
 | title | ${title} |
-| location | 苏州 |
+| location | City-X |
 | salary | 20-35K |
 | created_at | 2026-08-05 |
 

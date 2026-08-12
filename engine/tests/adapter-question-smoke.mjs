@@ -17,7 +17,7 @@ setTimeout(() => {
 }, 90000)
 const sdk = sdkQuery({
   prompt:
-    '用 AskUserQuestion 向用户提一个选择题：最看重哪个城市？选项：深圳 / 上海 / 北京。' +
+    '用 AskUserQuestion 向用户提一个选择题：最看重哪个城市？选项：City-W / City-Y / 北京。' +
     '得到答案后回复「已收到：<答案>」，不要做其他事。',
   options: {
     cwd,
@@ -49,10 +49,10 @@ try {
       const qs = msg.tool_use_result?.questions
       console.log(`[研究] user 消息: questions=${qs ? qs.length : 0} session_id=${msg.session_id ?? '-'}`)
       if (qs && qs.length > 0 && !answered) {
-        console.log('[研究] → streamInput 回答「深圳」')
+        console.log('[研究] → streamInput 回答「City-W」')
         answers.push({
           type: 'user',
-          message: { role: 'user', content: [{ type: 'text', text: '深圳' }] },
+          message: { role: 'user', content: [{ type: 'text', text: 'City-W' }] },
           parent_tool_use_id: null,
         })
         answered = true

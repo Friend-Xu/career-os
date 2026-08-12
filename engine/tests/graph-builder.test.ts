@@ -13,7 +13,7 @@ function decision(payload?: DecisionPayload, over: Partial<DecisionRecord> = {})
       direction: '机器人结构设计',
       directionMatch: 82,
       directionConfidence: 'medium' as Confidence,
-      city: '苏州',
+      city: 'City-X',
       cityScore: 76,
       salaryFeasible: true,
       riskLevel: 'medium' as RiskLevel,
@@ -39,21 +39,21 @@ test('城市 payload → 每城市独立节点（各自得分、边强度）', (
       type: 'city',
       direction: '机器人结构设计',
       cities: [
-        { name: '苏州', score: 76, strengths: [], risks: [] },
-        { name: '深圳', score: 69.5, strengths: [], risks: [] },
+        { name: 'City-X', score: 76, strengths: [], risks: [] },
+        { name: 'City-W', score: 69.5, strengths: [], risks: [] },
       ],
     }),
   )
-  const su = nodes.find((n) => n.id === 'city:苏州')
-  const sz = nodes.find((n) => n.id === 'city:深圳')
-  assert.ok(su && su.matchScore === 76, '苏州节点应带 76 分')
-  assert.ok(sz && sz.matchScore === 69.5, '深圳节点应带 69.5 分')
-  const edgeSu = edges.find((e) => e.source === 'decision:d-1' && e.target === 'city:苏州')
-  const edgeSz = edges.find((e) => e.source === 'decision:d-1' && e.target === 'city:深圳')
+  const su = nodes.find((n) => n.id === 'city:City-X')
+  const sz = nodes.find((n) => n.id === 'city:City-W')
+  assert.ok(su && su.matchScore === 76, 'City-X节点应带 76 分')
+  assert.ok(sz && sz.matchScore === 69.5, 'City-W节点应带 69.5 分')
+  const edgeSu = edges.find((e) => e.source === 'decision:d-1' && e.target === 'city:City-X')
+  const edgeSz = edges.find((e) => e.source === 'decision:d-1' && e.target === 'city:City-W')
   assert.equal(edgeSu?.relation, '位于')
   assert.equal(edgeSu?.strength, 'medium') // 76 → medium
   assert.equal(edgeSz?.strength, 'medium') // 69.5 → medium
-  assert.ok(!nodes.some((n) => n.id === 'city:苏州 / 深圳'), '不应出现整串城市节点')
+  assert.ok(!nodes.some((n) => n.id === 'city:City-X / City-W'), '不应出现整串城市节点')
 })
 
 test('方向 payload → 每方向独立节点（各自匹配）', () => {
@@ -77,7 +77,7 @@ test('方向 payload → 每方向独立节点（各自匹配）', () => {
 })
 
 test('无 payload（存量决策）：单字符串 city/direction 节点 fallback', () => {
-  const { nodes } = graphOf(decision(undefined, { city: '苏州 / 深圳', directionMatch: 82 }))
-  assert.ok(nodes.some((n) => n.id === 'city:苏州 / 深圳'), '旧协议整串城市保持单节点')
+  const { nodes } = graphOf(decision(undefined, { city: 'City-X / City-W', directionMatch: 82 }))
+  assert.ok(nodes.some((n) => n.id === 'city:City-X / City-W'), '旧协议整串城市保持单节点')
   assert.ok(nodes.some((n) => n.id === 'direction:机器人结构设计'))
 })

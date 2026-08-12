@@ -61,7 +61,7 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
         'created_at: 2026-08-07',
         'person_id: person_003',
         '---',
-        '# 城市评估 — 苏州 vs 深圳',
+        '# 城市评估 — City-X vs City-W',
         '',
         '## 分析摘要',
         '',
@@ -70,8 +70,8 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
         '| skill | city-advisor |',
         '| direction | 机器人结构设计 |',
         '| direction_match | - |',
-        '| city | 苏州 / 深圳 |',
-        '| city_score | 苏州 7.6 / 深圳 6.95 |',
+        '| city | City-X / City-W |',
+        '| city_score | City-X 7.6 / City-W 6.95 |',
         '| risk_level | 中 |',
         '| key_risk | 测试风险 |',
         '| status | complete |',
@@ -92,8 +92,8 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
     assert.ok(!next.includes('旧城市'), '旧城市评估行应被替换')
     // person 列继承（person_id → display_name）
     assert.ok(next.includes('| 你好 |'), 'person 列应由 person_id 派生为展示名')
-    assert.ok(next.includes('城市评估 — 苏州 vs 深圳'), '新决策应出现在决策段落')
-    assert.ok(next.includes('苏州 7.6 / 深圳 6.95'), '城市得分应来自摘要表原文')
+    assert.ok(next.includes('城市评估 — City-X vs City-W'), '新决策应出现在决策段落')
+    assert.ok(next.includes('City-X 7.6 / City-W 6.95'), '城市得分应来自摘要表原文')
     // 其他段落保留
     assert.ok(next.includes('## 用户画像'), '用户画像段落保留')
     assert.ok(next.includes('## 公司尽调'), '公司尽调段落保留')
@@ -133,7 +133,7 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
         'created_at: 2026-08-07',
         'person_id: person_003',
         '---',
-        '# 城市评估 — 苏州 vs 深圳',
+        '# 城市评估 — City-X vs City-W',
         '',
         '## 分析摘要',
         '',
@@ -154,8 +154,8 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
         '',
         '| 城市 | 得分 | 置信度 | 关键优势 | 关键风险 |',
         '|------|:--:|:--:|---------|---------|',
-        '| 苏州 | 7.6/10 | 中 | 薪酬性价比/政策 | - |',
-        '| 深圳 | 6.95/10 | - | 行业天花板 | - |',
+        '| City-X | 7.6/10 | 中 | 薪酬性价比/政策 | - |',
+        '| City-W | 6.95/10 | - | 行业天花板 | - |',
       ].join('\n'),
     )
 
@@ -163,9 +163,9 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
     writeIndexDecisionSections(ws, parsed)
     const next = ws.read('INDEX.md')
     // 城市列从 payload 城市名重组；得分从 payload 派生（X/10 显示），非摘要表原文
-    assert.ok(next.includes('| 苏州 / 深圳 |'), `城市列应重组自 payload。next=${JSON.stringify(next)}`)
-    assert.ok(next.includes('苏州 7.6 / 深圳 6.95'), '得分应从 payload 派生（76/10=7.6、69.5/10=6.95）')
-    assert.ok(next.includes('城市评估 — 苏州 vs 深圳'), '决策记录段落正常投影')
+    assert.ok(next.includes('| City-X / City-W |'), `城市列应重组自 payload。next=${JSON.stringify(next)}`)
+    assert.ok(next.includes('City-X 7.6 / City-W 6.95'), '得分应从 payload 派生（76/10=7.6、69.5/10=6.95）')
+    assert.ok(next.includes('城市评估 — City-X vs City-W'), '决策记录段落正常投影')
   } finally {
     cleanup()
   }

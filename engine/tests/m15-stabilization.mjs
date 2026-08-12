@@ -98,7 +98,7 @@ const JD_T1A = `# 后端开发工程师 — 凌云网络
 |------|-----|
 | company | 凌云网络 |
 | title | 后端开发工程师 |
-| location | 杭州 |
+| location | City-Z |
 | salary | 25-40K |
 | requirements | Go;分布式系统;Redis |
 | created_at | 2026-08-05 |
@@ -117,7 +117,7 @@ const JD_T1B = `# 产品经理 — 橙意科技
 |------|-----|
 | company | 橙意科技 |
 | title | 产品经理 |
-| location | 上海 |
+| location | City-Y |
 | salary | 20-35K |
 | requirements | 产品规划;需求分析;数据分析 |
 | created_at | 2026-08-05 |

@@ -9,6 +9,8 @@
     "engine:stop": "node ../scripts/engine.mjs stop",
     "engine:status": "node ../scripts/engine.mjs status",
     "typecheck": "tsc --noEmit",
+    "sanitize": "node ../scripts/sanitize-check.mjs",
+    "pretest": "node ../scripts/sanitize-check.mjs",
     "test": "node --test --test-isolation=none \"tests/*.test.ts\"",
     "smoke:bridge": "node tests/bridge-smoke.mjs",
     "smoke:proposal": "node tests/proposal-e2e.mjs",

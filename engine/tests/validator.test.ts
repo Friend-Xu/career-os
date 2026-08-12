@@ -9,7 +9,7 @@ const validRecord = {
   direction: '机器人研发',
   directionMatch: 82,
   directionConfidence: 'high',
-  city: '深圳',
+  city: 'City-W',
   cityScore: 86,
   salaryFeasible: true,
   riskLevel: 'medium',
@@ -81,8 +81,8 @@ const validPayloadRecord = {
     type: 'city',
     direction: '机器人结构设计',
     cities: [
-      { name: '苏州', score: 76, confidence: 'medium', strengths: ['薪酬性价比'], risks: [] },
-      { name: '深圳', score: 69.5, strengths: [], risks: ['租金高'] },
+      { name: 'City-X', score: 76, confidence: 'medium', strengths: ['薪酬性价比'], risks: [] },
+      { name: 'City-W', score: 69.5, strengths: [], risks: ['租金高'] },
     ],
   },
 }
@@ -96,7 +96,7 @@ test('payload.type 非法：degraded + warn', () => {
   const { validation } = validateDecisionRecord({
     ...validRecord,
     protocolVersion: '2.8',
-    payload: { type: 'company', cities: [{ name: '苏州', score: 76 }] },
+    payload: { type: 'company', cities: [{ name: 'City-X', score: 76 }] },
   })
   assert.equal(validation?.status, 'degraded')
   assert.ok(validation?.issues.some((i) => i.path === 'payload' && i.severity === 'warn'))

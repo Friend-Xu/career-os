@@ -62,6 +62,11 @@ export interface EngineConfig {
     /** 高德 JS API 安全密钥（2021-12 后申请的 key 必须；明文方式 _AMapSecurityConfig，同存 config.json 保护） */
     securityJsCode?: string
   }
+  /**
+   * 通勤圈城市（用户偏好数据：真实值只写本地 career-os.config.json，gitignored，不入库）。
+   * 空数组 = 未配置，圈约束不启用（JD 地点不因通勤圈产生 risk）。
+   */
+  prefCities?: string[]
   /** 文档智能（Document Runtime：PDF 简历提取等）——与 agent 平行，不共享 Provider 语义 */
   document: {
     /** 视觉模型连接（图片型 PDF 提取；未配置 → 仅文本型 PDF 可用） */
@@ -108,6 +113,7 @@ export function defaultConfig(): EngineConfig {
     },
     watcher: { enabled: true },
     map: { provider: 'amap' },
+    prefCities: [],
     document: { vision: { provider: 'zhipu', model: 'glm-4.6v-flash' } },
   }
 }
@@ -256,6 +262,15 @@ function assertMap(v: unknown, source: ConfigSource): { provider: string; apiKey
   }
 }
 
+/** 通勤圈城市校验：string[]（真实值仅存在于本地 gitignored config.json） */
+function assertPrefCities(v: unknown, source: ConfigSource): string[] | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v) || v.some((c) => typeof c !== 'string' || c.length === 0)) {
+    throw new ConfigError('prefCities', v, 'string[]（通勤圈城市，如 ["苏州","上海"]）', source)
+  }
+  return v
+}
+
 /** document 段校验（config.json 边界：直接编辑也可）；vision 可选，缺失字段回退默认 */
 function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider: 'zhipu'; model?: string; apiKey?: string } } {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) {
@@ -369,6 +384,9 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
     }
     if (file.map) {
       config.map = assertMap(file.map, 'config.json')
+    }
+    if (file.prefCities !== undefined) {
+      config.prefCities = assertPrefCities(file.prefCities, 'config.json')
     }
     if (file.document) {
       const doc = assertDocument(file.document, 'config.json')

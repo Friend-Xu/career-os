@@ -165,7 +165,7 @@ const decisionMd = `# 我 — 方向探索
 | 字段 | 值 |
 |------|-----|
 | direction | 机械结构工程师 |
-| city | 苏州 |
+| city | City-X |
 | salary_feasible | true |
 | status | exploring |
 | protocol_version | 2.3 |

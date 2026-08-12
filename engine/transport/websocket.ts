@@ -10,7 +10,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_CONFIG_PATH, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
+import { DEFAULT_CONFIG_PATH, defaultConfig, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
@@ -242,7 +242,7 @@ export function computeJdAnalysis(workspace: Workspace, params: { jobId: string;
   const person = scanPersons(workspace).find((p) => p.personId === params.personId)
   if (!person) throw new Error(`人不存在：${params.personId}`)
   const { skills } = scanKnowledge(workspace)
-  return analyzeJob({ job: job.record, person, skills })
+  return analyzeJob({ job: job.record, person, skills, prefCities: defaultConfig().prefCities ?? [] })
 }
 
 /** person/session/create 入参校验（RPC 边界：用户输入校验，fail fast） */

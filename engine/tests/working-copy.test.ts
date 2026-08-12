@@ -48,7 +48,7 @@ function sectionsInput(claimId: string) {
     {
       id: 'sec_1',
       title: '个人信息',
-      blocks: [{ id: 'blk_1', text: '我 | 机械结构工程师 | 5年经验 | 杭州' }],
+      blocks: [{ id: 'blk_1', text: '我 | 机械结构工程师 | 5年经验 | City-Z' }],
     },
     {
       id: 'sec_2',

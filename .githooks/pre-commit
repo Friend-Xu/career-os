@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# pre-commit：Data Source Boundary 最后防线——架构文件含真实数据（真实实体名/PII）即拒绝提交。
+# 安装：git config core.hooksPath .githooks
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+node "$ROOT/scripts/sanitize-check.mjs"

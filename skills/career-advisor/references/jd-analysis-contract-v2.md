@@ -192,9 +192,9 @@ Projection → UI Display（只渲染四态结果）
 
 ## 10. 验收标准（冻结后）
 
-- 心玮医疗（培养型）：岗位理解展示工作方式/发展路径；门槛显示 学历 ✓（档案本科，四态
+- Company-A 医疗（培养型）：岗位理解展示工作方式/发展路径；门槛显示 学历 ✓（档案本科，四态
   正确）；能力匹配只算 [hard] 词（soft/preference 不进匹配）
-- 博流控制（工程型，分析后）：门槛 学历 —（JD 未写学历）→ NOT_DECLARED 不误判
+- Company-B 智控（工程型，分析后）：门槛 学历 —（JD 未写学历）→ NOT_DECLARED 不误判
 - 模糊门槛（「相关专业」）→ NEEDS_CONFIRMATION 走确认流，Engine 不猜
 - 档案缺件（Person 无 education）+ JD 有学历要求 → NEEDS_CONFIRMATION（非 NOT_MATCHED）
 - 简略 JD：三层诚实缺失

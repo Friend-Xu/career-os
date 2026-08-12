@@ -143,7 +143,7 @@ matchEducation(
 
 | Case | 档案侧（confirmed 集合） | 门槛侧 | 预期 |
 |------|------------------------|--------|------|
-| 1 心玮 | degree=本科 | education=[本科;硕士;博士] NORMALIZED | MATCHED |
+| 1 Company-A | degree=本科 | education=[本科;硕士;博士] NORMALIZED | MATCHED |
 | 2 JD 未写学历 | 任意 | 无 education 维度 | NOT_DECLARED |
 | 3 档案缺失 | 空集合 | education=[本科;硕士] | NEEDS_CONFIRMATION |
 | 4 无法归一化 | 任意 | education=[应届] NEEDS_CONFIRMATION | NEEDS_CONFIRMATION |

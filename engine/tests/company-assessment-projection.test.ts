@@ -22,7 +22,7 @@ function setup(extra?: string): ReturnType<typeof initWorkspace> {
 
 | 字段 | 值 |
 |------|-----|
-| city | 杭州 |
+| city | City-Z |
 | industry | 工业自动化 |
 | match_score | 52% |
 | risk_level | 中 |

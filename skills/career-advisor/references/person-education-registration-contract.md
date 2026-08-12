@@ -45,7 +45,7 @@ Person Aggregate（education 结构化事实）
 education_candidate:
   id: c-001                     # 对应 extraction/candidates.md 条目
   school:
-    value: 东华大学
+    value: University-A
     confidence: high            # high | medium（来源明确度）
   major:
     value: 机械工程
@@ -56,7 +56,7 @@ education_candidate:
     end_year: 2023
   evidence:
     source: resume.pdf           # 非结构化来源（简历/用户口述）
-    quote: "东华大学机械工程本科（2019-2023）"   # 原文锚点（Claim Strength ≤ Evidence Strength）
+    quote: "University-A机械工程本科（2019-2023）"   # 原文锚点（Claim Strength ≤ Evidence Strength）
   status: pending               # pending | confirmed | rejected
 ```
 
@@ -68,7 +68,7 @@ education_candidate:
 
 ```yaml
 education:
-  - school: 东华大学            # 学校（必填）
+  - school: University-A            # 学校（必填）
     major: 机械工程              # 专业（可选）
     degree: 本科                # 归一化枚举：高中/大专/本科/硕士/博士
     graduation_year: 2023      # 事实层存毕业年份（届别派生规则不在本层）
@@ -130,7 +130,7 @@ education:
 
 ## 8. 验收标准（冻结后）
 
-- 心玮 Golden Case：档案 degree=本科（confirmed）+ JD 学历 本科;硕士;博士 → **MATCHED**
+- Company-A Golden Case：档案 degree=本科（confirmed）+ JD 学历 本科;硕士;博士 → **MATCHED**
 - 档案无 education 条目 + JD 有学历要求 → **NEEDS_CONFIRMATION**（不是 NOT_MATCHED）
 - 档案 pending / rejected + JD 有学历要求 → NEEDS_CONFIRMATION
 - 教育候选确认 → 登记立即生效（无 Agent 中间聚合、无 parse 路径）

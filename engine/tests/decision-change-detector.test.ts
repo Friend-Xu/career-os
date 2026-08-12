@@ -25,16 +25,16 @@ test('方向变化 → direction_target 候选（Level A）', () => {
 
 test('城市/薪资可行性变化 → city_constraint / salary_constraint 候选', () => {
   const cands = detectDecisionChange(
-    proj({ city: '深圳', salaryFeasible: true }),
-    proj({ city: '沪苏通勤圈', salaryFeasible: false }),
+    proj({ city: 'City-W', salaryFeasible: true }),
+    proj({ city: 'City-Circle', salaryFeasible: false }),
   )
   assert.equal(cands.length, 2)
   const city = cands.find((c) => c.changeUnit === 'city_constraint')!
   assert.deepEqual(city, {
     changeUnit: 'city_constraint',
     changeType: 'preference',
-    before: '深圳',
-    after: '沪苏通勤圈',
+    before: 'City-W',
+    after: 'City-Circle',
     confidence: 'medium',
   })
   const salary = cands.find((c) => c.changeUnit === 'salary_constraint')!
@@ -46,7 +46,7 @@ test('城市/薪资可行性变化 → city_constraint / salary_constraint 候�
 test('分析变化不产生候选：投影不含分析字段（结构保证），相同投影 → 空', () => {
   // DecisionProjection 类型无 confidence/score/risk/match/analysis 字段——
   // Detector 结构上无从检测分析变化
-  const base = proj({ direction: '机器人', city: '苏州' })
+  const base = proj({ direction: '机器人', city: 'City-X' })
   assert.deepEqual(detectDecisionChange(base, base), [])
 })
 
@@ -74,8 +74,8 @@ test('显式 selected_change → 候选（source=user_decision，confidence=high
   })
   // city 落点 → preference 类型
   const cityCands = detectDecisionChange(
-    proj({ selectedChange: { unit: 'city_constraint', from: '深圳', to: '苏州' } }),
-    proj({ selectedChange: { unit: 'city_constraint', from: '深圳', to: '上海' } }),
+    proj({ selectedChange: { unit: 'city_constraint', from: 'City-W', to: 'City-X' } }),
+    proj({ selectedChange: { unit: 'city_constraint', from: 'City-W', to: 'City-Y' } }),
   )
   assert.equal(cityCands[0]!.changeType, 'preference')
 })
@@ -103,7 +103,7 @@ test('projectDecision：摘要表 → 投影（direction/city/salary/selected_ch
 | 字段 | 值 |
 |------|-----|
 | direction | 机器人结构设计 |
-| city | 苏州 |
+| city | City-X |
 | salary_feasible | true |
 | selected_change | direction_target:机器人结构设计 → 机械+AI 交叉 |
 | direction_match | 82% |
@@ -111,7 +111,7 @@ test('projectDecision：摘要表 → 投影（direction/city/salary/selected_ch
 `
   const p = projectDecision(md, 'decision_001', '2026-08-06')
   assert.equal(p.direction, '机器人结构设计')
-  assert.equal(p.city, '苏州')
+  assert.equal(p.city, 'City-X')
   assert.equal(p.salaryFeasible, true)
   assert.deepEqual(p.selectedChange, { unit: 'direction_target', from: '机器人结构设计', to: '机械+AI 交叉' })
   // 分析字段不进入投影（结构保证）
@@ -126,7 +126,7 @@ test('projectDecision：摘要表 → 投影（direction/city/salary/selected_ch
 
 test('parseSelectedChange：格式解析（含首选择 from 可空 + 非法单位拒绝）', () => {
   assert.deepEqual(parseSelectedChange('direction_target:机器人 → 工业'), { unit: 'direction_target', from: '机器人', to: '工业' })
-  assert.deepEqual(parseSelectedChange('city_constraint:→ 苏州'), { unit: 'city_constraint', to: '苏州' }) // 首选择
+  assert.deepEqual(parseSelectedChange('city_constraint:→ City-X'), { unit: 'city_constraint', to: 'City-X' }) // 首选择
   assert.equal(parseSelectedChange('bad_unit:A → B'), undefined) // 非法单位
   assert.equal(parseSelectedChange('无箭头格式'), undefined)
 })

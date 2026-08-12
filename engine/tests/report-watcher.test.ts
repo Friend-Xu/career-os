@@ -16,7 +16,7 @@ const transitionMd = `# 李明 — 转行可行性分析：非标自动化 → �
 | direction | 机器人结构设计 |
 | direction_match | 75% |
 | direction_confidence | 中 |
-| city | 苏州 |
+| city | City-X |
 | city_score | - |
 | salary_feasible | true |
 | risk_level | 中高 |
@@ -31,14 +31,14 @@ const transitionMd = `# 李明 — 转行可行性分析：非标自动化 → �
 从非标自动化机械设计转向机器人本体结构设计是**可行但有代价**的转行路径。
 `
 
-const cityMd = `# 苏州
+const cityMd = `# City-X
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
 | skill | city-advisor |
-| city | 苏州 |
+| city | City-X |
 | city_score | 8.2/10 |
 | city_confidence | 中 |
 | salary_feasible | true |
@@ -57,7 +57,7 @@ test('解析 2.0 记录：字段映射 + 值转换 + 无 validation（协议必�
   assert.equal(value.direction, '机器人结构设计')
   assert.equal(value.directionMatch, 75) // 75% → 75
   assert.equal(value.directionConfidence, 'medium') // 中 → medium
-  assert.equal(value.city, '苏州')
+  assert.equal(value.city, 'City-X')
   assert.equal(value.salaryFeasible, true)
   assert.equal(value.riskLevel, 'high') // 中高 → high
   assert.equal(value.createdAt, '2026-08-01')
@@ -136,7 +136,7 @@ test('decision_ 文件名（无 frontmatter）：createdAt 从系统文件名派
 
 // ─── v2.8 Decision Payload（业务协议结构化）───
 
-const cityDetailMd = `# 城市评估 — 苏州 vs 深圳
+const cityDetailMd = `# 城市评估 — City-X vs City-W
 
 ## 分析摘要
 
@@ -159,12 +159,12 @@ const cityDetailMd = `# 城市评估 — 苏州 vs 深圳
 
 | 城市 | 得分 | 置信度 | 关键优势 | 关键风险 |
 |------|:--:|:--:|---------|---------|
-| 苏州 | 7.6/10 | 中 | 薪酬性价比/政策 | 产业规模小于深圳 |
-| 深圳 | 6.95/10 | - | 行业天花板 | 租金负担率高 |
+| City-X | 7.6/10 | 中 | 薪酬性价比/政策 | 产业规模小于City-W |
+| City-W | 6.95/10 | - | 行业天花板 | 租金负担率高 |
 
 ## 结论
 
-**苏州（7.6）> 深圳（6.95）**
+**City-X（7.6）> City-W（6.95）**
 `
 
 const dirDetailMd = `# 职业方向探索
@@ -196,7 +196,7 @@ const dirDetailMd = `# 职业方向探索
 `
 
 test('城市评估明细段落 → city payload：0-100 归一、优势/风险拆分、direction 口径继承', () => {
-  const { value, validation } = parseDecisionMarkdown(cityDetailMd, '2026-08-07-苏州vs深圳.md')
+  const { value, validation } = parseDecisionMarkdown(cityDetailMd, '2026-08-07-City-XvsCity-W.md')
   assert.equal(validation, undefined)
   assert.equal(value.cityConfidence, 'medium')
   assert.equal(value.payload?.type, 'city')
@@ -205,13 +205,13 @@ test('城市评估明细段落 → city payload：0-100 归一、优势/风险�
   assert.equal(p.direction, '机器人结构设计') // 摘要表 direction 继承为评估口径
   assert.equal(p.cities.length, 2)
   const su = p.cities[0]
-  assert.equal(su.name, '苏州')
+  assert.equal(su.name, 'City-X')
   assert.equal(su.score, 76) // 7.6/10 → 76
   assert.equal(su.confidence, 'medium')
   assert.deepEqual(su.strengths, ['薪酬性价比', '政策'])
-  assert.deepEqual(su.risks, ['产业规模小于深圳'])
+  assert.deepEqual(su.risks, ['产业规模小于City-W'])
   const sz = p.cities[1]
-  assert.equal(sz.name, '深圳')
+  assert.equal(sz.name, 'City-W')
   assert.equal(sz.score, 69.5) // 6.95/10 → 69.5（保留两位小数）
   assert.equal(sz.confidence, undefined) // '-' 缺省
   assert.deepEqual(sz.strengths, ['行业天花板'])
@@ -241,17 +241,17 @@ test('无明细段落 → payload undefined（存量决策无 payload 属常态�
 })
 
 test('空明细表（无数据行）→ payload undefined', () => {
-  const md = cityDetailMd.replace(/\| 苏州 \|.*\n\| 深圳 \|.*\n/, '')
+  const md = cityDetailMd.replace(/\| City-X \|.*\n\| City-W \|.*\n/, '')
   const { value } = parseDecisionMarkdown(md, '2026-08-07-空明细.md')
   assert.equal(value.payload, undefined)
 })
 
 test('明细得分缺单位（裸数字）→ 该行跳过（协议要求显式单位 X/10 或 X%）', () => {
-  const md = cityDetailMd.replace('| 苏州 | 7.6/10 |', '| 苏州 | 7.6 |')
+  const md = cityDetailMd.replace('| City-X | 7.6/10 |', '| City-X | 7.6 |')
   const { value } = parseDecisionMarkdown(md, '2026-08-07-裸数字.md')
   const p = value.payload
   if (p?.type !== 'city') throw new Error('payload 应为 city')
-  assert.equal(p.cities.length, 1) // 深圳行保留
-  assert.equal(p.cities[0].name, '深圳')
+  assert.equal(p.cities.length, 1) // City-W行保留
+  assert.equal(p.cities[0].name, 'City-W')
 })
 

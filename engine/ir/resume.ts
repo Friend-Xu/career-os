@@ -10,7 +10,7 @@ export type ResumeSectionType = 'summary' | 'experience' | 'projects' | 'skills'
 
 /** 身份信息条目（M5.2 G6：非 claim 内容——profile/education/experience/target_intent 段的身份事实，Assembly 不校验 claim 锚定） */
 export interface ResumeIdentityEntry {
-  label?: string // 条目标签（如"东华大学 | 机械工程"或公司名）
+  label?: string // 条目标签（如"University-A | 机械工程"或公司名）
   body?: string // 描述（如职责摘要/定位语）
 }
 

@@ -226,7 +226,7 @@ status 是分数可信度标注，不是质量评价：PARTIAL 的 60 分不因�
 ````
 
 **禁止**：
-- **narrative 式事实**——「博流是一家非常优秀的成长型企业」不是 fact 是 prose；prose 归
+- **narrative 式事实**——「Company-B是一家非常优秀的成长型企业」不是 fact 是 prose；prose 归
   `## 尽调详情` 正文（untrusted narrative，不参与计分）
 - 自造类型或内容——类型必须 ∈ CompanyFactType 枚举；内容必须 ∈ §4 规则表 value 枚举
   （枚举外 → UNKNOWN_VALUE 不计分，UI 标「待确认」；自造信号套分 = 越权）
@@ -259,7 +259,7 @@ status 是分数可信度标注，不是质量评价：PARTIAL 的 60 分不因�
 ## 9. UI Projection（Evidence > Impression，不用星级）
 
 ```
-博流控制
+Company-B 智控
 
 公司职业价值   85/100        ← 新（Engine 计分；null → 「待评估」）
 匹配程度      52%            ← 已有（不动）

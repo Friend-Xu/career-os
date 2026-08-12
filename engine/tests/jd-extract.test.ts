@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { parseJdJson } from '../runtime/jd-extract.ts'
 
 test('parseJdJson：剥离 markdown 围栏', () => {
-  const r = parseJdJson('```json\n{"company": "澜山自动化", "title": "机械工程师", "requirements": ["SolidWorks"]}\n```')
-  assert.equal(r.company, '澜山自动化')
+  const r = parseJdJson('```json\n{"company": "Company-C 自动化", "title": "机械工程师", "requirements": ["SolidWorks"]}\n```')
+  assert.equal(r.company, 'Company-C 自动化')
   assert.equal(r.title, '机械工程师')
   assert.deepEqual(r.requirements, ['SolidWorks'])
 })

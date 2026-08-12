@@ -6,7 +6,7 @@
 import WebSocket from 'ws'
 
 const URL = 'ws://127.0.0.1:5289'
-const TASK = '请分析岗位「南京新拓尼克科技 · 机械结构工程师」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表'
+const TASK = '请分析岗位「Company-D 科技 · 机械结构工程师」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表'
 const TIMEOUT_MS = 600000
 
 const ws = new WebSocket(URL)

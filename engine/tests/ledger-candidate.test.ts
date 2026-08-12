@@ -49,7 +49,7 @@ status: ${status}
 | 字段 | 值 |
 |------|-----|
 | salary | ${salary} |
-| city | 沪苏通勤圈 |
+| city | City-Circle |
 | preference_count | ${prefs.length} |
 | constraint_count | ${cons.length} |
 

@@ -34,10 +34,10 @@ const skillsMd = `# 技能词表
 
 const rolesMd = `# 岗位清单
 
-## 机器人结构工程师（澜山自动化）
+## 机器人结构工程师（Company-C 自动化）
 
-- essential：机械设计（来源：JD-澜山自动化-2026-08-02）
-- nice-to-have：减速器设计（来源：JD-澜山自动化-2026-08-02）
+- essential：机械设计（来源：JD-Company-C 自动化-2026-08-02）
+- nice-to-have：减速器设计（来源：JD-Company-C 自动化-2026-08-02）
 `
 
 const personMd = `# 我
@@ -116,11 +116,11 @@ test('roles.md 合法解析：岗位名/公司名/id/essential/source/nice-to-ha
   assert.equal(value.length, 1)
   const role = value[0]!
   assert.equal(role.name, '机器人结构工程师')
-  assert.equal(role.company, '澜山自动化')
-  assert.equal(role.id, '机器人结构工程师-澜山自动化') // id = 岗位名-公司名
+  assert.equal(role.company, 'Company-C 自动化')
+  assert.equal(role.id, '机器人结构工程师-Company-C 自动化') // id = 岗位名-公司名
   assert.deepEqual(role.skills, [
-    { name: '机械设计', essential: true, source: 'JD-澜山自动化-2026-08-02' },
-    { name: '减速器设计', essential: false, source: 'JD-澜山自动化-2026-08-02' },
+    { name: '机械设计', essential: true, source: 'JD-Company-C 自动化-2026-08-02' },
+    { name: '减速器设计', essential: false, source: 'JD-Company-C 自动化-2026-08-02' },
   ])
 })
 
@@ -179,7 +179,7 @@ function roleOf(partial: Partial<Role> = {}): Role {
   return {
     id: 'r-1',
     name: '机器人结构工程师',
-    company: '澜山自动化',
+    company: 'Company-C 自动化',
     skills: [
       { name: '机械设计', essential: true, source: 'JD-x' },
       { name: '减速器设计', essential: false, source: 'JD-x' },
@@ -274,8 +274,8 @@ test('computeGap：词表外自由技能按名精确匹配', () => {
 test('computeGap：tools 工具词命中（Skill Representation v0.1）——JD 工具词命中声明 tools → satisfied + via；未声明 → missing', () => {
   const gap = computeGap({
     role: roleOf({ skills: [
-      { name: 'SolidWorks', essential: true, source: 'JD-博流' },
-      { name: '泵选型', essential: true, source: 'JD-博流' },
+      { name: 'SolidWorks', essential: true, source: 'JD-Company-B' },
+      { name: '泵选型', essential: true, source: 'JD-Company-B' },
     ] }),
     person: '我',
     personSkills: [{ name: '机械制图与三维建模（SolidWorks/Creo/AutoCAD）', level: 4, tools: ['SolidWorks', 'Creo', 'AutoCAD'] }],
@@ -307,7 +307,7 @@ test('scanKnowledge：缺文件 → 空列表；skills.md/roles.md → 解析产
     const scan = scanKnowledge(ws)
     assert.equal(scan.skills.length, 2)
     assert.equal(scan.roles.length, 1)
-    assert.equal(scan.roles[0]!.id, '机器人结构工程师-澜山自动化')
+    assert.equal(scan.roles[0]!.id, '机器人结构工程师-Company-C 自动化')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -323,7 +323,7 @@ test('graph：role/skill 节点 + company→role 雇佣 / role→skill 需求（
   const graph = buildGraph({
     decisions: [],
     companies: [
-      { id: '澜山自动化', name: '澜山自动化' },
+      { id: 'Company-C 自动化', name: 'Company-C 自动化' },
       { id: '无摘要公司', name: '无摘要公司', validation: { status: 'invalid', issues: [] } },
     ],
     profileNames: [],
@@ -332,12 +332,12 @@ test('graph：role/skill 节点 + company→role 雇佣 / role→skill 需求（
   })
   // 节点
   assert.ok(graph.nodes.some((n) => n.id === 'skill:机械设计' && n.label === '机械设计' && n.type === 'skill'))
-  assert.ok(graph.nodes.some((n) => n.id === 'role:机器人结构工程师-澜山自动化' && n.label === '机器人结构工程师' && n.type === 'role'))
+  assert.ok(graph.nodes.some((n) => n.id === 'role:机器人结构工程师-Company-C 自动化' && n.label === '机器人结构工程师' && n.type === 'role'))
   assert.ok(graph.nodes.some((n) => n.id === 'role:结构工程师-无档案公司')) // 无公司档案的岗位节点仍在
   // 边：雇佣（medium）+ 需求（essential high / nice-to-have medium）+ 别名归一化（结构设计 → skill:机械设计）
-  assert.ok(graph.edges.some((e) => e.source === 'company:澜山自动化' && e.target === 'role:机器人结构工程师-澜山自动化' && e.relation === '雇佣' && e.strength === 'medium'))
-  assert.ok(graph.edges.some((e) => e.source === 'role:机器人结构工程师-澜山自动化' && e.target === 'skill:机械设计' && e.relation === '需求' && e.strength === 'high'))
-  assert.ok(graph.edges.some((e) => e.source === 'role:机器人结构工程师-澜山自动化' && e.target === 'skill:减速器设计' && e.relation === '需求' && e.strength === 'medium'))
+  assert.ok(graph.edges.some((e) => e.source === 'company:Company-C 自动化' && e.target === 'role:机器人结构工程师-Company-C 自动化' && e.relation === '雇佣' && e.strength === 'medium'))
+  assert.ok(graph.edges.some((e) => e.source === 'role:机器人结构工程师-Company-C 自动化' && e.target === 'skill:机械设计' && e.relation === '需求' && e.strength === 'high'))
+  assert.ok(graph.edges.some((e) => e.source === 'role:机器人结构工程师-Company-C 自动化' && e.target === 'skill:减速器设计' && e.relation === '需求' && e.strength === 'medium'))
   assert.ok(graph.edges.some((e) => e.source === 'role:结构工程师-无档案公司' && e.target === 'skill:机械设计' && e.relation === '需求')) // 别名归一化连线
   assert.ok(!graph.edges.some((e) => e.source === 'company:无摘要公司'), 'invalid 公司不产生雇佣边')
   assert.ok(!graph.nodes.some((n) => n.id === 'skill:未入表技能'), '词表外技能不产生节点')
@@ -389,13 +389,13 @@ status: v2
       { skillId: 'skill_c', name: 'CAE 仿真', level: 3 },
     ])
 
-    const gap = computeKnowledgeGap(ws, { person: '我', roleId: '机器人结构工程师-澜山自动化' })
+    const gap = computeKnowledgeGap(ws, { person: '我', roleId: '机器人结构工程师-Company-C 自动化' })
     assert.deepEqual(gap.satisfied, [{ name: '机械设计', level: 4 }])
     assert.deepEqual(gap.transferable, [{ name: '减速器设计', level: 2 }])
     assert.deepEqual(gap.missing, []) // CAE 仿真不在岗位需求矩阵中，不产出
 
     // 未建档的人（无 persons/ 条目）→ 空技能，全部缺口（旧 profiles 不再消费）
-    const unknown = computeKnowledgeGap(ws, { person: '无技能', roleId: '机器人结构工程师-澜山自动化' })
+    const unknown = computeKnowledgeGap(ws, { person: '无技能', roleId: '机器人结构工程师-Company-C 自动化' })
     assert.deepEqual(unknown.missing.map((m) => m.name), ['机械设计', '减速器设计'])
 
     assert.throws(() => computeKnowledgeGap(ws, { person: '我', roleId: '不存在' }), /角色不存在/)

@@ -49,7 +49,7 @@ status: ${status}
 | 字段 | 值 |
 |------|-----|
 | salary | 11-13K/月 |
-| city | 沪苏通勤圈 |
+| city | City-Circle |
 | preference_count | 1 |
 | constraint_count | 1 |
 

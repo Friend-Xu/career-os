@@ -175,7 +175,7 @@ interface CapabilityProposal {
 
 ## 6. 验收标准（冻结后）
 
-- 心玮医疗：完整三段式可解析 → Matcher 端到端 MATCHED（Golden Case 1）
+- Company-A 医疗：完整三段式可解析 → Matcher 端到端 MATCHED（Golden Case 1）
 - 简略 JD：三段无补写（反幻觉）
 - 「相关专业」→ medium + 原样入表 → NEEDS_CONFIRMATION
 - 方案 B 落地后：Agent 无法直接改 jobs 文件（权限通道校验）
@@ -212,7 +212,7 @@ interface CapabilityProposal {
 | 未来扩展空间 | ✅ 有——constraints major/experience 已预留；capabilities category 枚举扩展向后兼容（旧字段不变）；evidencePatterns 词表扩展走版本分派 |
 | Validator 权限边界 | ✅ 清晰——只校验格式/值域/锚点/黑名单；「硕士优先」的值域合法性通过（归一化语义在 Parser）；不做「AI 评审器」 |
 
-**真实 JD 试构（心玮医疗·培养型 + 博流控制·工程型）：**
+**真实 JD 试构（Company-A 医疗·培养型 + Company-B 智控·工程型）：**
 
 | 发现 | 结论 |
 |------|------|

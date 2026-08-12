@@ -18,15 +18,15 @@ function setup(): ReturnType<typeof initWorkspace> {
   return ws
 }
 
-const jobId = '2026-08-07-心玮医疗-管理培训生'
+const jobId = '2026-08-07-Company-A 医疗-管理培训生'
 
 function createJob(ws: ReturnType<typeof initWorkspace>): void {
   createJobFile(
     ws,
     {
-      company: '心玮医疗',
+      company: 'Company-A 医疗',
       title: '管理培训生',
-      location: '上海',
+      location: 'City-Y',
       salary: '8-15k·15薪',
       requirements: '熟练使用办公软件;数据整理与文案',
       jdText: '任职要求 1：本科/硕士/博士应届生。',
@@ -135,7 +135,7 @@ test('Writer：matchMode 投影到模式列（related）→ Parser 读回 NEEDS_
     const ir = parseJdConstraint(md)
     assert.equal(ir.education!.matchMode, 'related')
     assert.equal(ir.education!.normalizationStatus, 'NEEDS_CONFIRMATION')
-    const result = matchEducation([{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
+    const result = matchEducation([{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
     assert.equal(result.status, 'NEEDS_CONFIRMATION')
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -163,7 +163,7 @@ test('Writer：合法 Proposal → 三段式写回 jobs md；parseJdConstraint �
     const ir = parseJdConstraint(md)
     assert.deepEqual(ir.education!.normalizedDegrees, ['本科', '硕士', '博士'])
     const result = matchEducation(
-      [{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }],
+      [{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }],
       ir.education,
     )
     assert.equal(result.status, 'MATCHED')
@@ -189,7 +189,7 @@ test('Writer：恶意 education（source=岗位名称）→ 该字段不写入�
     const ir = parseJdConstraint(md)
     assert.equal(ir.education, undefined) // education 未写入 → Matcher 视 NOT_DECLARED
     const result = matchEducation(
-      [{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }],
+      [{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }],
       ir.education,
     )
     assert.equal(result.status, 'NOT_DECLARED')

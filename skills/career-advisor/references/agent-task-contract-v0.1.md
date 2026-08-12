@@ -81,7 +81,7 @@ interface AgentContextBundle {
 interface ResolvedContextReference {
   type: 'job' | 'company' | 'resume' | 'decision'
   id: string
-  label?: string                        // 展示名（如「博流·流体机械工程师」）
+  label?: string                        // 展示名（如「Company-B·流体机械工程师」）
   snapshot?: {
     kind: 'version' | 'timestamp'       // resume=version / job/company/decision=timestamp
     value: string
@@ -154,7 +154,7 @@ UI 展示「本次分析依据」= Bundle 投影（引用级 + 版本戳），**
 
 ```
 本次分析依据
-✓ 岗位：博流 流体机械工程师（更新于 08-02，来源：岗位分析）
+✓ 岗位：Company-B 流体机械工程师（更新于 08-02，来源：岗位分析）
 ✓ 简历：Resume v3
 ```
 

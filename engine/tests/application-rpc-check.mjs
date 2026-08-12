@@ -87,7 +87,7 @@ writeFileSync(join(wsDir, 'jobs', `${JOB_ID}.md`), `# 机械设计工程师 — 
 |------|-----|
 | company | 示例智造 |
 | title | 机械设计工程师 |
-| location | 杭州 |
+| location | City-Z |
 | created_at | 2026-08-08 |
 `)
 

@@ -213,6 +213,7 @@ function GraphCanvas({
   search: string;
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
 }) {
+  const engineStatus = useAppStore((s) => s.engineStatus)
   // hover 状态存 ref（非 React state）：force-graph 的 nodeCanvasObject prop 更新链路不可靠，
   // drawNode 每帧执行时直接读 ref 最新值 → 重绘反映 hover（autoPauseRedraw=false 保证渲染循环常驻）
   const hoveredRef = useRef<string | null>(null)
@@ -461,6 +462,25 @@ function GraphCanvas({
         maxZoom={4}
       />
 
+      {/* 引擎在线空库 → 诚实空态（不拿 mock 冒充真实数据） */}
+      {engineStatus === 'connected' && nodes.length === 0 && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 4,
+            pointerEvents: 'none',
+          }}
+        >
+          <Typography sx={{ fontSize: 13, color: COLORS.textMuted }}>
+            信息池为空——引擎连接正常，暂无决策 / 公司 / 画像数据
+          </Typography>
+        </Box>
+      )}
+
       {/* Legend */}
       <Stack
         direction="row"
@@ -513,19 +533,22 @@ export function InfoPoolPage() {
   const poolGraph = useAppStore((s) => s.poolGraph)
   const push = useToastStore((s) => s.push)
 
-  const nodes = useMemo(() => poolGraph?.nodes ?? INFO_NODES, [poolGraph])
-  const edges = poolGraph?.edges ?? INFO_EDGES
+  // 引擎在线 → 只显示引擎数据（空库 = 空态，不拿 mock 冒充）；offline → mock 演示
+  const nodes = useMemo(() => (engineStatus === 'connected' ? poolGraph?.nodes ?? [] : INFO_NODES), [poolGraph, engineStatus])
+  const edges = useMemo(() => (engineStatus === 'connected' ? poolGraph?.edges ?? [] : INFO_EDGES), [poolGraph, engineStatus])
 
   /** 孤立节点数（真实计算：edges 无连接的节点） */
   const isolatedCount = useMemo(() => (poolGraph ? computePoolStats(poolGraph).isolated : 0), [poolGraph])
 
-  // 健康投影（契约 v1）：优先 engine health 角标；offline → 图谱本地估算 → mock
+  // 健康投影（契约 v1）：优先 engine health 角标；offline → 图谱本地估算 → mock（引擎在线空库 → 诚实空态 null）
   const healthPercent =
     health && engineStatus === 'connected'
       ? health.overallScore
       : engineStatus === 'connected' && nodes.length > 0
         ? Math.round((1 - isolatedCount / nodes.length) * 100)
-        : POOL_HEALTH.healthPercent
+        : engineStatus === 'connected'
+          ? null
+          : POOL_HEALTH.healthPercent
 
   /** 当前右键节点的公司档案（仅 company 节点可能命中；label = canonical name，resolve 统一语义）。 */
   const menuCompany = menu ? resolveCompanyReference(companies, menu.node.label) : undefined
@@ -569,7 +592,7 @@ export function InfoPoolPage() {
         <Typography sx={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>信息池</Typography>
         <Chip
           size="small"
-          label={`健康 ${healthPercent}% · ${nodes.length} 节点 · 孤立 ${isolatedCount}`}
+          label={healthPercent === null ? `健康 — · ${nodes.length} 节点 · 孤立 ${isolatedCount}` : `健康 ${healthPercent}% · ${nodes.length} 节点 · 孤立 ${isolatedCount}`}
           sx={{ height: 22, fontSize: 12, bgcolor: alpha(COLORS.riskLow, 0.1), color: COLORS.riskLow }}
         />
         <Box sx={{ flex: 1 }} />

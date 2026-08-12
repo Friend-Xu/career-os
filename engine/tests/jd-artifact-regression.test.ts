@@ -29,7 +29,7 @@ function setup(_jobId: string, company: string, title: string, jdText: string): 
 
 const JD_ORIGINAL_A = `公司名称：示例流体科技
 流体机械工程师 9-13K·13薪
-杭州 经验不限 学历不限
+City-Z 经验不限 学历不限
 岗位职责
 1.熟练掌握常用的三维设计软件(inventor或sw等)
 2.熟悉容器、管道、法兰等相关标准，熟悉泵、阀等设备，可以正确选型;
@@ -99,7 +99,7 @@ test('A 工程型：preferred 门槛 → 无 hard 维度 → Matcher NOT_DECLARE
     const md = ws.read(`jobs/${A_ID}.md`)
     const ir = parseJdConstraint(md)
     assert.equal(ir.education, undefined) // preferred → 无 hard 维度
-    const r = matchEducation([{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
+    const r = matchEducation([{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
     assert.equal(r.status, 'NOT_DECLARED')
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -157,7 +157,7 @@ test('B 培养型：应届归 experience（fresh）+ 学历枚举 NORMALIZED →
     const ir = parseJdConstraint(md)
     assert.deepEqual(ir.education!.normalizedDegrees, ['本科', '硕士', '博士'])
     assert.equal(ir.education!.normalizationStatus, 'NORMALIZED')
-    const r = matchEducation([{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
+    const r = matchEducation([{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
     assert.equal(r.status, 'MATCHED')
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -194,7 +194,7 @@ test('C 跨领域：无约束 → 不产出门槛段 → Matcher NOT_DECLARED（
 
     const ir = parseJdConstraint(md)
     assert.deepEqual(ir, {}) // 空 IR
-    const eduMatch = matchEducation([{ school: '东华大学', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
+    const eduMatch = matchEducation([{ school: 'University-A', degree: '本科', status: 'confirmed', source: 'resume' }], ir.education)
     assert.equal(eduMatch.status, 'NOT_DECLARED')
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })

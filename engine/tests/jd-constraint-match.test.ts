@@ -71,7 +71,7 @@ test('Parser：缺岗位门槛段 → 空 IR；行级非法维度跳过', () => 
 
 // ─── Matcher：四态派生（契约 §8 九个 Golden Case） ────────────────────────
 
-test('Case 1 心玮：本科 confirmed + [本科;硕士;博士] → MATCHED', () => {
+test('Case 1 Company-A：本科 confirmed + [本科;硕士;博士] → MATCHED', () => {
   const r = matchEducation([edu('本科')], parseJdConstraint(constraintMd('| education | 本科;硕士;博士 | 任职要求 1 | high |')).education)
   assert.equal(r.status, 'MATCHED')
   assert.deepEqual(r.evidence, { person: '本科', requirement: '本科、硕士、博士' })

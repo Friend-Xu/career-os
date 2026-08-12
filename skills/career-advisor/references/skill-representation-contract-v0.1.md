@@ -3,7 +3,7 @@
 > 冻结版（评审裁决：收敛——不做完整「职业语义翻译层」，只落 **Skill Representation
 > Layer v0.1**：能力主体/工具/别名的结构拆分；related/partial/推断归 Career Ontology
 > 层 v0.x 预留（长期命名——非纯翻译，含关系/迁移/推理/行业上下文），需 Evidence Boundary）。
-> 背景：博流 JD 匹配 22 个 ✗ 实测暴露——「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」
+> 背景：Company-B JD 匹配 22 个 ✗ 实测暴露——「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」
 > 声明无法命中 JD 工具词 SolidWorks。根因不是匹配算法 bug，而是 **PersonSkill 把
 > 能力主体+工具+领域压成一个 name 字符串**：两个职业世界（画像声明 / JD 语言）
 > 之间没有稳定表达载体。缺的不是翻译能力，是数据模型丢信息。
@@ -112,7 +112,7 @@ MATCHED（via: "SolidWorks"，UI 显示来源 = 声明名）
 
 - skill_001「机械制图与三维建模（SolidWorks/Creo/AutoCAD）」注册 → tools 派生
   [SolidWorks, Creo, AutoCAD]；skill_007「静应力仿真（Creo）」→ [Creo]；无括号技能 → 空
-- 博流 JD 需求 SolidWorks → **MATCHED**（via SolidWorks，来源显示声明名），不再出现在未覆盖
+- Company-B JD 需求 SolidWorks → **MATCHED**（via SolidWorks，来源显示声明名），不再出现在未覆盖
 - 未声明技能（泵选型等）→ missing，UI 显示「未覆盖能力/未声明」+ 提示「不代表不具备」
 - soft 责任单元（团队协作等）不进匹配（Capability Matching Boundary 已有契约）
 - 语义关系（故障排查/方案设计 partial）保持未覆盖——不做，等 v0.x 契约

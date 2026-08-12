@@ -53,8 +53,8 @@ test('插入新字段（表格尾追加）', () => {
 })
 
 test('更新后 parseSummaryTable 可解析出新值（格式合法）', () => {
-  const out = updateSummaryFields(SAMPLE_MD, { city: '深圳', city_score: '8.5/10' })
-  assert.ok(out.includes('| city | 深圳 |'))
+  const out = updateSummaryFields(SAMPLE_MD, { city: 'City-W', city_score: '8.5/10' })
+  assert.ok(out.includes('| city | City-W |'))
   assert.ok(out.includes('| city_score | 8.5/10 |'))
 })
 

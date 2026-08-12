@@ -24,7 +24,7 @@ ws.on('open', () => {
   } else {
     ws.send(JSON.stringify({
       id: 's1', method: 'agent/start',
-      params: { task: '用 AskUserQuestion 问用户：选哪个城市？选项：深圳/上海/北京。得到答案后回复「已收到：<答案>」', maxTurns: 4 },
+      params: { task: '用 AskUserQuestion 问用户：选哪个城市？选项：City-W/City-Y/北京。得到答案后回复「已收到：<答案>」', maxTurns: 4 },
     }))
   }
 })
@@ -45,8 +45,8 @@ ws.on('message', (d) => {
     }
     if (ev.type === 'question_request' && !answered) {
       answered = true
-      console.log('[check] → 回答「深圳」')
-      ws.send(JSON.stringify({ id: 'ans1', method: 'agent/answer', params: { taskId: m.taskId, text: '深圳' } }))
+      console.log('[check] → 回答「City-W」')
+      ws.send(JSON.stringify({ id: 'ans1', method: 'agent/answer', params: { taskId: m.taskId, text: 'City-W' } }))
     }
     if (ev.type === 'done' || ev.type === 'error') {
       clearTimeout(t)

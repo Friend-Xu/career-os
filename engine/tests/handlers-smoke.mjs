@@ -50,7 +50,7 @@ file(
 | direction | 机器人 |
 | direction_match | 85% |
 | direction_confidence | 高 |
-| city | 苏州 |
+| city | City-X |
 | city_score | 8.2/10 |
 | salary_feasible | true |
 | risk_level | 低 |
@@ -84,7 +84,7 @@ file(
 
 | 字段 | 值 |
 |------|-----|
-| city | 苏州 |
+| city | City-X |
 | industry | 工业自动化/机器人 |
 | match_score | 85% |
 | risk_level | 低 |

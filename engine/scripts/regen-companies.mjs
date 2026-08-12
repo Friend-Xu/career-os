@@ -36,7 +36,7 @@ for (const f of oldFiles) {
   const name = f.replace(/：求职背调报告\.md$/, '').replace(/\.md$/, '')
 
   console.log(`\n=== ${name} ===`)
-  const task = `你是 Career OS 的公司尽调 agent，为候选人「我」（技能画像见 profiles/我.md；方向：机器人结构设计；城市：苏州）整理公司求职档案。
+  const task = `你是 Career OS 的公司尽调 agent，为候选人整理公司求职档案（候选人画像与偏好以 workspace persons/ 档案为准，不要臆造方向或城市）。
 
 把下面这份旧版背调报告，按新协议重写为规范公司档案。**不要写任何文件**，把完整 markdown 作为最终回复，放在 \`\`\`markdown 代码块中：
 

@@ -23,7 +23,7 @@ const C_ID = '2026-08-08-示例自动化-机械设计工程师'
 function setup(): ReturnType<typeof initWorkspace> {
   const root = mkdtempSync(join(tmpdir(), 'cos-cm-'))
   const ws = initWorkspace(root)
-  // person_001：东华大学机械工程本科（2023 毕业，confirmed）——真实登记形态
+  // person_001：University-A机械工程本科（2023 毕业，confirmed）——真实登记形态
   ws.write('persons/person_001/manifest.md', `---
 id: person_001
 name: 我
@@ -37,7 +37,7 @@ created_at: 2026-08-08
 
 | 候选 ID | 学校 | 专业 | 学历 | 起始年 | 毕业年 | 状态 | 来源 |
 |---------|------|------|------|--------|--------|------|------|
-| c-001 | 东华大学 | 机械工程 | 本科 | 2019 | 2023 | confirmed | resume |
+| c-001 | University-A | 机械工程 | 本科 | 2019 | 2023 | confirmed | resume |
 `)
   ws.write('persons/person_001/snapshot/current/identity.md', '# Person 001\n')
   return ws

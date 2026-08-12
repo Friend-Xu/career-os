@@ -10,15 +10,15 @@ import { createJobFile, ensureCompanyPlaceholder, parseJobMarkdown, scanJobs } f
 import { initWorkspace } from '../storage/workspace.ts'
 import { parseCompanyMarkdown } from '../storage/projection.ts'
 
-const SAMPLE_MD = `# 机器人结构工程师 — 澜山自动化
+const SAMPLE_MD = `# 机器人结构工程师 — Company-C 自动化
 
 ## 分析摘要
 
 | 字段 | 值 |
 |------|-----|
-| company | 澜山自动化 |
+| company | Company-C 自动化 |
 | title | 机器人结构工程师 |
-| location | 苏州 |
+| location | City-X |
 | salary | 25-35万 |
 | jd_source | https://example.com/jd |
 | requirements | Python;PyTorch;LLM |
@@ -32,13 +32,13 @@ const SAMPLE_MD = `# 机器人结构工程师 — 澜山自动化
 `
 
 test('parseJobMarkdown：摘要表字段 + responsibilities 迁移映射（旧技能词 → statement，source=user）', () => {
-  const p = parseJobMarkdown(SAMPLE_MD, '2026-08-04-澜山自动化-机器人结构工程师.md')
+  const p = parseJobMarkdown(SAMPLE_MD, '2026-08-04-Company-C 自动化-机器人结构工程师.md')
   assert.equal(p.validation, undefined)
   const j = p.value
-  assert.equal(j.id, '2026-08-04-澜山自动化-机器人结构工程师')
-  assert.equal(j.company, '澜山自动化')
+  assert.equal(j.id, '2026-08-04-Company-C 自动化-机器人结构工程师')
+  assert.equal(j.company, 'Company-C 自动化')
   assert.equal(j.title, '机器人结构工程师')
-  assert.equal(j.location, '苏州')
+  assert.equal(j.location, 'City-X')
   assert.equal(j.salary, '25-35万')
   assert.equal(j.jdSource, 'https://example.com/jd')
   assert.equal(j.createdAt, '2026-08-04')
@@ -64,7 +64,7 @@ test('parseJobMarkdown：岗位智能段 → ai responsibilities（user+ai 合�
 | 自动化设备结构设计 | must | 机械设计;结构优化 | scope;validation | 你负责设计哪些模块？;如何验证设计有效？ |
 | 成本优化 | nice | 成本分析 | impact;bad_dim | 优化后成本变化多少？; |
 `
-  const j = parseJobMarkdown(md, '2026-08-04-澜山自动化-机器人结构工程师.md').value
+  const j = parseJobMarkdown(md, '2026-08-04-Company-C 自动化-机器人结构工程师.md').value
   assert.equal(j.responsibilities.length, 5) // 3 user（建档迁移）+ 2 ai（岗位智能）
   const ai = j.responsibilities.filter((r) => r.source === 'ai')
   assert.equal(ai.length, 2)
@@ -134,14 +134,14 @@ test('createJobFile：写文件闭环 + scanJobs 读回', () => {
     const ws = initWorkspace(join(dir, 'ws'))
     const now = new Date('2026-08-04T10:00:00Z')
     const created = createJobFile(ws, {
-      company: '澜山自动化',
+      company: 'Company-C 自动化',
       title: '机器人结构工程师',
-      location: '苏州',
+      location: 'City-X',
       salary: '25-35万',
       requirements: 'Python;SolidWorks',
       jdText: '负责机器人本体结构设计。',
     }, now)
-    assert.equal(created.id, '2026-08-04-澜山自动化-机器人结构工程师')
+    assert.equal(created.id, '2026-08-04-Company-C 自动化-机器人结构工程师')
     assert.ok(ws.exists(`jobs/${created.id}.md`))
     const scanned = scanJobs(ws)
     assert.equal(scanned.length, 1)
@@ -170,14 +170,14 @@ test('createJobFile 自动建占位公司：invalid = 待尽调；同名已存�
   try {
     const ws = initWorkspace(join(dir, 'ws'))
     const now = new Date('2026-08-04T10:00:00Z')
-    createJobFile(ws, { company: '澜山自动化', title: '机器人结构工程师', location: '苏州' }, now)
-    assert.ok(ws.exists('companies/澜山自动化.md'), '建档应自动创建占位公司')
-    const { value, validation } = parseCompanyMarkdown(ws.read('companies/澜山自动化.md'), '澜山自动化.md')
-    assert.equal(value.name, '澜山自动化')
-    assert.equal(value.city, '苏州') // location 带入占位档案
+    createJobFile(ws, { company: 'Company-C 自动化', title: '机器人结构工程师', location: 'City-X' }, now)
+    assert.ok(ws.exists('companies/Company-C 自动化.md'), '建档应自动创建占位公司')
+    const { value, validation } = parseCompanyMarkdown(ws.read('companies/Company-C 自动化.md'), 'Company-C 自动化.md')
+    assert.equal(value.name, 'Company-C 自动化')
+    assert.equal(value.city, 'City-X') // location 带入占位档案
     assert.equal(validation?.status, 'invalid') // 必填缺失 = 待尽调标记
     // 全称已建档 → 简称建档不重复建占位
-    assert.equal(ensureCompanyPlaceholder(ws, '澜山自动化科技有限公司'), null)
+    assert.equal(ensureCompanyPlaceholder(ws, 'Company-C 自动化科技有限公司'), null)
     assert.equal(ws.listMarkdown('companies').length, 1)
   } finally {
     rmSync(dir, { recursive: true, force: true })
