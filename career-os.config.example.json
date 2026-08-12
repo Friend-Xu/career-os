@@ -26,6 +26,7 @@
   "watcher": {
     "enabled": true
   },
+  "prefCities": [],
   "map": {
     "provider": "amap",
     "apiKey": "",

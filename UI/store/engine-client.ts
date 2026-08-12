@@ -716,7 +716,7 @@ export class EngineClient {
     outputTarget?: OutputTarget
     context?: string
     resumeSessionId?: string
-    /** 当前分析对象（person_003）——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
+    /** 当前分析对象——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
     personId?: string
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     allowedTools?: string[]

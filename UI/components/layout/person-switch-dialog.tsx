@@ -8,7 +8,6 @@ import {
 } from '@mui/material'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { PERSONS } from '../../data/mock-data'
 import { COLORS } from '../../data/constants'
 
 export function PersonSwitchDialog() {
@@ -17,9 +16,11 @@ export function PersonSwitchDialog() {
   const currentPerson = useAppStore((s) => s.currentPerson())
   const confirm = useAppStore((s) => s.confirmPersonSwitch)
   const cancel = useAppStore((s) => s.cancelPersonSwitch)
+  const persons = useAppStore((s) => s.persons)
   const push = useToastStore((s) => s.push)
 
-  const pending = PERSONS.find((p) => p.id === pendingPersonId)
+  // 从 store persons 找（offline 初始为演示数据；引擎连接后为真实人物——mock 直读会漏真实 id）
+  const pending = persons.find((p) => p.id === pendingPersonId)
 
   const confirmAndToast = (keepSession: boolean) => {
     confirm(keepSession)

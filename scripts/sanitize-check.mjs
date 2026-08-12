@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
 // 真实实体禁止清单（用户真实背调公司 / 学校 / 项目代号 / 偏好短语；新增真实数据时同步补充）
-const REAL_ENTITIES = ['心玮', '博流', '澜山', '新拓', '嘉树', '特尔玛', '东华大学', 'C2900', '沪苏通勤圈']
+const REAL_ENTITIES = ['心玮', '博流', '澜山', '新拓', '嘉树', '特尔玛', '东华大学', 'C2900', '沪苏通勤圈', '南京工业大学', '南工大']
 
 const PHONE_RE = /\b1[3-9]\d{9}\b/
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/

@@ -25,9 +25,11 @@ export function InfoPoolSidebar() {
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
   const setInfopoolFilter = useAppStore((s) => s.setInfopoolFilter)
   const poolGraph = useAppStore((s) => s.poolGraph)
+  const engineStatus = useAppStore((s) => s.engineStatus)
   const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
-  const nodes = poolGraph?.nodes ?? INFO_NODES
+  // 引擎在线 → 只显示引擎数据（空库 = 计数诚实为 0）；offline → mock 演示（与图谱一致）
+  const nodes = engineStatus === 'connected' ? poolGraph?.nodes ?? [] : INFO_NODES
 
   const counts = useMemo(() => {
     const byType: Record<string, number> = { all: nodes.length }

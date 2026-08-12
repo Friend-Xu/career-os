@@ -192,7 +192,7 @@ Fact Layer → Proposal → Human Decision → Artifact Version
 
 | 阶段 | skill 映射 | 技能层协议 | workspace 资产 | 引擎支持 | UI |
 |------|-----------|-----------|---------------|---------|-----|
-| 方向探索 | career-path | ✅ 8 方向画像卡 + path-scoring-model | ✅ profiles/我.md 目标方向 + 方向决策记录（机器人 82%/CAE 78%/流体 74%） | ⚠️ 仅决策记录解析进链（无 profile watcher） | ⚠️ 工作台方向视图（mock 数据） |
+| 方向探索 | career-path | ✅ 8 方向画像卡 + path-scoring-model | ✅ profiles/我.md 目标方向 + 方向决策记录（示例：机器人 82%/CAE 78%/流体 74%） | ⚠️ 仅决策记录解析进链（无 profile watcher） | ⚠️ 工作台方向视图（mock 数据） |
 | 转行评估 | career-transition | ✅ transition-model/gap-analysis/motivation-check | ✅ 决策记录（转行评估） | ⚠️ 同上 | 决策链阶段展示 |
 | 城市评估 | city-advisor | ✅ city-scoring-model/advisor-template | ❌ **cities/ 空目录**（无任何城市资产落盘） | ❌ 无 | ⚠️ 工作台城市热力图（mock 数据） |
 | 公司筛选 | company-screener | ✅ | ✅ companies/ 旧扁平档案 + company_001（M6 实体资产，identity locked） | ✅ companies/list（旧格式解析；company_001 未解析） | ✅ 公司页（接引擎） |
