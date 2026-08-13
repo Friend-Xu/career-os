@@ -11,8 +11,10 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import HistoryIcon from '@mui/icons-material/History'
 import CollectionsIcon from '@mui/icons-material/Collections'
+import AddIcon from '@mui/icons-material/Add'
 import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
+import { useToastStore } from '../../../store/toast-store'
 import { workingCopyLabel } from '../../../utils/resume-label'
 import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
 import { resumeVersionLabel } from '../../../utils/resume-label'
@@ -53,12 +55,29 @@ export function ResumesSidebar() {
   const resumeVersions = useAppStore((s) => s.resumeVersions)
   const careerContext = useAppStore((s) => s.careerContext)
   const derivationProposals = useAppStore((s) => s.derivationProposals)
+  const promoteWorkingCopy = useAppStore((s) => s.promoteWorkingCopy)
+  const push = useToastStore((s) => s.push)
 
   /** 派生副本标记：acceptedWcId 关联（引擎 accept 时登记的事实投影——不为副本新增身份字段） */
   const derivedCopyIds = useMemo(
     () => new Set(derivationProposals.filter((p) => p.acceptedWcId).map((p) => p.acceptedWcId as string)),
     [derivationProposals],
   )
+
+  /** 创建版本（promote 当前工作副本 → ResumeDocument Candidate；无副本 → 提示先创作） */
+  const createVersion = async () => {
+    const copy = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
+    if (!copy) {
+      push('warning', '暂无工作副本——先在编辑空间创作内容')
+      return
+    }
+    try {
+      const doc = await promoteWorkingCopy(copy.id)
+      push('success', `已创建版本 ${doc.id.slice(-6)}（未资产化内容已标注）`)
+    } catch (e) {
+      push('warning', e instanceof Error ? e.message : '创建版本失败')
+    }
+  }
 
   const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const versions = useMemo(() => [...resumeVersions].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt)), [resumeVersions])
@@ -192,9 +211,34 @@ export function ResumesSidebar() {
             <Typography sx={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.05em', flex: 1 }}>版本空间</Typography>
             <Typography sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textMuted }}>{versions.length}</Typography>
           </Stack>
+          {/* 创建版本入口：虚线卡片（与新增 JD/新建会话同构——版本空间的「生产入口」，promote 当前工作副本） */}
+          <Box sx={{ px: 1.25, pb: 0.75 }}>
+            <Stack
+              direction="row"
+              spacing={0.75}
+              onClick={() => void createVersion()}
+              sx={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                px: 1.25,
+                py: 1.1,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                border: `1px dashed ${alpha(COLORS.accent, 0.45)}`,
+                bgcolor: alpha(COLORS.accent, 0.05),
+                color: COLORS.accent,
+                '&:hover': { bgcolor: alpha(COLORS.accent, 0.12) },
+              }}
+            >
+              <AddIcon sx={{ fontSize: 16 }} />
+              <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>创建版本</Typography>
+            </Stack>
+          </Box>
           {versions.length === 0 ? (
-            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center' }}>
-              暂无资产版本——AI 产出草稿后自动登记（表述驱动，可追溯）
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted, px: 1, py: 2, textAlign: 'center', lineHeight: 1.7 }}>
+              暂无资产版本
+              <br />
+              上方「创建版本」发布当前工作副本
             </Typography>
           ) : (
             versions.map((r) => {

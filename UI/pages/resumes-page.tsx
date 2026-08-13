@@ -197,7 +197,6 @@ export function ResumesPage() {
   const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
   const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
   const upsertWorkingCopy = useAppStore((s) => s.upsertWorkingCopy)
-  const promoteWorkingCopy = useAppStore((s) => s.promoteWorkingCopy)
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
@@ -950,22 +949,6 @@ export function ResumesPage() {
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, flex: 1 }}>
               编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
             </Typography>
-            <Button
-              size="small"
-              startIcon={<SaveAltIcon sx={{ fontSize: 14 }} />}
-              onClick={async () => {
-                if (!workingCopy) return
-                try {
-                  const doc = await promoteWorkingCopy(workingCopy.id)
-                  push('success', `已创建版本 ${doc.id.slice(-6)}（未资产化内容已标注，可查看历史空间）`)
-                } catch (e) {
-                  push('warning', e instanceof Error ? e.message : '创建版本失败')
-                }
-              }}
-              sx={{ fontSize: 12 }}
-            >
-              创建版本
-            </Button>
             <Button size="small" startIcon={<FileDownloadIcon sx={{ fontSize: 14 }} />} onClick={exportPdf} sx={{ fontSize: 12 }}>
               导出 PDF
             </Button>
