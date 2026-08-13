@@ -61,7 +61,7 @@ function parseSections(md: string): { sections: ResumeSection[]; issues: { path:
     const content = line.match(/^\s*[-*]\s*(.+)$/)
     if (!content || !current) continue
     // bullet 行：- {sentence}（claim: {claimId}；expectation: {eid}）；asset 行：- {name}（asset）；
-    // identity 行：- {label} | {body}（identity）（M5.2 G6）；条目头行：- {title} | {role} | {period}（entry）（Entry Contract v0.1）
+    // identity 行：- {label} | {body}（identity）（M5.2 G6）；条目头行：- {title} | {role} | {period} | {description}（entry）（Entry Contract v0.2）
     const bulletOpen = content[1].indexOf('（claim: ')
     const asset = content[1].match(/^(.*?)（asset）$/)
     const identity = content[1].match(/^(.*?)（identity）$/)
@@ -71,10 +71,12 @@ function parseSections(md: string): { sections: ResumeSection[]; issues: { path:
       const dash = (v: string): string | undefined => (v === '' || v === '-' ? undefined : v)
       const role = dash(parts[1] ?? '')
       const period = dash(parts[2] ?? '')
+      const description = dash(parts.slice(3).join(' | '))
       ;(current.entries ??= []).push({
         title: parts[0] ?? '',
         ...(role ? { role } : {}),
         ...(period ? { period } : {}),
+        ...(description ? { description } : {}),
         bullets: [],
       })
     } else if (bulletOpen >= 0) {
@@ -146,6 +148,7 @@ export function serializeResumeDocument(d: ResumeDocument): string {
   const rows = [
     `| status | ${d.status} |`,
     `| person | ${d.person} |`,
+    ...(d.name && d.name.trim() ? [`| name | ${d.name.trim()} |`] : []),
     ...(d.targetId ? [`| target_id | ${d.targetId} |`] : []),
     ...(d.targetJobId ? [`| target_job_id | ${d.targetJobId} |`] : []),
     `| template_id | ${d.templateId} |`,
@@ -156,10 +159,12 @@ export function serializeResumeDocument(d: ResumeDocument): string {
   ].join('\n')
   const sections = d.sections.map((s) => {
     const bullets = s.bullets.map((b) => `- ${b.sentence}（claim: ${b.claimId}${b.metadata?.expectationId ? `；expectation: ${b.metadata.expectationId}` : ''}）`).join('\n')
-    // 条目化段（Resume Entry Contract v0.1）：条目头行 + 条目下 bullet（round-trip 同 parseSections）
+    // 条目化段（Resume Entry Contract v0.2）：条目头行（description 有值才输出第 4 段）+ 条目下 bullet（round-trip 同 parseSections）
     const entries = (s.entries ?? [])
       .map((e) => {
-        const head = `- ${[e.title, e.role ?? '', e.period ?? ''].join(' | ')}（entry）`
+        const head = e.description
+          ? `- ${[e.title, e.role ?? '', e.period ?? '', e.description].join(' | ')}（entry）`
+          : `- ${[e.title, e.role ?? '', e.period ?? ''].join(' | ')}（entry）`
         const eb = e.bullets.map((b) => `- ${b.sentence}（claim: ${b.claimId}${b.metadata?.expectationId ? `；expectation: ${b.metadata.expectationId}` : ''}）`).join('\n')
         return [head, eb].filter(Boolean).join('\n')
       })
@@ -223,6 +228,7 @@ export function parseResumeMarkdown(md: string, sourceFile: string): Validated<R
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     status: STATUSES.includes(status) ? status : 'draft',
     person: fields.person ?? '',
+    ...(fields.name && fields.name.trim() ? { name: fields.name.trim() } : {}),
     ...(fields.target_id ? { targetId: fields.target_id } : {}),
     ...(fields.target_job_id ? { targetJobId: fields.target_job_id } : {}),
     templateId: fields.template_id ?? '',

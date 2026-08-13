@@ -136,7 +136,7 @@ function escapeHtml(s: string): string {
 function buildResumeHtml(
   personName: string,
   resumeName: string,
-  modules: { title: string; content: string; identity?: { label?: string; body?: string }[]; entries?: { title: string; role?: string; period?: string; content: string }[] }[],
+  modules: { title: string; content: string; identity?: { label?: string; body?: string }[]; entries?: { title: string; role?: string; period?: string; description?: string; content: string }[] }[],
 ): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -149,6 +149,7 @@ function buildResumeHtml(
   h2 { font-size: 15px; border-bottom: 1px solid #d8d8dd; padding-bottom: 4px; margin: 20px 0 8px; }
   h3 { font-size: 14px; margin: 10px 0 4px; }
   p { margin: 0 0 10px; white-space: pre-wrap; }
+  .desc { color: #6e6e78; font-size: 12.5px; margin: 0 0 8px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -161,7 +162,8 @@ function buildResumeHtml(
           ? m.entries
               .map((e) => {
                 const head = [e.title, e.role, e.period ? `（${e.period}）` : ''].filter(Boolean).join(' · ')
-                return `<h3>${escapeHtml(head)}</h3>${e.content ? `<p>${escapeHtml(e.content)}</p>` : ''}`
+                const desc = e.description ? `<p class="desc">${escapeHtml(e.description)}</p>` : ''
+                return `<h3>${escapeHtml(head)}</h3>${desc}${e.content ? `<p>${escapeHtml(e.content)}</p>` : ''}`
               })
               .join('\n  ')
           : m.identity && m.identity.length > 0
@@ -202,25 +204,28 @@ export function ResumesPage() {
   /** P2.3：block 绑定保留（text → claim links——编辑重建 blocks 时合并，不丢锚） */
   const linksByText = useRef<Map<string, string[]>>(new Map())
 
+  /** 重建 blocks 时按文本合并既有绑定（新行 unbound；已有行保留 provenanceLinks——
+   *  条目化段 entries[].blocks 同样合并，否则条目表述丢锚 → 全段退化为未资产化） */
+  const buildSections = (mods: ResumeModule[]) => {
+    const mergeLinks = (b: { id: string; text: string }) => {
+      const links = linksByText.current.get(b.text)
+      return links ? { ...b, provenanceLinks: links } : b
+    }
+    return modulesToSections(mods).map((s) => ({
+      ...s,
+      blocks: s.blocks.map(mergeLinks),
+      ...(s.entries ? { entries: s.entries.map((e) => ({ ...e, blocks: e.blocks.map(mergeLinks) })) } : {}),
+    }))
+  }
+
   /** 模块变更统一出口：本地 state（输入流畅）+ 防抖 upsert 到引擎 working-copies（revision 协商） */
   const commitModules = (next: ResumeModule[]) => {
     setModules(next)
     if (workingCopy) {
-      // 重建 blocks 时按文本合并既有绑定（新行 unbound；已有行保留 provenanceLinks——
-      // 条目化段 entries[].blocks 同样合并，否则条目表述丢锚 → 全段退化为未资产化）
-      const mergeLinks = (b: { id: string; text: string }) => {
-        const links = linksByText.current.get(b.text)
-        return links ? { ...b, provenanceLinks: links } : b
-      }
-      const sections = modulesToSections(next).map((s) => ({
-        ...s,
-        blocks: s.blocks.map(mergeLinks),
-        ...(s.entries ? { entries: s.entries.map((e) => ({ ...e, blocks: e.blocks.map(mergeLinks) })) } : {}),
-      }))
       void upsertWorkingCopy({
         id: workingCopy.id,
         owner: person.personId ?? '',
-        sections,
+        sections: buildSections(next),
         revision: workingCopy.revision,
       }).catch((e: unknown) => push('warning', e instanceof Error ? e.message : '保存失败'))
     }
@@ -340,6 +345,7 @@ export function ResumesPage() {
       const migrated = migrateEntries(sectionsToModules(workingCopy.sections), map, evidenceItems, careerContext?.claims ?? [], person)
       setModules(migrated)
       setRevert(null)
+      setNameDraft(null)
       closeAll()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -534,6 +540,23 @@ export function ResumesPage() {
     push('success', '已加入技能模块（来自技能资产）')
   }
 
+  /** 工作副本显示名（User Confirmation 编辑内容，非系统身份——失焦/回车保存；空 = 回退系统 ID 切片） */
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
+  const commitRename = () => {
+    if (!workingCopy || nameDraft === null) return
+    const nextName = nameDraft.trim()
+    void upsertWorkingCopy({
+      id: workingCopy.id,
+      owner: person.personId ?? '',
+      name: nextName,
+      sections: buildSections(modules),
+      revision: workingCopy.revision,
+    })
+      .then(() => push('success', nextName ? '已重命名' : '已清除显示名（显示系统编号）'))
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '重命名失败'))
+    setNameDraft(null)
+  }
+
   /** P1.2：可用表达资产（本人生效——归属过滤 + usable；owner 缺失 = 归属不明，不展示给任何人） */
   const usableClaims = useMemo(
     () => (careerContext?.claims ?? []).filter((c) => c.usable && c.owner === person.personId),
@@ -590,7 +613,18 @@ export function ResumesPage() {
     if (ev) {
       const byEvent = m.entries?.find((e) => e.title === ev.event.title)
       if (byEvent) return { module: m, entry: byEvent }
-      const company = m.title.includes('工作经历') && ev.type === 'professional_experience' ? person.experiences?.[0] : undefined
+      const experiences = person.experiences ?? []
+      // Entry Contract v0.2 Option A：workRowRef 优先（identity 行 = 唯一事实源）；
+      // ref 行缺失 → 不猜公司，落证据事件条目（引擎已标 row_not_found，错位不再静默）
+      const refRow = ev.workRowRef
+        ? experiences.find((x) => x.company === ev.workRowRef!.company && (x.start ?? '') === ev.workRowRef!.start)
+        : undefined
+      const company =
+        m.title.includes('工作经历') && ev.type === 'professional_experience'
+          ? ev.workRowRef
+            ? refRow
+            : experiences[0]
+          : undefined
       if (company) {
         const byCompany = m.entries?.find((e) => e.title === company.company)
         if (byCompany) return { module: m, entry: byCompany }
@@ -756,6 +790,22 @@ export function ResumesPage() {
           onScroll={closeAll}
         >
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mr: 1 }}>
+              <SaveAltIcon sx={{ fontSize: 13, color: COLORS.textMuted }} />
+              <TextField
+                size="small"
+                variant="standard"
+                value={nameDraft ?? workingCopy?.name?.trim() ?? ''}
+                placeholder={workingCopy ? workingCopy.id.slice(-6) : '副本名'}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                title="工作副本显示名——失焦/回车保存；留空显示系统编号"
+                sx={{ fontSize: 12, width: 180, '& .MuiInputBase-root': { fontSize: 12 } }}
+              />
+            </Stack>
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted, flex: 1 }}>
               编辑区 · 划词或 Shift+方向键选中 6 字以上 → 点击 ✨ 改写 · 使用 ↑↓ 调整模块顺序
             </Typography>
@@ -958,6 +1008,22 @@ export function ResumesPage() {
                         <TextField
                           fullWidth
                           multiline
+                          minRows={1}
+                          maxRows={2}
+                          size="small"
+                          variant="standard"
+                          placeholder={m.title.includes('项目') ? '项目概述：做什么/解决什么问题（背景，一两句）' : '职责范围概述（可选）'}
+                          value={entry.description ?? ''}
+                          onChange={(e) => updateEntry(m.id, entry.id, { description: e.target.value || undefined })}
+                          sx={{
+                            px: 1.25,
+                            pb: 0.5,
+                            '& .MuiInputBase-root': { fontSize: 12, color: COLORS.textSecondary, '&:before': { borderBottom: 'none' } },
+                          }}
+                        />
+                        <TextField
+                          fullWidth
+                          multiline
                           value={entry.content}
                           inputRef={(el: HTMLTextAreaElement | null) => {
                             textareaRefs.current[`${m.id}:${entry.id}`] = el
@@ -1096,6 +1162,20 @@ export function ResumesPage() {
                           {entry.role ? ` · ${entry.role}` : ''}
                           {entry.period ? `（${entry.period}）` : ''}
                         </Typography>
+                        {entry.description && (
+                          <Typography
+                            sx={{
+                              fontSize: 12.5,
+                              color: '#555',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.6,
+                              mb: 0.5,
+                              fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+                            }}
+                          >
+                            {entry.description}
+                          </Typography>
+                        )}
                         {entry.content && (
                           <Typography
                             sx={{

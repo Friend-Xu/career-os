@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
 import { registerArtifacts } from '../storage/artifact-registry.ts'
-import { EVIDENCE_SPEC } from '../storage/evidence-watcher.ts'
+import { EVIDENCE_SPEC, scanEvidence } from '../storage/evidence-watcher.ts'
 import { CLAIM_SPEC } from '../storage/claim-watcher.ts'
 import { buildCareerContext } from '../context/career-context.ts'
 import { serializeResumeDocument } from '../storage/resume-watcher.ts'
@@ -193,5 +193,81 @@ test('T7 currentJob：带 jobId 时 expectations.coverage 三态投影', () => {
   const exp = ctx.currentJob.expectations[0]
   assert.equal(exp.dimension, 'scope')
   assert.equal(exp.coverage, 'covered') // evidence.contribution 与 responsibility 双向包含
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('T8 workRowRef 投影校验：evidence ↔ identity 工作经历行（一致无警示 / 周期错位 / 行缺失）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-ctx8-'))
+  const ws = initWorkspace(root)
+  const now = new Date('2026-08-13T10:00:00Z')
+
+  ws.write('persons/p1/manifest.md', `---
+id: p1
+name: Person-A
+status: active
+---
+
+# Person-A
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| id | p1 |
+| name | Person-A |
+| status | active |
+`)
+  ws.write('persons/p1/snapshot/current/identity.md', `# Identity
+
+## 工作经历
+
+| company | role | start | end |
+|---------|------|-------|-----|
+| Company-A | 机械工程师 | 2021.03 | 2023.08 |
+| Company-B | 结构工程师 | 2018.07 | 2021.02 |
+`)
+
+  const evidenceMd = (period: string, ref: string): string => `---
+owner: p1
+lifecycle: active
+type: professional_experience
+work_row_ref: ${ref}
+---
+
+# 事件
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| role | 机械工程师 |
+| contribution | 负责产线设备设计 |
+| period | ${period} |
+| source_type | user_input |
+| status | trusted |
+| verification_type | user_confirmed |
+| confirmed_at | 2026-08-13 |
+`
+  ws.write('evidence/2026-08-13-事件A.md', evidenceMd('2021.03-2023.08', 'Company-A|2021.03'))
+  ws.write('evidence/2026-08-13-事件B.md', evidenceMd('2022.05-2024.06', 'Company-A|2021.03'))
+  ws.write('evidence/2026-08-13-事件C.md', evidenceMd('2021.03-2023.08', 'Company-X|2021.03'))
+  ws.write('evidence/2026-08-13-事件D.md', evidenceMd('2021.06-2022.05', 'Company-A|2021.03'))
+  registerArtifacts(ws, EVIDENCE_SPEC, now)
+
+  const parsed = scanEvidence(ws).map((p) => p.record)
+  const a = parsed.find((e) => e.id === 'evidence_20260813_00001')!
+  assert.deepEqual(a.workRowRef, { company: 'Company-A', start: '2021.03' }, 'frontmatter work_row_ref → IR 引用')
+
+  const ctx = buildCareerContext(ws, {}, now)
+  assert.ok(ctx.workRowMismatches, '有错位时投影警示存在')
+  assert.equal(ctx.workRowMismatches.length, 2)
+  const byId = Object.fromEntries(ctx.workRowMismatches.map((m) => [m.evidenceId, m]))
+  assert.equal(byId['evidence_20260813_00002']!.reason, 'period_mismatch', '越界可检测（不再静默共存）')
+  assert.equal(byId['evidence_20260813_00002']!.evidencePeriod, '2022.05-2024.06')
+  assert.equal(byId['evidence_20260813_00002']!.identityPeriod, '2021.03-2023.08')
+  assert.equal(byId['evidence_20260813_00003']!.reason, 'row_not_found', '悬空引用可检测')
+  assert.equal(byId['evidence_20260813_00003']!.company, 'Company-X')
+  assert.ok(!byId['evidence_20260813_00001'], '周期一致不误报')
+  assert.ok(!byId['evidence_20260813_00004'], '周期内含（⊂ 公司行）不误报——包含语义非相等语义')
   rmSync(root, { recursive: true, force: true })
 })

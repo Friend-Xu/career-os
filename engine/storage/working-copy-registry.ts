@@ -31,6 +31,8 @@ export class WorkingCopyError extends Error {
 export interface WorkingCopyInput {
   id?: string // 缺省 = 新建（引擎登记 id）
   owner: string
+  /** 显示名（用户编辑内容；'' = 清除；undefined = 保持引擎当前值——旧调用方无感知） */
+  name?: string
   sections: WorkingSection[]
   revision: number // 客户端当前 revision（协商基准）
   targetContext?: { jobId?: string }
@@ -42,12 +44,13 @@ export interface UpsertResult {
 }
 
 // ─── 序列化（md：frontmatter + `## {title}` 段 + `- {text}` 块；块 claims 标注 `（claims: c1, c2）`；
-//     条目化段（Resume Entry Contract v0.1）：条目头行 `- {title} | {role} | {period}（entry）`，其下块行归属该条目）──
+//     条目化段（Resume Entry Contract v0.2）：条目头行 `- {title} | {role} | {period} | {description}（entry）`，其下块行归属该条目）──
 
 export function serializeWorkingCopy(wc: WorkingCopy): string {
   const meta = [
     `id: ${wc.id}`,
     `owner: ${wc.owner}`,
+    ...(wc.name && wc.name.trim() ? [`name: ${wc.name.trim()}`] : []),
     `status: ${wc.status}`,
     `revision: ${wc.revision}`,
     `updated_at: ${wc.updatedAt}`,
@@ -66,7 +69,10 @@ export function serializeWorkingCopy(wc: WorkingCopy): string {
           .join('\n')
       const entries = (s.entries ?? [])
         .map((e) => {
-          const head = [e.title, e.role ?? '', e.period ?? ''].join(' | ')
+          // Resume Entry Contract v0.2：条目头 4 字段（description 有值才输出第 4 段，空 = 3 字段旧格式）
+          const head = e.description
+            ? [e.title, e.role ?? '', e.period ?? '', e.description].join(' | ')
+            : [e.title, e.role ?? '', e.period ?? ''].join(' | ')
           return `- ${head}（entry）${e.blocks.length > 0 ? `\n${blocks(e.blocks)}` : ''}`
         })
         .join('\n')
@@ -104,18 +110,21 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
         ;(current.identity ??= []).push(sep > 0 ? { label: content.slice(0, sep).trim(), body: content.slice(sep + 1).trim() } : { body: content })
         continue
       }
-      // 条目头行（Resume Entry Contract v0.1）：`- {title} | {role} | {period}（entry）` → 新条目
+      // 条目头行（Resume Entry Contract v0.2）：`- {title} | {role} | {period} | {description}（entry）` → 新条目
       const entryM = raw.match(/^(.*)（entry）$/)
       if (entryM) {
         const parts = entryM[1].split('|').map((p) => p.trim())
         const dash = (v: string): string | undefined => (v === '' || v === '-' ? undefined : v)
         const role = dash(parts[1] ?? '')
         const period = dash(parts[2] ?? '')
+        // description = 第 4 段起合并（描述内禁 ASCII |，写全角 ｜；合并保证含 | 的旧式行不崩）
+        const description = dash(parts.slice(3).join(' | '))
         currentEntry = {
           id: `ent_${(current.entries?.length ?? 0) + 1}`,
           title: parts[0] ?? '',
           ...(role ? { role } : {}),
           ...(period ? { period } : {}),
+          ...(description ? { description } : {}),
           blocks: [],
         }
         ;(current.entries ??= []).push(currentEntry)
@@ -138,6 +147,7 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
   return {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     owner: meta.owner ?? '',
+    ...(meta.name && meta.name.trim() ? { name: meta.name.trim() } : {}),
     sections,
     ...(meta.target_job_id ? { targetContext: { jobId: meta.target_job_id } } : {}),
     status: (meta.status as WorkingCopy['status']) ?? 'active',
@@ -172,6 +182,8 @@ export function upsertWorkingCopy(ws: Workspace, input: WorkingCopyInput, now: D
       const next: WorkingCopy = {
         id: current.id,
         owner: input.owner,
+        // 显示名：'' = 清除；undefined = 保持引擎当前值（旧调用方无感知）
+        ...(input.name !== undefined ? (input.name.trim() ? { name: input.name.trim() } : {}) : current.name ? { name: current.name } : {}),
         sections: input.sections,
         ...(input.targetContext ? { targetContext: input.targetContext } : {}),
         status: current.status,
@@ -188,6 +200,7 @@ export function upsertWorkingCopy(ws: Workspace, input: WorkingCopyInput, now: D
   const copy: WorkingCopy = {
     id,
     owner: input.owner,
+    ...(input.name && input.name.trim() ? { name: input.name.trim() } : {}),
     sections: input.sections,
     ...(input.targetContext ? { targetContext: input.targetContext } : {}),
     status: 'active',
@@ -256,6 +269,7 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
       title: e.title,
       ...(e.role ? { role: e.role } : {}),
       ...(e.period ? { period: e.period } : {}),
+      ...(e.description ? { description: e.description } : {}),
       bullets: mapBullets(e.blocks),
     }))
     sections.push({
@@ -276,6 +290,7 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
     id: nextArtifactId(ws, RESUME_SPEC, now),
     status: 'draft',
     person: wc.owner,
+    ...(wc.name && wc.name.trim() ? { name: wc.name.trim() } : {}),
     ...(wc.targetContext?.jobId ? { targetJobId: wc.targetContext.jobId } : {}),
     templateId: 'working-copy-v0.1',
     templateVersion: '0.1',

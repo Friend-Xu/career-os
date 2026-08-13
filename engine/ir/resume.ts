@@ -28,11 +28,13 @@ export interface ResumeBullet {
   metadata?: ResumeBulletMeta
 }
 
-/** 经历条目（版本层，Resume Entry Contract v0.1）：事实头 + bullet（claim 驱动同现行） */
+/** 经历条目（版本层，Resume Entry Contract v0.2）：事实头 + description（项目概述/职责范围，事实通道）+ bullet（claim 驱动同现行） */
 export interface ResumeEntry {
   title: string
   role?: string
   period?: string
+  /** 条目描述（v0.2）：项目概述（做什么/解决什么问题）或职责范围概述——事实通道，不校验 claim 锚定 */
+  description?: string
   bullets: ResumeBullet[]
 }
 
@@ -52,6 +54,8 @@ export interface ResumeDocument {
   id: string // 简历版本 id（对齐 UI resumes 版本）
   status: ResumeStatus
   person: string
+  /** 显示名（promote 时继承 WorkingCopy.name——用户编辑内容；空 = 回退系统 ID 切片） */
+  name?: string
   targetId?: string // M6.3：目标机会实体引用（target_xxx）——Target 是 M6 职业机会实体
   targetJobId?: string // 原始 JD 标识（source_jd_id，M6.3 起降级为输入来源资产，不再直接依赖 jobs/）
   templateId: string // 模板版本化（v0.2 冻结 #5）：换模板可重渲染，PDF 可复现
@@ -75,13 +79,14 @@ export interface WorkingBlock {
   expectationId?: string // 表达锚（P4.1——apply rewrite 时引擎写入：表达对应岗位期望 E；重诊断据此判定表达已写入）
 }
 
-/** 经历条目（Resume Entry Contract v0.1）：事实头（title/role/period）+ 表述块（claim 通道）。
- *  条目头 = 事实通道（同 identity 语义：不产生 bullet、不校验 claim 锚定） */
+/** 经历条目（Resume Entry Contract v0.2）：事实头（title/role/period/description）+ 表述块（claim 通道）。
+ *  条目头与描述 = 事实通道（同 identity 语义：不产生 bullet、不校验 claim 锚定） */
 export interface WorkingEntry {
   id: string
   title: string // 公司名或项目名
   role?: string // 职位/角色
   period?: string // 时间段（自由文本，如 2023.07-2025.03）
+  description?: string // 条目描述（v0.2）：项目概述/职责范围——事实通道，单行序列化
   blocks: WorkingBlock[]
 }
 
@@ -106,6 +111,8 @@ export function blocksOf(s: WorkingSection): WorkingBlock[] {
 export interface WorkingCopy {
   id: string // wc_{YYYYMMDD}_{NNNNN}，引擎登记
   owner: string // person_id
+  /** 显示名（用户编辑内容，非系统身份——多副本区分；空 = 回退系统 ID 切片） */
+  name?: string
   sections: WorkingSection[]
   targetContext?: { jobId?: string } // 目标岗位/JD 引用（编辑与优化共享）
   status: WorkingCopyStatus

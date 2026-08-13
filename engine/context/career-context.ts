@@ -45,6 +45,46 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
     }
   }
 
+  // Resume Entry Contract v0.2 Option A：workRowRef 投影校验（identity 行 = 唯一事实源）。
+  // 语义 = 包含而非相等：证据事件周期必须落在公司行周期内（ST 2024.07-2025.03 ⊂ 2023.07-2025.03 合法）；
+  // 越界（归属错公司/周期笔误）→ 警示。日期归一化 YYYYMM，不可解析 → 跳过不误报。
+  const periodBounds = (s: string | undefined): [string, string] | undefined => {
+    if (!s) return undefined
+    const tokens = s.match(/\d{4}\s*[./年-]\s*\d{1,2}/g)
+    if (!tokens || tokens.length === 0) return undefined
+    const norm = (t: string): string => {
+      const [y, m] = t.replace(/\s/g, '').split(/[./年-]/)
+      return `${y}${(m ?? '').padStart(2, '0')}`
+    }
+    return [norm(tokens[0]!), norm(tokens[tokens.length - 1]!)]
+  }
+  const workRowMismatches: NonNullable<CareerContext['workRowMismatches']> = []
+  const workRowsOf = new Map(persons.map((p) => [p.personId, p.experiences ?? []]))
+  for (const e of evidence) {
+    if (!e.workRowRef) continue
+    const rows = workRowsOf.get(e.owner ?? '') ?? []
+    const row = rows.find((r) => r.company === e.workRowRef!.company && (r.start ?? '') === e.workRowRef!.start)
+    if (!row) {
+      workRowMismatches.push({ evidenceId: e.id, company: e.workRowRef.company, reason: 'row_not_found' })
+      continue
+    }
+    const evBounds = periodBounds(e.event.period)
+    if (evBounds) {
+      const rowStart = periodBounds(row.start)?.[0]
+      const rowEnd = periodBounds(row.end)?.[0]
+      const outOfBounds = (rowStart && evBounds[0] < rowStart) || (rowEnd && evBounds[1] > rowEnd)
+      if (outOfBounds) {
+        workRowMismatches.push({
+          evidenceId: e.id,
+          company: e.workRowRef.company,
+          reason: 'period_mismatch',
+          ...(e.event.period ? { evidencePeriod: e.event.period } : {}),
+          ...(row.start || row.end ? { identityPeriod: [row.start, row.end].filter(Boolean).join('-') } : {}),
+        })
+      }
+    }
+  }
+
   const expressions: CareerContext['expressions'] = []
   for (const r of resumes) {
     r.sections.forEach((s, si) => {
@@ -88,6 +128,7 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
     generatedAt: now.toISOString(),
     workspace: { id: ws.paths.root },
     ...(currentJob ? { currentJob } : {}),
+    ...(workRowMismatches.length > 0 ? { workRowMismatches } : {}),
     persons: persons.map((p) => ({
       personId: p.personId,
       name: p.name,
@@ -121,6 +162,7 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
     resumes: resumes.map((r) => ({
       id: r.id,
       status: r.status,
+      ...(r.name ? { name: r.name } : {}),
       ...(r.targetJobId ? { targetJobId: r.targetJobId } : {}),
       ...(r.lineage ? { lineage: { ...(r.lineage.parentResumeId ? { parent: r.lineage.parentResumeId } : {}), derivationType: r.lineage.derivationType } } : {}),
       validation: { status: r.validation?.status ?? 'valid' },

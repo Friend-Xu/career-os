@@ -1,7 +1,7 @@
 /**
  * Working Copy ↔ 编辑模块转换（P2.3：编辑空间与 Dashboard 共用）。
  * 行级 block——text = 行原样（含 - 前缀），round-trip 无损（序列化 `- {text}` 解析后还原）。
- * 条目化段（Resume Entry Contract v0.1）：工作经历/项目经验 = entries（条目头 + 表述行）。
+ * 条目化段（Resume Entry Contract v0.2）：工作经历/项目经验 = entries（条目头 + 描述 + 表述行）。
  */
 import type { WorkingSection } from '../../engine/ir/resume.ts'
 import type { Person, ResumeIdentityEntry, ResumeModule } from '../types'
@@ -20,6 +20,7 @@ export function sectionsToModules(sections: WorkingSection[]): ResumeModule[] {
             title: e.title,
             ...(e.role ? { role: e.role } : {}),
             ...(e.period ? { period: e.period } : {}),
+            ...(e.description ? { description: e.description } : {}),
             content: e.blocks.map((b) => b.text).join('\n'),
           })),
         }
@@ -35,7 +36,7 @@ export function modulesToSections(mods: ResumeModule[]): WorkingSection[] {
     title: m.title,
     // 空行不产生块（序列化 `- ` 无法被解析往返——行级块契约只承载非空文本）
     blocks: m.content.split('\n').filter(Boolean).map((text, i) => ({ id: `${m.id}-${i}`, text })),
-    // 条目化段：entries → WorkingEntry（条目头透传 + 块 id 带条目维度——RPC 定位链 section → entry → block）
+    // 条目化段：entries → WorkingEntry（条目头 + 描述透传 + 块 id 带条目维度——RPC 定位链 section → entry → block）
     ...(m.entries && m.entries.length > 0
       ? {
           entries: m.entries.map((e, ei) => ({
@@ -43,6 +44,8 @@ export function modulesToSections(mods: ResumeModule[]): WorkingSection[] {
             title: e.title,
             ...(e.role ? { role: e.role } : {}),
             ...(e.period ? { period: e.period } : {}),
+            // Entry Contract v0.2：description 单行序列化（换行折叠为空格）
+            ...(e.description && e.description.trim() ? { description: e.description.trim().replace(/\n+/g, ' ') } : {}),
             blocks: e.content.split('\n').filter(Boolean).map((text, i) => ({ id: `${m.id}-e${ei}-${i}`, text })),
           })),
         }

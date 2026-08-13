@@ -1438,7 +1438,7 @@ export async function startServer(opts: {
             id: typeof s?.id === 'string' ? s.id : '',
             title: typeof s?.title === 'string' ? s.title : '',
             blocks: mapBlocks(s?.blocks),
-            // 条目化段（Resume Entry Contract v0.1）：条目头 + 块透传——丢字段 = 结构静默丢失
+            // 条目化段（Resume Entry Contract v0.2）：条目头 + 描述 + 块透传——丢字段 = 结构静默丢失
             ...(Array.isArray(s?.entries)
               ? {
                   entries: (s.entries as Record<string, unknown>[]).map((e) => ({
@@ -1446,6 +1446,7 @@ export async function startServer(opts: {
                     title: typeof e?.title === 'string' ? e.title : '',
                     ...(typeof e?.role === 'string' ? { role: e.role } : {}),
                     ...(typeof e?.period === 'string' ? { period: e.period } : {}),
+                    ...(typeof e?.description === 'string' ? { description: e.description } : {}),
                     blocks: mapBlocks(e?.blocks),
                   })),
                 }
@@ -1464,6 +1465,7 @@ export async function startServer(opts: {
       const input: WorkingCopyInput = {
         ...(typeof p?.id === 'string' ? { id: p.id } : {}),
         owner: typeof p?.owner === 'string' ? p.owner : '',
+        ...(typeof p?.name === 'string' ? { name: p.name } : {}),
         sections,
         revision: typeof p?.revision === 'number' ? p.revision : 0,
         ...(p?.targetContext && typeof (p.targetContext as Record<string, unknown>)?.jobId === 'string'

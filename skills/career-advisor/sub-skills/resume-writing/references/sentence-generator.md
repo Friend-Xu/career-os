@@ -1,7 +1,7 @@
 # Sentence Generator 契约（M3-1 Step 4）
 
 > resume-writing 子模块（M3 表达链路消费端）。对应 RESUME-EXPRESSION-M3-v0.1.md §5。
-> 输入 = ExpressionCandidate（引擎 `claims/select` 输出）；规则 = CareerContentStandard v1.2（standards/mechanical/*.md）；输出 = Sentence（临时，不落盘）。
+> 输入 = ExpressionCandidate（引擎 `claims/select` 输出）；规则 = CareerContentStandard v1.3（standards/mechanical/*.md）；输出 = Sentence（临时，不落盘）。
 
 **职责边界**：本契约管"怎么说"（把 Claim 的 statement 按场景改写为 Sentence）。Claim 的生成与可信度不由本模块负责——输入必须来自引擎 `claims/select`（消费前置已由引擎保证）。
 
@@ -23,7 +23,7 @@ ExpressionCandidate[]（claims/select，per-responsibility）
 
 禁止：直接读 claims/ 或 evidence/ 自行选材——选择必须走引擎 `claims/select`（规则进代码，不靠消费者自律）。
 
-## 2. 生成规则（来自 CareerContentStandard v1.2）
+## 2. 生成规则（来自 CareerContentStandard v1.3）
 
 | 规则 | 来源 | 执行 |
 |------|------|------|
@@ -32,6 +32,8 @@ ExpressionCandidate[]（claims/select，per-responsibility）
 | fact 主体 / interpretation 辅助 | v1.2 §8.3 | Resume bullet 以 fact 为主体；interpretation 仅作辅助（不单独成 bullet 主体） |
 | 不产生新事实 | v1.2 §9 / P1 | Sentence 只重组 statement，禁止添加结果/数字/责任升级 |
 | 不落盘、不反写 | v1.2 §8.4 / §9 | Sentence 即用即弃；禁止写回 claims/ 或 evidence/ |
+| 量化档位 ≤ 证据可得档位 | v1.3 §4 可得性档位 | Claim 无数值且证据无业务结果 → 落交付物/工程指标表述或确定性终点；**无证据数字 = 最严重违规** |
+| 职责式表述归条目头 | v1.3 §4 职责式/成果式 | 「负责」类职责范围表述不生成 bullet（归 entry header/description）；bullet 用成果式动词 |
 
 ## 3. 输出
 
@@ -48,6 +50,7 @@ ExpressionSentence { claimId, statement }（临时；供 Resume Assembly 消费�
 3. 动词合规：层级 ≤ 证据层级；seniorityLevel 上限内
 4. 类型合规：fact 为主体、interpretation 不单独作 bullet 主体
 5. 语言族对齐：动词/量化/关键词符合 standards/mechanical/{族}.md
+6. 量化合规（v1.3）：量化档位 ≤ 证据可得档位；Claim 无业务数字 → 交付物/工程指标或确定性终点，禁止编造
 
 ## 5. 与上游 Producer 的边界
 

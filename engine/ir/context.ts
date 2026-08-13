@@ -42,6 +42,7 @@ export interface CareerContext {
   resumes: {
     id: string
     status: ResumeStatus // lifecycle 全可见（archived 不隐藏——AI 需要历史）
+    name?: string // 显示名（WorkingCopy promote 继承；空 = 回退 ID 切片）
     targetJobId?: string
     lineage?: { parent?: string; derivationType: string }
     validation: { status: 'valid' | 'warning' | 'invalid' }
@@ -51,6 +52,17 @@ export interface CareerContext {
     resumeId: string
     format: 'pdf' | 'markdown' | 'html'
     exportedAt: string
+  }[]
+
+  // ─── Resume Entry Contract v0.2 Option A：workRowRef 投影校验 ───
+
+  /** evidence.workRowRef ↔ identity.md 工作经历行不一致（错位可检测，不再静默共存） */
+  workRowMismatches?: {
+    evidenceId: string
+    company: string
+    reason: 'row_not_found' | 'period_mismatch'
+    evidencePeriod?: string
+    identityPeriod?: string
   }[]
 
   // ─── M6.5：Person Intelligence（ADR-009/013——Agent 身份与经历上下文）──

@@ -333,6 +333,11 @@ export function ResumeStudio() {
                               {entry.role ? ` · ${entry.role}` : ''}
                               {entry.period ? `（${entry.period}）` : ''}
                             </Typography>
+                            {entry.description && (
+                              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6, mb: 0.25 }}>
+                                {entry.description}
+                              </Typography>
+                            )}
                             {entry.bullets.map((b, bi) => (
                               <Typography
                                 key={bi}

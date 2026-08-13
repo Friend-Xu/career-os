@@ -235,6 +235,7 @@ test('Entry Contract v0.1：条目化段 round-trip + promote → ResumeSection.
             title: 'Company-A',
             role: '机械工程师',
             period: '2023.07-2025.03',
+            description: '非标自动化设备结构设计部门：负责产线设备与气密性工装',
             blocks: [
               { id: 'blk_1', text: '主导气密性工装设计，使装配泄漏率降至 0.5%', provenanceLinks: [claimId] },
               { id: 'blk_2', text: '负责产线日常维护' },
@@ -254,12 +255,13 @@ test('Entry Contract v0.1：条目化段 round-trip + promote → ResumeSection.
     updatedAt: '2026-08-13T10:00:00Z',
   }
   const md = serializeWorkingCopy(wc)
-  assert.match(md, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03（entry）/)
+  assert.match(md, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03 \| 非标自动化设备结构设计部门：负责产线设备与气密性工装（entry）/)
   const parsed = parseWorkingCopyMarkdown(md, 'wc.md')
   const exp = parsed.sections[0]!.entries![0]!
   assert.equal(exp.title, 'Company-A')
   assert.equal(exp.role, '机械工程师')
   assert.equal(exp.period, '2023.07-2025.03')
+  assert.equal(exp.description, '非标自动化设备结构设计部门：负责产线设备与气密性工装', 'description 4 字段 round-trip')
   assert.equal(exp.blocks.length, 2)
   assert.deepEqual(exp.blocks[0]!.provenanceLinks, [claimId])
   assert.deepEqual(exp.blocks[1]!.provenanceLinks, [])
@@ -267,6 +269,7 @@ test('Entry Contract v0.1：条目化段 round-trip + promote → ResumeSection.
   assert.equal(proj.title, 'Project-X')
   assert.equal(proj.role, undefined, 'role/period 可空 round-trip')
   assert.equal(proj.period, undefined)
+  assert.equal(proj.description, undefined, '无描述不输出第 4 段（3 字段旧行向后兼容）')
   assert.equal(parsed.sections[1]!.blocks.length, 0)
 
   upsertWorkingCopy(ws, { id: wc.id, owner: 'person_001', sections: parsed.sections, revision: 1 }, new Date('2026-08-13T10:05:00Z'))
@@ -276,20 +279,47 @@ test('Entry Contract v0.1：条目化段 round-trip + promote → ResumeSection.
   const e = expSec.entries![0]!
   assert.equal(e.title, 'Company-A')
   assert.equal(e.period, '2023.07-2025.03')
+  assert.equal(e.description, '非标自动化设备结构设计部门：负责产线设备与气密性工装', 'promote 透传 description')
   assert.equal(e.bullets.length, 2)
   assert.equal(e.bullets[0]!.claimId, claimId)
   assert.equal(e.bullets[1]!.claimId, '', 'unbound → UNBOUND_BLOCK warning 但进入版本')
   assert.ok(doc.validation?.issues.some((i) => i.code === 'UNBOUND_BLOCK'))
 
   const docMd = ws.read(`resumes/documents/${doc.id}.md`)
-  assert.match(docMd, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03（entry）/)
+  assert.match(docMd, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03 \| 非标自动化设备结构设计部门：负责产线设备与气密性工装（entry）/)
   const reParsed = scanResumes(ws).find((r) => r.record.id === doc.id)!.record
   const reEntry = reParsed.sections.find((s) => s.type === 'experience')!.entries![0]!
   assert.equal(reEntry.title, 'Company-A')
+  assert.equal(reEntry.description, '非标自动化设备结构设计部门：负责产线设备与气密性工装', '文档层 round-trip')
   assert.equal(reEntry.bullets.length, 2)
   assert.equal(reEntry.bullets[0]!.claimId, claimId)
   const reProj = reParsed.sections.find((s) => s.type === 'projects')!.entries![0]!
   assert.equal(reProj.title, 'Project-X')
   assert.equal(reProj.bullets.length, 1)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('显示名（name）：round-trip + upsert 保持/清除语义 + promote 继承', () => {
+  const { ws, root } = setup()
+  const created = upsertWorkingCopy(ws, { owner: 'person_001', name: ' Company-A 定制版 ', sections: sectionsInput(''), revision: 0 })
+  assert.equal(created.copy.name, 'Company-A 定制版', '新建 trim')
+  const md = ws.read(`resumes/working-copies/${created.copy.id}.md`)
+  assert.match(md, /name: Company-A 定制版/)
+
+  // undefined → 保持引擎当前值（旧调用方无感知）
+  const kept = upsertWorkingCopy(ws, { id: created.copy.id, owner: 'person_001', sections: sectionsInput(''), revision: 1 })
+  assert.equal(kept.copy.name, 'Company-A 定制版', 'undefined 保持')
+  // '' → 清除
+  const cleared = upsertWorkingCopy(ws, { id: created.copy.id, owner: 'person_001', name: '', sections: sectionsInput(''), revision: 2 })
+  assert.equal(cleared.copy.name, undefined, '空串清除')
+  assert.ok(!ws.read(`resumes/working-copies/${created.copy.id}.md`).includes('name:'))
+
+  // 重命名 + promote 继承
+  upsertWorkingCopy(ws, { id: created.copy.id, owner: 'person_001', name: '通用版', sections: sectionsInput(''), revision: 3 })
+  const doc = promoteToDocumentCandidate(ws, created.copy.id, new Date('2026-08-13T12:30:00Z'))
+  assert.equal(doc.name, '通用版', 'promote 继承显示名')
+  assert.match(ws.read(`resumes/documents/${doc.id}.md`), /\| name \| 通用版 \|/)
+  const reParsed = scanResumes(ws).find((r) => r.record.id === doc.id)!.record
+  assert.equal(reParsed.name, '通用版', '文档 round-trip')
   rmSync(root, { recursive: true, force: true })
 })

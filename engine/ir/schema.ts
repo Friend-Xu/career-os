@@ -540,6 +540,9 @@ export interface EvidenceItem {
   lifecycle?: 'active' | 'legacy' | 'archived' // ADR-011：legacy=开发期提取/构造（不参与新表达）
   origin?: string // dev_era_extraction / resume_import / self_report / development_fixture
   type?: 'professional_experience' | 'independent_project' | 'learning_record' // M6.5 经历分类
+  /** Resume Entry Contract v0.2 Option A：identity.md 工作经历行引用（自然键 = 公司名+入职时间）——
+   *  公司/职位/时间单一真相源；引擎投影校验 event.period 与行 period 一致（错位可检测） */
+  workRowRef?: { company: string; start: string }
   event: {
     title: string // 事件名："减速机壳体结构设计项目"
     context?: string // 背景（可选）

@@ -15,6 +15,8 @@ export function resumeVersionLabel(
   v: ResumeDocument,
   jobs: { id: string; company: string; title: string }[],
 ): string {
+  // 显示名优先（用户编辑内容，非系统身份——promote 继承自工作副本）
+  if (v.name?.trim()) return v.name.trim()
   const job = v.targetJobId ? jobs.find((j) => j.id === v.targetJobId) : undefined
   const target = job ? `${job.company} · ${job.title}` : undefined
   const deriv = v.lineage ? (DERIVATION_LABEL[v.lineage.derivationType] ?? v.lineage.derivationType) : 'AI 生成'
@@ -24,11 +26,12 @@ export function resumeVersionLabel(
 }
 
 /** 工作副本可读标签（编号命名修复——wc id 是系统流水号无语义）：
- *  目标岗位（targetContext.jobId）优先；否则首个内容块文本摘要（内容识别）。 */
+ *  显示名优先；其次目标岗位（targetContext.jobId）；否则首个内容块文本摘要（内容识别）。 */
 export function workingCopyLabel(
   w: WorkingCopy,
   jobs: { id: string; company: string; title: string }[],
 ): string {
+  if (w.name?.trim()) return w.name.trim()
   const targetJobId = w.targetContext?.jobId
   const job = targetJobId ? jobs.find((j) => j.id === targetJobId) : undefined
   if (job) return `${job.company} · ${job.title}`

@@ -20,7 +20,7 @@ export const EVIDENCE_SPEC: ArtifactSpec = {
   idPrefix: 'evidence_',
   marker: /##\s*分析摘要/,
   // 身份/分类字段透传（登记重命名不剥——否则 Agent 通道写入的 owner/type 静默丢失）
-  passthroughFields: ['owner', 'lifecycle', 'origin', 'type'],
+  passthroughFields: ['owner', 'lifecycle', 'origin', 'type', 'work_row_ref'],
 }
 
 const STATUSES: EvidenceStatus[] = ['raw', 'candidate', 'trusted', 'archived']
@@ -106,6 +106,14 @@ export function parseEvidenceMarkdown(md: string, sourceFile: string): Validated
     ...(meta.origin ? { origin: meta.origin } : {}), // ADR-011：来源定性
     ...(meta.type && ['professional_experience', 'independent_project', 'learning_record'].includes(meta.type)
       ? { type: meta.type as 'professional_experience' | 'independent_project' | 'learning_record' } : {}), // M6.5 经历分类
+    // Resume Entry Contract v0.2 Option A：`work_row_ref: {company}|{start}` → identity.md 工作经历行引用
+    ...(typeof meta.work_row_ref === 'string' && meta.work_row_ref.includes('|')
+      ? (() => {
+          const [company, ...rest] = meta.work_row_ref.split('|').map((p: string) => p.trim())
+          const start = rest.join('|').trim()
+          return company && start ? { workRowRef: { company, start } } : {}
+        })()
+      : {}),
     event: {
       title: fields.event ?? deriveTitle(body, sourceFile),
       ...(fields.period ? { period: fields.period } : {}),

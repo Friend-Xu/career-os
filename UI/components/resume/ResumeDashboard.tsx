@@ -99,7 +99,7 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
             <DescriptionOutlinedIcon sx={{ fontSize: 16, color: COLORS.accent }} />
             <Typography sx={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
-              {current.id.slice(-10)}
+              {current.name?.trim() || current.id.slice(-10)}
             </Typography>
             {target && (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }} noWrap>
