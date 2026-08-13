@@ -742,7 +742,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                     return (
                       <Stack spacing={0} sx={{ mt: 0.25 }}>
                         <Typography sx={{ fontSize: 12.5, color: COLORS.accent }} title={`能力 ${ms.dimensions.capability.score}/5 · 门槛 ${ms.dimensions.gate.score ?? '—'}/5 · 差异化维度未纳入`}>
-                          匹配度 {ms.score} / {ms.maxScore}
+                          匹配度 {ms.score} / {ms.maxScore}{ms.verdict ? ` · ${ms.verdict}` : ''}
                         </Typography>
                         {ms.city?.conflict && (
                           <Typography sx={{ fontSize: 11, color: RISK_COLOR.medium }} title="城市意向冲突——提示不否决，是否接受由你判断">
@@ -777,8 +777,14 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                       {d.title}
                     </Typography>
                     {d.directionMatch > 0 && (
-                      <Typography sx={{ fontSize: 12, fontFamily: 'var(--cos-mono, monospace)', color: COLORS.textSecondary }}>
+                      <Typography
+                        sx={{ fontSize: 12, fontFamily: 'var(--cos-mono, monospace)', color: COLORS.textSecondary }}
+                        title="AI 分析时的方向匹配判断（历史记录，非引擎规则合成分数）"
+                      >
                         {d.directionMatch}%
+                        <Box component="span" sx={{ fontSize: 10, color: COLORS.textMuted, ml: 0.5 }}>
+                          AI 参考
+                        </Box>
                       </Typography>
                     )}
                   </Stack>

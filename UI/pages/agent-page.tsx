@@ -137,7 +137,7 @@ function ReportCard({ record }: { record: DecisionRecord }) {
         {(
           [
             ['方向', record.direction],
-            ['匹配度', `${record.directionMatch}%`],
+            ['匹配度', record.directionMatch > 0 ? `${record.directionMatch}%（AI 参考）` : `${record.directionMatch}%`],
             ['置信', record.directionConfidence],
             ['城市', record.city || '—'],
             ['城市分', String(record.cityScore || '—')],

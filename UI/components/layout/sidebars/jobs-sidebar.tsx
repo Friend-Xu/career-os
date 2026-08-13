@@ -215,7 +215,7 @@ export function JobsSidebar() {
                               }}
                             >
                               {ms.status === 'EVALUATED'
-                                ? `匹配度 ${ms.score} / ${ms.maxScore}`
+                                ? `匹配度 ${ms.score} / ${ms.maxScore}${ms.verdict ? ` · ${ms.verdict}` : ''}`
                                 : ms.status === 'HARD_GATE_FAILED'
                                   ? '硬门槛不满足'
                                   : '待分析'}

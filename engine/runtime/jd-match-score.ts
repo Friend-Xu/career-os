@@ -10,7 +10,7 @@
 
 import type { ConstraintMatchRow, GapResult } from '../ir/schema.ts'
 
-export const JD_MATCH_RULE_VERSION = '2026-08-jd-match-v1'
+export const JD_MATCH_RULE_VERSION = '2026-08-jd-match-v2'
 
 /** 能力维度权重（硬技能 25 + 领域知识 15 + 软技能 15——领域知识已由 hard capabilities 承载） */
 const CAPABILITY_WEIGHT = 55
@@ -18,6 +18,27 @@ const CAPABILITY_WEIGHT = 55
 const GATE_ROW_WEIGHT = 10
 /** 未纳入维度（差异化优势——转行背景激活的 AI 判断维度，v1 不引擎化） */
 const EXCLUDED_WEIGHT = 15
+/** 核心要求权重（must×2 / nice×1——job-copilot「必需项权重 2、优先项权重 1」；核心缺口致命一倍） */
+const MUST_WEIGHT = 2
+
+/**
+ * 判定档位（provisional——借档 job-copilot「85-100 高度匹配 / 70-84 推荐投递 / 50-69 备选 /
+ * 0-49 观望」，百分制映射到 score/maxScore 比率；本地数据积累后 Benchmark 校准阈值）。
+ * 档位是 UI 语义层，不改变分数本身——阈值修订不 bump 规则表版本。
+ */
+const VERDICT_BANDS: { min: number; label: string }[] = [
+  { min: 85, label: '高度匹配' },
+  { min: 70, label: '推荐投递' },
+  { min: 50, label: '备选' },
+  { min: 0, label: '观望' },
+]
+
+/** 分数比率 → 档位（EVALUATED 专用；HARD_GATE/PARTIAL 由 status 表达，不产档位） */
+export function verdictOf(score: number, maxScore: number): string {
+  if (maxScore <= 0) return ''
+  const pct = Math.round((score / maxScore) * 100)
+  return VERDICT_BANDS.find((b) => pct >= b.min)?.label ?? '观望'
+}
 
 export interface JDMatchScoreInput {
   jobId: string
@@ -44,6 +65,8 @@ export interface JDMatchScore {
   score: number | null
   /** 有效分母（能力 55 + 门槛参与行 × 10；≤85）——UI 显示「62 / 85」 */
   maxScore: number
+  /** 判定档位（EVALUATED 专用，provisional 借档；HARD_GATE/PARTIAL 无档位——状态即结论） */
+  verdict?: string
   dimensions: {
     capability: JDMatchDimension & {
       detail: {
@@ -77,19 +100,23 @@ export function cityConflictOf(preferredCity: string | undefined, jobLocation: s
   return { preferred: a, jobLocation: b, conflict: !(a.includes(b) || b.includes(a)) }
 }
 
-/** 能力覆盖三元组 → 维度分 1-5（有序求值，表 total；无硬能力声明 → null = 维度无数据） */
+/** 能力覆盖三元组 → 维度分 1-5（有序求值，表 total；无硬能力声明 → null = 维度无数据）。
+ *  v2 加权口径：缺口按 must×2 + nice×1 计量（核心缺口致命一倍）——满足侧只参与 4/5 行
+ *  定性判定（规则行未量化满足数，加权无作用点）。 */
 export function capabilityScore(gap: GapResult): number | null {
   const { satisfied, transferable, missing } = gap
   const total = satisfied.length + transferable.length + missing.length
   if (total === 0) return null
   const mustMissing = missing.filter((m) => m.essential).length
-  if (missing.length === 0) {
+  const niceMissing = missing.length - mustMissing
+  const weightedMissing = mustMissing * MUST_WEIGHT + niceMissing
+  if (weightedMissing === 0) {
     if (transferable.length === 0) return 5 // 全覆盖
     if (satisfied.length > 0) return 4 // 完全满足（核心全声明，边缘有基础）
     return 3 // 全为有基础（transferable）——差半级
   }
-  if (mustMissing === 0) return 3 // 核心全覆盖，少量缺口
-  if (missing.length <= 3) return 2 // 核心有缺口（差一级）
+  if (mustMissing === 0) return 3 // 缺的全是加分项——核心全覆盖
+  if (weightedMissing <= 6) return 2 // 核心有缺口（差一级；6 = 现行 3 个缺口的核心×2 等价）
   return 1 // 核心大面积缺失
 }
 
@@ -179,12 +206,14 @@ export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new D
   const capPoints = (capScore / 5) * CAPABILITY_WEIGHT
   const maxScore = CAPABILITY_WEIGHT + scoredRows.length * GATE_ROW_WEIGHT
 
+  const score = Math.round(capPoints + gatePoints)
   return {
     jobId,
     personId,
     status: 'EVALUATED',
-    score: Math.round(capPoints + gatePoints),
+    score,
     maxScore,
+    verdict: verdictOf(score, maxScore),
     dimensions: {
       capability: {
         score: capScore,

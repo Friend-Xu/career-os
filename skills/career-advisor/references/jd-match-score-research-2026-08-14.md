@@ -105,11 +105,12 @@ JD 匹配度引擎化（契约 v0.1）冻结后发现三类问题需要外部锚
 
 | # | 采纳点 | 出处 | 落地形态 | 状态 |
 |---|--------|------|---------|------|
-| 1 | **"Be generous" 同义匹配**：画像以任何形式提及即覆盖（复合技能名拆词 + alias 归一） | ai-job-search /upskill + fuzzy 派 | skill_inventory aliases/tools 补齐 + 词表 alias 扩充（D 类数据修复）；匹配侧维持词表精确匹配，同义经数据表达 | **待做（下一优先）** |
+| 1 | **"Be generous" 同义匹配**：画像以任何形式提及即覆盖（复合技能名拆词 + alias 归一） | ai-job-search /upskill + fuzzy 派 | skill_inventory aliases 列（解析器按表头列名定位）+ 8 条技能同义拆分（D 类数据修复） | **已完成** |
 | 2 | **城市冲突 FLAG（非否决）**：意向城市是软偏好（会变、行为可能推翻声明）——否决制语境错位（ai-job-search 的 FAIL 基于 current location 事实）。已实现为提示字段：⚠ 标注 + tooltip，不扣分不出局；无偏好数据不提示 | ai-job-search Location 设计（降级采用） | 匹配度 `city: { preferred, jobLocation, conflict }` 字段 + UI ⚠ 标注 | **已完成** |
-| 3 | **判定档位**：裸分数 → 档位文案 | job-copilot / ai-job-search | 85 分制稳定后映射档位（推荐投递/备选/观望）——映射规则需 Benchmark 校准后再定 | 观察 |
-| 4 | **方向维度权重证据**：Career Alignment 30% 是同类项目的最大权重 | ai-job-search | 方向维度将来应拿 25–30%，不是从属维度——触发条件 = 岗位方向结构化 | Known Future |
-| 5 | **缺口热力图**：缺口按岗位重要度加权 | ai-job-search /upskill | P3 Opportunity Loop 扩展技能补强投影 | 观察 |
+| 3 | **must/plus 2:1 权重**：核心缺口致命一倍——「核心全覆盖、只差加分」与「加分全覆盖、缺核心」不再同分（ruleVersion v2，用户评审通过） | job-copilot「JD 必需项权重 2、优先项权重 1」/ 北森必备加分分列加权 | 能力维度加权计量（must×2+nice×1）+ 规则行分界换算 | **已完成** |
+| 4 | **判定档位（provisional）**：裸分数 → 档位文案——借档 job-copilot 阈值（85/70/50 → 高度匹配/推荐投递/备选/观望），百分制映射 score/maxScore 比率；本地数据积累后 Benchmark 校准阈值（档位是 UI 语义层，不 bump 规则表版本） | job-copilot 档位 / ai-job-search 判定带 | 引擎 verdict 字段 + UI「17 / 65 · 观望」 | **已完成（provisional）** |
+| 5 | **方向维度权重证据**：Career Alignment 30% 是同类项目的最大权重 | ai-job-search | 方向维度将来应拿 25–30%，不是从属维度——触发条件 = 岗位方向结构化 | Known Future |
+| 6 | **缺口热力图**：缺口按岗位重要度加权 | ai-job-search /upskill | P3 Opportunity Loop 扩展技能补强投影 | 观察 |
 
 ## 6. 不采纳项与理由
 
@@ -119,13 +120,13 @@ JD 匹配度引擎化（契约 v0.1）冻结后发现三类问题需要外部锚
 - **AI 手评总分**（ai-job-search 式 rubric 打分）：我们已走过这条路（directionMatch 52%
   的教训——rubric 存在但执行不落盘不可审计）。引擎规则合成是更严格的执行层。
 
-## 7. 后续动作顺序
+## 7. 后续动作顺序（2026-08-14 更新：①②③ 已完成）
 
 ```
-① D 类数据修复：person skill_inventory 补 aliases/tools（拆复合技能名）
-   + 词表 knowledge/skills.md 补同义 alias → 假缺口消失，匹配度重算
-② 城市否决闸：preference_constraints 城市意向 → 匹配度 HARD_GATE（或独立闸）
-③ 契约 §3.4 Known Gap 更新：must/plus 2:1 权重评审（用户理解后决定）
+① ✅ D 类数据修复：skill_inventory aliases 列解析 + 8 条技能同义拆分
+   → 假缺口消失（19 → 15），匹配度重算
+② ✅ 城市冲突 FLAG（降级采用——否决制语境错位，用户评审修正）
+③ ✅ must/plus 2:1 权重（ruleVersion v2，用户评审通过）
 ④ 档位映射：85 分制分数稳定后，Benchmark 校准档位阈值
 ⑤ 方向维度：岗位方向结构化（触发条件）→ 25-30% 权重维度
 ```

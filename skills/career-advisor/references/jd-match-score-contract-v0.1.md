@@ -83,20 +83,25 @@ score = Σ(维度分 × 权重)，max 85，UI 显示「62 / 85 · 差异化维�
 - `transferable`：声明水平 1-2（有基础需补强）
 - `missing`：未声明（需学习）；must missing = 核心要求未声明
 
-| 状态向量 | 维度分 | 语义（对齐 skill 1-5 分制） |
+| 状态向量（v2 加权口径：must×2 + nice×1） | 维度分 | 语义（对齐 skill 1-5 分制） |
 |---------|:-----:|---------------------------|
-| missing=0 且 transferable=0 | 5 | 全覆盖 |
-| missing=0 且 satisfied>0 且 transferable>0 | 4 | 完全满足（核心全声明，有基础项存在） |
-| missing=0 且 satisfied=0（全为 transferable） | 3 | 基本满足（差半级——全是有基础需补强） |
-| mustMissing=0 且 missing>0 | 3 | 核心全覆盖，少量缺口 |
-| mustMissing>0 且 missing≤3 | 2 | 部分满足（差一级） |
-| mustMissing>0 且 missing>3 | 1 | 不满足（核心大面积缺失） |
+| weightedMissing=0 且 transferable=0 | 5 | 全覆盖 |
+| weightedMissing=0 且 satisfied>0 且 transferable>0 | 4 | 完全满足（核心全声明，有基础项存在） |
+| weightedMissing=0 且 satisfied=0（全为 transferable） | 3 | 基本满足（差半级——全是有基础需补强） |
+| mustMissing=0 且 weightedMissing>0（缺的全是加分项） | 3 | 核心全覆盖，少量缺口 |
+| mustMissing>0 且 weightedMissing≤6 | 2 | 部分满足（差一级；6 = 现行 3 个缺口的核心×2 等价） |
+| mustMissing>0 且 weightedMissing>6 | 1 | 不满足（核心大面积缺失） |
 | 无 hard capabilities（岗位未分析） | 无数据 | 维度不参与，status 降级 |
 
 > 实现校准（2026-08-14，§8.2 授权「实现时按真实数据校验，分界调整」）：评审版 5 行
 > 分界（transferable≤2 / must 全满足且 missing≤3）实现时校准为 6 行 **total 表**——
 > 原表两处状态无行可落（missing=0 且 satisfied=0；mustMissing=0 且 missing>3），
 > 补行后每个状态恰命中一行（有序求值）。规则行必须 total——不允许状态向量落空。
+>
+> **v2 修订（2026-08-14，用户评审通过）**：缺口计量从「个数」改为「加权重量」
+> （must×2 + nice×1——job-copilot「必需项权重 2、优先项权重 1」）：核心缺口致命一倍，
+> 「核心全覆盖、只差加分项」与「加分全覆盖、缺核心」不再同分。满足侧只参与 4/5 行
+> 定性判定（规则行未量化满足数，加权无作用点）。ruleVersion = 2026-08-jd-match-v2。
 
 规则 grounding：声明水平语义继承 gap-calculator（满足≥3 / 可迁移 1-2 / 缺失未声明
 ——skill-inventory v0.1 的水平定义），不新发明分级标准。
@@ -134,9 +139,9 @@ ai-job-search 1.5.0 分析 + 开源三派技术路线 + 采纳决策）。本节
 
 **Known Gap（调研发现、本版未采纳——见调研记录 §5 采纳决策）**：
 
-1. **must/plus 权重区分**：job-copilot「JD 必需项权重 2、优先项权重 1」；北森把 JD
-   拆为必备项/加分项分别加权。本版所有 hard capabilities 等权，must 仅经 mustMissing
-   规则行间接体现——核心缺口与加分缺口扣分同重。待用户评审后决定是否进入规则表 v2。
+1. **must/plus 权重区分**：已实现（2026-08-14，用户评审通过）——job-copilot「JD 必需项
+   权重 2、优先项权重 1」；缺口计量改加权重量（must×2 + nice×1），规则行分界同步换算
+   （≤6 = 现行 3 个核心缺口等价），ruleVersion = 2026-08-jd-match-v2（§3.1 v2 修订注记）。
 2. **同义匹配（"be generous"）**：行业已从关键词匹配升级到语义（智联双塔 / 大厂 ATS
    语义向量）；开源第三派（受控词表 + 模糊匹配）证明确定性同义归一可行。本系统采用
    第三派：alias/tools 数据层归一——skill_inventory 补 alias（复合技能名拆词）+ 词表
@@ -182,6 +187,10 @@ interface JDMatchScore {
     }
   }
   excluded: { label: string; weight: number }[]  // 未纳入维度披露（差异化优势 15）
+  verdict?: string            // 判定档位（EVALUATED 专用）：高度匹配/推荐投递/备选/观望
+                              // provisional 借档 job-copilot 阈值（85/70/50），本地数据积累后
+                              // Benchmark 校准——档位是 UI 语义层，阈值修订不 bump 规则表版本
+  city: { preferred: string; jobLocation: string; conflict: boolean } | null  // 城市冲突 FLAG（非否决）
   ruleVersion: string             // 评分规则版本（历史分数可审计）
   assessedAt: string
 }

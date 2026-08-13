@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeJDMatchScore, capabilityScore, cityConflictOf, JD_MATCH_RULE_VERSION } from '../runtime/jd-match-score.ts'
+import { computeJDMatchScore, capabilityScore, cityConflictOf, verdictOf, JD_MATCH_RULE_VERSION } from '../runtime/jd-match-score.ts'
 import type { ConstraintMatchRow, GapResult } from '../ir/schema.ts'
 
 /**
@@ -40,14 +40,23 @@ function row(dim: ConstraintMatchRow['dim'], status: ConstraintMatchRow['status'
   return { id: `c-${dim}`, dim, requirement, person: '本科', personEvidence: [], status } as ConstraintMatchRow
 }
 
-test('能力维度分：规则行 total（全覆盖 5 / 核心全声明 4 / 全基础 3 / 核心覆盖 3 / 核心缺口 2 / 大面积缺失 1 / 无数据 null）', () => {
+test('能力维度分：规则行 total（v2 加权口径——核心缺口 must×2；全覆盖 5 / 核心全声明 4 / 全基础 3 / 核心覆盖 3 / 核心缺口 2 / 大面积缺失 1 / 无数据 null）', () => {
   assert.equal(capabilityScore(gap({ satisfied: sat(3) })), 5)
   assert.equal(capabilityScore(gap({ satisfied: sat(3), transferable: tra(1) })), 4)
   assert.equal(capabilityScore(gap({ transferable: tra(3) })), 3)
-  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(4) })), 3) // must 全覆盖
-  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(3, 1) })), 2) // must 缺口 ≤3
-  assert.equal(capabilityScore(gap({ missing: miss(4, 2) })), 1) // must 缺口 >3
+  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(4) })), 3) // 缺的全是加分项——核心全覆盖
+  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(3, 1) })), 2) // 1 核心 + 2 加分 = 4 重量
+  assert.equal(capabilityScore(gap({ missing: miss(4, 2) })), 2) // 2 核心 + 2 加分 = 6 重量（恰在边界）
+  assert.equal(capabilityScore(gap({ missing: miss(4, 3) })), 1) // 3 核心 + 1 加分 = 7 重量（越过边界）
   assert.equal(capabilityScore(gap({})), null) // 岗位未分析
+})
+
+test('v2 加权语义：核心缺口比加分缺口致命一倍（B 场景从 2 分降到 1 分）', () => {
+  // 场景 A：核心全覆盖、缺 3 个加分 → 3 分（不变）
+  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(3) })), 3)
+  // 场景 B：加分全覆盖、缺 3 个核心 → 重量 6 ≤6 → 2 分（v1 也是 2）；缺 4 个核心 → 重量 8 → 1 分
+  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(3, 3) })), 2)
+  assert.equal(capabilityScore(gap({ satisfied: sat(2), missing: miss(4, 4) })), 1)
 })
 
 test('EVALUATED 全覆盖：能力 5 + 门槛三行 MATCHED → 85 / 85', () => {
@@ -171,4 +180,15 @@ test('城市数据缺失：无偏好（不知道去哪）或无岗位城市 → 
     constraints: [],
   })
   assert.equal(r.city, null)
+})
+
+test('判定档位（provisional 借档）：比率 → 高度匹配/推荐投递/备选/观望', () => {
+  assert.equal(verdictOf(85, 85), '高度匹配')
+  assert.equal(verdictOf(55, 65), '高度匹配') // 85%
+  assert.equal(verdictOf(52, 65), '推荐投递') // 80%
+  assert.equal(verdictOf(39, 65), '备选') // 60%
+  assert.equal(verdictOf(33, 65), '备选') // 50.8→51
+  assert.equal(verdictOf(32, 65), '观望') // 49%
+  assert.equal(verdictOf(17, 65), '观望') // 26%
+  assert.equal(verdictOf(10, 0), '') // 无有效分母
 })
