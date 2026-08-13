@@ -33,7 +33,7 @@
    "比如——你负责过哪些模块的设计？怎么验证设计有效的？"）
 
 3. 分支：
-   有类似经历 → 转入 create-evidence 引导流程（六问）→ candidate 落盘
+   有类似经历 → 转入 create-evidence 引导流程（按类型分轨：持续职责四问 / 项目六问）→ candidate 落盘
    没有 → 诚实标注缺口（不编造、不生成"声称可学"）
 
 4. 沉淀后闭环
@@ -50,3 +50,4 @@
 4. **一条经历一个条目**：不要为补齐岗位维度把多条经历合并进一条
 5. **Anti-Hallucination**：禁止从岗位名推断用户经历——"负责自动化设备结构设计"不等于用户做过自动化设备项目
 6. 沉淀完成后再评估：该 responsibility 的覆盖是否改善（交给 UI 覆盖视图，本模块只负责创建候选）
+7. **type 按经历性质判定**（v1.3）：岗位期望是持续职责性质（日常维护/例行支持）→ professional_experience；是一次性专项性质 → independent_project。判定标准与 workRowRef 规则见 evidence-output-schema.md

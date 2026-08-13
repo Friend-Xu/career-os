@@ -60,6 +60,17 @@ workspace/career-advisor/evidence/{日期}-{事件名}.md
 {溯源说明（可选）：来自哪次对话/哪个文档}
 ```
 
+**frontmatter（经历分类，Resume Entry Contract v0.2 / CareerContentStandard v1.3）**：
+
+```markdown
+---
+owner: {person_id，必填}
+lifecycle: active
+type: {professional_experience / independent_project / learning_record，必填}
+work_row_ref: {公司名}|{入职时间}（professional_experience 必填——引用 identity.md 工作经历行）
+---
+```
+
 ---
 
 ## 规则（强制）
@@ -73,3 +84,28 @@ workspace/career-advisor/evidence/{日期}-{事件名}.md
 7. **`role` ≠ 岗位责任**：role 是"我在事件中是什么身份"（如"机械结构负责人"），不是 JD 要求的责任
 8. `source_type` 默认 `user_input`（JD 驱动入口产生的条目内容也来自用户口述）
 9. **维度只记口述明确的证据，禁止推导归属**：adoption（被采纳应用）只记口述**明确说明**的采纳事实（"方案被采纳"/"已量产"/"客户验收"/"正式上线"）；禁止从 impact 指标变化（如"产能提升"）推断"已投产使用"——指标变化是 impact 的证据，投产是 adoption 的证据，口述没明确说就不记
+
+### type 判定标准（v1.3，强制）
+
+**type 决定下游消费**：professional_experience → 简历工作经历模块；independent_project → 项目经验模块。标错 = 下游条目放错位置。
+
+| 判定信号 | professional_experience（持续职责） | independent_project（阶段性专项） |
+|---------|----------------------------------|--------------------------------|
+| 动词时态 | 持续态：维护/跟进/支撑/负责 | 完成态：完成/建立/重建/实现 |
+| 对象性质 | 可预期重复发生的常规工作 | 有明确起止的一次性交付 |
+| 规模词 | X 台设备、月均 X 项、覆盖 X 型号 | 一次性总量（80+ 张图纸） |
+| 时间跨度 | 贯穿任职期 | 项目时间段 |
+
+判定流程：
+
+1. 问用户或从口述判断：**「这段经历是贯穿任职期的持续职责，还是有明确起止的一次性专项？」**
+2. 四信号任一命中「阶段性」→ independent_project；四信号均「持续性」→ professional_experience
+3. **职责句拆分**：项目证据中夹带的持续职责内容（如项目段落里的"协助新机型开发，完成图纸绘制与打样，跟进样机装配"）→ **拆为独立的 professional_experience 证据**，不混入项目证据——混入会导致表述投影类型错位
+4. 拿不准时问用户，**禁止凭猜测标类型**（标错 = 下游消费错位，比缺类型更糟）
+
+### workRowRef 规则（Resume Entry Contract v0.2 Option A，强制）
+
+- `type: professional_experience` 的 evidence **必填** `work_row_ref: {公司名}|{入职时间}`——引用 identity.md `## 工作经历` 表的行（公司名+start 精确一致）
+- 公司名/入职时间以 identity.md 表为准，不写别名/简称
+- 周期校验语义：evidence 的 period 必须**包含于**公司行任期——越界 = 归属错公司
+- independent_project 在公司内完成时也可带 workRowRef（可选，标记项目归属公司）
