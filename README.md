@@ -40,16 +40,27 @@
 
 <table>
 <tr>
-<td><img src="docs/screenshots/01-workbench.png" alt="工作台" width="100%"/><br/><sub>工作台：决策链 + 下一步行动</sub></td>
-<td><img src="docs/screenshots/02-agent.png" alt="决策 Agent" width="100%"/><br/><sub>决策 Agent：真实 LLM 对话（流式回复 / 提问卡片 / 权限弹窗）</sub></td>
+<td><img src="docs/screenshots/01-workbench.png" alt="工作台" width="100%"/><br/><sub>工作台：决策时间线 + 下一步行动</sub></td>
+<td><img src="docs/screenshots/Agent.png" alt="决策 Agent" width="100%"/><br/><sub>决策 Agent：真实 LLM 对话（流式回复 / 提问卡片 / 权限弹窗）</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/03-infopool.png" alt="信息池" width="100%"/><br/><sub>信息池：决策 / 公司 / 方向 / 城市图谱</sub></td>
-<td><img src="docs/screenshots/04-companies.png" alt="公司探索" width="100%"/><br/><sub>公司探索：目标公司列表 + 尽调入口</sub></td>
+<td><img src="docs/screenshots/信息池.png" alt="信息池" width="100%"/><br/><sub>信息池：决策 / 公司 / 方向 / 城市图谱</sub></td>
+<td><img src="docs/screenshots/公司地图.png" alt="公司探索" width="100%"/><br/><sub>公司探索：地图视图 + 目标公司列表</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/05-applications.png" alt="投递管理" width="100%"/><br/><sub>投递管理：申请进度看板</sub></td>
-<td><img src="docs/screenshots/06-resumes.png" alt="简历中心" width="100%"/><br/><sub>简历中心：划词 AI 改写 + 基于 JD 派生</sub></td>
+<td><img src="docs/screenshots/公司背调.png" alt="公司尽调" width="100%"/><br/><sub>公司尽调：职业价值评分 + 风险信号</sub></td>
+<td><img src="docs/screenshots/JD.png" alt="JD 工作区" width="100%"/><br/><sub>JD 工作区：岗位门槛四态 + 引擎匹配度 + 投决区</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/投递状态管理.png" alt="投递管理" width="100%"/><br/><sub>投递管理：申请进度看板</sub></td>
+<td><img src="docs/screenshots/简历编辑.png" alt="简历中心" width="100%"/><br/><sub>简历中心：版本工作区 + 划词 AI 改写</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/方向探索.png" alt="方向视图" width="100%"/><br/><sub>方向视图：按方向聚合的决策时间线 + 推荐方向</sub></td>
+<td><img src="docs/screenshots/职业方向探索.png" alt="职业方向探索" width="100%"/><br/><sub>职业方向探索：方向决策与匹配度</sub></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/screenshots/基于JD优化简历.png" alt="基于 JD 优化简历" width="60%"/><br/><sub>基于 JD 优化简历：缺口驱动的简历派生提案</sub></td>
 </tr>
 </table>
 

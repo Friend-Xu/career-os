@@ -40,16 +40,27 @@ Walked the full chain in Career OS: transition feasibility (44% skill overlap �
 
 <table>
 <tr>
-<td><img src="docs/screenshots/01-workbench.png" alt="Workbench" width="100%"/><br/><sub>Workbench: decision chain + next action</sub></td>
-<td><img src="docs/screenshots/02-agent.png" alt="Decision Agent" width="100%"/><br/><sub>Decision Agent: real LLM chat (streaming / question cards / permission dialogs)</sub></td>
+<td><img src="docs/screenshots/01-workbench.png" alt="Workbench" width="100%"/><br/><sub>Workbench: decision timeline + next action</sub></td>
+<td><img src="docs/screenshots/Agent.png" alt="Decision Agent" width="100%"/><br/><sub>Decision Agent: real LLM chat (streaming / question cards / permission dialogs)</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/03-infopool.png" alt="Info Pool" width="100%"/><br/><sub>Info pool: decisions / companies / directions / cities graph</sub></td>
-<td><img src="docs/screenshots/04-companies.png" alt="Companies" width="100%"/><br/><sub>Company explorer: target list + due diligence entry</sub></td>
+<td><img src="docs/screenshots/信息池.png" alt="Info Pool" width="100%"/><br/><sub>Info pool: decisions / companies / directions / cities graph</sub></td>
+<td><img src="docs/screenshots/公司地图.png" alt="Companies" width="100%"/><br/><sub>Company explorer: map view + target company list</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/05-applications.png" alt="Applications" width="100%"/><br/><sub>Applications: application progress board</sub></td>
-<td><img src="docs/screenshots/06-resumes.png" alt="Resumes" width="100%"/><br/><sub>Resume center: AI rewrite + JD-driven derivation</sub></td>
+<td><img src="docs/screenshots/公司背调.png" alt="Due Diligence" width="100%"/><br/><sub>Company due diligence: career-value score + risk signals</sub></td>
+<td><img src="docs/screenshots/JD.png" alt="JD Workspace" width="100%"/><br/><sub>JD workspace: gate matching + engine match score + decision zone</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/投递状态管理.png" alt="Applications" width="100%"/><br/><sub>Applications: application progress board</sub></td>
+<td><img src="docs/screenshots/简历编辑.png" alt="Resumes" width="100%"/><br/><sub>Resume center: version workspace + selection AI rewrite</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/方向探索.png" alt="Direction View" width="100%"/><br/><sub>Direction view: decisions grouped by direction + recommended directions</sub></td>
+<td><img src="docs/screenshots/职业方向探索.png" alt="Direction Exploration" width="100%"/><br/><sub>Direction exploration: direction decisions and match rates</sub></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/screenshots/基于JD优化简历.png" alt="JD-driven Resume Optimization" width="60%"/><br/><sub>JD-driven resume optimization: gap-driven derivation proposals</sub></td>
 </tr>
 </table>
 
