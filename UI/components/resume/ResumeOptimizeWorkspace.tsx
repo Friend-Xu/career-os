@@ -137,6 +137,8 @@ export function ResumeOptimizeWorkspace() {
   // ─── 派生模式（P2-2 提案通道；mode 在 store——Dashboard 深链入口可直达派生 tab）──
   const mode = useAppStore((s) => s.resumeOptimizeMode)
   const setMode = useAppStore((s) => s.setResumeOptimizeMode)
+  const resumeOptimizeJobId = useAppStore((s) => s.resumeOptimizeJobId)
+  const setResumeOptimizeJobId = useAppStore((s) => s.setResumeOptimizeJobId)
   const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
   const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const [viewedProposalId, setViewedProposalId] = useState<string | null>(null)
@@ -158,11 +160,19 @@ export function ResumeOptimizeWorkspace() {
     void useAppStore.getState().listDerivationProposals()
   }, [engineStatus])
 
-  // 进入派生模式：未显式选源 → 默认当前编辑对象（拆分视图左栏需要有源；覆盖 Dashboard 深链入口）
+  // 进入派生模式：未显式选源 → 默认当前编辑对象（拆分视图左栏需要有源；覆盖 Dashboard 深链入口）。
+  // 依赖 activeWorkingCopyId：跨页深链时 resumes-page 挂载后才回退设置默认副本——挂载时还是 null，需等其落定再填
   useEffect(() => {
     if (mode === 'derive' && !wcId && activeWorkingCopyId) setWcId(activeWorkingCopyId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode])
+  }, [mode, activeWorkingCopyId])
+
+  // 目标岗位深链意图（JD 空间「优化简历」写入）：消费即清除——覆盖当前选择，且不回滚后续手动切换
+  useEffect(() => {
+    if (!resumeOptimizeJobId) return
+    setJobId(resumeOptimizeJobId)
+    setProjection(null)
+    setResumeOptimizeJobId(null)
+  }, [resumeOptimizeJobId, setResumeOptimizeJobId])
 
   /** 当前配对（源副本 × JD）的提案（新在前）；viewed 缺省 = 最新 pending ?? 最新 */
   const pairProposals = useMemo(

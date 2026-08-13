@@ -31,6 +31,7 @@ import type {
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
+import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
@@ -312,6 +313,11 @@ export class EngineClient {
   /** 岗位门槛匹配投影（约束四态：学历 MATCHED/NOT_MATCHED/NEEDS_CONFIRMATION + 专业/经验待确认；UI 只投影不解释） */
   constraintMatch(jobId: string, personId: string): Promise<ConstraintMatchRow[]> {
     return this.rpc<ConstraintMatchRow[]>(METHODS.constraintMatch, { id: jobId, personId })
+  }
+
+  /** 岗位匹配度（契约 jd-match-score-contract-v0.1：能力覆盖 + 门槛四态规则合成，纯投影不回写） */
+  jobMatchScore(jobId: string, personId: string): Promise<JDMatchScore> {
+    return this.rpc<JDMatchScore>(METHODS.jobMatchScore, { id: jobId, personId })
   }
 
   /** JD 信息 AI 提取（粘贴 JD 自动回填建档表单；LLM 慢操作，超时放宽到 90s） */

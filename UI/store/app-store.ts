@@ -48,6 +48,7 @@ import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
+import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
@@ -183,6 +184,8 @@ interface AppState {
   evidenceCoverage: Record<string, ResponsibilityCoverage[]>;
   /** 岗位门槛匹配投影缓存（主线 3：jobId → ConstraintMatchRow[]，按岗位拉取；UI 只投影不解释） */
   constraintRows: Record<string, ConstraintMatchRow[]>;
+  /** 岗位匹配度（契约 jd-match-score-contract-v0.1：规则合成投影，缓存 jobMatchScores[jobId]） */
+  jobMatchScores: Record<string, JDMatchScore>;
   /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable——可消费性引擎推导） */
   claims: (CareerClaim & { usable: boolean })[];
   /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
@@ -243,6 +246,8 @@ interface AppState {
   resumeWorkspaceView: ResumeWorkspaceView;
   /** 优化空间子模式（诊断 = 逐条提案 / 派生 = 整份重写提案；Dashboard 深链入口可直达派生 tab） */
   resumeOptimizeMode: 'diagnose' | 'derive';
+  /** 优化空间目标岗位深链意图（JD 空间「优化简历」按钮写入；优化空间挂载时消费并清除——一次性导航语义，不持久化） */
+  resumeOptimizeJobId: string | null;
   /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心 / Evolution 演化时间线——v0.3 信息架构四区按 slice 落地） */
   artifactsView: 'assets' | 'proposals' | 'evolution';
   /** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 引擎实时派生（已确定性排序，UI 不重排） */
@@ -324,6 +329,7 @@ interface AppState {
   setResumeWorkspaceView: (view: ResumeWorkspaceView) => void;
   /** 切换优化空间子模式（诊断/派生） */
   setResumeOptimizeMode: (mode: 'diagnose' | 'derive') => void;
+  setResumeOptimizeJobId: (jobId: string | null) => void;
   /** 选中简历版本（M3.5.5：切到历史空间并定位——Agent/Deep Link/导出跳转共用） */
   selectResume: (id: string) => void;
   createSession: (title?: string) => string;
@@ -388,6 +394,8 @@ interface AppState {
   matchJob: (jobId: string, personName: string) => Promise<GapResult>;
   /** 岗位门槛匹配投影（约束四态；结果缓存 constraintRows[jobId]——UI 只投影不解释） */
   fetchConstraintMatch: (jobId: string, personId: string) => Promise<void>;
+  /** 岗位匹配度（规则合成投影；结果缓存 jobMatchScores[jobId]） */
+  fetchJobMatchScore: (jobId: string, personId: string) => Promise<void>;
   /** 岗位证据覆盖（M2：evidenceExpectations × Inventory，三态；结果缓存 evidenceCoverage[jobId]） */
   fetchJobCoverage: (jobId: string) => Promise<void>;
   /** 岗位 Claim 表达候选（M3-1：responsibility → 关联 trusted evidence → 可消费 Claims；缓存 claimCoverage[jobId]） */
@@ -520,6 +528,7 @@ export const useAppStore = create<AppState>()(
       /** 岗位证据覆盖缓存（jobId → ResponsibilityCoverage[]；M2 层3 三态） */
       evidenceCoverage: {},
       constraintRows: {},
+      jobMatchScores: {},
       /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable） */
       claims: [],
       /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
@@ -567,6 +576,7 @@ export const useAppStore = create<AppState>()(
       companiesView: 'profile',
       resumeWorkspaceView: 'dashboard',
       resumeOptimizeMode: 'diagnose',
+      resumeOptimizeJobId: null,
       artifactsView: 'assets',
       timelineEvents: [],
       traceability: null,
@@ -1202,6 +1212,16 @@ export const useAppStore = create<AppState>()(
     }
   },
 
+  fetchJobMatchScore: async (jobId, personId) => {
+    if (!engine) return
+    try {
+      const score = await engine.jobMatchScore(jobId, personId)
+      set((state) => ({ jobMatchScores: { ...state.jobMatchScores, [jobId]: score } }))
+    } catch {
+      // offline：保持现有缓存
+    }
+  },
+
   fetchJobCoverage: async (jobId) => {
     if (!engine) return
     try {
@@ -1655,6 +1675,7 @@ export const useAppStore = create<AppState>()(
   setResumeWorkspaceView: (view) => set({ resumeWorkspaceView: view }),
 
   setResumeOptimizeMode: (mode) => set({ resumeOptimizeMode: mode }),
+  setResumeOptimizeJobId: (jobId) => set({ resumeOptimizeJobId: jobId }),
   setArtifactsView: (view) => set({ artifactsView: view }),
   /** 选中简历版本（M3.5.5：切到历史空间并定位） */
   selectResume: (id) => set({ selectedResumeId: id, resumeWorkspaceView: 'history' }),

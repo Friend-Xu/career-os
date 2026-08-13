@@ -169,6 +169,36 @@ status: v1
   }
 })
 
+test('scanPersons：skill_inventory aliases 列 → 同义表达（逗号/分号/顿号分隔；旧四列格式无此列 → 缺省兼容）', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'persons/person_001/snapshot/current/skill_inventory.md': `---
+id: person_001
+status: v1
+---
+
+## A. 技能清单
+
+| skill_id | 技能 | level | usage_context | aliases |
+|----------|------|-------|---------------|---------|
+| skill_001 | 电路原理图绘制 | applied-professional | 硬件设计 | 电路图、PCB 绘图 |
+| skill_002 | 网络布线设计与施工 | applied-professional | 弱电工程 | 布线, 网络施工; 线缆敷设 |
+| skill_003 | 数据库设计与优化 | applied-intermediate | 后端开发 |
+`,
+  })
+  try {
+    const ws = initWorkspace(dir)
+    const p = scanPersons(ws)[0]!
+    assert.deepEqual(p.skills, [
+      { skillId: 'skill_001', name: '电路原理图绘制', level: 4, aliases: ['电路图', 'PCB 绘图'] },
+      { skillId: 'skill_002', name: '网络布线设计与施工', level: 4, aliases: ['布线', '网络施工', '线缆敷设'] },
+      { skillId: 'skill_003', name: '数据库设计与优化', level: 3 },
+    ])
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('scanPersons：User Career Intent 表 → targetRoles（只取 source=user，recommended 不消费为目标）', () => {
   const dir = makeWorkspace({
     'persons/person_001/manifest.md': manifestMd,

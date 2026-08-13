@@ -1,24 +1,60 @@
 /**
- * JD 空间侧栏：JD 池列表（按公司分组 + 投递状态 chip）。
+ * JD 空间侧栏：JD 池列表（按公司分组 + 投递状态 chip + 岗位匹配度）。
+ * 匹配度 = 引擎规则合成投影（jd-match-score-contract-v0.1：能力覆盖 + 门槛四态，85 分制披露）。
  * 点击行 → JD 工作区（selectedJobId）。hover 行尾删除按钮（确认后删 JD 文件，引擎广播重拉）。
  */
-import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import WorkIcon from '@mui/icons-material/Work'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { useToastStore } from '../../../store/toast-store'
-import { alpha, COLORS } from '../../../data/constants'
+import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
+import type { JDMatchScore } from '../../../../engine/runtime/jd-match-score.ts'
+
+const DIM_CN: Record<string, string> = { education: '学历', major: '专业', experience: '经验' }
+
+/** 匹配度 tooltip（可解释依据——能力名单/门槛行/未纳入维度；不显示裸分） */
+function matchTooltip(s: JDMatchScore): string {
+  if (s.status === 'HARD_GATE_FAILED') {
+    const veto = s.dimensions.gate.detail.rows.find((r) => r.status === 'NOT_MATCHED')
+    return veto ? `硬门槛不满足：${DIM_CN[veto.dim] ?? veto.dim}要求「${veto.requirement}」，你的情况「${veto.person}」` : '硬门槛不满足'
+  }
+  if (s.status === 'PARTIAL') return '岗位未完成分析——暂无能力覆盖数据'
+  const cap = s.dimensions.capability
+  const gate = s.dimensions.gate
+  const lines = [
+    `能力覆盖 ${cap.score}/5：声明 ${cap.detail.satisfied.length} · 有基础 ${cap.detail.transferable.length} · 缺口 ${cap.detail.missing.length}${cap.detail.mustMissing.length > 0 ? `（核心缺口 ${cap.detail.mustMissing.length}）` : ''}`,
+    gate.score !== null
+      ? `门槛 ${gate.score}/5：${gate.detail.rows
+          .filter((r) => r.status !== 'NOT_DECLARED')
+          .map((r) => `${DIM_CN[r.dim] ?? r.dim} ${r.status === 'MATCHED' ? '✓' : '待确认'}`)
+          .join(' · ')}`
+      : '岗位未要求门槛',
+    '差异化优势维度未纳入（转行场景激活的 AI 判断维度）',
+  ]
+  return lines.join('\n')
+}
 
 export function JobsSidebar() {
   const jobs = useAppStore((s) => s.jobs)
   const applications = useAppStore((s) => s.applications)
+  const decisions = useAppStore((s) => s.decisions)
+  const person = useAppStore((s) => s.currentPerson())
+  const jobMatchScores = useAppStore((s) => s.jobMatchScores)
+  const fetchJobMatchScore = useAppStore((s) => s.fetchJobMatchScore)
   const selectedJobId = useAppStore((s) => s.selectedJobId)
   const setSelectedJobId = useAppStore((s) => s.setSelectedJobId)
   const setJdAddOpen = useAppStore((s) => s.setJdAddOpen)
   const deleteJob = useAppStore((s) => s.deleteJob)
   const push = useToastStore((s) => s.push)
+
+  // 匹配度拉取：JD 池全量（个人工具量级小）；decisions 变化 = JD 分析落盘信号（capabilities 随之更新 → 重算）
+  useEffect(() => {
+    if (!person.personId) return
+    for (const j of jobs) void fetchJobMatchScore(j.id, person.personId)
+  }, [jobs, person.personId, decisions, fetchJobMatchScore])
 
   const byCompany = useMemo(() => {
     const map = new Map<string, typeof jobs>()
@@ -88,6 +124,7 @@ export function JobsSidebar() {
               {list.map((j) => {
                 const active = selectedJobId === j.id
                 const app = applications.find((a) => a.jobId === j.id)
+                const ms = jobMatchScores[j.id]
                 return (
                   <Stack
                     key={j.id}
@@ -160,6 +197,28 @@ export function JobsSidebar() {
                       {[j.location, j.salary, j.responsibilities.length > 0 ? `${j.responsibilities.length} 项要求` : null]
                         .filter(Boolean)
                         .join(' · ')}
+                      {ms && (
+                        <>
+                          {' · '}
+                          <Tooltip title={<Typography sx={{ fontSize: 11, lineHeight: 1.7, whiteSpace: 'pre-line' }}>{matchTooltip(ms)}</Typography>}>
+                            <Box
+                              component="span"
+                              sx={{
+                                fontFamily: COLORS.mono,
+                                fontWeight: 600,
+                                cursor: 'help',
+                                color: ms.status === 'EVALUATED' ? COLORS.accent : ms.status === 'HARD_GATE_FAILED' ? RISK_COLOR.high : COLORS.textMuted,
+                              }}
+                            >
+                              {ms.status === 'EVALUATED'
+                                ? `匹配度 ${ms.score} / ${ms.maxScore}`
+                                : ms.status === 'HARD_GATE_FAILED'
+                                  ? '硬门槛不满足'
+                                  : '待分析'}
+                            </Box>
+                          </Tooltip>
+                        </>
+                      )}
                     </Typography>
                   </Stack>
                 )

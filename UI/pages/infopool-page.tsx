@@ -26,14 +26,8 @@ import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 import { resolveCompanyReference } from '../data/company-ref'
+import { decisionMatchesJob } from '../utils/decision-job-link'
 import type { InfoNode } from '../types'
-
-/** 决策标题公司名匹配（同 job-workspace/agent-page——jd-analysis 决策 title 含公司名） */
-function decisionCompanyInTitle(d: { title: string }, company: string): boolean {
-  if (d.title.includes(company)) return true
-  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
-  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
-}
 
 /**
  * 类型色与风险色（绿/黄/红）完全错开，避免红色节点被误读为高风险。
@@ -853,15 +847,16 @@ export function InfoPoolPage() {
               <MenuItem
                 onClick={() => {
                   setMenu(null)
-                  // ADR-019 Step 4.3：仅「有岗位分析决策」的公司可发起投递（决策 → 行动链）
+                  // ADR-019 Step 4.3：仅「有岗位分析决策」的公司可发起投递（决策 → 行动链；
+                  // subjectId 直连优先，存量标题回退——同一公司多 JD 时不再取错岗位）
                   const decision = decisions.find(
-                    (d) => d.skill === 'jd-analysis' && decisionCompanyInTitle(d, menuCompany.name),
+                    (d) => d.skill === 'jd-analysis' && jobs.some((j) => j.company === menuCompany.name && decisionMatchesJob(d, j)),
                   )
                   if (!decision) {
                     push('warning', `「${menuCompany.name}」暂无岗位分析决策——先分析该公司的 JD 生成决策，才能发起投递`)
                     return
                   }
-                  const job = jobs.find((j) => decisionCompanyInTitle(decision, j.company))
+                  const job = jobs.find((j) => decisionMatchesJob(decision, j))
                   if (!job) {
                     push('warning', `「${menuCompany.name}」的决策未关联岗位档案（JD 池无匹配）`)
                     return

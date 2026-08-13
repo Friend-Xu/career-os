@@ -405,6 +405,9 @@ export interface DecisionRecord {
   protocolVersion: string
   /** ADR-013 单身份源（存量无 person_id 时按 profile 人名映射） */
   personId?: string
+  /** subject_id frontmatter（系统身份字段）：jd-analysis 决策关联的岗位 ID——Engine Registration 写入，
+   *  身份关联不靠标题解析（存量旧记录无此字段，缺失合法） */
+  subjectId?: string
   /** Contract v1 inputs：本次分析引用的 Person Aggregate 资产（`## 输入引用` 段落） */
   inputs?: DecisionInputs
   /** v2.8：城市评估置信度（摘要表 city_confidence；缺失合法） */

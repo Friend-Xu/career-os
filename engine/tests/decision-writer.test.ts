@@ -123,6 +123,8 @@ test('Case A 工程型：差距明细表 = Engine 事实（泵选型 NOT_DECLARE
     // 记录可被现有决策投影协议解析（摘要表紧跟头——SUMMARY_RE 协议约束；title 非空不触发 NOT NULL）
     const parsed = parseDecisionMarkdown(md, `${id}.md`)
     assert.equal(parsed.value.title, `岗位决策 — ${A_ID}`)
+    // subject_id → subjectId：jd-analysis 决策直连岗位 ID（UI 关联不靠标题解析）
+    assert.equal(parsed.value.subjectId, A_ID)
     assert.ok(!parsed.validation?.issues.some((i) => i.reason.includes('未找到')))
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
@@ -193,6 +195,46 @@ test('无叙述草稿：记录只有 Engine 事实段（差距明细照常，无
     assert.ok(md.includes('| 能力 | 泵选型 | 未声明 | NOT_DECLARED（未声明——不代表不具备） | SKILL_GAP | 是否具备「泵选型」？ |'))
     assert.ok(!md.includes('## 岗位理解'))
     assert.ok(!md.includes('## 准备建议'))
+  } finally {
+    rmSync(ws.paths.root, { recursive: true, force: true })
+  }
+})
+
+test('存量旧记录：无 subject_id frontmatter → subjectId undefined（标题回退合法，解析不破坏）', () => {
+  const ws = setup()
+  try {
+    ws.write(
+      'decisions/legacy-1.md',
+      `---
+id: decision_20260807_00001
+created_at: 2026-08-07
+---
+
+# JD 分析 — 示例公司 · 机械结构工程师
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill | jd-analysis |
+| direction | 机器人本体设计 |
+| direction_match | 52% |
+| direction_confidence | 中 |
+| city | 苏州 |
+| city_score | 60% |
+| salary_feasible | true |
+| risk_level | 中 |
+| key_risk | 行业竞争 |
+| status | 进行中 |
+| protocol_version | 2.1 |
+| profile | 我 |
+`,
+    )
+    const parsed = parseDecisionMarkdown(ws.read('decisions/legacy-1.md'), 'legacy-1.md')
+    assert.equal(parsed.value.subjectId, undefined)
+    assert.equal(parsed.value.title, 'JD 分析 — 示例公司 · 机械结构工程师')
+    assert.equal(parsed.value.skill, 'jd-analysis')
+    assert.ok(!parsed.validation?.issues.some((i) => i.severity === 'error'))
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
   }

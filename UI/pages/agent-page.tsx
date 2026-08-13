@@ -36,6 +36,7 @@ import { MarkdownView } from '../components/markdown-view'
 import { QuestionCardView } from '../components/agent/question-card-view'
 import { useSessionScroll } from '../hooks/use-session-scroll'
 import { belongsToPerson } from '../utils/ownership'
+import { decisionMatchesJob } from '../utils/decision-job-link'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord } from '../types'
 
@@ -79,13 +80,6 @@ function ContextCapsule() {
   )
 }
 
-/** 决策标题公司名匹配（同 job-workspace——jd-analysis 决策 title 含公司名，匹配过宽会误判） */
-function decisionCompanyInTitle(d: { title: string }, company: string): boolean {
-  if (d.title.includes(company)) return true
-  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
-  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
-}
-
 function ReportCard({ record }: { record: DecisionRecord }) {
   const setPage = useAppStore((s) => s.setPage)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
@@ -94,8 +88,8 @@ function ReportCard({ record }: { record: DecisionRecord }) {
   const applications = useAppStore((s) => s.applications)
   const createApplication = useAppStore((s) => s.createApplication)
 
-  // ADR-019 Step 4.3：决策 → 行动入口。仅 JD 分析类决策（标题含公司名）可关联岗位发起投递
-  const linkedJob = jobs.find((j) => decisionCompanyInTitle(record, j.company))
+  // ADR-019 Step 4.3：决策 → 行动入口。仅 JD 分析类决策（subjectId 直连，存量标题回退）可关联岗位发起投递
+  const linkedJob = jobs.find((j) => decisionMatchesJob(record, j))
   const existingApp = linkedJob ? applications.find((a) => a.jobId === linkedJob.id) : undefined
 
   const handleStartApply = () => {

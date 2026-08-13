@@ -202,6 +202,8 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
   if (inputs) record.inputs = inputs
   // ADR-014：person_id 是系统身份字段——frontmatter（新协议，权威）优先，摘要表（存量 v2.1）兜底
   if (meta.person_id) record.personId = meta.person_id
+  // subject_id（Engine Registration 身份关联）：jd-analysis 决策直连岗位 ID——UI 关联不靠标题解析
+  if (meta.subject_id) record.subjectId = meta.subject_id
   const payload = parsePayload(body)
   if (payload) {
     // 城市评估 payload 携带方向口径（摘要表 direction 行——「机器人结构设计」）

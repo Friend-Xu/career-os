@@ -45,6 +45,7 @@ import { buildDecisionCandidate, constraintRefOf, resolveGapDisplay } from '../r
 import { buildResumeRewriteContext, parseNarrativeSections } from '../runtime/resume-context.ts'
 import { parseCompanyFacts } from '../runtime/company-fact-parser.ts'
 import { computeCompanyAssessment } from '../runtime/company-assessment.ts'
+import { computeJDMatchScore } from '../runtime/jd-match-score.ts'
 import { writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
 import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
@@ -1905,6 +1906,20 @@ export async function startServer(opts: {
       const p = params as Record<string, unknown>
       if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
       return computeConstraintMatch(workspace, jobIdParams(params), p.personId)
+    },
+    [METHODS.jobMatchScore]: (params) => {
+      const p = params as Record<string, unknown>
+      const jobId = jobIdParams(params)
+      if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
+      const person = scanPersons(workspace).find((x) => x.personId === p.personId)
+      if (!person) throw new Error(`人不存在：${p.personId}`)
+      // 纯投影：复用既有确定性匹配产物（能力三元组 + 门槛四态）→ 规则表合成
+      return computeJDMatchScore({
+        jobId,
+        personId: p.personId,
+        gap: computeJobMatch(workspace, jobId, person.name),
+        constraints: computeConstraintMatch(workspace, jobId, p.personId),
+      })
     },
     [METHODS.decisionDraft]: (params) => {
       const p = params as Record<string, unknown>

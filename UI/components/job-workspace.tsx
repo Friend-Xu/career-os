@@ -25,6 +25,7 @@ import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/sc
 import type { ConstraintMatchRow, GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
 import type { Company } from '../types'
 import { resolveCompanyReference } from '../data/company-ref'
+import { decisionMatchesJob } from '../utils/decision-job-link'
 
 /** store companies 成员（CompanyRecord + validation 标记；占位公司 = invalid = 待尽调） */
 type CompanyWithValidation = Company & { validation?: Validation }
@@ -126,21 +127,14 @@ function cleanJd(jd: string, job: JobRecord): string {
     .join('\n\n')
 }
 
-/** 决策标题里的公司名可能为简称（"示例智造科技" vs 建档全称"示例智造科技有限公司"）——双向子串容错 */
-function companyInTitle(d: { title: string }, company: string): boolean {
-  if (d.title.includes(company)) return true
-  const brief = (d.title.split(/[：:]/)[1] ?? '').trim().split(/\s+/)[0]
-  return Boolean(brief && brief.length >= 2 && (brief.includes(company) || company.includes(brief)))
-}
-
 /** 岗位工作区状态（从数据派生）：分析/建档/投递/面试
  *  - ADR-019：投递记录由用户「开始投递流程」创建（PREPARING 起）——applied 判定：
  *    状态推进到 SUBMITTED（已投递）才算投出
  *  - 占位公司（validation invalid）= 待尽调，不视为已尽调 */
-function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string }[], company: CompanyWithValidation | undefined, appliedStatus?: string) {
-  // 已分析判定：该公司的 jd-analysis 决策（公司名匹配，title 匹配过宽会误判）
+function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string; subjectId?: string }[], company: CompanyWithValidation | undefined, appliedStatus?: string) {
+  // 已分析判定：该岗位的 jd-analysis 决策（subjectId 直连优先，存量标题回退——同公司多 JD 不误判）
   const analyzed = decisions.some(
-    (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
+    (d) => d.skill === 'jd-analysis' && decisionMatchesJob(d, job),
   )
   const dueDiligence = company !== undefined && company.validation?.status !== 'invalid'
   const applied = appliedStatus === 'SUBMITTED' || appliedStatus === 'COMMUNICATING' || appliedStatus === 'INTERVIEWING' || appliedStatus === 'OFFERED'
@@ -164,19 +158,24 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const decisions = useAppStore((s) => s.decisions)
   const companies = useAppStore((s) => s.companies)
   const applications = useAppStore((s) => s.applications)
-  const resumes = useAppStore((s) => s.resumes)
   const person = useAppStore((s) => s.currentPerson())
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const matchJob = useAppStore((s) => s.matchJob)
   const fetchConstraintMatch = useAppStore((s) => s.fetchConstraintMatch)
   const constraintRows = useAppStore((s) => s.constraintRows)
+  const fetchJobMatchScore = useAppStore((s) => s.fetchJobMatchScore)
+  const jobMatchScores = useAppStore((s) => s.jobMatchScores)
   const fetchJobCoverage = useAppStore((s) => s.fetchJobCoverage)
   const evidenceCoverage = useAppStore((s) => s.evidenceCoverage)
   const evidenceItems = useAppStore((s) => s.evidence)
   const fetchClaimCoverage = useAppStore((s) => s.fetchClaimCoverage)
   const claimCoverage = useAppStore((s) => s.claimCoverage)
   const updateApplicationStatus = useAppStore((s) => s.updateApplicationStatus)
+  const createApplication = useAppStore((s) => s.createApplication)
   const setPage = useAppStore((s) => s.setPage)
+  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
+  const setResumeOptimizeMode = useAppStore((s) => s.setResumeOptimizeMode)
+  const setResumeOptimizeJobId = useAppStore((s) => s.setResumeOptimizeJobId)
   const push = useToastStore((s) => s.push)
 
   const [gap, setGap] = useState<GapResult | null>(null)
@@ -197,6 +196,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       .catch(() => {})
       .finally(() => setGapLoading(false))
     fetchConstraintMatch(job.id, person.personId ?? '')
+    fetchJobMatchScore(job.id, person.personId ?? '')
     fetchJobCoverage(job.id)
     fetchClaimCoverage(job.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -205,7 +205,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   if (!job || !st) return null
 
   const jobDecisions = decisions.filter(
-    (d) => d.skill === 'jd-analysis' && companyInTitle(d, job.company),
+    (d) => d.skill === 'jd-analysis' && decisionMatchesJob(d, job),
   )
   const aiResponsibilities = job.responsibilities.filter((r) => r.source === 'ai')
   const cRows = constraintRows[job.id] ?? null
@@ -226,23 +226,31 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     })
     push('info', '已预置「公司尽调」上下文')
   }
+  /** 优化简历（P2-2 提案通道深链）：派生不在聊天承载——直达优化空间派生模式，目标岗位预选为当前 JD */
   const optimizeResume = (): void => {
-    const latestResume = [...resumes]
-      .filter((r) => r.personId === person.id)
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0]
-    startAnalysis(`请针对岗位「${job.company} · ${job.title}」的 JD 优化我的简历：拆解 JD 关键词，逐模块改写，输出修改建议`, {
-      taskType: 'resume_adaptation',
-      contextRefs: [
-        { type: 'job', id: job.id },
-        ...(latestResume ? [{ type: 'resume' as const, id: latestResume.id }] : []),
-      ],
-      outputTarget: 'artifact',
-    })
-    push('info', '已预置「简历优化」上下文')
+    setResumeOptimizeJobId(job.id)
+    setResumeOptimizeMode('derive')
+    setResumeWorkspaceView('optimize')
     setPage('resumes')
   }
+  /** 发起投递（ADR-019 用户行动事实——显式「开始投递」创建，Agent 禁止创建）：
+   *  decisionId 取本岗位最新 jd-analysis 决策——B 落地后 jobDecisions 由 subjectId 精确过滤，不会串到同公司其他 JD */
+  const startApply = (): void => {
+    const newest = [...jobDecisions].sort((a, b) => `${b.createdAt}${b.id}`.localeCompare(`${a.createdAt}${a.id}`))[0]
+    if (!newest) {
+      push('warning', '该岗位暂无分析决策——先完成 JD 分析再发起投递')
+      return
+    }
+    createApplication({ jobId: job.id, decisionId: newest.id }).then(
+      () => {
+        push('success', `已发起投递流程：${job.company} · ${job.title}（准备投递）`)
+        setPage('applications')
+      },
+      (err) => push('warning', `发起投递失败：${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
   const advanceApply = (): void => {
-    // 投递记录由决策页「开始投递流程」创建；此处推进到 SUBMITTED（用户确认投出）
+    // 投递记录存在后推进到 SUBMITTED（用户确认投出）
     if (!app) return
     updateApplicationStatus(app.id, 'SUBMITTED')
       .then(() => push('success', '已推进投递（已投递）——到投递管理推进后续状态'))
@@ -356,11 +364,25 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 优化简历
               </Button>
             )}
+            {st.analyzed && st.dueDiligence && !app && (
+              <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
+                onClick={startApply}
+                sx={{ fontSize: 12 }}>
+                开始投递
+              </Button>
+            )}
             {st.analyzed && st.dueDiligence && app && (app.status === 'PREPARING' || app.status === 'READY') && (
               <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
                 onClick={advanceApply}
                 sx={{ fontSize: 12 }}>
                 推进投递
+              </Button>
+            )}
+            {st.analyzed && st.dueDiligence && app && app.status !== 'PREPARING' && app.status !== 'READY' && (
+              <Button size="small" variant="outlined" startIcon={<SendIcon sx={{ fontSize: 14 }} />}
+                onClick={() => setPage('applications')}
+                sx={{ fontSize: 12 }}>
+                查看投递
               </Button>
             )}
             {st.applied && !st.interviewing && (
@@ -706,6 +728,25 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 <Typography sx={{ fontSize: 12.5, color: COLORS.text }}>
                   {job.responsibilities.length > 0 ? `${job.responsibilities.length} 项要求已评估` : '未评估'}
                 </Typography>
+                {(() => {
+                  const ms = jobMatchScores[job.id]
+                  if (!ms) return null
+                  if (ms.status === 'HARD_GATE_FAILED') {
+                    return (
+                      <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.high, mt: 0.25 }} title={ms.dimensions.gate.detail.rows.find((r) => r.status === 'NOT_MATCHED')?.requirement}>
+                        硬门槛不满足
+                      </Typography>
+                    )
+                  }
+                  if (ms.status === 'EVALUATED') {
+                    return (
+                      <Typography sx={{ fontSize: 12.5, color: COLORS.accent, mt: 0.25 }} title={`能力 ${ms.dimensions.capability.score}/5 · 门槛 ${ms.dimensions.gate.score ?? '—'}/5 · 差异化维度未纳入`}>
+                        匹配度 {ms.score} / {ms.maxScore}
+                      </Typography>
+                    )
+                  }
+                  return null
+                })()}
               </Box>
               <Box sx={{ flex: 1, p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
                 <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, mb: 0.5 }}>公司评估</Typography>

@@ -127,6 +127,8 @@ export const METHODS = {
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
   constraintMatch: 'jobs/constraint-match',
+  /** 岗位匹配度（params: { jobId, personId } → JDMatchScore：能力覆盖 + 门槛四态规则合成，85 分制披露；契约 jd-match-score-contract-v0.1，纯投影不回写） */
+  jobMatchScore: 'jobs/match-score',
   /** 决策候选投影（params: { jobId, personId } → DecisionCandidate：门槛行非 MATCHED + 能力未声明 → 差距清单；只引用不复制，Producer = Engine） */
   decisionDraft: 'jobs/decision-draft',
   /** Agent 叙述提交（params: { id: jobId, personId, narrative? } → { decisionId }：Writer 合并 Engine 差距段 + Agent 叙述段写 decisions/{id}.md；narrative 禁含引擎事实区标题） */

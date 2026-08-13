@@ -576,20 +576,48 @@ function deriveTools(name: string): string[] {
 
 /**
  * snapshot/skill_inventory.md → confirmed 技能 + 版本。
- * 解析所有 `| skill_id | 名称 | level |` 表格行（A/B/C 段）；level 单元格取首词
+ * 解析所有 `| skill_id | 名称 | level | … |` 表格行（A/B/C 段）；level 单元格取首词
  * （`applied（cross-domain）` → applied）；inferred/learned 不进 Person.skills。
+ * aliases 列（Skill Representation v0.1 数据源落地）：逗号/分号/顿号分隔的同义表达——
+ * "be generous" 匹配的同义归一入口。列序不固定（4 列旧格式 / 6 列扩展格式并存），
+ * 按表头列名定位（无 aliases 列 → 缺省）。
  */
 function parseSkillInventory(md: string): { skills: PersonSkill[]; version: string } {
+  const lines = md.split('\n')
+  let aliasCol = -1
+  for (const line of lines) {
+    if (!line.trim().startsWith('|')) continue
+    const cells = line.split('|').map((c) => c.trim())
+    if (cells.includes('skill_id')) {
+      aliasCol = cells.indexOf('aliases')
+      break
+    }
+  }
   const skills: PersonSkill[] = []
-  for (const line of md.split('\n')) {
-    const m = line.match(/^\|\s*(skill_\w+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|/)
-    if (!m) continue
-    const levelWord = m[3]!.trim().split(/[（(]/)[0]!.trim()
-    const level = SKILL_LEVEL_MAP[levelWord]
+  for (const line of lines) {
+    if (!line.trim().startsWith('|')) continue
+    const cells = line.split('|').map((c) => c.trim())
+    const skillId = cells[1] ?? ''
+    if (!/^skill_\w+$/.test(skillId)) continue
+    const level = SKILL_LEVEL_MAP[(cells[3] ?? '').split(/[（(]/)[0]!.trim()]
     if (level === undefined) continue
-    const name = m[2]!.trim()
+    const name = (cells[2] ?? '').trim()
+    if (name.length === 0) continue
     const tools = deriveTools(name)
-    skills.push({ skillId: m[1]!.trim(), name, level, ...(tools.length > 0 ? { tools } : {}) })
+    const aliases =
+      aliasCol >= 0
+        ? (cells[aliasCol] ?? '')
+            .split(/[,，;；、]/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+        : []
+    skills.push({
+      skillId,
+      name,
+      level,
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(aliases.length > 0 ? { aliases } : {}),
+    })
   }
   const version = md.match(/^status:\s*(v[\w.-]+)/m)?.[1] ?? 'v1'
   return { skills, version }
