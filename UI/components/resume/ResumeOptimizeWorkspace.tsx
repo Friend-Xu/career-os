@@ -11,6 +11,7 @@
  */
 import { Box, Chip, MenuItem, Select, Stack, Typography, Button, CircularProgress, Checkbox, FormControlLabel } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
@@ -136,6 +137,8 @@ export function ResumeOptimizeWorkspace() {
   // ─── 派生模式（P2-2 提案通道；mode 在 store——Dashboard 深链入口可直达派生 tab）──
   const mode = useAppStore((s) => s.resumeOptimizeMode)
   const setMode = useAppStore((s) => s.setResumeOptimizeMode)
+  const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
+  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const [viewedProposalId, setViewedProposalId] = useState<string | null>(null)
   const [notesOpen, setNotesOpen] = useState(true)
   const [deriveError, setDeriveError] = useState('')
@@ -218,7 +221,9 @@ export function ResumeOptimizeWorkspace() {
     try {
       if (action === 'accept') {
         const decided = await decideDerivationProposal(p.id, 'accept')
-        push('success', `已接受派生——新副本「${selectedJob ? `${selectedJob.company} · ${selectedJob.title}` : decided.acceptedWcId ?? ''}」已创建`)
+        // 正向桥：接受后新副本 = 下一步工作对象——自动选中（编辑空间打开即为此副本）
+        if (decided.acceptedWcId) setActiveWorkingCopy(decided.acceptedWcId)
+        push('success', `已接受派生——新副本「${selectedJob ? `${selectedJob.company} · ${selectedJob.title}` : decided.acceptedWcId ?? ''}」已创建并选中`)
       } else {
         await decideDerivationProposal(p.id, 'reject')
         push('info', '已拒绝派生提案（审计保留，可重新生成）')
@@ -537,62 +542,6 @@ export function ResumeOptimizeWorkspace() {
           {engineStatus !== 'connected' && (
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>引擎离线——对齐计算不可用</Typography>
           )}
-          {/* 模式切换：诊断（逐条提案）/ 派生（整份重写提案）——粒度不同所以层级并列 */}
-          <Box
-            sx={{
-              ml: 'auto',
-              display: 'flex',
-              flexShrink: 0,
-              borderRadius: '8px',
-              border: `1px solid ${COLORS.border}`,
-              overflow: 'hidden',
-            }}
-          >
-            <Button
-              size="small"
-              disableRipple
-              onClick={() => switchMode('diagnose')}
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 0,
-                fontSize: 12,
-                minWidth: 0,
-                textTransform: 'none',
-                fontWeight: mode === 'diagnose' ? 700 : 400,
-                color: mode === 'diagnose' ? COLORS.accent : COLORS.textMuted,
-                bgcolor: mode === 'diagnose' ? alpha(COLORS.accent, 0.1) : 'transparent',
-              }}
-            >
-              诊断
-            </Button>
-            <Button
-              size="small"
-              disableRipple
-              onClick={() => switchMode('derive')}
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 0,
-                fontSize: 12,
-                minWidth: 0,
-                textTransform: 'none',
-                fontWeight: mode === 'derive' ? 700 : 400,
-                color: mode === 'derive' ? COLORS.accent : COLORS.textMuted,
-                bgcolor: mode === 'derive' ? alpha(COLORS.accent, 0.1) : 'transparent',
-              }}
-            >
-              派生
-              {pendingBadgeCount > 0 && (
-                <Box
-                  component="span"
-                  sx={{ ml: 0.5, fontSize: 10, px: 0.75, borderRadius: 8, bgcolor: COLORS.riskMedium, color: '#fff', lineHeight: '15px' }}
-                >
-                  {pendingBadgeCount}
-                </Box>
-              )}
-            </Button>
-          </Box>
         </Stack>
         {wc && (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1, flexWrap: 'wrap', gap: 0.5 }}>
@@ -608,6 +557,70 @@ export function ResumeOptimizeWorkspace() {
             <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>诊断基于当前编辑内容（未资产化内容不参与证据投影）</Typography>
           </Stack>
         )}
+      </Box>
+
+      {/* 模式条：诊断（逐条提案）/ 派生（整份重写提案）——粒度不同所以层级并列；大号分段按钮 = 优化空间两种策略的主入口 */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+        <Button
+          disableRipple
+          onClick={() => switchMode('diagnose')}
+          sx={{
+            flex: 1,
+            p: 1.25,
+            borderRadius: '10px',
+            textTransform: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 0.25,
+            border: `1.5px solid ${mode === 'diagnose' ? COLORS.accent : alpha(COLORS.border, 0.9)}`,
+            bgcolor: mode === 'diagnose' ? alpha(COLORS.accent, 0.1) : COLORS.bgElevated,
+            boxShadow: mode === 'diagnose' ? `0 0 0 3px ${alpha(COLORS.accent, 0.15)}` : COLORS.cardShadow,
+            '&:hover': { borderColor: COLORS.accent, bgcolor: mode === 'diagnose' ? alpha(COLORS.accent, 0.12) : alpha(COLORS.accent, 0.05) },
+          }}
+        >
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+            <AssessmentOutlinedIcon sx={{ fontSize: 17, color: mode === 'diagnose' ? COLORS.accent : COLORS.textMuted }} />
+            <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: mode === 'diagnose' ? COLORS.accent : COLORS.textSecondary }}>诊断</Typography>
+          </Stack>
+          <Typography sx={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5 }}>
+            逐条检查岗位要求覆盖，发现机会并生成改写提案
+          </Typography>
+        </Button>
+        <Button
+          disableRipple
+          onClick={() => switchMode('derive')}
+          sx={{
+            flex: 1,
+            p: 1.25,
+            borderRadius: '10px',
+            textTransform: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 0.25,
+            border: `1.5px solid ${mode === 'derive' ? COLORS.accent : alpha(COLORS.border, 0.9)}`,
+            bgcolor: mode === 'derive' ? alpha(COLORS.accent, 0.1) : COLORS.bgElevated,
+            boxShadow: mode === 'derive' ? `0 0 0 3px ${alpha(COLORS.accent, 0.15)}` : COLORS.cardShadow,
+            '&:hover': { borderColor: COLORS.accent, bgcolor: mode === 'derive' ? alpha(COLORS.accent, 0.12) : alpha(COLORS.accent, 0.05) },
+          }}
+        >
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+            <AutoAwesomeIcon sx={{ fontSize: 17, color: mode === 'derive' ? COLORS.accent : COLORS.textMuted }} />
+            <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: mode === 'derive' ? COLORS.accent : COLORS.textSecondary }}>派生</Typography>
+            {pendingBadgeCount > 0 && (
+              <Box
+                component="span"
+                sx={{ fontSize: 10.5, px: 0.9, py: 0.15, borderRadius: 8, bgcolor: COLORS.riskMedium, color: '#fff', fontWeight: 700, lineHeight: '15px' }}
+              >
+                {pendingBadgeCount} 待决定
+              </Box>
+            )}
+          </Stack>
+          <Typography sx={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5 }}>
+            对照源副本整体重写一份对齐 JD 的版本，接受后才创建副本
+          </Typography>
+        </Button>
       </Box>
 
       {/* ─── 诊断模式：对齐投影 + 发现机会（逐条提案——外科手术） ─── */}
@@ -1161,7 +1174,30 @@ export function ResumeOptimizeWorkspace() {
                     />
                     <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>生成于 {viewed.createdAt.slice(11, 16)}</Typography>
                     {viewed.status === 'accepted' && viewed.acceptedWcId && (
-                      <Typography sx={{ fontSize: 11, color: COLORS.riskLow }}>已创建副本 {viewed.acceptedWcId}（选择器可见）</Typography>
+                      <>
+                        <Typography sx={{ fontSize: 11, color: COLORS.riskLow }}>已创建副本 {viewed.acceptedWcId}</Typography>
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            // 自足桥：选中 + 导航（activeWorkingCopyId 不持久化——重载后回访不能靠 accept 时的自动选中）
+                            setActiveWorkingCopy(viewed.acceptedWcId!)
+                            setResumeWorkspaceView('edit')
+                          }}
+                          sx={{
+                            ml: pairProposals.length > 1 ? 0 : 'auto',
+                            fontSize: 11.5,
+                            textTransform: 'none',
+                            color: COLORS.accent,
+                            border: `1px solid ${alpha(COLORS.accent, 0.35)}`,
+                            borderRadius: '8px',
+                            px: 1.25,
+                            py: 0.25,
+                            '&:hover': { bgcolor: alpha(COLORS.accent, 0.08) },
+                          }}
+                        >
+                          去编辑
+                        </Button>
+                      </>
                     )}
                     {pairProposals.length > 1 && (
                       <Select
