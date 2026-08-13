@@ -67,7 +67,7 @@ export function ResumeOptimizeWorkspace() {
   const [assetPanel, setAssetPanel] = useState<{ oppId: string; selected: string[]; generating: boolean } | null>(null)
   const [bindResult, setBindResult] = useState<{ claimId: string; ok: boolean; text: string } | null>(null)
 
-  const personWorkingCopies = workingCopies.filter((w) => w.owner === String(person.id))
+  const personWorkingCopies = workingCopies.filter((w) => w.owner === person.personId)
   const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
 
   useEffect(() => {
@@ -206,7 +206,7 @@ export function ResumeOptimizeWorkspace() {
   const generate = async (o: Opportunity) => {
     setGenState({ oppId: o.id, phase: '生成改写方案中…' })
     try {
-      await generateOpportunityProposals(o.id, wcId, String(person.id))
+      await generateOpportunityProposals(o.id, wcId, person.personId ?? '')
       // 任务完成后轮询候选（agent 提交经引擎登记——以提案出现为完成信号）
       const deadline = Date.now() + 90_000
       const poll = async (): Promise<void> => {
@@ -248,7 +248,7 @@ export function ResumeOptimizeWorkspace() {
     if (!assetPanel || assetPanel.selected.length === 0) return
     setAssetPanel((p) => (p ? { ...p, generating: true } : p))
     try {
-      await generateAssetCandidate(o.id, wcId, assetPanel.selected, String(person.id))
+      await generateAssetCandidate(o.id, wcId, assetPanel.selected, person.personId ?? '')
       // 完成信号 = 关联机会的 ClaimProposal 出现（CLI 提交不经事件广播——轮询必须走 RPC 拉取）
       const deadline = Date.now() + 90_000
       const poll = async (): Promise<void> => {

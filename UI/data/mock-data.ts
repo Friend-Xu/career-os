@@ -400,12 +400,21 @@ export const RESUMES: ResumeVersion[] = [
     name: '原始简历 v1',
     personId: 1,
     updatedAt: '2026-07-10',
+    isDemo: true,
     modules: [
       {
         id: 'm1',
         title: '个人信息',
-        content: '我 | 算法工程师 | 5年经验 | 深圳\n邮箱: me@email.com | 电话: 138****0000',
+        content: '',
         order: 0,
+        identity: [
+          { label: '姓名', body: '我' },
+          { label: '目标职位', body: '算法工程师' },
+          { label: '经验', body: '5年经验' },
+          { label: '城市', body: '深圳' },
+          { label: '邮箱', body: 'me@email.com' },
+          { label: '电话', body: '138****0000' },
+        ],
       },
       {
         id: 'm2',
@@ -442,14 +451,21 @@ export const RESUMES: ResumeVersion[] = [
     personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-22',
+    isDemo: true,
     targetCompany: '天穹智航',
     targetPosition: '机器人算法工程师',
     modules: [
       {
         id: 'm1',
         title: '个人信息',
-        content: '我 | 机器人算法工程师 | 5年算法经验 | 深圳',
+        content: '',
         order: 0,
+        identity: [
+          { label: '姓名', body: '我' },
+          { label: '目标职位', body: '机器人算法工程师' },
+          { label: '经验', body: '5年算法经验' },
+          { label: '城市', body: '深圳' },
+        ],
       },
       {
         id: 'm2',
@@ -486,14 +502,20 @@ export const RESUMES: ResumeVersion[] = [
     personId: 1,
     parentId: 'r-root',
     updatedAt: '2026-07-25',
+    isDemo: true,
     targetCompany: '弘毅机器人',
     targetPosition: '感知算法工程师',
     modules: [
       {
         id: 'm1',
         title: '个人信息',
-        content: '我 | 感知算法工程师 | 深圳',
+        content: '',
         order: 0,
+        identity: [
+          { label: '姓名', body: '我' },
+          { label: '目标职位', body: '感知算法工程师' },
+          { label: '城市', body: '深圳' },
+        ],
       },
       {
         id: 'm2',
@@ -526,12 +548,21 @@ export const RESUMES: ResumeVersion[] = [
     name: '家人 A · 原始简历 v1',
     personId: 2,
     updatedAt: '2026-07-28',
+    isDemo: true,
     modules: [
       {
         id: 'fa-m1',
         title: '个人信息',
-        content: '家人 A | 内容运营 | 3年经验 | 上海\n邮箱: family@email.com | 电话: 139****0000',
+        content: '',
         order: 0,
+        identity: [
+          { label: '姓名', body: '家人 A' },
+          { label: '目标职位', body: '内容运营' },
+          { label: '经验', body: '3年经验' },
+          { label: '城市', body: '上海' },
+          { label: '邮箱', body: 'family@email.com' },
+          { label: '电话', body: '139****0000' },
+        ],
       },
       {
         id: 'fa-m2',

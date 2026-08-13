@@ -1434,6 +1434,15 @@ export async function startServer(opts: {
                   ...(Array.isArray(b?.provenanceLinks) ? { provenanceLinks: (b.provenanceLinks as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
                 }))
               : [],
+            // 身份事实通道（M5.2 G6）：字段条目随 section 透传——丢字段会把身份段变空
+            ...(Array.isArray(s?.identity)
+              ? {
+                  identity: (s.identity as Record<string, unknown>[]).map((e) => ({
+                    ...(typeof e?.label === 'string' ? { label: e.label } : {}),
+                    ...(typeof e?.body === 'string' ? { body: e.body } : {}),
+                  })),
+                }
+              : {}),
           }))
         : []
       const input: WorkingCopyInput = {

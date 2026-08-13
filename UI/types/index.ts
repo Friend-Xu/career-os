@@ -27,7 +27,7 @@ import type {
   CareerClaim,
   ClaimCoverageRow,
 } from '../../engine/ir/schema.ts';
-import type { ResumeDocument, ResumeBullet, ResumeSection } from '../../engine/ir/resume.ts';
+import type { ResumeDocument, ResumeBullet, ResumeSection, ResumeIdentityEntry } from '../../engine/ir/resume.ts';
 import type { AgentContextBundle } from '../../engine/ir/agent-task.ts';
 import type { ArtifactSummary, ArtifactType } from '../../engine/ir/artifact-summary.ts';
 import type { ArtifactTimelineEvent, ArtifactTimelineEventType } from '../../engine/ir/artifact-timeline.ts';
@@ -56,6 +56,7 @@ export type { ClaimCoverageRow };
 export type { ResumeDocument };
 export type { ResumeBullet };
 export type { ResumeSection };
+export type { ResumeIdentityEntry };
 export type { ArtifactSummary };
 export type { ArtifactType };
 export type { ArtifactTimelineEvent };
@@ -211,6 +212,8 @@ export interface ResumeVersion {
   targetCompany?: string;
   targetPosition?: string;
   modules: ResumeModule[];
+  /** 演示数据标记（mock-data 合成人设——非真实档案派生，UI 展示「演示」角标） */
+  isDemo?: boolean;
 }
 
 export interface ResumeModule {
@@ -218,6 +221,8 @@ export interface ResumeModule {
   title: string;
   content: string;
   order: number;
+  /** 身份事实字段条目（M5.2 G6 非 claim 通道；profile/education 等模块用——字段级渲染与编辑） */
+  identity?: ResumeIdentityEntry[];
 }
 
 export interface PoolHealth {

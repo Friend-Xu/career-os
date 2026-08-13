@@ -46,6 +46,8 @@ export interface Person {
   sourceMode?: 'resume' | 'interview' // 初始化通道（M6.5 双通道：简历驱动/访谈驱动——用户意图，非文件状态）
   initialInterest?: string[] // 创建时自报的关注方向（user_reported 意向，非方向决策；语义见 M6.5 initial_interest）
   initStatus?: 'pending' | 'active' // 初始化生命周期状态（Banner 显隐；缺省 = active；session 内部多阶段在引擎资产层）
+  /** 身份基本信息（identity.md 投影；简历身份字段 seed 来源——User Confirmation 后写入） */
+  identity?: PersonIdentity
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
   education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
 }
@@ -174,6 +176,15 @@ export interface JDAnalysisValidationIssue {
 
 // ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
 
+/** 身份基本信息（identity.md 基本信息表投影——用户确认事实；简历身份字段 seed 来源） */
+export interface PersonIdentity {
+  education?: string
+  graduationYear?: string
+  location?: string
+  currentStatus?: string
+  yearsExperience?: string
+}
+
 /**
  * Person 快照（persons/{person_id}/ 投影）：manifest + snapshot/*.md + events/ 计数。
  * 当前状态投影（非可编辑真相源）——来源可包括 Change Events、用户确认输入、
@@ -188,13 +199,7 @@ export interface PersonSnapshot {
   /** 初始化通道（manifest source_mode；刷新后恢复通道语义） */
   sourceMode?: 'resume' | 'interview'
   manifestPath: string // persons/{person_id}/manifest.md
-  identity?: {
-    education?: string
-    graduationYear?: string
-    location?: string
-    currentStatus?: string
-    yearsExperience?: string
-  }
+  identity?: PersonIdentity
   careerProfile?: {
     currentRole?: string
     targetRoles?: string[]

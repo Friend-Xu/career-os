@@ -21,7 +21,7 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE } from '../data/constants'
 import type { ResumeModule } from '../types'
-import { modulesToSections, sectionsToModules } from '../utils/resume-working-copy'
+import { modulesToSections, sectionsToModules, buildSkeletonModules } from '../utils/resume-working-copy'
 import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
@@ -59,7 +59,11 @@ function escapeHtml(s: string): string {
 }
 
 /** 组装简历打印 HTML（引擎侧 Edge headless 渲染为 PDF） */
-function buildResumeHtml(personName: string, resumeName: string, modules: { title: string; content: string }[]): string {
+function buildResumeHtml(
+  personName: string,
+  resumeName: string,
+  modules: { title: string; content: string; identity?: { label?: string; body?: string }[] }[],
+): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -75,7 +79,15 @@ function buildResumeHtml(personName: string, resumeName: string, modules: { titl
 <body>
   <h1>${escapeHtml(personName)}</h1>
   <div class="sub">${escapeHtml(resumeName)}</div>
-  ${modules.map((m) => `<h2>${escapeHtml(m.title)}</h2><p>${escapeHtml(m.content)}</p>`).join('\n  ')}
+  ${modules
+    .map((m) => {
+      const body =
+        m.identity && m.identity.length > 0
+          ? m.identity.map((f) => `<b>${escapeHtml(f.label ?? '')}：</b>${escapeHtml(f.body ?? '')}`).join('<br/>')
+          : escapeHtml(m.content)
+      return `<h2>${escapeHtml(m.title)}</h2><p>${body}</p>`
+    })
+    .join('\n  ')}
 </body>
 </html>`
 }
@@ -101,7 +113,7 @@ export function ResumesPage() {
   const evidenceItems = useAppStore((s) => s.evidence)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
   /** P2.3：编辑对象 = 工作副本（引擎侧用户创作对象）——localStorage 草稿降为初始化来源 */
-  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const workingCopy = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
   const resume = personResumes[0]
   const [modules, setModules] = useState<ResumeModule[]>([])
@@ -122,7 +134,7 @@ export function ResumesPage() {
       }))
       void upsertWorkingCopy({
         id: workingCopy.id,
-        owner: String(person.id),
+        owner: person.personId ?? '',
         sections,
         revision: workingCopy.revision,
       }).catch((e: unknown) => push('warning', e instanceof Error ? e.message : '保存失败'))
@@ -419,15 +431,19 @@ export function ResumesPage() {
                   variant="contained"
                   onClick={async () => {
                     try {
-                      await upsertWorkingCopy({ owner: String(person.id), sections: modulesToSections(resume.modules.map((m, i) => ({ ...m, order: i }))), revision: 0 })
-                      push('success', '已创建工作副本（内容来自现有简历）')
+                      // 演示简历不携带人设内容：以档案身份字段 + 空模块骨架初始化（M5.2 G6 身份事实通道）
+                      const seed = resume.isDemo
+                        ? buildSkeletonModules(person)
+                        : resume.modules.map((m, i) => ({ ...m, order: i }))
+                      await upsertWorkingCopy({ owner: person.personId ?? '', sections: modulesToSections(seed), revision: 0 })
+                      push('success', resume.isDemo ? '已从档案初始化身份字段（演示内容未带入）' : '已创建工作副本（内容来自现有简历）')
                     } catch (e) {
                       push('warning', e instanceof Error ? e.message : '创建工作副本失败')
                     }
                   }}
                   sx={{ fontSize: 12.5 }}
                 >
-                  从现有简历初始化
+                  {resume.isDemo ? '从档案初始化' : '从现有简历初始化'}
                 </Button>
               )}
               <Button
@@ -447,6 +463,11 @@ export function ResumesPage() {
                 生成简历
               </Button>
             </Stack>
+            {resume?.isDemo && (
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                现有简历为演示数据——初始化仅带入你的档案身份字段，演示内容不会写入
+              </Typography>
+            )}
           </Stack>
         </Box>
       ) : (
@@ -582,28 +603,62 @@ export function ResumesPage() {
                     ↓
                   </Button>
                 </Stack>
-                <TextField
-                  fullWidth
-                  multiline
-                  value={m.content}
-                  inputRef={(el: HTMLTextAreaElement | null) => {
-                    textareaRefs.current[m.id] = el
-                  }}
-                  onChange={(e) => {
-                    setRevert(null)
-                    commitModules(
-                      modules.map((x) => (x.id === m.id ? { ...x, content: e.target.value } : x)),
-                    )
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      fontSize: 13,
-                      lineHeight: 1.6,
-                      '& fieldset': { border: 'none' },
-                    },
-                    '& textarea': { padding: '12px !important' },
-                  }}
-                />
+                {m.identity && m.identity.length > 0 ? (
+                  <Stack sx={{ p: 0.5 }}>
+                    {m.identity.map((f) => (
+                      <Stack
+                        key={f.label}
+                        direction="row"
+                        spacing={1}
+                        sx={{ alignItems: 'center', px: 0.75, py: 0.5 }}
+                      >
+                        <Typography sx={{ fontSize: 12, color: COLORS.textMuted, width: 64, flexShrink: 0 }}>
+                          {f.label}
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          variant="standard"
+                          value={f.body ?? ''}
+                          onChange={(e) => {
+                            setRevert(null)
+                            commitModules(
+                              modules.map((x) =>
+                                x.id === m.id
+                                  ? { ...x, identity: x.identity?.map((y) => (y.label === f.label ? { ...y, body: e.target.value } : y)) }
+                                  : x,
+                              ),
+                            )
+                          }}
+                          sx={{ fontSize: 13, '& .MuiInputBase-root': { fontSize: 13 } }}
+                        />
+                      </Stack>
+                    ))}
+                  </Stack>
+                ) : (
+                  <TextField
+                    fullWidth
+                    multiline
+                    value={m.content}
+                    inputRef={(el: HTMLTextAreaElement | null) => {
+                      textareaRefs.current[m.id] = el
+                    }}
+                    onChange={(e) => {
+                      setRevert(null)
+                      commitModules(
+                        modules.map((x) => (x.id === m.id ? { ...x, content: e.target.value } : x)),
+                      )
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                        '& fieldset': { border: 'none' },
+                      },
+                      '& textarea': { padding: '12px !important' },
+                    }}
+                  />
+                )}
               </Box>
             ))}
           </Stack>
@@ -645,17 +700,38 @@ export function ResumesPage() {
                 >
                   {m.title}
                 </Typography>
-                <Typography
-                  sx={{
-                    fontSize: 13,
-                    color: '#333',
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.65,
-                    fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
-                  }}
-                >
-                  {m.content}
-                </Typography>
+                {m.identity && m.identity.length > 0 ? (
+                  <Box>
+                    {m.identity.map((f) => (
+                      <Typography
+                        key={f.label}
+                        sx={{
+                          fontSize: 13,
+                          color: '#333',
+                          lineHeight: 1.65,
+                          fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+                        }}
+                      >
+                        <Box component="span" sx={{ fontWeight: 700, color: '#222' }}>
+                          {f.label}：
+                        </Box>
+                        {f.body}
+                      </Typography>
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography
+                    sx={{
+                      fontSize: 13,
+                      color: '#333',
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.65,
+                      fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+                    }}
+                  >
+                    {m.content}
+                  </Typography>
+                )}
               </Box>
             ))}
           </Box>

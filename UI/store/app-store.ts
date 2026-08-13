@@ -35,6 +35,7 @@ import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal }
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
+import { buildSkeletonModules } from '../utils/resume-working-copy'
 import type { PortfolioProject, PortfolioProposal } from '../../engine/ir/portfolio.ts'
 import type { InterviewQa, InterviewProposal } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal } from '../../engine/ir/cover-letter.ts'
@@ -1107,9 +1108,9 @@ export const useAppStore = create<AppState>()(
     }
     const personId = get().currentPersonId
     const id = `r-${Date.now()}`
-    // 模板模块：该人第一份版本深拷贝（编辑起点），id 重生成避免冲突
+    // 模板模块 = 档案身份 + 空骨架（演示简历不携带人设内容）；id 重生成避免冲突
     const template = RESUMES.find((r) => r.personId === personId)
-    const modules = (template?.modules ?? []).map((m, i) => ({
+    const modules = buildSkeletonModules(person).map((m, i) => ({
       ...m,
       id: `m-${Date.now()}-${i}`,
     }))
@@ -1697,6 +1698,10 @@ export const useAppStore = create<AppState>()(
         const p = persisted as Record<string, unknown>
         if (p && typeof p === 'object' && 'agentPanelOpen' in p) delete p.agentPanelOpen
         const merged = { ...current, ...(p as object) } as AppState
+        // 演示简历不持久化为历史：mock 条目以当前 RESUMES 刷新（含 isDemo/identity 结构升级）；
+        // 用户派生版本（id r-{ts}）不在 mock id 集合内，原样保留
+        const demoIds = new Set(RESUMES.map((r) => r.id))
+        merged.resumes = [...merged.resumes.filter((r) => !demoIds.has(r.id)), ...RESUMES]
         // 断流收尾幂等：localStorage 未写回时重复标记结果一致
         return { ...merged, sessions: markInterruptedSessions(merged.sessions) }
       },

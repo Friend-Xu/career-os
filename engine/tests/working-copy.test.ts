@@ -1,6 +1,6 @@
 /**
  * Working Copy Registry 测试矩阵（ADR-023 P2.2）。
- * 验证：parse/serialize 往返、upsert revision 协商（push/conflict）、
+ * 验证：parse/serialize 往返、upsert revision 协商（push/conflict）、owner 登记校验（ADR-013/014）、
  * promote → ResumeDocument Candidate（bound 块锚主 claim / unbound 块 UNBOUND_BLOCK warning /
  * 未知段类型跳过 + invalid）、promoted 状态写回。
  */
@@ -17,6 +17,17 @@ import type { WorkingCopy } from '../ir/resume.ts'
 function setup(): { ws: Workspace; root: string; claimId: string } {
   const root = mkdtempSync(join(tmpdir(), 'cos-wc-'))
   const ws = initWorkspace(root)
+  // owner 登记校验（ADR-013/014）：upsert 前 owner 必须是已登记 person
+  ws.write(
+    'persons/person_001/manifest.md',
+    `---
+id: person_001
+name: Person-A
+status: active
+created_at: 2026-08-08
+---
+`,
+  )
   ws.write(
     'claims/claim_20260808_00001.md',
     `---
@@ -92,6 +103,51 @@ test('upsert：新建 → created + revision=1；push → revision+1', () => {
   assert.equal(pushed.status, 'ok')
   assert.equal(pushed.copy.revision, 2)
   assert.equal(scanWorkingCopies(ws).length, 1, '同 id 不重复创建')
+})
+
+test('identity 通道（M5.2 G6）：字段条目 round-trip + promote 不产生 bullet/UNBOUND_BLOCK', () => {
+  const { ws } = setup()
+  const created = upsertWorkingCopy(ws, {
+    owner: 'person_001',
+    sections: [
+      {
+        id: 'sec_1',
+        title: '个人信息',
+        blocks: [],
+        identity: [
+          { label: '姓名', body: 'Person-A' },
+          { label: '目标职位', body: '机械结构工程师' },
+          { label: '城市', body: 'City-Z' },
+        ],
+      },
+    ],
+    revision: 0,
+  })
+  const md = ws.read(`resumes/working-copies/${created.copy.id}.md`)
+  assert.ok(md.includes('- 姓名 | Person-A（identity）'), '身份行带 identity 标记序列化')
+  const parsed = parseWorkingCopyMarkdown(md, `${created.copy.id}.md`)
+  assert.deepEqual(parsed.sections[0]!.identity, [
+    { label: '姓名', body: 'Person-A' },
+    { label: '目标职位', body: '机械结构工程师' },
+    { label: '城市', body: 'City-Z' },
+  ])
+  assert.equal(parsed.sections[0]!.blocks.length, 0, 'identity 不进 claim 通道（blocks 空）')
+
+  const doc = promoteToDocumentCandidate(ws, created.copy.id, new Date('2026-08-08T12:00:00Z'))
+  const profile = doc.sections.find((s) => s.type === 'profile')
+  assert.ok(profile)
+  assert.equal(profile.bullets.length, 0)
+  assert.deepEqual(profile.identity, parsed.sections[0]!.identity, 'promote 映射 ResumeSection.identity')
+  assert.equal(doc.validation?.status, 'valid', '身份事实不产生 UNBOUND_BLOCK 警告')
+})
+
+test('upsert：owner 非登记人 → 拒绝（ADR-013/014 系统身份字段）', () => {
+  const { ws } = setup()
+  // 占位符/UI 本地 id 一律拒绝——错误值会导致简历归属断裂（A 的简历挂到 B）
+  assert.throws(() => upsertWorkingCopy(ws, { owner: '1', sections: sectionsInput(''), revision: 0 }), /owner 非登记人：1/)
+  assert.throws(() => upsertWorkingCopy(ws, { owner: 'person_999', sections: sectionsInput(''), revision: 0 }), /owner 非登记人：person_999/)
+  assert.throws(() => upsertWorkingCopy(ws, { owner: '  ', sections: sectionsInput(''), revision: 0 }), /owner 缺失/)
+  assert.equal(scanWorkingCopies(ws).length, 0, '非法 owner 不落盘')
 })
 
 test('upsert：revision 协商——engine > local → conflict（询问合并）', () => {

@@ -28,7 +28,7 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
   const push = useToastStore((s) => s.push)
 
   // P2.3：当前编辑对象 = 工作副本（引擎侧创作对象）
-  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const current = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
 
   // 已有数据投影（不新增计算）：质量规则 / 引擎计数

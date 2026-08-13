@@ -62,7 +62,11 @@ export function serializeWorkingCopy(wc: WorkingCopy): string {
           return `- ${b.text}${suffix.length > 0 ? `（${suffix.join('）（')}）` : ''}`
         })
         .join('\n')
-      return `## ${s.title}\n\n${blocks}`
+      // 身份事实通道（M5.2 G6）：与 resume-watcher 同约定 `- {label} | {body}（identity）`
+      const identity = (s.identity ?? [])
+        .map((e) => `- ${e.label ? `${e.label} | ${e.body ?? ''}` : (e.body ?? '')}（identity）`)
+        .join('\n')
+      return `## ${s.title}\n\n${[blocks, identity].filter(Boolean).join('\n')}`
     })
     .join('\n\n')
   return `---\n${meta.join('\n')}\n---\n# 简历工作副本\n\n${body}\n`
@@ -82,6 +86,14 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
     const block = line.match(/^\s*[-*]\s*(.+)$/)
     if (block && current) {
       const raw = block[1].trim()
+      // 身份事实行（M5.2 G6）：`- {label} | {body}（identity）` → section.identity，不进 claim 通道
+      const identityM = raw.match(/^(.*)（identity）$/)
+      if (identityM) {
+        const content = identityM[1].trim()
+        const sep = content.indexOf('|')
+        ;(current.identity ??= []).push(sep > 0 ? { label: content.slice(0, sep).trim(), body: content.slice(sep + 1).trim() } : { body: content })
+        continue
+      }
       const claimsM = raw.match(/（claims:\s*([^）]+)）/)
       const expM = raw.match(/（expectation:\s*([^）]+)）/)
       const text = raw.replace(/\s*（(?:claims|expectation):\s*[^）]*）/g, '').trim()
@@ -114,6 +126,11 @@ export function scanWorkingCopies(ws: Workspace): WorkingCopy[] {
 
 export function upsertWorkingCopy(ws: Workspace, input: WorkingCopyInput, now: Date = new Date()): UpsertResult {
   if (!input.owner?.trim()) throw new WorkingCopyError('owner 缺失')
+  // owner 是系统身份字段（ADR-013/014）：必须已登记 persons/{id}——UI 本地数字 id / 占位符一律拒绝
+  const registered = ws.listDirs('persons')
+  if (!registered.includes(input.owner)) {
+    throw new WorkingCopyError(`owner 非登记人：${input.owner}${registered.length > 0 ? `（登记人：${registered.join('、')}）` : '（无登记人）'}`)
+  }
   if (!Array.isArray(input.sections)) throw new WorkingCopyError('sections 必须为数组')
 
   if (input.id) {
@@ -171,7 +188,8 @@ function sectionTypeOf(title: string): ResumeSectionType | null {
 }
 
 /** 纯组装：WorkingCopy → ResumeDocument Candidate（不写盘——promote 与 alignment 输入共用。
- *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid） */
+ *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid；
+ *  identity 条目走身份事实通道（M5.2 G6）——不产生 bullet、不校验 claim 锚定 */
 export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date = new Date()): ResumeDocument {
   const claimsById = new Map(scanClaims(ws).map((c) => [c.record.id, c.record]))
   const issues: ResumeValidationIssue[] = []
@@ -201,7 +219,7 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
       if (r.issue) issues.push(r.issue)
       if (r.bullet) sectionBullets.push(r.bullet)
     }
-    sections.push({ type, title: s.title, bullets: sectionBullets })
+    sections.push({ type, title: s.title, bullets: sectionBullets, ...(s.identity && s.identity.length > 0 ? { identity: s.identity } : {}) })
   }
 
   const validation: ResumeValidation = {

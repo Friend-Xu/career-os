@@ -16,6 +16,8 @@ import { computeObservationStats } from '../runtime/observation.ts'
 function setupBase(): { ws: Workspace } {
   const root = mkdtempSync(join(tmpdir(), 'cos-obs-'))
   const ws = initWorkspace(root)
+  // owner 登记校验（ADR-013/014）：upsert 前 owner 必须是已登记 person
+  ws.write('persons/p1/manifest.md', '---\nid: p1\nname: Person-A\nstatus: active\n---\n\n# Person-A\n')
   ws.write(
     'jobs/job_test.md',
     `---

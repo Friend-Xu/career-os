@@ -70,6 +70,9 @@ export interface WorkingSection {
   id: string
   title: string
   blocks: WorkingBlock[]
+  /** M5.2 G6 身份事实通道（非 claim）：字段条目（如 姓名/目标职位/年限/城市）——
+   *  promote 时映射 ResumeSection.identity，不产生 bullet、不产生 UNBOUND_BLOCK */
+  identity?: ResumeIdentityEntry[]
 }
 
 /** 用户创作对象（resumes/working-copies/；promote → ResumeDocument Candidate） */

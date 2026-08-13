@@ -53,7 +53,7 @@ export function ResumesSidebar() {
   const resumeVersions = useAppStore((s) => s.resumeVersions)
   const careerContext = useAppStore((s) => s.careerContext)
 
-  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === String(person.id)), [workingCopies, person.id])
+  const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const versions = useMemo(() => [...resumeVersions].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt)), [resumeVersions])
   const claimsOf = (id: string): number => {
     const v = resumeVersions.find((r) => r.id === id)
