@@ -51,6 +51,38 @@ lifecycle: active
 - evidence_20260808_00001
 `,
   )
+  ws.write(
+    'evidence/evidence_20260808_00001.md',
+    `---
+id: evidence_20260808_00001
+owner: person_001
+lifecycle: active
+type: independent_project
+created_at: 2026-08-08
+---
+# Project-A 气密性工装
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| role | 结构负责人 |
+| contribution | 主导气密性工装设计 |
+| status | trusted |
+| source_type | user_input |
+| captured_at | 2026-08-08 |
+| owner | person_001 |
+| type | independent_project |
+
+## 证据
+
+### scope
+- 气密性工装设计
+
+### impact
+- 装配泄漏率降至 0.5%
+`,
+  )
   return { ws, root, claimId: 'claim_20260808_00001' }
 }
 
@@ -198,6 +230,24 @@ test('promote：主 claim 不存在 → CLAIM_NOT_FOUND invalid；未知段类�
   assert.ok(doc.validation?.issues.some((i) => i.code === 'UNKNOWN_SECTION'))
   assert.ok(doc.validation?.issues.some((i) => i.code === 'CLAIM_NOT_FOUND'))
   assert.equal(doc.sections.length, 1, '未知段类型段不进入文档')
+})
+
+test('promote：claim 证据未通过可信校验 → CLAIM_NOT_USABLE，不进版本（消费策略统一入口）', () => {
+  const { ws, claimId } = setup()
+  // 证据降为 raw（未确认）→ claim 不可消费
+  ws.write(
+    'evidence/evidence_20260808_00001.md',
+    ws.read('evidence/evidence_20260808_00001.md').replace('| status | trusted |', '| status | raw |'),
+  )
+  const created = upsertWorkingCopy(ws, {
+    owner: 'person_001',
+    sections: [{ id: 'sec_1', title: '个人优势', blocks: [{ id: 'blk_1', text: '主导气密性工装设计', provenanceLinks: [claimId] }] }],
+    revision: 0,
+  })
+  const doc = promoteToDocumentCandidate(ws, created.copy.id)
+  assert.equal(doc.validation?.status, 'invalid', '不可消费 claim 丢内容 → invalid')
+  assert.ok(doc.validation?.issues.some((i) => i.code === 'CLAIM_NOT_USABLE'))
+  assert.equal(doc.sections[0]!.bullets.length, 0, '不可消费 claim 的块不进版本')
 })
 
 test('promote：全 bound + 全 unbound 的 validation 区分（valid vs warning）', () => {

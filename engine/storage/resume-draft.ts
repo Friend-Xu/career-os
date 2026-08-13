@@ -249,7 +249,7 @@ export function assembleResumeFromDraft(input: AssembleInput): AssembleResult {
 }
 
 const SECTION_TITLES: Record<ResumeSectionType, string> = {
-  summary: '个人简介',
+  summary: '个人优势',
   experience: '工作经历',
   projects: '项目经历',
   skills: '技能',

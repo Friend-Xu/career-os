@@ -21,7 +21,7 @@ export function ResumeDeriveDialog({ open, onClose }: { open: boolean; onClose: 
       targetPosition: title,
     })
     startAnalysis(
-      `请基于所选 JD 派生简历内容（岗位：${company} · ${title}）：\nJD 要求：${requirements.join('、') || '（无结构化要求）'}\nJD 原文：${(jd ?? '').slice(0, 800) || '（无原文，按岗位名推断）'}\n按模块输出：个人信息/专业摘要/工作经历/项目经验/技能——含量化指标，关键词与 JD 对齐`,
+      `请基于所选 JD 派生简历内容（岗位：${company} · ${title}）：\nJD 要求：${requirements.join('、') || '（无结构化要求）'}\nJD 原文：${(jd ?? '').slice(0, 800) || '（无原文，按岗位名推断）'}\n按模块输出：个人信息/个人优势/工作经历/项目经验/技能——含量化指标，关键词与 JD 对齐`,
     )
     push('success', '已创建派生版本并预置「基于 JD 派生」上下文')
     onClose()

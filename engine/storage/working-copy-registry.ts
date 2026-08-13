@@ -3,6 +3,7 @@
  * - 双通道写入 + revision 协商：local.revision > engine → push；engine > local → conflict（询问合并）
  * - promoteToDocumentCandidate：WorkingCopy → ResumeDocument Candidate（用户主动「创建版本」）
  *   - bound 块 → bullet（claimId = 主 claim——provenanceLinks[0]，sentence = 用户文本）
+ *   - bound 块经 canUseClaim 消费策略校验（证据未通过可信校验 → 跳过 + CLAIM_NOT_USABLE invalid）
  *   - unbound 块 → bullet（claimId 空）+ UNBOUND_BLOCK warning（不阻止——Progressive Trust）
  * - 层级：WorkingCopy → Section → Block（unbound 合法；provenance 是增强不是负担）
  */
@@ -11,6 +12,8 @@ import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 import { nextArtifactId, splitFrontmatter, type ArtifactSpec } from './artifact-registry.ts'
 import { scanClaims } from './claim-watcher.ts'
+import { scanEvidence } from './evidence-watcher.ts'
+import { canUseClaim, indexEvidence } from './claim-policy.ts'
 import { RESUME_SPEC, serializeResumeDocument } from './resume-watcher.ts'
 
 export const WORKING_COPY_SPEC: ArtifactSpec = {
@@ -215,7 +218,7 @@ export function upsertWorkingCopy(ws: Workspace, input: WorkingCopyInput, now: D
 
 const TITLE_TO_TYPE: [RegExp, ResumeSectionType][] = [
   [/个人信息|基本信息/, 'profile'],
-  [/专业摘要|个人简介|自我介绍/, 'summary'],
+  [/专业摘要|个人简介|自我介绍|个人优势|核心优势/, 'summary'],
   [/工作经历|实习经历/, 'experience'],
   [/项目经验|项目经历/, 'projects'],
   [/技能/, 'skills'],
@@ -229,11 +232,12 @@ function sectionTypeOf(title: string): ResumeSectionType | null {
 }
 
 /** 纯组装：WorkingCopy → ResumeDocument Candidate（不写盘——promote 与 alignment 输入共用。
- *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid；
+ *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid；claim 不可消费（证据未确认）跳过 + invalid；
  *  identity 条目走身份事实通道（M5.2 G6）——不产生 bullet、不校验 claim 锚定；
  *  条目化段（Resume Entry Contract v0.1）→ ResumeSection.entries（条目头透传，不校验 claim 锚定） */
 export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date = new Date()): ResumeDocument {
   const claimsById = new Map(scanClaims(ws).map((c) => [c.record.id, c.record]))
+  const evidenceById = indexEvidence(scanEvidence(ws).map((e) => e.record))
   const issues: ResumeValidationIssue[] = []
   const sections: ResumeSection[] = []
 
@@ -247,6 +251,15 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
         const claim = claimsById.get(main)
         if (!claim) {
           issues.push({ code: 'CLAIM_NOT_FOUND', message: `主 claim 不存在：${main}`, target: b.id })
+          continue
+        }
+        // 消费策略统一入口（claim-policy：规则进代码，不靠消费者自律）——证据未通过可信校验的 claim 不进版本
+        if (!canUseClaim(claim, evidenceById)) {
+          issues.push({
+            code: 'CLAIM_NOT_USABLE',
+            message: `claim ${main} 不可消费（来源证据未通过可信校验，需先确认证据）`,
+            target: b.id,
+          })
           continue
         }
         bullets.push({ sentence: b.text, claimId: main, ...(meta ? { metadata: meta } : {}) })
@@ -282,7 +295,7 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
   }
 
   const validation: ResumeValidation = {
-    status: issues.some((i) => i.code === 'CLAIM_NOT_FOUND' || i.code === 'UNKNOWN_SECTION') ? 'invalid' : issues.length > 0 ? 'warning' : 'valid',
+    status: issues.some((i) => i.code === 'CLAIM_NOT_FOUND' || i.code === 'CLAIM_NOT_USABLE' || i.code === 'UNKNOWN_SECTION') ? 'invalid' : issues.length > 0 ? 'warning' : 'valid',
     issues,
   }
 

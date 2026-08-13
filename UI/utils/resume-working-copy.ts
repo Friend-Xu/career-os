@@ -75,7 +75,7 @@ export function buildSkeletonModules(person: Person): ResumeModule[] {
   const company = person.experiences?.[0]
   return [
     { id: 'm1', title: '个人信息', content: '', order: 0, identity: buildPersonIdentity(person) },
-    { id: 'm2', title: '专业摘要', content: '', order: 1 },
+    { id: 'm2', title: '个人优势', content: '', order: 1 },
     {
       id: 'm3',
       title: '工作经历',

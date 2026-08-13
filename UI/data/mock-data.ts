@@ -418,7 +418,7 @@ export const RESUMES: ResumeVersion[] = [
       },
       {
         id: 'm2',
-        title: '专业摘要',
+        title: '个人优势',
         content:
           '具备量化交易与机器学习背景，熟悉 C++/Python，有大规模实时系统经验，正在向机器人/具身智能方向转型。',
         order: 1,
@@ -469,7 +469,7 @@ export const RESUMES: ResumeVersion[] = [
       },
       {
         id: 'm2',
-        title: '专业摘要',
+        title: '个人优势',
         content:
           '算法工程师，5年实时系统与机器学习经验。熟悉感知算法与嵌入式部署，ROS2 项目实践，目标机器人研发岗位。',
         order: 1,
@@ -519,7 +519,7 @@ export const RESUMES: ResumeVersion[] = [
       },
       {
         id: 'm2',
-        title: '专业摘要',
+        title: '个人优势',
         content: '聚焦多模态感知与机器学习部署，有实时系统与计算机视觉实践经验。',
         order: 1,
       },
@@ -566,7 +566,7 @@ export const RESUMES: ResumeVersion[] = [
       },
       {
         id: 'fa-m2',
-        title: '专业摘要',
+        title: '个人优势',
         content: '3年新媒体内容运营经验，擅长公众号/柚屿社区图文与活动策划，正在考虑更稳定的内容方向。',
         order: 1,
       },
