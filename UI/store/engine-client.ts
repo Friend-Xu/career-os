@@ -32,6 +32,7 @@ import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-cover
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
+import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -623,6 +624,21 @@ export class EngineClient {
 
   listPersons(): Promise<Person[]> {
     return this.rpc<Person[]>(METHODS.listPersons)
+  }
+
+  /** 优势亮点 upsert（Summary Strength Contract v0.2：引用型资产——Engine Registration Owner 校验 + 写文件） */
+  upsertSummaryStrengths(personId: string, items: { text: string; claimIds: string[]; evidenceIds: string[] }[]): Promise<{ text: string; claimIds: string[]; evidenceIds: string[] }[]> {
+    return this.rpc<{ text: string; claimIds: string[]; evidenceIds: string[] }[]>(METHODS.upsertSummaryStrengths, { personId, items })
+  }
+
+  /** 优势亮点提案列表（personId 可选过滤——Agent CLI 桥提交的候选） */
+  listStrengthProposals(personId?: string): Promise<StrengthProposal[]> {
+    return this.rpc<StrengthProposal[]>(METHODS.listStrengthProposals, { ...(personId ? { personId } : {}) })
+  }
+
+  /** 优势提案裁决（accept 并入优势亮点——用户确认；Agent 不能自批） */
+  decideStrengthProposal(id: string, action: 'accept' | 'reject', reason?: string): Promise<StrengthProposal> {
+    return this.rpc<StrengthProposal>(METHODS.decideStrengthProposal, { id, action, ...(reason ? { reason } : {}) })
   }
 
   /** 创建 Person + Initialization Session（引擎写 manifest.md + intake/session-001.md） */

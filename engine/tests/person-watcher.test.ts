@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons, watchPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths, watchPersons } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 
 const manifestMd = `---
@@ -467,6 +467,139 @@ test('watchPersons：add/change/unlink 任一触发 onChanged（P1 Person Aggreg
     assert.equal(fired, 3, 'add/change/unlink 三次都应触发')
   } finally {
     await close()
+    cleanup(dir)
+  }
+})
+
+// ─── Summary Strength Contract v0.1：优势亮点（引用型资产——锚 claims，不复制事实）───
+
+const CLAIM_FIXTURE = `---
+id: claim_20260808_00001
+created_at: 2026-08-08
+lifecycle: active
+---
+# 主导气密性工装设计，使装配泄漏率降至 0.5%
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| statement | 主导气密性工装设计，使装配泄漏率降至 0.5% |
+| claim_type | fact |
+| source | agent_generated |
+| captured_at | 2026-08-08 |
+
+## 证据来源
+
+- evidence_20260808_00001
+`
+
+const EVIDENCE_FIXTURE = `---
+id: evidence_20260808_00001
+owner: person_001
+lifecycle: active
+type: independent_project
+created_at: 2026-08-08
+---
+# Project-A 气密性工装
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| role | 结构负责人 |
+| contribution | 主导气密性工装设计 |
+| status | trusted |
+| source_type | user_input |
+| captured_at | 2026-08-08 |
+| owner | person_001 |
+| type | independent_project |
+
+## 证据
+
+### scope
+- 气密性工装设计
+
+### impact
+- 装配泄漏率降至 0.5%
+`
+
+const STRENGTHS_FIXTURE = `---
+id: person_001
+---
+# 优势亮点 — person_001
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| version | 1 |
+
+## 优势条目
+
+- 气密性问题解决：主导工装设计，装配泄漏率降至 0.5%（claims: claim_20260808_00001）
+- 动手与落地：全流程独立开发能力（claims: claim_20260808_00001, claim_99999999_00001）（evidence: evidence_20260808_00001）
+- 软性优势——无支撑标注
+`
+
+test('scanPersons：summary_strengths.md → summaryStrengths（v0.2 结论句 + 多锚标注解析）', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'persons/person_001/snapshot/current/summary_strengths.md': STRENGTHS_FIXTURE,
+  })
+  try {
+    const ws = initWorkspace(dir)
+    const p = scanPersons(ws)[0]!
+    assert.deepEqual(p.summaryStrengths, [
+      { text: '气密性问题解决：主导工装设计，装配泄漏率降至 0.5%', claimIds: ['claim_20260808_00001'], evidenceIds: [] },
+      { text: '动手与落地：全流程独立开发能力', claimIds: ['claim_20260808_00001', 'claim_99999999_00001'], evidenceIds: ['evidence_20260808_00001'] },
+      { text: '软性优势——无支撑标注', claimIds: [], evidenceIds: [] },
+    ])
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('upsertSummaryStrengths：校验通过 → 写文件 + 返回条目；scanPersons 回读一致', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'claims/claim_20260808_00001.md': CLAIM_FIXTURE,
+    'evidence/evidence_20260808_00001.md': EVIDENCE_FIXTURE,
+  })
+  try {
+    const ws = initWorkspace(dir)
+    const cleaned = upsertSummaryStrengths(ws, 'person_001', [
+      { text: '  气密性问题解决：主导工装设计  ', claimIds: ['claim_20260808_00001'], evidenceIds: ['evidence_20260808_00001'] },
+      { text: '软性优势', claimIds: [], evidenceIds: [] },
+    ])
+    assert.deepEqual(cleaned, [
+      { text: '气密性问题解决：主导工装设计', claimIds: ['claim_20260808_00001'], evidenceIds: ['evidence_20260808_00001'] },
+      { text: '软性优势', claimIds: [], evidenceIds: [] },
+    ])
+    const p = scanPersons(ws)[0]!
+    assert.deepEqual(p.summaryStrengths, cleaned, 'scanPersons 回读与 upsert 返回一致')
+    const md = ws.read('persons/person_001/snapshot/current/summary_strengths.md')
+    assert.ok(md.includes('- 气密性问题解决：主导工装设计 （claims: claim_20260808_00001） （evidence: evidence_20260808_00001）'))
+    assert.ok(md.includes('- 软性优势\n'), '软性条目无标注')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('upsertSummaryStrengths：引用不存在 / 未可信 / 文本空 → fail fast', () => {
+  const dir = makeWorkspace({
+    'persons/person_001/manifest.md': manifestMd,
+    'claims/claim_20260808_00001.md': CLAIM_FIXTURE,
+    'evidence/evidence_20260808_00001.md': EVIDENCE_FIXTURE.replace('| status | trusted |', '| status | raw |'),
+  })
+  try {
+    const ws = initWorkspace(dir)
+    assert.throws(() => upsertSummaryStrengths(ws, 'person_001', [{ text: 'x', claimIds: ['claim_99999999_99999'], evidenceIds: [] }]), /claim 不存在/)
+    assert.throws(() => upsertSummaryStrengths(ws, 'person_001', [{ text: 'x', claimIds: ['claim_20260808_00001'], evidenceIds: [] }]), /不可消费/)
+    assert.throws(() => upsertSummaryStrengths(ws, 'person_001', [{ text: 'x', claimIds: [], evidenceIds: ['evidence_20260808_00001'] }]), /不可消费/)
+    assert.throws(() => upsertSummaryStrengths(ws, 'person_001', [{ text: 'x', claimIds: [], evidenceIds: ['evidence_99999999_99999'] }]), /evidence 不存在/)
+    assert.throws(() => upsertSummaryStrengths(ws, 'person_001', [{ text: '  ', claimIds: [], evidenceIds: [] }]), /不能为空/)
+  } finally {
     cleanup(dir)
   }
 })

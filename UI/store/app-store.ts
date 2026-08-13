@@ -49,6 +49,7 @@ import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-cover
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
+import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -156,6 +157,8 @@ interface AppState {
   initSessionId: string | null;
   /** 各会话运行中的 Agent 任务（归属 session：同会话单任务互斥，跨会话并行）——状态条/停止按钮的驱动源 */
   sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number; type?: string }>;
+  /** 后台 agent 任务（非会话簿记——CLI 桥类任务：机会提案/优势总结；done/error 时清除） */
+  backgroundTasks: Record<string, { type: string; startedAt: number }>;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
@@ -183,6 +186,7 @@ interface AppState {
   claims: (CareerClaim & { usable: boolean })[];
   /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
   claimProposals: ClaimProposal[];
+  strengthProposals: StrengthProposal[];
   /** 工作副本（ADR-023 P2.2）：resumes/working-copies/ 引擎实时派生（用户创作对象——编辑空间数据源） */
   workingCopies: WorkingCopy[];
   /** 当前编辑对象（P2.3：编辑空间读写的工作副本 id） */
@@ -401,6 +405,16 @@ interface AppState {
   rejectClaimProposal: (id: string) => Promise<ClaimProposal>;
   /** 工作副本 upsert（P2.3：revision 协商——conflict 抛错，调用方提示合并） */
   upsertWorkingCopy: (input: WorkingCopyInput) => Promise<void>;
+  /** 优势亮点 upsert（Summary Strength Contract v0.2：profile 引用型资产——保存 = 用户确认） */
+  upsertSummaryStrengths: (personId: string, items: { text: string; claimIds: string[]; evidenceIds: string[] }[]) => Promise<void>;
+  /** 优势亮点提案全量（Summary Strength Contract v0.2 §3：AI 总结候选——accept/reject 需用户裁决） */
+  listStrengthProposals: (personId?: string) => Promise<StrengthProposal[]>;
+  /** 优势提案裁决（accept → 并入优势亮点；reject → 审计保留） */
+  decideStrengthProposal: (id: string, action: 'accept' | 'reject', reason?: string) => Promise<StrengthProposal>;
+  /** 启动 AI 总结任务（agent CLI 桥：--strength-context 读池 → 候选 → --strength-submit 提交） */
+  generateStrengthProposals: (personId: string) => Promise<string>;
+  /** 取消后台任务（agent/cancel RPC + backgroundTasks 清理——CLI 桥类任务无会话簿记） */
+  cancelBackgroundTask: (taskId: string) => Promise<void>;
   /** 创建版本（P2.3：promote → ResumeDocument Candidate） */
   promoteWorkingCopy: (id: string) => Promise<ResumeDocument>;
   /** 切换当前编辑对象（P2.3） */
@@ -478,6 +492,7 @@ export const useAppStore = create<AppState>()(
       currentSessionId: 's-current',
       initSessionId: null,
       sessionTasks: {},
+      backgroundTasks: {},
       now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
@@ -496,6 +511,7 @@ export const useAppStore = create<AppState>()(
       claims: [],
       /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
       claimProposals: [],
+      strengthProposals: [],
       /** 工作副本（P2.2）：用户创作对象（working-copies/） */
       workingCopies: [],
       activeWorkingCopyId: null,
@@ -1302,6 +1318,73 @@ export const useAppStore = create<AppState>()(
     }))
   },
 
+  /** 优势亮点 upsert（Summary Strength Contract v0.1：保存 = 用户确认；引擎校验 claim 锚定链） */
+  upsertSummaryStrengths: async (personId, items) => {
+    if (!engine) throw new Error('引擎未连接')
+    const cleaned = await engine.upsertSummaryStrengths(personId, items)
+    // 乐观更新本地（引擎 personsChanged 广播会再次刷新——双写无害，幂等）
+    useAppStore.setState((s) => ({
+      persons: s.persons.map((p) => (p.personId === personId ? { ...p, summaryStrengths: cleaned } : p)),
+    }))
+  },
+
+  /** 优势亮点提案全量（AI 总结候选——accept/reject 需用户裁决，Agent 不能自批） */
+  listStrengthProposals: async (personId) => {
+    if (!engine) throw new Error('引擎未连接')
+    const list = await engine.listStrengthProposals(personId)
+    useAppStore.setState({ strengthProposals: list })
+    return list
+  },
+
+  /** 优势提案裁决：accept → 引擎校验 + 并入优势亮点；reject → 审计保留 */
+  decideStrengthProposal: async (id, action, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const proposal = await engine.decideStrengthProposal(id, action, reason)
+    useAppStore.setState((s) => ({
+      strengthProposals: s.strengthProposals.map((p) => (p.id === id ? proposal : p)),
+    }))
+    return proposal
+  },
+
+  /** 取消后台任务（CLI 桥类任务无会话簿记——cancel RPC + 立即清理 backgroundTasks；done/error 兜底清理幂等） */
+  cancelBackgroundTask: async (taskId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    await engine.cancelAgent(taskId)
+    useAppStore.setState((s) => {
+      const bg = { ...s.backgroundTasks }
+      delete bg[taskId]
+      return { backgroundTasks: bg }
+    })
+  },
+
+  /** 启动 AI 总结任务（agent CLI 桥：--strength-context 读池 → 生成候选 → --strength-submit 提交；
+   *  任务状态由 agent.event 流呈现，提交后 strengthProposalsChanged 广播驱动建议卡刷新） */
+  generateStrengthProposals: async (personId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    const task = `你是 Career OS 的优势亮点总结助手。当前任务：为人员 ${personId} 总结优势亮点候选。
+
+步骤：
+1. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --strength-context ${personId}\`（从项目根；用项目内便携 node，环境隔离）读取上下文 JSON（claims 可用表述 + evidence 可信事实 + existingStrengths 已有优势）
+2. 基于上下文总结 2-4 条优势候选：每条 = 结论句（能力维度 + 具体能力，20-40 字）+ 支撑引用（claimIds 从 claims 选经历支撑；evidenceIds 从 evidence 选技能/奖项支撑）。规则：结论句不编造上下文外的事实与数字；能力声明不得高于证据原文；existingStrengths 已覆盖的维度不重复提；市场规范 3 硬 1 软——优先有支撑的硬优势。
+3. 用 Write 写候选 JSON 到项目根 .local/strength-candidate-${personId}.json：{"personId": "${personId}", "items": [{"text": "结论句", "claimIds": ["claim_xxx"], "evidenceIds": ["evidence_xxx"]}]}
+4. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --strength-submit .local/strength-candidate-${personId}.json\` 提交。失败读错误（引用不存在/不可消费），修正重试最多 1 次。
+5. 输出一句话总结：提案 id 或失败原因。
+
+硬约束：不得修改除候选 JSON 外的任何文件；不得直接写优势亮点文件（登记必须用户接受提案后由引擎完成）。`
+    const res = await engine.startAgent({
+      task,
+      personId,
+      allowedTools: ['Bash', 'Write', 'Read', 'Glob'],
+      permissionMode: 'bypassPermissions',
+      maxTurns: 15,
+    })
+    // 后台任务登记（backgroundTasks）——done/error 事件清除；UI 用类型匹配显示运行态
+    useAppStore.setState((s) => ({
+      backgroundTasks: { ...s.backgroundTasks, [res.taskId]: { type: 'strength_summary', startedAt: Date.now() } },
+    }))
+    return res.taskId
+  },
+
   /** 创建版本（P2.3：promote → 版本空间可见） */
   promoteWorkingCopy: async (id) => {
     if (!engine) throw new Error('引擎未连接')
@@ -2043,7 +2126,18 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
   }
 
   const task = agentTasks.get(taskId)
-  if (!task) return
+  if (!task) {
+    // 后台任务（非会话簿记——CLI 桥类如机会提案/优势总结）：无占位消息可路由，
+    // 但 done/error 必须清理 backgroundTasks（否则运行态卡片永不消失）
+    if (ev.type === 'done' || ev.type === 'error') {
+      useAppStore.setState((s) => {
+        const bg = { ...s.backgroundTasks }
+        delete bg[taskId]
+        return { backgroundTasks: bg }
+      })
+    }
+    return
+  }
   const { sessionId, messageId } = task
   switch (ev.type) {
     case 'text_delta':
@@ -2142,7 +2236,9 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       useAppStore.setState((s) => {
         const next = { ...s.sessionTasks }
         if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
-        return { sessionTasks: next }
+        const bg = { ...s.backgroundTasks }
+        delete bg[taskId]
+        return { sessionTasks: next, backgroundTasks: bg }
       })
       break
     }
@@ -2159,7 +2255,9 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       useAppStore.setState((s) => {
         const next = { ...s.sessionTasks }
         if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
-        return { sessionTasks: next }
+        const bg = { ...s.backgroundTasks }
+        delete bg[taskId]
+        return { sessionTasks: next, backgroundTasks: bg }
       })
       break
   }
@@ -2226,6 +2324,17 @@ async function pullClaimProposals(): Promise<void> {
   try {
     const list = await engine.listClaimProposals()
     useAppStore.setState({ claimProposals: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 优势亮点提案（Summary Strength Contract v0.2 §3）：全量拉取；strengthProposalsChanged 事件驱动重拉 */
+async function pullStrengthProposals(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listStrengthProposals()
+    useAppStore.setState({ strengthProposals: list })
   } catch {
     // offline：保持现有数据
   }
@@ -2528,6 +2637,7 @@ export function connectEngine(): void {
     useAppStore.setState({ claimCoverage: {} })
   })
   engine.on(EVENTS.claimProposalsChanged, () => void pullClaimProposals())
+  engine.on(EVENTS.strengthProposalsChanged, () => void pullStrengthProposals())
   engine.on(EVENTS.workingCopiesChanged, () => {
     void pullWorkingCopies()
     void pullResumes() // promote 可能产生版本

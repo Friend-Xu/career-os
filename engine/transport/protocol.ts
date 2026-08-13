@@ -58,6 +58,9 @@ export const METHODS = {
   decisionGet: 'decisions/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
+  /** 优势亮点 upsert（Summary Strength Contract v0.2：params { personId, items: [{text, claimIds, evidenceIds}] } →
+   *  SummaryStrength[]；Engine Registration Owner——引用存在 + 可消费校验，写 snapshot/summary_strengths.md） */
+  upsertSummaryStrengths: 'person/summary-strengths/upsert',
   /** 创建 Person + Initialization Session（切片 2.1：params { name, sourceMode } → { personId, sessionId }；生成 manifest.md + intake/session-001.md） */
   createPersonSession: 'person/session/create',
   /** 追加对话轮次到 intake/session-001.md（params { personId, role, content, timestamp? }；原始对话记录非事实层） */
@@ -215,6 +218,10 @@ export const METHODS = {
   acceptPortfolioProposal: 'portfolio/proposals/accept',
   /** 拒绝 Portfolio 提案（params: { id, reason? } → pending → rejected；单向不 reopen，审计保留） */
   rejectPortfolioProposal: 'portfolio/proposals/reject',
+  /** 优势亮点提案列表（strength-proposals/ 扫描 + personId 过滤；Summary Strength Contract v0.2 §3 AI 总结边界） */
+  listStrengthProposals: 'person/strength-proposals/list',
+  /** 优势提案裁决（params { id, action: accept|reject, reason? }——accept 并入优势亮点；Agent 不能自批） */
+  decideStrengthProposal: 'person/strength-proposals/decide',
   /** 全量 Interview QA（interviews/ 扫描；M4-2 问答资产——Fact/Expression/Strategy 三层） */
   listInterviewQas: 'interviews/list',
   /** 全量 Interview 提案（interviews/proposals/ 扫描 + 校验标记；M4-2 Intent Layer） */
@@ -291,6 +298,8 @@ export const EVENTS = {
   proposalsChanged: 'data.proposals.changed',
   /** portfolio/ 目录变更后推送（不含数据，客户端用 portfolio/projects|proposals/list 拉快照；M4-1） */
   portfolioChanged: 'data.portfolio.changed',
+  /** strength-proposals/ 目录变更后推送（不含数据，客户端用 person/strength-proposals/list 拉快照） */
+  strengthProposalsChanged: 'data.strength-proposals.changed',
   /** interviews/ 目录变更后推送（不含数据，客户端用 interviews/list 拉快照；M4-2） */
   interviewChanged: 'data.interviews.changed',
   /** cover-letters/ 目录变更后推送（不含数据，客户端用 cover-letters/list 拉快照；M4-3） */

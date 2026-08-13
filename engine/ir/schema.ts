@@ -52,6 +52,8 @@ export interface Person {
   education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
   /** 工作经历事实（identity.md `## 工作经历` 表投影——简历公司条目头来源；无 = 未采集） */
   experiences?: PersonWorkExperience[]
+  /** 优势亮点（snapshot/summary_strengths.md 投影——引用型资产，锚 claims；Person Summary Strength Contract v0.1） */
+  summaryStrengths?: SummaryStrength[]
 }
 
 /** JD 分析 Proposal（jd/analyze-result RPC 载荷——Agent → Validator，JSON 非 Markdown；
@@ -228,7 +230,18 @@ export interface PersonSnapshot {
   skillInventoryVersion?: string
   /** 工作经历事实（identity.md `## 工作经历` 表派生——简历公司条目头来源） */
   experiences?: PersonWorkExperience[]
+  /** 优势亮点（snapshot/summary_strengths.md 派生——引用型资产：锚 claims，不复制事实；
+   *  Person Summary Strength Contract v0.1） */
+  summaryStrengths?: SummaryStrength[]
   eventCount: number // events/*.md 计数（Change Events 轻协议）
+}
+
+/** 优势亮点条目（引用型 profile 资产：结论句 + 支撑引用数组——claimIds 经历型 + evidenceIds 技能/奖项型；
+ *  双空 = 软性条目（降级标注）。Person Summary Strength Contract v0.2） */
+export interface SummaryStrength {
+  text: string
+  claimIds: string[]
+  evidenceIds: string[]
 }
 
 /** 初始化采集 Candidate（切片 2.2：extraction/candidates.md 投影）——Candidate ≠ Fact。

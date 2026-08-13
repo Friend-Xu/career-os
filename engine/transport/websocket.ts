@@ -53,7 +53,7 @@ import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
-import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, resetPerson, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 import { extractLocalText, extractVisionPages } from '../runtime/document/pdf-import.ts'
 import { ZhipuVisionProvider } from '../runtime/document/vision-provider.ts'
@@ -87,6 +87,7 @@ import {
   submitClaimBridge,
   submitOpportunityProposal,
 } from '../storage/opportunity-proposal-registry.ts'
+import { decideStrengthProposal, scanStrengthProposals } from '../storage/strength-proposal-registry.ts'
 import {
   promoteToDocumentCandidate,
   scanWorkingCopies,
@@ -435,6 +436,40 @@ function personIdParams(v: unknown): string {
     throw new Error('需要 params { personId }')
   }
   return (v as Record<string, unknown>).personId as string
+}
+
+/** person/summary-strengths/upsert 入参校验（RPC 边界：personId + items 数组
+ *  { text, claimIds, evidenceIds }——引用数组可为空数组） */
+function summaryStrengthsParams(v: unknown): { personId: string; items: { text: string; claimIds: string[]; evidenceIds: string[] }[] } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { personId, items }')
+  const p = v as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId : ''
+  if (!personId) throw new Error('personId 必填')
+  if (!Array.isArray(p.items)) throw new Error('items 必填（{ text, claimIds, evidenceIds }[]）')
+  const items = (p.items as unknown[]).map((it) => {
+    if (typeof it !== 'object' || it === null) throw new Error('items 元素必须是 { text, claimIds, evidenceIds }')
+    const r = it as Record<string, unknown>
+    if (typeof r.text !== 'string') throw new Error('items 元素需要 text')
+    const ids = (v: unknown): string[] => {
+      if (!Array.isArray(v)) throw new Error('items 元素的 claimIds/evidenceIds 必须是字符串数组')
+      return (v as unknown[]).map((x) => {
+        if (typeof x !== 'string') throw new Error('引用必须是字符串 id')
+        return x
+      })
+    }
+    return { text: r.text, claimIds: ids(r.claimIds ?? []), evidenceIds: ids(r.evidenceIds ?? []) }
+  })
+  return { personId, items }
+}
+
+/** person/strength-proposals/decide 入参校验（RPC 边界：id + action 白名单；reason 可选） */
+function strengthProposalDecideParams(v: unknown): { id: string; action: 'accept' | 'reject'; reason?: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { id, action }')
+  const p = v as Record<string, unknown>
+  const id = typeof p.id === 'string' ? p.id : ''
+  if (!id) throw new Error('id 必填')
+  if (p.action !== 'accept' && p.action !== 'reject') throw new Error('action 必须是 accept / reject')
+  return { id, action: p.action, ...(typeof p.reason === 'string' && p.reason ? { reason: p.reason } : {}) }
 }
 
 /** resume/extract 入参校验（RPC 边界：pdfBase64 或 pages 至少其一） */
@@ -1119,6 +1154,10 @@ export async function startServer(opts: {
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.decisionGet]: (params) => readDecisionFile(workspace, jobIdParams(params)),
     [METHODS.listPersons]: () => store.listPersons(),
+    [METHODS.upsertSummaryStrengths]: (params) => {
+      const p = summaryStrengthsParams(params)
+      return upsertSummaryStrengths(workspace, p.personId, p.items)
+    },
     [METHODS.createPersonSession]: (params) => createPersonSession(workspace, createPersonSessionParams(params)),
     [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),
     [METHODS.appendCandidates]: (params) => appendCandidates(workspace, appendCandidatesParams(params)),
@@ -1563,6 +1602,18 @@ export async function startServer(opts: {
         broadcast({ event: EVENTS.opportunitiesChanged })
       }
       return result
+    },
+    [METHODS.listStrengthProposals]: (params) => {
+      const p = params as Record<string, unknown> | null
+      const personId = typeof p?.personId === 'string' && p.personId ? p.personId : undefined
+      return scanStrengthProposals(workspace, personId)
+    },
+    [METHODS.decideStrengthProposal]: (params) => {
+      const p = strengthProposalDecideParams(params)
+      const proposal = decideStrengthProposal(workspace, p.id, p.action, p.reason)
+      broadcast({ event: EVENTS.strengthProposalsChanged })
+      if (p.action === 'accept') broadcast({ event: EVENTS.personsChanged })
+      return proposal
     },
     [METHODS.claimBridgeContext]: (params) => {
       const p = params as Record<string, unknown>

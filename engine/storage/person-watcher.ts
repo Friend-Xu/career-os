@@ -13,10 +13,14 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { watch } from 'chokidar'
-import type { PersonSkill, PersonSnapshot } from '../ir/schema.ts'
+import type { PersonSkill, PersonSnapshot, PersonWorkExperience, SummaryStrength } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
 import { parseSummaryTable } from '../ir/summary-table.ts'
+import { scanClaims } from './claim-watcher.ts'
+import { scanEvidence } from './evidence-watcher.ts'
+import { canUseClaim, indexEvidence } from './claim-policy.ts'
+import { canConsumeEvidence } from './evidence-policy.ts'
 
 export interface PersonManifest {
   id: string
@@ -441,6 +445,99 @@ function snapshotOf(ws: Workspace, pid: string, file: string): Record<string, st
   return ws.exists(rel) ? parseSnapshotTable(ws.read(rel)) : undefined
 }
 
+/** snapshot/summary_strengths.md `## 优势条目` 行 → SummaryStrength[]（v0.2：结论句 +
+ *  尾部标注（claims: a, b）（evidence: c, d）多锚；缺文件/缺段/空行 → 空数组，缺件显式）。
+ *  契约：references/person-summary-strength-contract.md
+ *  strength-proposal-registry 共用此解析（提案条目行与优势条目行同格式）。 */
+export function parseStrengthLines(md: string): SummaryStrength[] {
+  const sec = md.split(/##\s*优势条目/, 2)[1]
+  if (!sec) return []
+  const body = sec.split(/\n##\s+/)[0]
+  const out: SummaryStrength[] = []
+  for (const line of body.split('\n')) {
+    const m = line.match(/^\s*[-*]\s*(.+?)\s*$/)
+    if (!m) continue
+    let text = m[1]!
+    const claimIds: string[] = []
+    const evidenceIds: string[] = []
+    for (;;) {
+      const ann = text.match(/（\s*(claims|evidence)\s*:\s*([^（）]*)\s*）\s*$/)
+      if (!ann) break
+      const ids = ann[2]!.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+      if (ann[1] === 'claims') claimIds.unshift(...ids)
+      else evidenceIds.unshift(...ids)
+      text = text.slice(0, text.length - ann[0].length).trim()
+    }
+    if (text) out.push({ text, claimIds, evidenceIds })
+  }
+  return out
+}
+
+/** 优势条目引用校验（Summary Strength Contract v0.2 §4，upsert 与 strength-proposal submit 共用）：
+ *  结论句非空；claimIds 逐条存在 + canUseClaim；evidenceIds 逐条存在 + trusted。非法 → throw（fail fast）。 */
+export function validateStrengthItems(
+  ws: Workspace,
+  items: { text: string; claimIds: string[]; evidenceIds: string[] }[],
+): SummaryStrength[] {
+  const claimsById = new Map(scanClaims(ws).map((c) => [c.record.id, c.record]))
+  const evidenceById = indexEvidence(scanEvidence(ws).map((e) => e.record))
+  const cleaned: SummaryStrength[] = []
+  for (const item of items) {
+    const text = item.text.trim()
+    if (!text) throw new Error('优势结论句不能为空')
+    for (const claimId of item.claimIds) {
+      const claim = claimsById.get(claimId)
+      if (!claim) throw new Error(`claim 不存在：${claimId}`)
+      if (!canUseClaim(claim, evidenceById)) {
+        throw new Error(`claim ${claimId} 不可消费（来源证据未通过可信校验）`)
+      }
+    }
+    for (const evidenceId of item.evidenceIds) {
+      const ev = evidenceById.get(evidenceId)
+      if (!ev) throw new Error(`evidence 不存在：${evidenceId}`)
+      if (!canConsumeEvidence(ev, 'resume')) {
+        throw new Error(`evidence ${evidenceId} 不可消费（未确认——需 trusted）`)
+      }
+    }
+    cleaned.push({ text, claimIds: [...item.claimIds], evidenceIds: [...item.evidenceIds] })
+  }
+  return cleaned
+}
+
+/** 优势亮点 upsert（Summary Strength Contract v0.2）：Engine Registration Owner——
+ *  校验支撑引用 → 写 snapshot/summary_strengths.md。引用型资产：删除 = 物理移除（无损）。 */
+export function upsertSummaryStrengths(
+  ws: Workspace,
+  personId: string,
+  items: { text: string; claimIds: string[]; evidenceIds: string[] }[],
+): SummaryStrength[] {
+  const cleaned = validateStrengthItems(ws, items)
+  const md = [
+    '---',
+    `id: ${personId}`,
+    '---',
+    `# 优势亮点 — ${personId}`,
+    '',
+    '## 分析摘要',
+    '',
+    '| 字段 | 值 |',
+    '|------|-----|',
+    '| version | 1 |',
+    '',
+    '## 优势条目',
+    '',
+    ...cleaned.map((s) => {
+      const anns: string[] = []
+      if (s.claimIds.length > 0) anns.push(`（claims: ${s.claimIds.join(', ')}）`)
+      if (s.evidenceIds.length > 0) anns.push(`（evidence: ${s.evidenceIds.join(', ')}）`)
+      return `- ${s.text}${anns.length > 0 ? ` ${anns.join(' ')}` : ''}`
+    }),
+    '',
+  ].join('\n')
+  ws.write(`persons/${personId}/snapshot/current/summary_strengths.md`, md)
+  return cleaned
+}
+
 /** identity.md `## 工作经历` 表 → PersonWorkExperience[]（公司条目头 Candidate——简历 Entry 契约 §4；
  *  规范键 company/role/start/end；无表/空值 → 空数组，缺件显式） */
 function parseWorkExperiences(md: string): PersonWorkExperience[] {
@@ -600,6 +697,12 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
         snapshot.skills = inv.skills
         snapshot.skillInventoryVersion = inv.version
       }
+    }
+    // 优势亮点（Summary Strength Contract v0.1）：引用型资产——锚 claims，不复制事实
+    const strengthRel = `persons/${pid}/snapshot/current/summary_strengths.md`
+    if (ws.exists(strengthRel)) {
+      const strengths = parseStrengthLines(ws.read(strengthRel))
+      if (strengths.length > 0) snapshot.summaryStrengths = strengths
     }
     snapshot.eventCount = eventCount
     out.push(snapshot)

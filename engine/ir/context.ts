@@ -87,6 +87,9 @@ export interface CareerContext {
       role?: string
       contribution?: string
     }[]
+    /** 优势亮点（snapshot/summary_strengths.md——引用型资产，结论句 + 多锚支撑；
+     *  Person Summary Strength Contract v0.2） */
+    summaryStrengths?: { text: string; claimIds: string[]; evidenceIds: string[] }[]
   }[]
 
   // ─── M3.5.7：Proposal Feedback Projection（决策反馈——Evolution Evidence）──

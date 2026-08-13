@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Collapse,
   Dialog,
   DialogContent,
@@ -59,6 +60,9 @@ const EVIDENCE_TYPE_LABEL: Record<string, string> = {
 }
 
 const isExperienceModule = (title: string) => /工作经历|项目经验|项目经历|实习经历/.test(title)
+
+/** 摘要段（个人优势）——平铺段，行锚 claim（Summary Strength Contract v0.1） */
+const isSummaryModule = (title: string) => /个人优势|专业摘要|自我评价/.test(title)
 
 /** 模块内容行（条目 content 与平铺 content 同契约——行 = 块文本） */
 const linesOf = (content: string): string[] => content.split('\n').filter(Boolean)
@@ -655,17 +659,21 @@ export function ResumesPage() {
   }
 
   /** 用户主动应用：Claim → 条目插入（不自动插入——User apply 边界；插入行带 claim 锚；
-   *  同条目已绑定 → 提示不重复；跨模块已使用 → 显式确认（防重复写两遍减分）） */
+   *  同条目已绑定 → 提示不重复；跨模块已使用 → 显式确认（防重复写两遍减分）；
+   *  摘要段例外——蒸馏正文是市场规范（结论+证据对），不触发跨模块确认 */
   const insertClaim = (claimId: string) => {
     if (!assetOpen) return
     if (addedClaimIds.has(claimId)) {
       push('info', '该表述已在当前条目中')
       return
     }
-    const usedModules = claimModules.get(claimId)
-    if (usedModules && !usedModules.has(assetOpen.moduleId)) {
-      setPendingCross({ claimId })
-      return
+    const targetTitle = modules.find((m) => m.id === assetOpen.moduleId)?.title ?? ''
+    if (!isSummaryModule(targetTitle)) {
+      const usedModules = claimModules.get(claimId)
+      if (usedModules && !usedModules.has(assetOpen.moduleId)) {
+        setPendingCross({ claimId })
+        return
+      }
     }
     doInsertClaim(claimId)
   }
@@ -674,16 +682,143 @@ export function ResumesPage() {
     if (!assetOpen) return
     const claim = usableClaims.find((c) => c.id === claimId)
     if (!claim) return
-    const { module: m, entry } = entryForInsert(assetOpen.moduleId, assetOpen.entryId, claimId)
+    const m = modules.find((x) => x.id === assetOpen.moduleId)
+    if (!m) return
+    // 平铺段（个人优势）：行追加到 content + claim 锚（Entry Contract §1 平铺段形态）
+    if (!m.entries) {
+      const line = `- ${claim.statement}`
+      if (linesOf(m.content).includes(line)) {
+        push('info', '该表述已在当前模块中')
+        return
+      }
+      linksByText.current.set(line, [claimId])
+      commitModules(modules.map((x) => (x.id === m.id ? { ...x, content: `${m.content}${m.content ? '\n' : ''}${line}` } : x)))
+      setAssetOpen(null)
+      push('success', '已加入个人优势（表达来自经历资产）')
+      return
+    }
+    const { module, entry } = entryForInsert(assetOpen.moduleId, assetOpen.entryId, claimId)
     const line = `- ${claim.statement}`
     linksByText.current.set(line, [claimId])
     const nextEntries = sortEntries([
-      ...(m.entries ?? []).filter((e) => e.id !== entry.id),
+      ...(module.entries ?? []).filter((e) => e.id !== entry.id),
       { ...entry, content: `${entry.content}${entry.content ? '\n' : ''}${line}` },
     ])
-    commitModules(modules.map((x) => (x.id === m.id ? { ...x, content: '', entries: nextEntries } : x)))
+    commitModules(modules.map((x) => (x.id === module.id ? { ...x, content: '', entries: nextEntries } : x)))
     setAssetOpen(null)
     push('success', '已加入简历（表达来自经历资产）')
+  }
+
+  /** 优势亮点（Summary Strength Contract v0.2）：profile 级引用型资产——结论句 + 多锚支撑
+   *  （claimIds 经历型 / evidenceIds 技能奖项型；双空 = 软性条目降级标注）。保存 = 用户确认。
+   *  所有写操作从 store 读最新状态（getState）——渲染闭包在 HMR/异步期间可能过期，用陈旧数组
+   *  写回 = 覆盖引擎侧新数据（2026-08-14 实损 4 条优势教训）。 */
+  type StrengthDraft = { text: string; claimIds: string[]; evidenceIds: string[] }
+  const strengths = (person.summaryStrengths ?? []) as StrengthDraft[]
+  /** 当前人的优势亮点最新状态（getState 实时读取——写操作唯一数据源，不用渲染闭包） */
+  const latestStrengths = () =>
+    ((useAppStore.getState().persons.find((p) => p.personId === person.personId)?.summaryStrengths ?? []) as StrengthDraft[])
+  /** 已保存快照（onBlur 对比基准——本地乐观编辑后 person.summaryStrengths 已变，不能作基线） */
+  const strengthsSavedRef = useRef<StrengthDraft[]>(person.summaryStrengths ?? [])
+  const saveStrengths = (items: StrengthDraft[]) => {
+    if (!person.personId) {
+      push('warning', '人员未登记（引擎未连接）——优势亮点保存需要引擎登记')
+      return
+    }
+    void useAppStore
+      .getState()
+      .upsertSummaryStrengths(person.personId, items)
+      .then(() => {
+        strengthsSavedRef.current = items
+        push('success', '优势亮点已保存')
+      })
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '保存失败'))
+  }
+  const addStrength = (claimId: string) => {
+    const claim = usableClaims.find((c) => c.id === claimId)
+    if (!claim) return
+    const current = latestStrengths()
+    if (current.some((s) => s.claimIds.includes(claimId))) {
+      push('info', '该表述已是优势亮点支撑')
+      return
+    }
+    saveStrengths([...current, { text: claim.statement, claimIds: [claimId], evidenceIds: [] }])
+  }
+  /** 新建空条目（本地草稿行——blur 时无文本则丢弃不保存） */
+  const newStrength = () => {
+    const pid = person.personId
+    useAppStore.setState((st) => ({
+      persons: st.persons.map((p) =>
+        p.personId === pid ? { ...p, summaryStrengths: [...(p.summaryStrengths ?? []), { text: '', claimIds: [], evidenceIds: [] }] } : p,
+      ),
+    }))
+  }
+  const removeStrength = (index: number) => saveStrengths(latestStrengths().filter((_, i) => i !== index))
+  const editStrength = (index: number, text: string) =>
+    saveStrengths(latestStrengths().map((s, i) => (i === index ? { ...s, text } : s)))
+  const toggleStrengthSupport = (index: number, kind: 'claimIds' | 'evidenceIds', id: string) => {
+    const current = latestStrengths()
+    const s = current[index]
+    if (!s) return
+    const arr = s[kind]
+    saveStrengths(current.map((x, i) => (i === index ? { ...x, [kind]: arr.includes(id) ? arr.filter((v) => v !== id) : [...arr, id] } : x)))
+  }
+  const insertStrength = (s: StrengthDraft) => {
+    if (!assetOpen) return
+    const m = modules.find((x) => x.id === assetOpen.moduleId)
+    if (!m) return
+    const line = `- ${s.text}`
+    if (linesOf(m.content).includes(line)) {
+      push('info', '该优势已在模块中')
+      return
+    }
+    if (s.claimIds.length > 0) linksByText.current.set(line, s.claimIds)
+    commitModules(modules.map((x) => (x.id === m.id ? { ...x, content: `${m.content}${m.content ? '\n' : ''}${line}` } : x)))
+    setAssetOpen(null)
+    push('success', s.claimIds.length > 0 ? '已加入个人优势（多锚支撑已绑定）' : '已加入个人优势（软性条目——无 claim 锚，promote 会提示）')
+  }
+  /** 支撑 picker 展开态（优势条目行「+ 支撑」——内联展开，非浮层） */
+  const [supportPicker, setSupportPicker] = useState<{ index: number } | null>(null)
+  /** 支撑候选：本人 trusted 证据（技能/奖项型佐证事实） */
+  const trustedEvidence = useMemo(
+    () => evidenceItems.filter((e) => e.status === 'trusted' && e.owner === person.personId),
+    [evidenceItems, person.personId],
+  )
+  /** AI 总结候选（Summary Strength Contract v0.2 §3：Agent CLI 桥提交 → 用户裁决） */
+  const strengthProposals = useAppStore((s) => s.strengthProposals).filter(
+    (p) => p.personId === person.personId && p.status === 'pending',
+  )
+  const [summarizing, setSummarizing] = useState(false)
+  /** AI 总结运行态（backgroundTasks 类型匹配——引擎 done/error 事件清除；后台任务不走会话簿记） */
+  const strengthTaskRunning = useAppStore((s) => Object.values(s.backgroundTasks).some((t) => t.type === 'strength_summary'))
+  const strengthTaskId = useAppStore((s) => Object.entries(s.backgroundTasks).find(([, t]) => t.type === 'strength_summary')?.[0] ?? null)
+  const cancelStrengthTask = () => {
+    if (!strengthTaskId) return
+    void useAppStore
+      .getState()
+      .cancelBackgroundTask(strengthTaskId)
+      .then(() => push('info', '已取消总结任务'))
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '取消失败'))
+  }
+  const summarizeStrengths = () => {
+    if (!person.personId) {
+      push('warning', '人员未登记（引擎未连接）——AI 总结需要引擎')
+      return
+    }
+    setSummarizing(true)
+    void useAppStore
+      .getState()
+      .generateStrengthProposals(person.personId)
+      .then(() => push('info', 'AI 总结任务已启动——完成后建议卡出现在下方'))
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '启动失败'))
+      .finally(() => setSummarizing(false))
+  }
+  const decideStrength = (id: string, action: 'accept' | 'reject') => {
+    void useAppStore
+      .getState()
+      .decideStrengthProposal(id, action)
+      .then(() => push('success', action === 'accept' ? '已接受——优势已并入档案（引擎校验锚定链）' : '已拒绝（审计保留）'))
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '裁决失败'))
   }
 
   /** 跨模块重复插入确认（单侧使用红线——用户显式确认才放行） */
@@ -898,7 +1033,7 @@ export function ResumesPage() {
                     const bound = allBlocks.filter((b) => b.provenanceLinks && b.provenanceLinks.length > 0).length
                     const total = allBlocks.length
                     // 技能/个人信息走资产行与身份通道，不适用 claim 锚定角标（Entry Contract §7）
-                    if (!sec || total === 0 || /技能|个人|基本信息/.test(m.title)) return null
+                    if (!sec || total === 0 || /技能|个人信息|基本信息/.test(m.title)) return null
                     const all = bound === total
                     return (
                       <Typography
@@ -914,6 +1049,16 @@ export function ResumesPage() {
                       size="small"
                       onClick={() => setAssetOpen({ moduleId: m.id, entryId: '' })}
                       title="从经历资产添加表达（将自动创建条目）"
+                      sx={{ minWidth: 0, px: 0.75, fontSize: 12, color: COLORS.accent }}
+                    >
+                      + 资产
+                    </Button>
+                  )}
+                  {isSummaryModule(m.title) && usableClaims.length > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => setAssetOpen({ moduleId: m.id, entryId: '' })}
+                      title="从资产添加优势（结论 + 证据锚——摘要不产生新事实）"
                       sx={{ minWidth: 0, px: 0.75, fontSize: 12, color: COLORS.accent }}
                     >
                       + 资产
@@ -1655,8 +1800,195 @@ export function ResumesPage() {
 
       {/* P1.2：从经历资产添加——可用表达列表（用户主动应用，不自动插入） */}
       <Dialog open={assetOpen !== null} onClose={() => setAssetOpen(null)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>从经历资产添加</DialogTitle>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>
+          {isSummaryModule(modules.find((m) => m.id === assetOpen?.moduleId)?.title ?? '')
+            ? '从资产添加优势（结论 + 证据锚）'
+            : '从经历资产添加'}
+        </DialogTitle>
         <DialogContent>
+          {isSummaryModule(modules.find((m) => m.id === assetOpen?.moduleId)?.title ?? '') && (
+            <Stack spacing={0.75} sx={{ mb: 1.5, p: 1, borderRadius: '8px', bgcolor: alpha(COLORS.accent, 0.05) }}>
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent, flex: 1 }}>
+                  优势亮点（档案级，跨简历复用——结论句 + 支撑引用）
+                </Typography>
+                <Button
+                  size="small"
+                  disabled={summarizing || strengthTaskRunning}
+                  onClick={summarizeStrengths}
+                  title="AI 从经历池总结优势候选（提案 → 你确认后并入）"
+                  sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.accent }}
+                >
+                  {summarizing || strengthTaskRunning ? '总结中…' : 'AI 总结'}
+                </Button>
+                <Button size="small" onClick={newStrength} sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.accent }}>
+                  + 新优势
+                </Button>
+              </Stack>
+              {strengthTaskRunning && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1,
+                    p: 2,
+                    my: 0.5,
+                    minHeight: 140,
+                    borderRadius: '10px',
+                    backdropFilter: 'blur(10px) saturate(150%)',
+                    WebkitBackdropFilter: 'blur(10px) saturate(150%)',
+                    bgcolor: alpha(COLORS.bgElevated, 0.55),
+                    border: `1px solid ${alpha(COLORS.accent, 0.3)}`,
+                    boxShadow: COLORS.cardShadow,
+                  }}
+                >
+                  <CircularProgress size={22} sx={{ color: COLORS.accent }} />
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>AI 正在总结优势亮点…</Typography>
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>完成后建议卡出现在下方</Typography>
+                  <Button
+                    size="small"
+                    onClick={cancelStrengthTask}
+                    sx={{ mt: 0.5, px: 1, fontSize: 11, color: COLORS.riskHigh, border: `1px solid ${alpha(COLORS.riskHigh, 0.35)}` }}
+                  >
+                    取消任务
+                  </Button>
+                </Box>
+              )}
+              {strengths.length === 0 && (
+                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                  暂无——点「+ 新优势」直接写结论句，或在下方表述点 ★ 快捷创建
+                </Typography>
+              )}
+              {strengths.map((s, i) => {
+                const soft = s.claimIds.length === 0 && s.evidenceIds.length === 0
+                return (
+                  <Stack key={`${s.text}-${i}`} spacing={0.5}>
+                    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                      <TextField
+                        size="small"
+                        variant="standard"
+                        placeholder="结论句：能力维度 + 具体能力（如「动手与落地：从方案设计到样机调试的全流程独立开发」）"
+                        value={s.text}
+                        onChange={(e) => {
+                          const next = [...strengths]
+                          next[i] = { ...s, text: e.target.value }
+                          useAppStore.setState((st) => ({
+                            persons: st.persons.map((p) =>
+                              p.personId === person.personId ? { ...p, summaryStrengths: next } : p,
+                            ),
+                          }))
+                        }}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim()
+                          const prev = strengthsSavedRef.current[i]?.text ?? ''
+                          if (v && v !== prev) editStrength(i, v)
+                          else if (!v && prev === '') removeStrength(i)
+                        }}
+                        sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 12 } }}
+                      />
+                      <Button size="small" onClick={() => insertStrength(s)} title="加入个人优势模块（多锚行）" sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.accent }}>
+                        加入
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => removeStrength(i)}
+                        title="从优势亮点移除（支撑资产不受影响）"
+                        sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.riskHigh }}
+                      >
+                        ✕
+                      </Button>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', pl: 1 }}>
+                      {s.claimIds.map((cid) => {
+                        const claim = usableClaims.find((c) => c.id === cid)
+                        const evId = claim?.provenance.evidenceIds[0]
+                        return (
+                          <Chip
+                            key={`c-${cid}`}
+                            size="small"
+                            label={`经历 · ${evId ? titleOfEvidence(evId) : cid}`}
+                            onDelete={() => toggleStrengthSupport(i, 'claimIds', cid)}
+                            sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
+                          />
+                        )
+                      })}
+                      {s.evidenceIds.map((eid) => (
+                        <Chip
+                          key={`e-${eid}`}
+                          size="small"
+                          label={`事实 · ${titleOfEvidence(eid)}`}
+                          onDelete={() => toggleStrengthSupport(i, 'evidenceIds', eid)}
+                          sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.low, 0.12), color: RISK_COLOR.low }}
+                        />
+                      ))}
+                      {soft && (
+                        <Chip
+                          size="small"
+                          label="无证据支撑（软性条目）"
+                          title="主观优势无支撑——HR 跳过信号；建议补支撑引用"
+                          sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.medium, 0.12), color: RISK_COLOR.medium }}
+                        />
+                      )}
+                      <Button
+                        size="small"
+                        onClick={() => setSupportPicker(supportPicker?.index === i ? null : { index: i })}
+                        title="添加/移除支撑引用（经历表述 + 事实）"
+                        sx={{ minWidth: 0, px: 0.5, fontSize: 11, color: COLORS.accent }}
+                      >
+                        + 支撑
+                      </Button>
+                    </Stack>
+                    {supportPicker?.index === i && (
+                      <Stack spacing={0.5} sx={{ pl: 1, py: 0.5, borderRadius: '6px', bgcolor: COLORS.bgHover }}>
+                        <Typography sx={{ fontSize: 10.5, color: COLORS.textMuted }}>经历支撑（表述资产）</Typography>
+                        {usableClaims.map((c) => (
+                          <Stack key={c.id} direction="row" spacing={0.5} sx={{ alignItems: 'center', cursor: 'pointer' }} onClick={() => toggleStrengthSupport(i, 'claimIds', c.id)}>
+                            <Typography sx={{ fontSize: 11, flex: 1, color: s.claimIds.includes(c.id) ? COLORS.accent : COLORS.text }}>{c.statement}</Typography>
+                            <Typography sx={{ fontSize: 10.5, color: s.claimIds.includes(c.id) ? COLORS.accent : COLORS.textMuted }}>{s.claimIds.includes(c.id) ? '✓' : '+'}</Typography>
+                          </Stack>
+                        ))}
+                        <Typography sx={{ fontSize: 10.5, color: COLORS.textMuted, mt: 0.25 }}>事实支撑（技能/奖项证据）</Typography>
+                        {trustedEvidence.map((e) => (
+                          <Stack key={e.id} direction="row" spacing={0.5} sx={{ alignItems: 'center', cursor: 'pointer' }} onClick={() => toggleStrengthSupport(i, 'evidenceIds', e.id)}>
+                            <Typography sx={{ fontSize: 11, flex: 1, color: s.evidenceIds.includes(e.id) ? RISK_COLOR.low : COLORS.text }}>{e.event.title}</Typography>
+                            <Typography sx={{ fontSize: 10.5, color: s.evidenceIds.includes(e.id) ? RISK_COLOR.low : COLORS.textMuted }}>{s.evidenceIds.includes(e.id) ? '✓' : '+'}</Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
+                )
+              })}
+              {strengthProposals.length > 0 && (
+                <Stack spacing={0.75}>
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.accent }}>
+                    AI 总结候选（接受 → 引擎校验后并入优势亮点；拒绝 → 审计保留）
+                  </Typography>
+                  {strengthProposals.map((p) => (
+                    <Box key={p.id} sx={{ border: `1px dashed ${alpha(COLORS.accent, 0.5)}`, borderRadius: '6px', p: 0.75 }}>
+                      <Stack spacing={0.25}>
+                        {p.items.map((it, j) => (
+                          <Typography key={j} sx={{ fontSize: 11.5, lineHeight: 1.6 }}>
+                            · {it.text}
+                          </Typography>
+                        ))}
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, justifyContent: 'flex-end' }}>
+                        <Button size="small" onClick={() => decideStrength(p.id, 'accept')} sx={{ minWidth: 0, px: 0.75, fontSize: 11.5, color: RISK_COLOR.low }}>
+                          接受
+                        </Button>
+                        <Button size="small" onClick={() => decideStrength(p.id, 'reject')} sx={{ minWidth: 0, px: 0.75, fontSize: 11.5, color: COLORS.riskHigh }}>
+                          拒绝
+                        </Button>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          )}
           {usableClaims.length === 0 ? (
             <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
               暂无可用表达——先在素材空间确认待确认表达（AI 从你的经历生成的建议）
@@ -1705,6 +2037,20 @@ export function ResumesPage() {
                           label={EVIDENCE_TYPE_LABEL[c.evidenceType] ?? c.evidenceType}
                           sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
                         />
+                      )}
+                      {isSummaryModule(modules.find((m) => m.id === assetOpen?.moduleId)?.title ?? '') && (
+                        <Button
+                          size="small"
+                          title={strengths.some((s) => s.claimIds.includes(c.id)) ? '已是优势亮点支撑' : '存为优势亮点（档案级资产，跨简历复用）'}
+                          disabled={strengths.some((s) => s.claimIds.includes(c.id))}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            addStrength(c.id)
+                          }}
+                          sx={{ minWidth: 0, px: 0.5, fontSize: 12, color: COLORS.accent }}
+                        >
+                          ★
+                        </Button>
                       )}
                     </Stack>
                     <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25 }}>

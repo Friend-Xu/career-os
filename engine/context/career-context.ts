@@ -143,6 +143,7 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
           ...(e.role ? { role: e.role } : {}),
           ...(e.contribution ? { contribution: e.contribution } : {}),
         })),
+      ...(p.summaryStrengths && p.summaryStrengths.length > 0 ? { summaryStrengths: p.summaryStrengths } : {}),
     })),
     claims: claims.map((c) => {
       const firstEvidence = evidenceById.get(c.provenance[0]?.evidenceId)

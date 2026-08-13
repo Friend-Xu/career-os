@@ -28,6 +28,7 @@ import { generateHealthReport } from './health/checker.ts'
 import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
+import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
@@ -153,6 +154,25 @@ async function main(args: string[]): Promise<void> {
       return
     }
 
+    // ─── Strength Bridge（--strength-context {personId} / --strength-submit {file}）：
+    //      优势亮点提案 Agent 消费通道（与 claim Bridge 同模式——Agent 总结候选，Engine 校验登记；
+    //      accept 裁决必须用户经 RPC 触发，Agent 不能自批）
+    if (args.includes('--strength-context')) {
+      const idx = args.indexOf('--strength-context')
+      const personId = args[idx + 1]
+      if (!personId) throw new Error('--strength-context 需要 {personId}')
+      console.log(JSON.stringify(buildStrengthProposalContext(ws, personId), null, 2))
+      return
+    }
+    if (args.includes('--strength-submit')) {
+      const idx = args.indexOf('--strength-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--strength-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as StrengthProposalInput
+      console.log(JSON.stringify(submitStrengthProposals(ws, input), null, 2))
+      return
+    }
+
     // ─── 投影层（SQLite，markdown 真相源的查询投影）──────────────────────
     const projection = createProjection({ dbPath: config.paths.db, workspace: ws, logger })
     const initial = scanDecisions(ws)
@@ -274,6 +294,11 @@ async function main(args: string[]): Promise<void> {
       watchPortfolio(ws, () => {
         broadcast({ event: EVENTS.portfolioChanged })
         logger.info('portfolio/ 变更：已广播（portfolio/projects|proposals/list 按需重扫）')
+      })
+      // strength-proposals/ 变更只发信号（优势亮点提案——Agent CLI 桥提交 + RPC 裁决都触发）
+      watchStrengthProposals(ws, (parsed) => {
+        broadcast({ event: EVENTS.strengthProposalsChanged })
+        logger.info(`strength-proposals/ 变更：重扫 ${parsed.length} 条并广播`)
       })
       // interviews/ 变更只发信号（M4-2：问答资产 + 提案——文件登记 + RPC 状态流转/transition 都触发）
       watchInterviews(ws, () => {
