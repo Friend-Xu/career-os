@@ -10,6 +10,7 @@ import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import { useAppStore } from '../../store/app-store'
 import { COLORS, alpha } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
+import { hasPersonDirection, latestPersonDirection } from '../../utils/direction-state'
 
 type DimKey = 'skills' | 'education' | 'goals' | 'direction' | 'experience' | 'city' | 'preference'
 type DimState = 'confirmed' | 'pending' | 'inferred' | 'missing'
@@ -29,10 +30,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
   const resumes = useAppStore((s) => s.resumes)
 
   const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
-  const latest = personDecisions.length
-    ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-    : undefined
-  const hasDirection = Boolean(latest?.direction && latest.direction !== '方向待定')
+  const hasDirection = hasPersonDirection(decisions, person)
 
   const skills = person.skills ?? []
   const interests = person.initialInterest ?? []
@@ -67,7 +65,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
       key: 'direction',
       label: '职业方向',
       state: hasDirection ? 'confirmed' : interests.length > 0 ? 'inferred' : 'missing',
-      detail: hasDirection ? latest!.direction : interests.length > 0 ? `${interests.length} 个自报意向` : '未探索',
+      detail: hasDirection ? latestPersonDirection(decisions, person) ?? '已探索' : interests.length > 0 ? `${interests.length} 个自报意向` : '未探索',
     },
     {
       key: 'experience',
@@ -386,11 +384,7 @@ function ActionRow() {
   const startAgentTask = useAppStore((s) => s.startAgentTask)
   const decisions = useAppStore((s) => s.decisions)
 
-  const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
-  const latest = personDecisions.length
-    ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-    : undefined
-  const hasDirection = Boolean(latest?.direction && latest.direction !== '方向待定')
+  const hasDirection = hasPersonDirection(decisions, person)
 
   const actions: { label: string; onClick: () => void }[] = []
   if (person.initStatus === 'pending') {

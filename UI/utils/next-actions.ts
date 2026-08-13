@@ -1,5 +1,6 @@
 import { useAppStore } from '../store/app-store'
 import { belongsToPerson } from './ownership'
+import { hasPersonDirection } from './direction-state'
 import type { NextAction } from '../types'
 
 /**
@@ -15,14 +16,11 @@ export function useNextActions(): NextAction[] {
 
   const personApps = applications.filter((a) => a.personId === (person.personId ?? ''))
   const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
-  const latestDirection =
-    personDecisions.length > 0
-      ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
-      : undefined
 
   const actions: NextAction[] = []
-  // 方向探索：档案可用（非初始化中；undefined = 存量档案默认可用）但尚未产出方向决策 → 第一个推理引导
-  if (latestDirection === undefined && person.initStatus !== 'pending') {
+  // 方向探索：档案可用（非初始化中；undefined = 存量档案默认可用）但尚未产出方向决策
+  // （摘要 direction 或方向评估明细任一非空即视为已探索，后续决策不覆盖）→ 第一个推理引导
+  if (!hasPersonDirection(decisions, person) && person.initStatus !== 'pending') {
     actions.push({
       label: '探索职业方向',
       page: 'agent',

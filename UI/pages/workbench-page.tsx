@@ -20,6 +20,7 @@ import { DirectionsView } from '../components/workbench/directions-view'
 import { CitiesView } from '../components/workbench/cities-view'
 import { DecisionsView } from '../components/workbench/decisions-view'
 import { belongsToPerson } from '../utils/ownership'
+import { latestPersonDirection } from '../utils/direction-state'
 import { useNextActions } from '../utils/next-actions'
 import { ProfileView } from '../components/workbench/profile-view'
 import { POOL_HEALTH } from '../data/mock-data'
@@ -128,10 +129,7 @@ function TodaySection() {
   const personApps = applications.filter((a) => a.personId === (person.personId ?? ''))
   const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
 
-  const latestDirection =
-    personDecisions.length > 0
-      ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0].direction
-      : undefined
+  const latestDirection = latestPersonDirection(decisions, person)
 
   const kpis = [
     { label: '方向', value: latestDirection ?? '未探索' },

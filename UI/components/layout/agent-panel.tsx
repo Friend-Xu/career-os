@@ -26,6 +26,7 @@ import { QuestionCardView } from '../agent/question-card-view'
 import { useSessionScroll } from '../../hooks/use-session-scroll'
 import { useNextActions } from '../../utils/next-actions'
 import { belongsToPerson } from '../../utils/ownership'
+import { latestPersonDirection } from '../../utils/direction-state'
 import type { DecisionRecord } from '../../types'
 
 export function AgentPanel() {
@@ -423,7 +424,7 @@ export function AgentPanel() {
           }}
           onClick={() => {
             const content = draft.trim() || '当前分析结果'
-            // direction/city 跟随当前人最新决策（与顶栏方向胶囊同源），演示写入不硬编码方向
+            // direction 跟随已确定方向（跨决策）；city/得分跟随最新决策（与顶栏方向胶囊同源），演示写入不硬编码方向
             const mine = decisions.filter((d) => belongsToPerson(d, person))
             const latest = mine.length
               ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
@@ -432,7 +433,7 @@ export function AgentPanel() {
               id: `d-${Date.now()}`,
               title: content.slice(0, 24) || '未命名决策',
               skill: 'agent-write',
-              direction: latest?.direction ?? '方向待定',
+              direction: latestPersonDirection(decisions, person) ?? '方向待定',
               directionMatch: latest?.directionMatch ?? 0,
               directionConfidence: 'medium',
               city: latest?.city ?? '',

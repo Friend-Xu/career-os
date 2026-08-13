@@ -66,15 +66,16 @@ test('registerDecisionIdentity：登记闭环（重命名 + frontmatter 注入 +
   rmSync(ws.paths.root, { recursive: true, force: true })
 })
 
-test('registerDecisionIdentity：写入方声明的 type/subject_id 透传保留', () => {
+test('registerDecisionIdentity：写入方声明的 type/subject_id/person_id 透传保留', () => {
   const ws = tempWs()
   const now = new Date('2026-08-05T10:00:00Z')
-  const md = `---\ntype: jd-analysis\nsubject_id: 2026-08-05-某公司-工程师\n---\n${DECISION_MD}`
+  const md = `---\ntype: jd-analysis\nsubject_id: 2026-08-05-某公司-工程师\nperson_id: person_001\n---\n${DECISION_MD}`
   ws.write('decisions/2026-08-05-JD分析-某公司.md', md)
   registerDecisionIdentity(ws, now)
   const registered = ws.read('decisions/decision_20260805_00001.md')
   assert.ok(registered.includes('type: jd-analysis'))
   assert.ok(registered.includes('subject_id: 2026-08-05-某公司-工程师'))
+  assert.ok(registered.includes('person_id: person_001'), 'person_id 是系统身份字段，登记不得丢弃（ADR-013/014）')
   assert.ok(!registered.includes('type: jd-analysis\ntype:'), '不重复声明')
   rmSync(ws.paths.root, { recursive: true, force: true })
 })

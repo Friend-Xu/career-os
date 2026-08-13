@@ -1,5 +1,6 @@
 import type { Person, ResumeVersion } from '../types'
 import type { DecisionView } from './engine-client'
+import { hasPersonDirection } from '../utils/direction-state'
 
 /**
  * 导航 Attention 状态：当前事实的持续反映（≠ Attention 事件）。
@@ -25,11 +26,7 @@ export function deriveNavigationState(
   resumes: ResumeVersion[],
 ): NavigationState {
   const out: NavigationState = {}
-  const personDecisions = decisions.filter((d) => d.profile === person.name)
-  const latest = personDecisions.length
-    ? [...personDecisions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-    : undefined
-  const hasDirection = Boolean(latest?.direction && latest.direction !== '方向待定')
+  const hasDirection = hasPersonDirection(decisions, person)
 
   if (person.initStatus === 'pending') {
     out.workbench = { kind: 'waiting', reason: '初始化采集中' }

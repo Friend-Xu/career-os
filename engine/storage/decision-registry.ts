@@ -10,7 +10,8 @@ export const DECISION_SPEC: ArtifactSpec = {
   dir: 'decisions',
   idPrefix: 'decision_',
   marker: /##\s*分析摘要/,
-  passthroughFields: ['type', 'subject_id'],
+  // person_id 是系统身份字段（ADR-013/014）：登记重写 frontmatter 时不得丢弃，否则决策归属断裂
+  passthroughFields: ['type', 'subject_id', 'person_id'],
 }
 
 export { splitFrontmatter, type ArtifactSpec }

@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
+import { hasPersonDirection } from '../../utils/direction-state'
 import type { DecisionView } from '../../store/engine-client'
 import type { RiskLevel } from '../../types'
 import { DecisionDetailDrawer } from '../decision-detail-drawer'
@@ -118,12 +119,8 @@ export function CitiesView() {
     return { top: sorted[0], second: sorted[1] }
   }, [cities])
 
-  /** 方向是否已确定（最新决策的 direction 非空）——城市评估的前置条件 */
-  const hasDirection = (() => {
-    const mine = decisions.filter((d) => belongsToPerson(d, person))
-    const latest = mine.length ? [...mine].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] : undefined
-    return Boolean(latest?.direction && latest.direction !== '方向待定')
-  })()
+  /** 方向是否已确定（任一决策携带方向证据：摘要 direction 或方向评估明细）——城市评估的前置条件 */
+  const hasDirection = hasPersonDirection(decisions, person)
 
   if (!hasDirection) {
     return (
