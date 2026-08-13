@@ -14,7 +14,7 @@ import CollectionsIcon from '@mui/icons-material/Collections'
 import { useMemo, type ReactNode } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { workingCopyLabel } from '../../../utils/resume-label'
-import { COLORS, RISK_COLOR } from '../../../data/constants'
+import { alpha, COLORS, RISK_COLOR } from '../../../data/constants'
 import { resumeVersionLabel } from '../../../utils/resume-label'
 import type { ResumeWorkspaceView } from '../../../store/app-store'
 
@@ -52,6 +52,13 @@ export function ResumesSidebar() {
   const selectedResumeId = useAppStore((s) => s.selectedResumeId)
   const resumeVersions = useAppStore((s) => s.resumeVersions)
   const careerContext = useAppStore((s) => s.careerContext)
+  const derivationProposals = useAppStore((s) => s.derivationProposals)
+
+  /** 派生副本标记：acceptedWcId 关联（引擎 accept 时登记的事实投影——不为副本新增身份字段） */
+  const derivedCopyIds = useMemo(
+    () => new Set(derivationProposals.filter((p) => p.acceptedWcId).map((p) => p.acceptedWcId as string)),
+    [derivationProposals],
+  )
 
   const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const versions = useMemo(() => [...resumeVersions].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt)), [resumeVersions])
@@ -126,6 +133,25 @@ export function ResumesSidebar() {
                     <Typography sx={{ fontSize: 12.5, fontWeight: active ? 600 : 500, color: active ? COLORS.accent : COLORS.text, flex: 1, minWidth: 0 }} noWrap>
                       {workingCopyLabel(w, jobs)}
                     </Typography>
+                    {derivedCopyIds.has(w.id) && (
+                      <Box
+                        component="span"
+                        sx={{
+                          flexShrink: 0,
+                          fontSize: 10,
+                          px: 0.6,
+                          py: 0.1,
+                          borderRadius: '4px',
+                          bgcolor: alpha(COLORS.accent, 0.1),
+                          color: COLORS.accent,
+                          lineHeight: '15px',
+                          fontWeight: 600,
+                        }}
+                        title="由 JD 派生生成（接受派生提案后创建的副本）"
+                      >
+                        已优化
+                      </Box>
+                    )}
                     <Typography sx={{ fontSize: 11, color: w.status === 'promoted' ? COLORS.textMuted : COLORS.accent, flexShrink: 0 }}>
                       {w.status === 'promoted' ? '已发布' : '编辑中'}
                     </Typography>

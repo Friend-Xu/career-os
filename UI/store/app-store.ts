@@ -2678,6 +2678,7 @@ export function connectEngine(): void {
       void pullResumes()
       void pullCareerContext()
       void pullProposals()
+      void pullDerivationProposals()
       void pullArtifactSummaries()
       void pullArtifactTimeline()
       void pullPortfolio()

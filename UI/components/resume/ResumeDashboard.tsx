@@ -24,6 +24,7 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
   const jobs = useAppStore((s) => s.jobs)
+  const derivationProposals = useAppStore((s) => s.derivationProposals)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const push = useToastStore((s) => s.push)
 
@@ -37,6 +38,8 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
   const claimCount = careerContext?.claims.length ?? 0
   const targetJob = current?.targetContext?.jobId ? jobs.find((j) => j.id === current.targetContext?.jobId) : undefined
   const target = targetJob ? `${targetJob.company} · ${targetJob.title}` : ''
+  /** 派生副本标记（acceptedWcId 关联投影——引擎 accept 时登记的事实） */
+  const derived = Boolean(current && derivationProposals.some((p) => p.acceptedWcId === current.id))
 
   if (!current) {
     return (
@@ -101,6 +104,25 @@ export function ResumeDashboard({ onDerive }: { onDerive: () => void }) {
             <Typography sx={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
               {current.name?.trim() || current.id.slice(-10)}
             </Typography>
+            {derived && (
+              <Box
+                component="span"
+                sx={{
+                  flexShrink: 0,
+                  fontSize: 10,
+                  px: 0.7,
+                  py: 0.15,
+                  borderRadius: '4px',
+                  bgcolor: alpha(COLORS.accent, 0.1),
+                  color: COLORS.accent,
+                  lineHeight: '16px',
+                  fontWeight: 600,
+                }}
+                title="由 JD 派生生成（接受派生提案后创建的副本）"
+              >
+                已优化
+              </Box>
+            )}
             {target && (
               <Typography sx={{ fontSize: 12, color: COLORS.textMuted }} noWrap>
                 → {target}
