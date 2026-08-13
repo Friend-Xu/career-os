@@ -2405,10 +2405,13 @@ async function pullPersons(): Promise<void> {
   try {
     const list = await engine.listPersons()
     if (list.length === 0) return
-    // 保护初始化中的本地 Person：引擎 persons/ 尚无对应资产（切片 2 落盘前），不因引擎快照覆盖丢失
+    // 保护初始化中的本地 Person：仅「尚未落盘引擎」（无 personId）的进行中 Person 需要保护
+    // （创建向导 RPC 往返窗口/引擎离线创建）。已有 personId 的本地记录以引擎列表为唯一真相源——
+    // 引擎无该资产 = 已删除或他工作区残留（localStorage 跨项目共享），丢弃，避免幽灵 Person 复活
+    // 后 complete/reset 打到不存在的 manifest（person/session/complete: manifest 不存在）。
     const localPending = useAppStore
       .getState()
-      .persons.filter((p) => p.initStatus === 'pending' && !list.some((e) => e.id === p.id))
+      .persons.filter((p) => p.initStatus === 'pending' && !p.personId && !list.some((e) => e.id === p.id))
     useAppStore.setState({ persons: [...list, ...localPending] })
   } catch {
     // offline：保持现有数据
