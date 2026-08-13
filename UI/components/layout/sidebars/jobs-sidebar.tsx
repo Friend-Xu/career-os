@@ -17,23 +17,27 @@ const DIM_CN: Record<string, string> = { education: '学历', major: '专业', e
 
 /** 匹配度 tooltip（可解释依据——能力名单/门槛行/未纳入维度；不显示裸分） */
 function matchTooltip(s: JDMatchScore): string {
+  const lines: string[] = []
   if (s.status === 'HARD_GATE_FAILED') {
     const veto = s.dimensions.gate.detail.rows.find((r) => r.status === 'NOT_MATCHED')
-    return veto ? `硬门槛不满足：${DIM_CN[veto.dim] ?? veto.dim}要求「${veto.requirement}」，你的情况「${veto.person}」` : '硬门槛不满足'
+    lines.push(veto ? `硬门槛不满足：${DIM_CN[veto.dim] ?? veto.dim}要求「${veto.requirement}」，你的情况「${veto.person}」` : '硬门槛不满足')
+  } else if (s.status === 'PARTIAL') {
+    lines.push('岗位未完成分析——暂无能力覆盖数据')
+  } else {
+    const cap = s.dimensions.capability
+    const gate = s.dimensions.gate
+    lines.push(
+      `能力覆盖 ${cap.score}/5：声明 ${cap.detail.satisfied.length} · 有基础 ${cap.detail.transferable.length} · 缺口 ${cap.detail.missing.length}${cap.detail.mustMissing.length > 0 ? `（核心缺口 ${cap.detail.mustMissing.length}）` : ''}`,
+      gate.score !== null
+        ? `门槛 ${gate.score}/5：${gate.detail.rows
+            .filter((r) => r.status !== 'NOT_DECLARED')
+            .map((r) => `${DIM_CN[r.dim] ?? r.dim} ${r.status === 'MATCHED' ? '✓' : '待确认'}`)
+            .join(' · ')}`
+        : '岗位未要求门槛',
+      '差异化优势维度未纳入（转行场景激活的 AI 判断维度）',
+    )
   }
-  if (s.status === 'PARTIAL') return '岗位未完成分析——暂无能力覆盖数据'
-  const cap = s.dimensions.capability
-  const gate = s.dimensions.gate
-  const lines = [
-    `能力覆盖 ${cap.score}/5：声明 ${cap.detail.satisfied.length} · 有基础 ${cap.detail.transferable.length} · 缺口 ${cap.detail.missing.length}${cap.detail.mustMissing.length > 0 ? `（核心缺口 ${cap.detail.mustMissing.length}）` : ''}`,
-    gate.score !== null
-      ? `门槛 ${gate.score}/5：${gate.detail.rows
-          .filter((r) => r.status !== 'NOT_DECLARED')
-          .map((r) => `${DIM_CN[r.dim] ?? r.dim} ${r.status === 'MATCHED' ? '✓' : '待确认'}`)
-          .join(' · ')}`
-      : '岗位未要求门槛',
-    '差异化优势维度未纳入（转行场景激活的 AI 判断维度）',
-  ]
+  if (s.city?.conflict) lines.push(`⚠ 城市意向冲突：意向 ${s.city.preferred} · 岗位 ${s.city.jobLocation}（提示不否决——是否接受由你判断）`)
   return lines.join('\n')
 }
 
@@ -215,6 +219,11 @@ export function JobsSidebar() {
                                 : ms.status === 'HARD_GATE_FAILED'
                                   ? '硬门槛不满足'
                                   : '待分析'}
+                              {ms.city?.conflict && (
+                                <Box component="span" sx={{ color: RISK_COLOR.medium, fontWeight: 700 }} title="城市意向冲突（提示不否决）">
+                                  {' ⚠'}
+                                </Box>
+                              )}
                             </Box>
                           </Tooltip>
                         </>

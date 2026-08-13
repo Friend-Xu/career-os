@@ -1913,12 +1913,16 @@ export async function startServer(opts: {
       if (typeof p?.personId !== 'string' || p.personId.length === 0) throw new Error('params.personId 缺失')
       const person = scanPersons(workspace).find((x) => x.personId === p.personId)
       if (!person) throw new Error(`人不存在：${p.personId}`)
-      // 纯投影：复用既有确定性匹配产物（能力三元组 + 门槛四态）→ 规则表合成
+      const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+      if (!job) throw new Error(`岗位不存在：${jobId}`)
+      // 纯投影：复用既有确定性匹配产物（能力三元组 + 门槛四态）→ 规则表合成；城市冲突 = FLAG 非否决
       return computeJDMatchScore({
         jobId,
         personId: p.personId,
         gap: computeJobMatch(workspace, jobId, person.name),
         constraints: computeConstraintMatch(workspace, jobId, p.personId),
+        jobLocation: job.record.location,
+        preferredCity: person.preference?.city,
       })
     },
     [METHODS.decisionDraft]: (params) => {

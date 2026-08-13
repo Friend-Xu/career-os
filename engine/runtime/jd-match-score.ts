@@ -24,6 +24,10 @@ export interface JDMatchScoreInput {
   personId: string
   gap: GapResult
   constraints: ConstraintMatchRow[]
+  /** 岗位所在地（JobRecord.location——JD 建档原文；无 = 不参与城市判定） */
+  jobLocation?: string
+  /** 意向城市（Person.preference.city——用户偏好声明；无 = 不知道去哪，不提示） */
+  preferredCity?: string
 }
 
 export interface JDMatchDimension {
@@ -57,8 +61,20 @@ export interface JDMatchScore {
     }
   }
   excluded: { label: string; weight: number }[]
+  /** 城市意向冲突（FLAG 非否决）：偏好是软事实（会变/行为可能推翻声明）——只提示不扣分不出局。
+   *  null = 无偏好数据或岗位无城市（不提示）；conflict = 意向城市与岗位所在地互不含 */
+  city: { preferred: string; jobLocation: string; conflict: boolean } | null
   ruleVersion: string
   assessedAt: string
+}
+
+/** 城市冲突判定：偏好是软事实——互不含才提示；任一侧缺失 → 不判定（不知道去哪 = 不提示） */
+export function cityConflictOf(preferredCity: string | undefined, jobLocation: string | undefined): { preferred: string; jobLocation: string; conflict: boolean } | null {
+  if (!preferredCity || !jobLocation) return null
+  const a = preferredCity.trim()
+  const b = jobLocation.trim()
+  if (a.length === 0 || b.length === 0) return null
+  return { preferred: a, jobLocation: b, conflict: !(a.includes(b) || b.includes(a)) }
 }
 
 /** 能力覆盖三元组 → 维度分 1-5（有序求值，表 total；无硬能力声明 → null = 维度无数据） */
@@ -93,7 +109,7 @@ function gateRowScore(status: ConstraintMatchRow['status']): number | null {
 
 /** JDMatchScore 纯投影（不落盘、不回写 markdown） */
 export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new Date().toISOString()): JDMatchScore {
-  const { jobId, personId, gap, constraints } = input
+  const { jobId, personId, gap, constraints, jobLocation, preferredCity } = input
 
   const rows = constraints.map((r) => ({
     dim: r.dim,
@@ -103,6 +119,7 @@ export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new D
   }))
   const vetoRow = rows.find((r) => r.status === 'NOT_MATCHED')
   const capScore = capabilityScore(gap)
+  const city = cityConflictOf(preferredCity, jobLocation)
 
   // 硬门槛一票否决（skill 模型规则：明确要求不满足 → 不计算综合分）——优先级最高
   if (vetoRow) {
@@ -126,6 +143,7 @@ export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new D
         gate: { score: null, weight: 0, detail: { rows, excludedRows: [] } },
       },
       excluded: [{ label: '差异化优势', weight: EXCLUDED_WEIGHT }],
+      city,
       ruleVersion: JD_MATCH_RULE_VERSION,
       assessedAt,
     }
@@ -148,6 +166,7 @@ export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new D
         gate: { score: null, weight: 0, detail: { rows, excludedRows: [] } },
       },
       excluded: [{ label: '差异化优势', weight: EXCLUDED_WEIGHT }],
+      city,
       ruleVersion: JD_MATCH_RULE_VERSION,
       assessedAt,
     }
@@ -184,6 +203,7 @@ export function computeJDMatchScore(input: JDMatchScoreInput, assessedAt = new D
       },
     },
     excluded: [{ label: '差异化优势', weight: EXCLUDED_WEIGHT }],
+    city,
     ruleVersion: JD_MATCH_RULE_VERSION,
     assessedAt,
   }

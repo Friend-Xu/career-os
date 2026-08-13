@@ -740,9 +740,16 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                   }
                   if (ms.status === 'EVALUATED') {
                     return (
-                      <Typography sx={{ fontSize: 12.5, color: COLORS.accent, mt: 0.25 }} title={`能力 ${ms.dimensions.capability.score}/5 · 门槛 ${ms.dimensions.gate.score ?? '—'}/5 · 差异化维度未纳入`}>
-                        匹配度 {ms.score} / {ms.maxScore}
-                      </Typography>
+                      <Stack spacing={0} sx={{ mt: 0.25 }}>
+                        <Typography sx={{ fontSize: 12.5, color: COLORS.accent }} title={`能力 ${ms.dimensions.capability.score}/5 · 门槛 ${ms.dimensions.gate.score ?? '—'}/5 · 差异化维度未纳入`}>
+                          匹配度 {ms.score} / {ms.maxScore}
+                        </Typography>
+                        {ms.city?.conflict && (
+                          <Typography sx={{ fontSize: 11, color: RISK_COLOR.medium }} title="城市意向冲突——提示不否决，是否接受由你判断">
+                            ⚠ 城市意向冲突：意向 {ms.city.preferred} · 岗位 {ms.city.jobLocation}
+                          </Typography>
+                        )}
+                      </Stack>
                     )
                   }
                   return null

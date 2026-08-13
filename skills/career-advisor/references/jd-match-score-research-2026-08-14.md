@@ -106,7 +106,7 @@ JD 匹配度引擎化（契约 v0.1）冻结后发现三类问题需要外部锚
 | # | 采纳点 | 出处 | 落地形态 | 状态 |
 |---|--------|------|---------|------|
 | 1 | **"Be generous" 同义匹配**：画像以任何形式提及即覆盖（复合技能名拆词 + alias 归一） | ai-job-search /upskill + fuzzy 派 | skill_inventory aliases/tools 补齐 + 词表 alias 扩充（D 类数据修复）；匹配侧维持词表精确匹配，同义经数据表达 | **待做（下一优先）** |
-| 2 | **城市否决闸**：城市冲突 = FAIL 出局，不进权重 | ai-job-search Location 设计 | 匹配度加城市闸（preference_constraints 已有城市意向数据）；Known Future「个人偏好规则」的落地形态 | 待做 |
+| 2 | **城市冲突 FLAG（非否决）**：意向城市是软偏好（会变、行为可能推翻声明）——否决制语境错位（ai-job-search 的 FAIL 基于 current location 事实）。已实现为提示字段：⚠ 标注 + tooltip，不扣分不出局；无偏好数据不提示 | ai-job-search Location 设计（降级采用） | 匹配度 `city: { preferred, jobLocation, conflict }` 字段 + UI ⚠ 标注 | **已完成** |
 | 3 | **判定档位**：裸分数 → 档位文案 | job-copilot / ai-job-search | 85 分制稳定后映射档位（推荐投递/备选/观望）——映射规则需 Benchmark 校准后再定 | 观察 |
 | 4 | **方向维度权重证据**：Career Alignment 30% 是同类项目的最大权重 | ai-job-search | 方向维度将来应拿 25–30%，不是从属维度——触发条件 = 岗位方向结构化 | Known Future |
 | 5 | **缺口热力图**：缺口按岗位重要度加权 | ai-job-search /upskill | P3 Opportunity Loop 扩展技能补强投影 | 观察 |

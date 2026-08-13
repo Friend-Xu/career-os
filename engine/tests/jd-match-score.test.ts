@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeJDMatchScore, capabilityScore, JD_MATCH_RULE_VERSION } from '../runtime/jd-match-score.ts'
+import { computeJDMatchScore, capabilityScore, cityConflictOf, JD_MATCH_RULE_VERSION } from '../runtime/jd-match-score.ts'
 import type { ConstraintMatchRow, GapResult } from '../ir/schema.ts'
 
 /**
@@ -139,4 +139,36 @@ test('excluded 披露：差异化优势 15 恒定披露（未纳入 ≠ 默认�
     constraints: [row('education', 'MATCHED')],
   })
   assert.deepEqual(r.excluded, [{ label: '差异化优势', weight: 15 }])
+})
+
+test('城市冲突 FLAG：意向苏州 vs 岗位杭州 → conflict=true（提示不否决，分数照常）', () => {
+  const r = computeJDMatchScore({
+    jobId: 'job-1',
+    personId: 'person_001',
+    gap: gap({ satisfied: sat(3) }),
+    constraints: [row('education', 'MATCHED')],
+    preferredCity: '苏州',
+    jobLocation: '杭州',
+  })
+  assert.equal(r.status, 'EVALUATED')
+  assert.equal(r.score, 65)
+  assert.deepEqual(r.city, { preferred: '苏州', jobLocation: '杭州', conflict: true })
+})
+
+test('城市互含：意向苏州 vs 岗位苏州工业园区 → conflict=false（子串双向）', () => {
+  assert.deepEqual(cityConflictOf('苏州', '苏州工业园区'), { preferred: '苏州', jobLocation: '苏州工业园区', conflict: false })
+  assert.deepEqual(cityConflictOf('上海市', '上海'), { preferred: '上海市', jobLocation: '上海', conflict: false })
+})
+
+test('城市数据缺失：无偏好（不知道去哪）或无岗位城市 → null（不提示）', () => {
+  assert.equal(cityConflictOf(undefined, '杭州'), null)
+  assert.equal(cityConflictOf('苏州', undefined), null)
+  assert.equal(cityConflictOf('', '杭州'), null)
+  const r = computeJDMatchScore({
+    jobId: 'job-1',
+    personId: 'person_001',
+    gap: gap({ satisfied: sat(1) }),
+    constraints: [],
+  })
+  assert.equal(r.city, null)
 })

@@ -141,8 +141,11 @@ ai-job-search 1.5.0 分析 + 开源三派技术路线 + 采纳决策）。本节
    语义向量）；开源第三派（受控词表 + 模糊匹配）证明确定性同义归一可行。本系统采用
    第三派：alias/tools 数据层归一——skill_inventory 补 alias（复合技能名拆词）+ 词表
    扩充是 D 类数据修复，匹配侧维持词表精确匹配。调研记录 §5 采纳点 ①。
-3. **城市否决闸**：ai-job-search 将 Location 设计为否决制（搬迁 = FAIL 出局）而非
-   计分维度——preference_constraints 已有城市意向数据，采纳点 ②。
+3. **城市冲突 FLAG**：已实现（2026-08-14）——ai-job-search 的 Location 否决制不适用于
+   本系统（其 FAIL 基于 current location 事实；我们的 preference_constraints 是意向软偏好，
+   用户行为可能推翻声明）。实现为 `city: { preferred, jobLocation, conflict }` 提示字段：
+   conflict=true 仅 UI ⚠ 标注（卡片/tooltip/投决区），**不扣分不出局**；无偏好数据 →
+   null 不提示（不知道去哪 = 不提示）。
 
 ## 4. 状态模型
 
