@@ -3,6 +3,7 @@
  * 只读投影：AI 不直接读数据库结构，只看引擎组合的可解释视图。
  * 不包含：AI Memory / 推荐 / 评分 / 决策字段（AI 是知情协作者不拥有决策权）。
  */
+import type { EvidenceItem } from './schema.ts'
 import type { ResumeStatus } from './resume.ts'
 
 export interface CareerContext {
@@ -27,6 +28,8 @@ export interface CareerContext {
     usable: boolean // canUseClaim（引擎派生）
     usedByResume: string[] // 被哪些简历版本引用（反查）
     provenance: { evidenceIds: string[] }
+    owner?: string // 归属 person_id（Engine Registration——approve 从证据 owner 派生；缺失 = 归属不明，UI 不展示给任何人）
+    evidenceType?: EvidenceItem['type'] // 证据经历分类（professional_experience/independent_project——编辑器模块建议标注）
   }[]
 
   expressions: {

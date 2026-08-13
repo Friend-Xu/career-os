@@ -20,7 +20,8 @@ export const CLAIM_PROPOSAL_SPEC: ArtifactSpec = {
   dir: 'claim-proposals',
   idPrefix: 'claim_proposal_',
   marker: /##\s*分析摘要/,
-  passthroughFields: [],
+  // Agent 通道写临时名提案经登记重命名——source/status 不剥（否则默认值静默替换写入方声明）
+  passthroughFields: ['source', 'status', 'opportunity_id'],
 }
 
 export type ClaimProposalSource = 'star_reconstructor' | 'user_edit' | 'interview_agent' | 'opportunity_bridge'
@@ -113,18 +114,26 @@ function deriveProvenance(items: EvidenceItem[]): ProvenanceSummary {
 }
 
 /** 输入校验（create 与 approve 二次校验共用——approve 时证据可能已变化） */
-export function validateClaimProposalInput(input: ClaimProposalInput, evidenceById: Map<string, EvidenceItem>): { issues: string[]; items: EvidenceItem[] } {
+export function validateClaimProposalInput(input: ClaimProposalInput, evidenceById: Map<string, EvidenceItem>): { issues: string[]; items: EvidenceItem[]; owner?: string } {
   const issues: string[] = []
   if (!SOURCES.includes(input.source)) issues.push(`非法 source：${JSON.stringify(input.source)}`)
   if (!input.proposedClaim.statement?.trim() || input.proposedClaim.statement.trim().length < 6) issues.push('statement 缺失或过短（≥6 字）')
   if (input.proposedClaim.section && !SECTIONS.includes(input.proposedClaim.section)) issues.push(`非法 section：${input.proposedClaim.section}`)
   const { items, issues: evIssues } = resolveEvidence(input.evidenceRefs, evidenceById)
   issues.push(...evIssues)
+  // owner 是系统身份字段（ADR-013/014）：Claim 归属从证据 owner 派生（Engine Registration），证据归属不明/跨人一律拒绝
+  let owner: string | undefined
+  if (items.length > 0) {
+    const owners = [...new Set(items.map((e) => e.owner).filter((o): o is string => Boolean(o?.trim())))]
+    if (owners.length === 0) issues.push('证据缺少 owner——归属不明，拒绝登记（owner 由 Engine Registration 从证据派生）')
+    else if (owners.length > 1) issues.push(`证据归属多人（${owners.join('、')}）——跨人提案拒绝`)
+    else owner = owners[0]
+  }
   if (issues.length === 0) {
     const unanchored = anchorCheck(input.proposedClaim.statement.trim(), items)
     if (unanchored.length > 0) issues.push(`statement 数字无证据锚点（Claim Strength ≤ Evidence Strength）：${unanchored.join('、')}`)
   }
-  return { issues, items }
+  return { issues, items, ...(owner ? { owner } : {}) }
 }
 
 /** create：只登记不生成（Producer 提供 evidenceRefs + proposedClaim；Engine validate + store） */
@@ -225,7 +234,7 @@ export function approveClaimProposal(ws: Workspace, id: string, now: Date = new 
   if (proposal.status !== 'pending') throw new ClaimProposalError(`仅 pending 可 approve（当前 ${proposal.status}）`)
 
   const evidenceById = new Map(scanEvidence(ws).map((p) => [p.record.id, p.record]))
-  const { issues, items } = validateClaimProposalInput(
+  const { issues, items, owner } = validateClaimProposalInput(
     { source: proposal.source, evidenceRefs: proposal.evidenceRefs, proposedClaim: proposal.proposedClaim, explanation: proposal.explanation },
     evidenceById,
   )
@@ -238,7 +247,7 @@ export function approveClaimProposal(ws: Workspace, id: string, now: Date = new 
   const provenance: ClaimProvenance[] = proposal.evidenceRefs.map((evidenceId) => ({ evidenceId }))
   const claim: CareerClaim = {
     id: claimId,
-    owner: undefined,
+    owner, // 校验通过 ⇒ 证据归属唯一非空（Engine Registration 派生，不落空 owner）
     lifecycle: 'active',
     claimType: 'fact',
     source: 'agent_generated',

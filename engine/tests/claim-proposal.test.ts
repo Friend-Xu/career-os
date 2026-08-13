@@ -16,6 +16,7 @@ import { scanClaimProposals, createClaimProposal, approveClaimProposal, rejectCl
 function evidenceMd(id: string, title: string, contribution: string, extra = ''): string {
   return `---
 id: ${id}
+owner: p1
 created_at: 2026-08-08
 lifecycle: active
 ---
@@ -174,4 +175,34 @@ test('Test 8：approve 二次校验——create 后证据变化 → invalid，�
   assert.throws(() => approveClaimProposal(ws, proposal.id), ClaimProposalError, '二次校验拒绝')
   assert.equal(scanClaimProposals(ws).find((p) => p.id === proposal.id)?.status, 'invalid')
   assert.equal(scanClaims(ws).length, 0)
+})
+
+test('Test 9：owner 派生——approve 从证据 owner 登记 Claim（Engine Registration）', () => {
+  const { ws, evId } = setup()
+  const proposal = createClaimProposal(ws, validInput(evId))
+  const { claimId } = approveClaimProposal(ws, proposal.id, new Date('2026-08-08T10:05:00Z'))
+  const created = scanClaims(ws).find((c) => c.record.id === claimId)?.record
+  assert.ok(created, 'claims/{id}.md 已生成')
+  assert.equal(created.owner, 'p1', 'Claim.owner 从证据 owner 派生')
+  assert.match(ws.read(`claims/${claimId}.md`), /owner: p1/, '落盘 owner 非空')
+})
+
+test('Test 10：证据缺 owner → 拒绝（归属不明不登记）', () => {
+  const { ws } = setup()
+  const noOwner = evidenceMd('evidence_20260808_00003', '无归属项目', '负责结构设计').replace('owner: p1\n', '')
+  ws.write('evidence/evidence_20260808_00003.md', noOwner)
+  assert.throws(
+    () => createClaimProposal(ws, validInput('evidence_20260808_00003')),
+    /缺少 owner/,
+  )
+})
+
+test('Test 11：证据归属多人 → 拒绝（跨人提案不登记）', () => {
+  const { ws, evId } = setup()
+  const otherOwner = evidenceMd('evidence_20260808_00004', '跨组项目', '负责跨组协作').replace('owner: p1', 'owner: p2')
+  ws.write('evidence/evidence_20260808_00004.md', otherOwner)
+  assert.throws(
+    () => createClaimProposal(ws, { ...validInput(evId), evidenceRefs: [evId, 'evidence_20260808_00004'] }),
+    /归属多人/,
+  )
 })

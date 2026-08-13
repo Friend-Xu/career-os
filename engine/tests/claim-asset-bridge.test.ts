@@ -65,6 +65,7 @@ created_at: 2026-08-09
     'evidence/evidence_20260809_00001.md',
     `---
 id: evidence_20260809_00001
+owner: p1
 created_at: 2026-08-09
 lifecycle: active
 ---

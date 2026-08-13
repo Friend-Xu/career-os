@@ -9,6 +9,7 @@
  */
 import type { CareerClaim, EvidenceItem, JobRecord } from '../ir/schema.ts'
 import type { ResumeDocument, WorkingCopy, WorkingBlock } from '../ir/resume.ts'
+import { blocksOf } from '../ir/resume.ts'
 import { computeResumeAlignment } from './resume-alignment.ts'
 import { computeEvidenceCoverage, relates } from './evidence-coverage.ts'
 
@@ -54,12 +55,12 @@ export interface OpportunityInput {
 
 /** 弱命中：unbound 块（无 claim 锚）文本与责任语句双向包含——「在写但没资产化」→ rewrite 落点 */
 function weakHitBlock(wc: WorkingCopy, statement: string): WorkingBlock | undefined {
-  return wc.sections.flatMap((s) => s.blocks).find((b) => !b.provenanceLinks?.length && relates(b.text, statement))
+  return wc.sections.flatMap(blocksOf).find((b) => !b.provenanceLinks?.length && relates(b.text, statement))
 }
 
 /** 精确落点：sentence 文本在工作副本中的块（Assembly 无损——wc block.text = document bullet.sentence） */
 function blockByText(wc: WorkingCopy, sentence: string): WorkingBlock | undefined {
-  return wc.sections.flatMap((s) => s.blocks).find((b) => b.text === sentence)
+  return wc.sections.flatMap(blocksOf).find((b) => b.text === sentence)
 }
 
 export function computeOpportunities(input: OpportunityInput): Opportunity[] {

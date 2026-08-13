@@ -6,7 +6,7 @@
  *   - unbound 块 → bullet（claimId 空）+ UNBOUND_BLOCK warning（不阻止——Progressive Trust）
  * - 层级：WorkingCopy → Section → Block（unbound 合法；provenance 是增强不是负担）
  */
-import type { WorkingCopy, WorkingSection, ResumeDocument, ResumeSection, ResumeSectionType, ResumeValidation, ResumeValidationIssue } from '../ir/resume.ts'
+import type { WorkingCopy, WorkingSection, WorkingBlock, WorkingEntry, ResumeDocument, ResumeSection, ResumeSectionType, ResumeBullet, ResumeValidation, ResumeValidationIssue } from '../ir/resume.ts'
 import type { Workspace } from './workspace.ts'
 import { watch } from 'chokidar'
 import { nextArtifactId, splitFrontmatter, type ArtifactSpec } from './artifact-registry.ts'
@@ -41,7 +41,8 @@ export interface UpsertResult {
   copy: WorkingCopy // conflict 时 = 引擎当前副本（UI 询问合并的依据）
 }
 
-// ─── 序列化（md：frontmatter + `## {title}` 段 + `- {text}` 块；块 claims 标注 `（claims: c1, c2）`）──
+// ─── 序列化（md：frontmatter + `## {title}` 段 + `- {text}` 块；块 claims 标注 `（claims: c1, c2）`；
+//     条目化段（Resume Entry Contract v0.1）：条目头行 `- {title} | {role} | {period}（entry）`，其下块行归属该条目）──
 
 export function serializeWorkingCopy(wc: WorkingCopy): string {
   const meta = [
@@ -54,19 +55,26 @@ export function serializeWorkingCopy(wc: WorkingCopy): string {
   ]
   const body = wc.sections
     .map((s) => {
-      const blocks = s.blocks
-        .map((b) => {
-          const suffix: string[] = []
-          if (b.provenanceLinks && b.provenanceLinks.length > 0) suffix.push(`claims: ${b.provenanceLinks.join(', ')}`)
-          if (b.expectationId) suffix.push(`expectation: ${b.expectationId}`)
-          return `- ${b.text}${suffix.length > 0 ? `（${suffix.join('）（')}）` : ''}`
+      const blocks = (list: WorkingBlock[]): string =>
+        list
+          .map((b) => {
+            const suffix: string[] = []
+            if (b.provenanceLinks && b.provenanceLinks.length > 0) suffix.push(`claims: ${b.provenanceLinks.join(', ')}`)
+            if (b.expectationId) suffix.push(`expectation: ${b.expectationId}`)
+            return `- ${b.text}${suffix.length > 0 ? `（${suffix.join('）（')}）` : ''}`
+          })
+          .join('\n')
+      const entries = (s.entries ?? [])
+        .map((e) => {
+          const head = [e.title, e.role ?? '', e.period ?? ''].join(' | ')
+          return `- ${head}（entry）${e.blocks.length > 0 ? `\n${blocks(e.blocks)}` : ''}`
         })
         .join('\n')
       // 身份事实通道（M5.2 G6）：与 resume-watcher 同约定 `- {label} | {body}（identity）`
       const identity = (s.identity ?? [])
         .map((e) => `- ${e.label ? `${e.label} | ${e.body ?? ''}` : (e.body ?? '')}（identity）`)
         .join('\n')
-      return `## ${s.title}\n\n${[blocks, identity].filter(Boolean).join('\n')}`
+      return `## ${s.title}\n\n${[entries, blocks(s.blocks), identity].filter(Boolean).join('\n')}`
     })
     .join('\n\n')
   return `---\n${meta.join('\n')}\n---\n# 简历工作副本\n\n${body}\n`
@@ -76,10 +84,12 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
   const { meta, body } = splitFrontmatter(md)
   const sections: WorkingSection[] = []
   let current: WorkingSection | null = null
+  let currentEntry: WorkingEntry | null = null
   for (const line of body.split('\n')) {
     const sec = line.match(/^##\s+(.+)$/)
     if (sec) {
       current = { id: `sec_${sections.length + 1}`, title: sec[1].trim(), blocks: [] }
+      currentEntry = null
       sections.push(current)
       continue
     }
@@ -94,12 +104,30 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
         ;(current.identity ??= []).push(sep > 0 ? { label: content.slice(0, sep).trim(), body: content.slice(sep + 1).trim() } : { body: content })
         continue
       }
+      // 条目头行（Resume Entry Contract v0.1）：`- {title} | {role} | {period}（entry）` → 新条目
+      const entryM = raw.match(/^(.*)（entry）$/)
+      if (entryM) {
+        const parts = entryM[1].split('|').map((p) => p.trim())
+        const dash = (v: string): string | undefined => (v === '' || v === '-' ? undefined : v)
+        const role = dash(parts[1] ?? '')
+        const period = dash(parts[2] ?? '')
+        currentEntry = {
+          id: `ent_${(current.entries?.length ?? 0) + 1}`,
+          title: parts[0] ?? '',
+          ...(role ? { role } : {}),
+          ...(period ? { period } : {}),
+          blocks: [],
+        }
+        ;(current.entries ??= []).push(currentEntry)
+        continue
+      }
       const claimsM = raw.match(/（claims:\s*([^）]+)）/)
       const expM = raw.match(/（expectation:\s*([^）]+)）/)
       const text = raw.replace(/\s*（(?:claims|expectation):\s*[^）]*）/g, '').trim()
       const expectationId = expM?.[1].trim()
-      current.blocks.push({
-        id: `blk_${current.blocks.length + 1}`,
+      const container = currentEntry?.blocks ?? current.blocks
+      container.push({
+        id: `blk_${container.length + 1}`,
         text,
         ...(expectationId ? { expectationId } : {}),
         // 契约 ApplyTransaction §2：不制造第三种 undefined 态——unbound 块显式 provenanceLinks = []
@@ -189,11 +217,33 @@ function sectionTypeOf(title: string): ResumeSectionType | null {
 
 /** 纯组装：WorkingCopy → ResumeDocument Candidate（不写盘——promote 与 alignment 输入共用。
  *  bound 块锚主 claim；unbound 块 UNBOUND_BLOCK warning；未知段类型跳过 + invalid；
- *  identity 条目走身份事实通道（M5.2 G6）——不产生 bullet、不校验 claim 锚定 */
+ *  identity 条目走身份事实通道（M5.2 G6）——不产生 bullet、不校验 claim 锚定；
+ *  条目化段（Resume Entry Contract v0.1）→ ResumeSection.entries（条目头透传，不校验 claim 锚定） */
 export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date = new Date()): ResumeDocument {
   const claimsById = new Map(scanClaims(ws).map((c) => [c.record.id, c.record]))
   const issues: ResumeValidationIssue[] = []
   const sections: ResumeSection[] = []
+
+  /** 块列表 → bullet 列表（claim 锚定映射 + UNBOUND_BLOCK warning） */
+  const mapBullets = (blocks: WorkingBlock[]): ResumeBullet[] => {
+    const bullets: ResumeBullet[] = []
+    for (const b of blocks) {
+      const meta = b.expectationId ? { expectationId: b.expectationId } : undefined
+      if (b.provenanceLinks && b.provenanceLinks.length > 0) {
+        const main = b.provenanceLinks[0]
+        const claim = claimsById.get(main)
+        if (!claim) {
+          issues.push({ code: 'CLAIM_NOT_FOUND', message: `主 claim 不存在：${main}`, target: b.id })
+          continue
+        }
+        bullets.push({ sentence: b.text, claimId: main, ...(meta ? { metadata: meta } : {}) })
+      } else {
+        bullets.push({ sentence: b.text, claimId: '', ...(meta ? { metadata: meta } : {}) })
+        issues.push({ code: 'UNBOUND_BLOCK', message: '未资产化块（无 claim 锚）——不参与对齐/证据投影', target: b.id })
+      }
+    }
+    return bullets
+  }
 
   for (const s of wc.sections) {
     const type = sectionTypeOf(s.title)
@@ -201,25 +251,20 @@ export function workingCopyToDocument(wc: WorkingCopy, ws: Workspace, now: Date 
       issues.push({ code: 'UNKNOWN_SECTION', message: `无法识别段类型（title=${s.title}）——该段未进入版本`, target: s.id })
       continue
     }
-    const bullets = s.blocks.map((b): { bullet: ResumeDocument['sections'][number]['bullets'][number] | null; issue?: ResumeValidationIssue } => {
-      const meta = b.expectationId ? { expectationId: b.expectationId } : undefined
-      if (b.provenanceLinks && b.provenanceLinks.length > 0) {
-        const main = b.provenanceLinks[0]
-        const claim = claimsById.get(main)
-        if (!claim) return { bullet: null, issue: { code: 'CLAIM_NOT_FOUND', message: `主 claim 不存在：${main}`, target: b.id } }
-        return { bullet: { sentence: b.text, claimId: main, ...(meta ? { metadata: meta } : {}) } }
-      }
-      return {
-        bullet: { sentence: b.text, claimId: '', ...(meta ? { metadata: meta } : {}) },
-        issue: { code: 'UNBOUND_BLOCK', message: '未资产化块（无 claim 锚）——不参与对齐/证据投影', target: b.id },
-      }
+    const bullets = mapBullets(s.blocks)
+    const entries = (s.entries ?? []).map((e) => ({
+      title: e.title,
+      ...(e.role ? { role: e.role } : {}),
+      ...(e.period ? { period: e.period } : {}),
+      bullets: mapBullets(e.blocks),
+    }))
+    sections.push({
+      type,
+      title: s.title,
+      bullets,
+      ...(entries.length > 0 ? { entries } : {}),
+      ...(s.identity && s.identity.length > 0 ? { identity: s.identity } : {}),
     })
-    const sectionBullets = []
-    for (const r of bullets) {
-      if (r.issue) issues.push(r.issue)
-      if (r.bullet) sectionBullets.push(r.bullet)
-    }
-    sections.push({ type, title: s.title, bullets: sectionBullets, ...(s.identity && s.identity.length > 0 ? { identity: s.identity } : {}) })
   }
 
   const validation: ResumeValidation = {

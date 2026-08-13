@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
 import { registerArtifacts } from '../storage/artifact-registry.ts'
+import { EVIDENCE_SPEC } from '../storage/evidence-watcher.ts'
+import { CLAIM_SPEC } from '../storage/claim-watcher.ts'
 import { buildCareerContext } from '../context/career-context.ts'
 import { serializeResumeDocument } from '../storage/resume-watcher.ts'
 import type { ResumeDocument } from '../ir/resume.ts'
@@ -17,7 +19,13 @@ import type { ResumeExportRecord } from '../ir/resume.ts'
 
 /** 最小资产集：1 evidence（trusted）+ 1 claim + 2 resume（引用同一 claim）+ 1 export 记录 */
 function seed(ws: ReturnType<typeof initWorkspace>, now: Date): void {
-  ws.write('evidence/2026-08-05-自动化设备改造.md', `# 自动化设备改造项目
+  ws.write('evidence/2026-08-05-自动化设备改造.md', `---
+owner: p1
+lifecycle: active
+type: independent_project
+---
+
+# 自动化设备改造项目
 
 ## 分析摘要
 
@@ -37,7 +45,12 @@ function seed(ws: ReturnType<typeof initWorkspace>, now: Date): void {
 - 负责机架和传动模块设计
 
 `)
-  ws.write('claims/2026-08-05-设计能力声明.md', `# 设计能力声明
+  ws.write('claims/2026-08-05-设计能力声明.md', `---
+owner: p1
+lifecycle: active
+---
+
+# 设计能力声明
 
 ## 分析摘要
 
@@ -52,8 +65,8 @@ function seed(ws: ReturnType<typeof initWorkspace>, now: Date): void {
 
 - evidence_20260805_00001
 `)
-  registerArtifacts(ws, { type: 'evidence', dir: 'evidence', idPrefix: 'evidence_', marker: /##\s*分析摘要/, passthroughFields: [] }, now)
-  registerArtifacts(ws, { type: 'claim', dir: 'claims', idPrefix: 'claim_', marker: /##\s*分析摘要/, passthroughFields: [] }, now)
+  registerArtifacts(ws, EVIDENCE_SPEC, now)
+  registerArtifacts(ws, CLAIM_SPEC, now)
 
   const base: ResumeDocument = {
     id: 'x',
@@ -82,7 +95,7 @@ function seed(ws: ReturnType<typeof initWorkspace>, now: Date): void {
   ws.write('resumes/exports/export_001.md', serializeExportRecord(rec))
 }
 
-test('T1 Claim projection：claims[].usable 正确（canUseClaim 引擎派生）', () => {
+test('T1 Claim projection：claims[].usable/owner/evidenceType 正确（canUseClaim + 归属 + 经历分类派生）', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-ctx-'))
   const ws = initWorkspace(root)
   seed(ws, new Date('2026-08-05T10:00:00Z'))
@@ -91,6 +104,8 @@ test('T1 Claim projection：claims[].usable 正确（canUseClaim 引擎派生）
   assert.equal(c.usable, true)
   assert.equal(c.type, 'fact')
   assert.deepEqual(c.provenance.evidenceIds, ['evidence_20260805_00001'])
+  assert.equal(c.owner, 'p1', 'owner 投影（Engine Registration 归属）')
+  assert.equal(c.evidenceType, 'independent_project', 'evidenceType 从 provenance 证据派生')
   rmSync(root, { recursive: true, force: true })
 })
 

@@ -19,7 +19,8 @@ export const EVIDENCE_SPEC: ArtifactSpec = {
   dir: 'evidence',
   idPrefix: 'evidence_',
   marker: /##\s*分析摘要/,
-  passthroughFields: [],
+  // 身份/分类字段透传（登记重命名不剥——否则 Agent 通道写入的 owner/type 静默丢失）
+  passthroughFields: ['owner', 'lifecycle', 'origin', 'type'],
 }
 
 const STATUSES: EvidenceStatus[] = ['raw', 'candidate', 'trusted', 'archived']

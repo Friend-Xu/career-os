@@ -441,6 +441,23 @@ function snapshotOf(ws: Workspace, pid: string, file: string): Record<string, st
   return ws.exists(rel) ? parseSnapshotTable(ws.read(rel)) : undefined
 }
 
+/** identity.md `## 工作经历` 表 → PersonWorkExperience[]（公司条目头 Candidate——简历 Entry 契约 §4；
+ *  规范键 company/role/start/end；无表/空值 → 空数组，缺件显式） */
+function parseWorkExperiences(md: string): PersonWorkExperience[] {
+  const sec = md.split(/##\s*工作经历/, 2)[1]
+  if (!sec) return []
+  const body = sec.split(/\n##\s+/)[0].split(/\n###\s+/)[0]
+  const out: PersonWorkExperience[] = []
+  for (const line of body.split('\n')) {
+    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/)
+    if (!m) continue
+    if (m[1]!.trim() === 'company' || /^[-:\s]+$/.test(m[1]!.trim())) continue
+    const dash = (v: string): string | undefined => (v.trim() === '' || v.trim() === '-' ? undefined : v.trim())
+    out.push({ company: m[1]!.trim(), role: dash(m[2]!), start: dash(m[3]!), end: dash(m[4]!) })
+  }
+  return out
+}
+
 /** skill_inventory 语义级别 → SFIA 数字（词表映射非打分；inferred/learned/未识别 → 跳过） */
 const SKILL_LEVEL_MAP: Record<string, number> = {
   'applied-professional': 4,
@@ -520,7 +537,9 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     const manifest = parsePersonManifest(ws.read(manifestPath))
     if (!manifest) continue
 
-    const identity = snapshotOf(ws, pid, 'identity.md')
+    const identityRel = `persons/${pid}/snapshot/current/identity.md`
+    const identityMd = ws.exists(identityRel) ? ws.read(identityRel) : undefined
+    const identity = identityMd ? parseSnapshotTable(identityMd) : undefined
     const careerRel = `persons/${pid}/snapshot/current/career_profile.md`
     const careerMd = ws.exists(careerRel) ? ws.read(careerRel) : undefined
     const career = careerMd ? parseSnapshotTable(careerMd) : undefined
@@ -568,6 +587,10 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
         salaryRange: preference.salary_range,
         city: preference.city,
       }
+    }
+    if (identityMd) {
+      const experiences = parseWorkExperiences(identityMd)
+      if (experiences.length > 0) snapshot.experiences = experiences
     }
     // M6.6.5：技能真相源 = skill_inventory.md（confirmed → Person.skills；决策 provenance 键）
     const skillRel = `persons/${pid}/snapshot/current/skill_inventory.md`

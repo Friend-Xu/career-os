@@ -13,7 +13,8 @@
  */
 import { createHash } from 'node:crypto'
 import type { EvidenceItem } from '../ir/schema.ts'
-import type { WorkingCopy } from '../ir/resume.ts'
+import type { WorkingCopy, WorkingBlock } from '../ir/resume.ts'
+import { blocksOf } from '../ir/resume.ts'
 import type { Workspace } from './workspace.ts'
 import { nextArtifactId, splitFrontmatter, type ArtifactSpec } from './artifact-registry.ts'
 import { scanEvidence } from './evidence-watcher.ts'
@@ -197,7 +198,7 @@ export function buildBridgeContext(ws: Workspace, wcId: string, opportunityId: s
     }))
   const currentBlockText =
     opportunity.applyTarget?.blockId
-      ? wc.sections.flatMap((s) => s.blocks).find((b) => b.id === opportunity.applyTarget!.blockId)?.text
+      ? wc.sections.flatMap(blocksOf).find((b) => b.id === opportunity.applyTarget!.blockId)?.text
       : undefined
 
   return { opportunity, responsibilityStatement, evidence, currentBlockText }
@@ -491,17 +492,32 @@ function normalizeBlockText(t: string): string {
  *  块.expectationId（对应机会锚定 responsibility 的首个期望模式）——重诊断据此判定「表达已写入」，
  *  四态从 expressive_gap 收敛（rewrite → unsupported_claim 红线 / insert → 同上）；delete 无锚（块消失） */
 function applyChanges(wc: WorkingCopy, changes: ProposalChange[], patternId?: string): WorkingCopy {
-  const sections = wc.sections.map((s) => ({ ...s, blocks: [...s.blocks] }))
+  const sections = wc.sections.map((s) => ({
+    ...s,
+    blocks: [...s.blocks],
+    ...(s.entries ? { entries: s.entries.map((e) => ({ ...e, blocks: [...e.blocks] })) } : {}),
+  }))
+  /** 块定位（Entry Contract v0.1：条目化段先查 entries[].blocks，再查平铺 blocks）→ 所在列表 + 下标 */
+  const locate = (blockId: string): { list: WorkingBlock[]; index: number } | null => {
+    for (const s of sections) {
+      for (const e of s.entries ?? []) {
+        const i = e.blocks.findIndex((b) => b.id === blockId)
+        if (i >= 0) return { list: e.blocks, index: i }
+      }
+      const i = s.blocks.findIndex((b) => b.id === blockId)
+      if (i >= 0) return { list: s.blocks, index: i }
+    }
+    return null
+  }
   for (const c of changes) {
     if (c.operation === 'rewrite' || c.operation === 'delete') {
-      const sec = sections.find((s) => s.blocks.some((b) => b.id === c.blockId))
-      if (!sec) throw new OpportunityProposalError(`${c.operation} 目标块不存在：${c.blockId}`)
+      const hit = locate(c.blockId ?? '')
+      if (!hit) throw new OpportunityProposalError(`${c.operation} 目标块不存在：${c.blockId}`)
       if (c.operation === 'rewrite') {
-        const i = sec.blocks.findIndex((b) => b.id === c.blockId)
-        const existing = sec.blocks[i]
-        sec.blocks[i] = { ...existing, text: normalizeBlockText(c.after), ...(patternId && !existing.expectationId ? { expectationId: patternId } : {}) }
+        const existing = hit.list[hit.index]
+        hit.list[hit.index] = { ...existing, text: normalizeBlockText(c.after), ...(patternId && !existing.expectationId ? { expectationId: patternId } : {}) }
       } else {
-        sec.blocks = sec.blocks.filter((b) => b.id !== c.blockId)
+        hit.list.splice(hit.index, 1)
       }
     } else if (c.operation === 'insert') {
       const target = c.sectionId ? sections.find((s) => s.id === c.sectionId) : sections[0]
@@ -782,21 +798,31 @@ export function bindClaimToBlock(ws: Workspace, wcId: string, blockId: string, c
   if (!claim) throw new OpportunityProposalError(`Claim 不存在：${claimId}`)
   const wc = scanWorkingCopies(ws).find((w) => w.id === wcId)
   if (!wc) throw new OpportunityProposalError(`工作副本不存在：${wcId}`)
-  const target = wc.sections.flatMap((s) => s.blocks).find((b) => b.id === blockId)
+  const target = wc.sections.flatMap(blocksOf).find((b) => b.id === blockId)
   if (!target) return { status: 'conflict', claimId, wcRevisionBefore: wc.revision }
   const links = [...new Set([...(target.provenanceLinks ?? []), claimId])]
   // 幂等（P5.2 评审回归）：锚已含 claimId → 不写盘、revision 不增加——高频路径防无意义版本膨胀
   if (target.provenanceLinks && links.length === target.provenanceLinks.length) {
     return { status: 'bound', claimId, wcRevisionBefore: wc.revision, wcRevisionAfter: wc.revision }
   }
+  // Entry Contract v0.1：块可位于条目容器——深拷贝后在同层容器写回
   const next: WorkingCopy = {
     ...wc,
     sections: wc.sections.map((s) => ({
       ...s,
-      blocks: s.blocks.map((b) => (b.id === blockId ? { ...b, provenanceLinks: links } : b)),
+      blocks: [...s.blocks],
+      ...(s.entries ? { entries: s.entries.map((e) => ({ ...e, blocks: [...e.blocks] })) } : {}),
     })),
     revision: wc.revision + 1,
     updatedAt: now.toISOString(),
+  }
+  for (const s of next.sections) {
+    for (const e of s.entries ?? []) {
+      const i = e.blocks.findIndex((b) => b.id === blockId)
+      if (i >= 0) e.blocks[i] = { ...e.blocks[i], provenanceLinks: links }
+    }
+    const i = s.blocks.findIndex((b) => b.id === blockId)
+    if (i >= 0) s.blocks[i] = { ...s.blocks[i], provenanceLinks: links }
   }
   ws.write(`resumes/working-copies/${wc.id}.md`, serializeWorkingCopy(next))
   return { status: 'bound', claimId, wcRevisionBefore: wc.revision, wcRevisionAfter: wc.revision + 1 }

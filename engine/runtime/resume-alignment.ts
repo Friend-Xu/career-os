@@ -43,7 +43,8 @@ function hitBullets(resp: JobRecord['responsibilities'][number], resume: ResumeD
   const patterns = new Set(resp.evidenceExpectations.map((e) => e.patternId))
   const out: ResumeBullet[] = []
   for (const s of resume.sections) {
-    for (const b of s.bullets) {
+    // 条目化段（Entry Contract v0.1）：entries[].bullets 与平铺 bullets 一并参与命中
+    for (const b of [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]) {
       if (b.metadata?.expectationId && patterns.has(b.metadata.expectationId)) { out.push(b); continue }
       if (b.claimId) out.push(b)
     }

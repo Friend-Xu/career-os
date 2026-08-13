@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace, type Workspace } from '../storage/workspace.ts'
@@ -217,4 +217,79 @@ test('promote：全 bound + 全 unbound 的 validation 区分（valid vs warning
   })
   const docUnbound = promoteToDocumentCandidate(ws, allUnbound.copy.id)
   assert.equal(docUnbound.validation?.status, 'warning', '全 unbound → warning（不阻止）')
+})
+
+test('Entry Contract v0.1：条目化段 round-trip + promote → ResumeSection.entries（头透传 + 文档还原）', () => {
+  const { ws, root, claimId } = setup()
+  const wc: WorkingCopy = {
+    id: 'wc_20260813_00001',
+    owner: 'person_001',
+    sections: [
+      {
+        id: 'sec_1',
+        title: '工作经历',
+        blocks: [],
+        entries: [
+          {
+            id: 'ent_1',
+            title: 'Company-A',
+            role: '机械工程师',
+            period: '2023.07-2025.03',
+            blocks: [
+              { id: 'blk_1', text: '主导气密性工装设计，使装配泄漏率降至 0.5%', provenanceLinks: [claimId] },
+              { id: 'blk_2', text: '负责产线日常维护' },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'sec_2',
+        title: '项目经验',
+        blocks: [],
+        entries: [{ id: 'ent_1', title: 'Project-X', blocks: [{ id: 'blk_1', text: '完成传动模块设计', provenanceLinks: [claimId] }] }],
+      },
+    ],
+    status: 'active',
+    revision: 1,
+    updatedAt: '2026-08-13T10:00:00Z',
+  }
+  const md = serializeWorkingCopy(wc)
+  assert.match(md, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03（entry）/)
+  const parsed = parseWorkingCopyMarkdown(md, 'wc.md')
+  const exp = parsed.sections[0]!.entries![0]!
+  assert.equal(exp.title, 'Company-A')
+  assert.equal(exp.role, '机械工程师')
+  assert.equal(exp.period, '2023.07-2025.03')
+  assert.equal(exp.blocks.length, 2)
+  assert.deepEqual(exp.blocks[0]!.provenanceLinks, [claimId])
+  assert.deepEqual(exp.blocks[1]!.provenanceLinks, [])
+  const proj = parsed.sections[1]!.entries![0]!
+  assert.equal(proj.title, 'Project-X')
+  assert.equal(proj.role, undefined, 'role/period 可空 round-trip')
+  assert.equal(proj.period, undefined)
+  assert.equal(parsed.sections[1]!.blocks.length, 0)
+
+  upsertWorkingCopy(ws, { id: wc.id, owner: 'person_001', sections: parsed.sections, revision: 1 }, new Date('2026-08-13T10:05:00Z'))
+  const doc = promoteToDocumentCandidate(ws, wc.id, new Date('2026-08-13T10:06:00Z'))
+  const expSec = doc.sections.find((s) => s.type === 'experience')!
+  assert.equal(expSec.entries?.length, 1)
+  const e = expSec.entries![0]!
+  assert.equal(e.title, 'Company-A')
+  assert.equal(e.period, '2023.07-2025.03')
+  assert.equal(e.bullets.length, 2)
+  assert.equal(e.bullets[0]!.claimId, claimId)
+  assert.equal(e.bullets[1]!.claimId, '', 'unbound → UNBOUND_BLOCK warning 但进入版本')
+  assert.ok(doc.validation?.issues.some((i) => i.code === 'UNBOUND_BLOCK'))
+
+  const docMd = ws.read(`resumes/documents/${doc.id}.md`)
+  assert.match(docMd, /- Company-A \| 机械工程师 \| 2023\.07-2025\.03（entry）/)
+  const reParsed = scanResumes(ws).find((r) => r.record.id === doc.id)!.record
+  const reEntry = reParsed.sections.find((s) => s.type === 'experience')!.entries![0]!
+  assert.equal(reEntry.title, 'Company-A')
+  assert.equal(reEntry.bullets.length, 2)
+  assert.equal(reEntry.bullets[0]!.claimId, claimId)
+  const reProj = reParsed.sections.find((s) => s.type === 'projects')!.entries![0]!
+  assert.equal(reProj.title, 'Project-X')
+  assert.equal(reProj.bullets.length, 1)
+  rmSync(root, { recursive: true, force: true })
 })

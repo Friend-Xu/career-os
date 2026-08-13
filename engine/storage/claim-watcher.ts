@@ -19,7 +19,8 @@ export const CLAIM_SPEC: ArtifactSpec = {
   dir: 'claims',
   idPrefix: 'claim_',
   marker: /##\s*分析摘要/,
-  passthroughFields: [],
+  // 身份/生命周期字段透传（登记重命名不剥——否则 Agent 通道写入的 owner 静默丢失，归属断裂）
+  passthroughFields: ['owner', 'lifecycle', 'origin'],
 }
 
 const CLAIM_TYPES: ClaimType[] = ['fact', 'interpretation']

@@ -50,6 +50,8 @@ export interface Person {
   identity?: PersonIdentity
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
   education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
+  /** 工作经历事实（identity.md `## 工作经历` 表投影——简历公司条目头来源；无 = 未采集） */
+  experiences?: PersonWorkExperience[]
 }
 
 /** JD 分析 Proposal（jd/analyze-result RPC 载荷——Agent → Validator，JSON 非 Markdown；
@@ -185,6 +187,14 @@ export interface PersonIdentity {
   yearsExperience?: string
 }
 
+/** 工作经历事实（identity.md `## 工作经历` 表——简历公司条目头 Candidate；用户确认事实） */
+export interface PersonWorkExperience {
+  company: string
+  role?: string
+  start?: string
+  end?: string
+}
+
 /**
  * Person 快照（persons/{person_id}/ 投影）：manifest + snapshot/*.md + events/ 计数。
  * 当前状态投影（非可编辑真相源）——来源可包括 Change Events、用户确认输入、
@@ -216,6 +226,8 @@ export interface PersonSnapshot {
   education?: PersonEducation[]
   /** skill_inventory 版本（frontmatter status: vX；Decision inputs.skillRefs.version） */
   skillInventoryVersion?: string
+  /** 工作经历事实（identity.md `## 工作经历` 表派生——简历公司条目头来源） */
+  experiences?: PersonWorkExperience[]
   eventCount: number // events/*.md 计数（Change Events 轻协议）
 }
 

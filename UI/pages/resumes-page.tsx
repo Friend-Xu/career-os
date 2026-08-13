@@ -19,8 +19,10 @@ import UndoIcon from '@mui/icons-material/Undo'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { alpha, COLORS, EASE } from '../data/constants'
-import type { ResumeModule } from '../types'
+import { alpha, COLORS, EASE, RISK_COLOR } from '../data/constants'
+import type { Person, ResumeEntry, ResumeModule } from '../types'
+import type { CareerContext } from '../../engine/ir/context.ts'
+import type { EvidenceItem } from '../../engine/ir/schema.ts'
 import { modulesToSections, sectionsToModules, buildSkeletonModules } from '../utils/resume-working-copy'
 import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
@@ -49,6 +51,78 @@ const CANDIDATE_RULES: { tag: string; apply: (text: string) => string }[] = [
 /** 常用改写意图（Revision Request 快捷入口，对应契约 intent chips） */
 const INTENT_CHIPS = ['对齐 JD', '更精简', '量化增强', '更专业'] as const
 
+/** 经历分类用户语言（evidenceType → 资产面板标注；不暴露 IR 枚举） */
+const EVIDENCE_TYPE_LABEL: Record<string, string> = {
+  professional_experience: '职责',
+  independent_project: '项目',
+  learning_record: '学习',
+}
+
+const isExperienceModule = (title: string) => /工作经历|项目经验|项目经历|实习经历/.test(title)
+
+/** 模块内容行（条目 content 与平铺 content 同契约——行 = 块文本） */
+const linesOf = (content: string): string[] => content.split('\n').filter(Boolean)
+
+/** 条目排序（Entry Contract §5）：period 倒序；无 period（未分组/新建空条目）垫底 */
+function sortEntries(entries: ResumeEntry[]): ResumeEntry[] {
+  return [...entries].sort((a, b) => (b.period ?? '').localeCompare(a.period ?? ''))
+}
+
+/** Entry Contract v0.1 迁移（渲染归类，保存即落盘）：旧平铺经历模块 → 条目化。
+ *  有锚行按 claim → evidence 归条目（职责类 + 工作经历模块 → 公司条目）；无锚行 → 「未分组」兜底 */
+function migrateEntries(
+  mods: ResumeModule[],
+  linksByText: Map<string, string[]>,
+  evidenceItems: EvidenceItem[],
+  claims: CareerContext['claims'],
+  person: Person,
+): ResumeModule[] {
+  return mods.map((m) => {
+    if (!isExperienceModule(m.title) || m.entries || m.content.trim() === '') return m
+    const byKey = new Map<string, { entry: ResumeEntry; lines: string[] }>()
+    const ungrouped: string[] = []
+    const evidenceOf = (claimId: string) => {
+      const claim = claims.find((c) => c.id === claimId)
+      const evId = claim?.provenance.evidenceIds[0]
+      return evId ? evidenceItems.find((e) => e.id === evId) : undefined
+    }
+    const company = person.experiences?.[0]
+    for (const line of linesOf(m.content)) {
+      const claimIds = linksByText.get(line) ?? []
+      const ev = claimIds.length > 0 ? evidenceOf(claimIds[0]!) : undefined
+      if (!ev || !ev.type) {
+        ungrouped.push(line)
+        continue
+      }
+      const isCompanyLine = m.title.includes('工作经历') && ev.type === 'professional_experience' && company
+      const key = isCompanyLine ? `company:${company.company}` : `ev:${ev.id}`
+      const hit = byKey.get(key) ?? {
+        entry: isCompanyLine
+          ? {
+              id: `ent-company-${company.company}`,
+              title: company.company,
+              ...(company.role ? { role: company.role } : {}),
+              ...(company.start || company.end ? { period: [company.start, company.end].filter(Boolean).join('-') } : {}),
+              content: '',
+            }
+          : {
+              id: `ent-${ev.id}`,
+              title: ev.event.title,
+              ...(ev.role ? { role: ev.role } : {}),
+              ...(ev.event.period ? { period: ev.event.period } : {}),
+              content: '',
+            },
+        lines: [],
+      }
+      hit.lines.push(line)
+      byKey.set(key, hit)
+    }
+    const entries = sortEntries([...byKey.values()].map(({ entry, lines }) => ({ ...entry, content: lines.join('\n') })))
+    if (ungrouped.length > 0) entries.push({ id: 'ent-ungrouped', title: '未分组', content: ungrouped.join('\n') })
+    return { ...m, content: '', entries }
+  })
+}
+
 /** HTML 转义（打印 HTML 内含用户文本——防注入） */
 function escapeHtml(s: string): string {
   return s
@@ -58,11 +132,11 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** 组装简历打印 HTML（引擎侧 Edge headless 渲染为 PDF） */
+/** 组装简历打印 HTML（引擎侧 Edge headless 渲染为 PDF；条目化段渲染条目头——Entry Contract v0.1） */
 function buildResumeHtml(
   personName: string,
   resumeName: string,
-  modules: { title: string; content: string; identity?: { label?: string; body?: string }[] }[],
+  modules: { title: string; content: string; identity?: { label?: string; body?: string }[]; entries?: { title: string; role?: string; period?: string; content: string }[] }[],
 ): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -73,6 +147,7 @@ function buildResumeHtml(
   h1 { font-size: 22px; margin: 0 0 4px; }
   .sub { color: #6e6e78; font-size: 12px; margin-bottom: 24px; }
   h2 { font-size: 15px; border-bottom: 1px solid #d8d8dd; padding-bottom: 4px; margin: 20px 0 8px; }
+  h3 { font-size: 14px; margin: 10px 0 4px; }
   p { margin: 0 0 10px; white-space: pre-wrap; }
 </style>
 </head>
@@ -82,10 +157,17 @@ function buildResumeHtml(
   ${modules
     .map((m) => {
       const body =
-        m.identity && m.identity.length > 0
-          ? m.identity.map((f) => `<b>${escapeHtml(f.label ?? '')}：</b>${escapeHtml(f.body ?? '')}`).join('<br/>')
-          : escapeHtml(m.content)
-      return `<h2>${escapeHtml(m.title)}</h2><p>${body}</p>`
+        m.entries && m.entries.length > 0
+          ? m.entries
+              .map((e) => {
+                const head = [e.title, e.role, e.period ? `（${e.period}）` : ''].filter(Boolean).join(' · ')
+                return `<h3>${escapeHtml(head)}</h3>${e.content ? `<p>${escapeHtml(e.content)}</p>` : ''}`
+              })
+              .join('\n  ')
+          : m.identity && m.identity.length > 0
+            ? m.identity.map((f) => `<b>${escapeHtml(f.label ?? '')}：</b>${escapeHtml(f.body ?? '')}`).join('<br/>')
+            : escapeHtml(m.content)
+      return `<h2>${escapeHtml(m.title)}</h2>${m.entries && m.entries.length > 0 ? body : `<p>${body}</p>`}`
     })
     .join('\n  ')}
 </body>
@@ -124,13 +206,16 @@ export function ResumesPage() {
   const commitModules = (next: ResumeModule[]) => {
     setModules(next)
     if (workingCopy) {
-      // 重建 blocks 时按文本合并既有绑定（新行 unbound；已有行保留 provenanceLinks）
+      // 重建 blocks 时按文本合并既有绑定（新行 unbound；已有行保留 provenanceLinks——
+      // 条目化段 entries[].blocks 同样合并，否则条目表述丢锚 → 全段退化为未资产化）
+      const mergeLinks = (b: { id: string; text: string }) => {
+        const links = linksByText.current.get(b.text)
+        return links ? { ...b, provenanceLinks: links } : b
+      }
       const sections = modulesToSections(next).map((s) => ({
         ...s,
-        blocks: s.blocks.map((b) => {
-          const links = linksByText.current.get(b.text)
-          return links ? { ...b, provenanceLinks: links } : b
-        }),
+        blocks: s.blocks.map(mergeLinks),
+        ...(s.entries ? { entries: s.entries.map((e) => ({ ...e, blocks: e.blocks.map(mergeLinks) })) } : {}),
       }))
       void upsertWorkingCopy({
         id: workingCopy.id,
@@ -156,8 +241,8 @@ export function ResumesPage() {
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
   const [deriveOpen, setDeriveOpen] = useState(false)
-  /** P1.2：从经历资产添加（assetOpen = 目标模块 id——用户主动应用表达资产进草稿） */
-  const [assetOpen, setAssetOpen] = useState<string | null>(null)
+  /** P1.2：从经历资产添加（assetOpen = 目标模块 + 条目 id——用户主动应用表达资产进草稿） */
+  const [assetOpen, setAssetOpen] = useState<{ moduleId: string; entryId: string } | null>(null)
   /** R1：表达检查清单展开态（质量条「查看详情」——逐项诊断非评分结论） */
   const [showChecks, setShowChecks] = useState(false)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
@@ -244,9 +329,16 @@ export function ResumesPage() {
         for (const b of s.blocks) {
           if (b.provenanceLinks && b.provenanceLinks.length > 0) map.set(b.text, b.provenanceLinks)
         }
+        for (const e of s.entries ?? []) {
+          for (const b of e.blocks) {
+            if (b.provenanceLinks && b.provenanceLinks.length > 0) map.set(b.text, b.provenanceLinks)
+          }
+        }
       }
       linksByText.current = map
-      setModules(sectionsToModules(workingCopy.sections))
+      // Entry Contract v0.1 迁移：旧平铺经历模块渲染归类（保存即落盘新格式）
+      const migrated = migrateEntries(sectionsToModules(workingCopy.sections), map, evidenceItems, careerContext?.claims ?? [], person)
+      setModules(migrated)
       setRevert(null)
       closeAll()
     }
@@ -323,9 +415,27 @@ export function ResumesPage() {
   const applyCandidate = (text: string) => {
     if (!selButton) return
     const { moduleId, text: selectedText } = selButton
+    const [mid, eid] = moduleId.split(':')
     let applied = false
     const next = modules.map((m) => {
-      if (m.id !== moduleId) return m
+      if (m.id !== mid) return m
+      // 条目 textarea（复合 id moduleId:entryId）→ 替换落在条目 content
+      if (eid) {
+        const entry = m.entries?.find((e) => e.id === eid)
+        if (!entry) return m
+        const idx = entry.content.indexOf(selectedText)
+        if (idx === -1) return m
+        applied = true
+        setRevert({ moduleId, prevContent: entry.content })
+        return {
+          ...m,
+          entries: m.entries!.map((e) =>
+            e.id === eid
+              ? { ...e, content: entry.content.slice(0, idx) + text + entry.content.slice(idx + selectedText.length) }
+              : e,
+          ),
+        }
+      }
       const idx = m.content.indexOf(selectedText)
       if (idx === -1) return m
       applied = true
@@ -349,8 +459,13 @@ export function ResumesPage() {
 
   const undoRewrite = () => {
     if (!revert) return
+    const [mid, eid] = revert.moduleId.split(':')
     commitModules(
-      modules.map((m) => (m.id === revert.moduleId ? { ...m, content: revert.prevContent } : m)),
+      modules.map((m) => {
+        if (m.id !== mid) return m
+        if (eid) return { ...m, entries: m.entries?.map((e) => (e.id === eid ? { ...e, content: revert.prevContent } : e)) }
+        return { ...m, content: revert.prevContent }
+      }),
     )
     setRevert(null)
     push('info', '已撤销本次改写')
@@ -364,25 +479,181 @@ export function ResumesPage() {
     commitModules(copy.map((m, i) => ({ ...m, order: i })))
   }
 
-  /** P1.2：可用表达资产（CareerContext 过滤 legacy + usable——可消费才可加入简历） */
-  const usableClaims = useMemo(() => (careerContext?.claims ?? []).filter((c) => c.usable), [careerContext])
+  /** 条目字段/内容变更（Entry Contract：条目头 = 事实通道——编辑保存 = 用户确认） */
+  const updateEntry = (moduleId: string, entryId: string, patch: Partial<ResumeEntry>) => {
+    setRevert(null)
+    commitModules(
+      modules.map((m) =>
+        m.id === moduleId && m.entries
+          ? { ...m, entries: m.entries.map((e) => (e.id === entryId ? { ...e, ...patch } : e)) }
+          : m,
+      ),
+    )
+  }
+  const moveEntry = (moduleId: string, entryId: string, dir: -1 | 1) => {
+    const m = modules.find((x) => x.id === moduleId)
+    if (!m?.entries) return
+    const i = m.entries.findIndex((e) => e.id === entryId)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= m.entries.length) return
+    const copy = [...m.entries];
+    [copy[i], copy[j]] = [copy[j], copy[i]]
+    commitModules(modules.map((x) => (x.id === moduleId ? { ...x, entries: copy } : x)))
+  }
+  const addEntry = (moduleId: string) => {
+    const m = modules.find((x) => x.id === moduleId)
+    if (!m) return
+    const entries = [...(m.entries ?? []), { id: `ent-${Date.now().toString(36)}`, title: '', content: '' }]
+    commitModules(modules.map((x) => (x.id === moduleId ? { ...x, entries } : x)))
+  }
+  /** 删除条目确认（无锚行删除即弃；有锚表述回资产池不删资产） */
+  const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<{ moduleId: string; entryId: string } | null>(null)
+  const doDeleteEntry = () => {
+    if (!confirmDeleteEntry) return
+    const { moduleId, entryId } = confirmDeleteEntry
+    commitModules(
+      modules.map((m) =>
+        m.id === moduleId && m.entries ? { ...m, entries: m.entries.filter((e) => e.id !== entryId) } : m,
+      ),
+    )
+    setConfirmDeleteEntry(null)
+    push('info', '条目已删除（表述仍保留在资产池）')
+  }
+
+  /** 技能资产通道（Entry Contract §7：flat 技能资产行——skill_inventory 投影） */
+  const [skillOpen, setSkillOpen] = useState(false)
+  const skillModule = useMemo(() => modules.find((m) => /技能/.test(m.title)), [modules])
+  const insertSkill = (skillName: string) => {
+    if (!skillModule) return
+    if (linesOf(skillModule.content).some((l) => l.includes(skillName))) {
+      push('info', '该技能已在技能模块中')
+      return
+    }
+    const line = `- ${skillName}`
+    commitModules(modules.map((m) => (m.id === skillModule.id ? { ...m, content: `${m.content}${m.content ? '\n' : ''}${line}` } : m)))
+    push('success', '已加入技能模块（来自技能资产）')
+  }
+
+  /** P1.2：可用表达资产（本人生效——归属过滤 + usable；owner 缺失 = 归属不明，不展示给任何人） */
+  const usableClaims = useMemo(
+    () => (careerContext?.claims ?? []).filter((c) => c.usable && c.owner === person.personId),
+    [careerContext, person.personId],
+  )
+  /** 资产面板排序：目标模块类型优先（工作经历→职责类；项目经验→项目类）——仅排序不硬过滤，同一条表述两模块都可合法消费 */
+  const orderedClaims = useMemo(() => {
+    if (!assetOpen) return usableClaims
+    const target = modules.find((m) => m.id === assetOpen.moduleId)?.title ?? ''
+    const preferred = target.includes('工作经历') ? 'professional_experience' : 'independent_project'
+    return [...usableClaims].sort((a, b) => (a.evidenceType === preferred ? 0 : 1) - (b.evidenceType === preferred ? 0 : 1))
+  }, [usableClaims, assetOpen, modules])
+  /** 目标条目已绑定的表述 id（行文本 → claim 锚反查）——已添加状态标记 + 防同条目重复插入 */
+  const addedClaimIds = useMemo(() => {
+    if (!assetOpen) return new Set<string>()
+    const target = modules.find((m) => m.id === assetOpen.moduleId)
+    if (!target) return new Set<string>()
+    const entry = target.entries?.find((e) => e.id === assetOpen.entryId)
+    const ids = new Set<string>()
+    for (const line of linesOf(entry ? entry.content : target.content)) {
+      for (const cid of linksByText.current.get(line) ?? []) ids.add(cid)
+    }
+    return ids
+  }, [assetOpen, modules])
+  /** claim → 使用中的模块集合（单侧使用判定——Entry Contract §5：跨模块重复需显式确认） */
+  const claimModules = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const m of modules) {
+      const allLines = m.entries && m.entries.length > 0 ? m.entries.flatMap((e) => linesOf(e.content)) : linesOf(m.content)
+      for (const line of allLines) {
+        for (const cid of linksByText.current.get(line) ?? []) {
+          if (!map.has(cid)) map.set(cid, new Set())
+          map.get(cid)!.add(m.id)
+        }
+      }
+    }
+    return map
+  }, [modules])
   const titleOfEvidence = (id: string) => evidenceItems.find((e) => e.id === id)?.event.title ?? id
-  const isExperienceModule = (title: string) => /工作经历|项目经验|项目经历|实习经历/.test(title)
-  /** 用户主动应用：Claim → Working Copy 插入（不自动插入——User apply 边界；插入行带 claim 锚） */
+  /** 表述证据（首个 provenance evidence——条目自动归属的投影来源） */
+  const evidenceOfClaim = (claimId: string) => {
+    const claim = usableClaims.find((c) => c.id === claimId)
+    const evId = claim?.provenance.evidenceIds[0]
+    return evId ? evidenceItems.find((e) => e.id === evId) : undefined
+  }
+
+  /** 插入落点：目标条目（不存在 → 按证据投影自动建条目；Entry Contract §5 自动建条目——
+   *  工作经历模块 + 职责类证据 → 公司条目（person 档案工作经历表）；其余 → 证据事件条目） */
+  const entryForInsert = (moduleId: string, entryId: string, claimId: string): { module: ResumeModule; entry: ResumeEntry } => {
+    const m = modules.find((x) => x.id === moduleId)!
+    const existing = m.entries?.find((e) => e.id === entryId)
+    if (existing) return { module: m, entry: existing }
+    const ev = evidenceOfClaim(claimId)
+    if (ev) {
+      const byEvent = m.entries?.find((e) => e.title === ev.event.title)
+      if (byEvent) return { module: m, entry: byEvent }
+      const company = m.title.includes('工作经历') && ev.type === 'professional_experience' ? person.experiences?.[0] : undefined
+      if (company) {
+        const byCompany = m.entries?.find((e) => e.title === company.company)
+        if (byCompany) return { module: m, entry: byCompany }
+        return {
+          module: m,
+          entry: {
+            id: `ent-company-${company.company}`,
+            title: company.company,
+            ...(company.role ? { role: company.role } : {}),
+            ...(company.start || company.end ? { period: [company.start, company.end].filter(Boolean).join('-') } : {}),
+            content: '',
+          },
+        }
+      }
+      return {
+        module: m,
+        entry: {
+          id: `ent-${ev.id}`,
+          title: ev.event.title,
+          ...(ev.role ? { role: ev.role } : {}),
+          ...(ev.event.period ? { period: ev.event.period } : {}),
+          content: '',
+        },
+      }
+    }
+    const ungrouped = m.entries?.find((e) => e.id === 'ent-ungrouped')
+    return { module: m, entry: ungrouped ?? { id: 'ent-ungrouped', title: '未分组', content: '' } }
+  }
+
+  /** 用户主动应用：Claim → 条目插入（不自动插入——User apply 边界；插入行带 claim 锚；
+   *  同条目已绑定 → 提示不重复；跨模块已使用 → 显式确认（防重复写两遍减分）） */
   const insertClaim = (claimId: string) => {
+    if (!assetOpen) return
+    if (addedClaimIds.has(claimId)) {
+      push('info', '该表述已在当前条目中')
+      return
+    }
+    const usedModules = claimModules.get(claimId)
+    if (usedModules && !usedModules.has(assetOpen.moduleId)) {
+      setPendingCross({ claimId })
+      return
+    }
+    doInsertClaim(claimId)
+  }
+
+  const doInsertClaim = (claimId: string) => {
     if (!assetOpen) return
     const claim = usableClaims.find((c) => c.id === claimId)
     if (!claim) return
+    const { module: m, entry } = entryForInsert(assetOpen.moduleId, assetOpen.entryId, claimId)
     const line = `- ${claim.statement}`
     linksByText.current.set(line, [claimId])
-    commitModules(
-      modules.map((m) =>
-        m.id === assetOpen ? { ...m, content: `${m.content}${m.content ? '\n' : ''}${line}` } : m,
-      ),
-    )
+    const nextEntries = sortEntries([
+      ...(m.entries ?? []).filter((e) => e.id !== entry.id),
+      { ...entry, content: `${entry.content}${entry.content ? '\n' : ''}${line}` },
+    ])
+    commitModules(modules.map((x) => (x.id === m.id ? { ...x, content: '', entries: nextEntries } : x)))
     setAssetOpen(null)
     push('success', '已加入简历（表达来自经历资产）')
   }
+
+  /** 跨模块重复插入确认（单侧使用红线——用户显式确认才放行） */
+  const [pendingCross, setPendingCross] = useState<{ claimId: string } | null>(null)
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -573,9 +844,11 @@ export function ResumesPage() {
                   <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{m.title}</Typography>
                   {(() => {
                     const sec = workingCopy?.sections.find((x) => x.id === m.id)
-                    const bound = sec?.blocks.filter((b) => b.provenanceLinks && b.provenanceLinks.length > 0).length ?? 0
-                    const total = sec?.blocks.length ?? 0
-                    if (!sec || total === 0) return null
+                    const allBlocks = [...(sec?.blocks ?? []), ...(sec?.entries ?? []).flatMap((e) => e.blocks)]
+                    const bound = allBlocks.filter((b) => b.provenanceLinks && b.provenanceLinks.length > 0).length
+                    const total = allBlocks.length
+                    // 技能/个人信息走资产行与身份通道，不适用 claim 锚定角标（Entry Contract §7）
+                    if (!sec || total === 0 || /技能|个人|基本信息/.test(m.title)) return null
                     const all = bound === total
                     return (
                       <Typography
@@ -586,14 +859,24 @@ export function ResumesPage() {
                       </Typography>
                     )
                   })()}
-                  {isExperienceModule(m.title) && usableClaims.length > 0 && (
+                  {isExperienceModule(m.title) && (!m.entries || m.entries.length === 0) && usableClaims.length > 0 && (
                     <Button
                       size="small"
-                      onClick={() => setAssetOpen(m.id)}
-                      title="从经历资产添加表达"
+                      onClick={() => setAssetOpen({ moduleId: m.id, entryId: '' })}
+                      title="从经历资产添加表达（将自动创建条目）"
                       sx={{ minWidth: 0, px: 0.75, fontSize: 12, color: COLORS.accent }}
                     >
                       + 资产
+                    </Button>
+                  )}
+                  {/技能/.test(m.title) && (person.skills?.length ?? 0) > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => setSkillOpen(true)}
+                      title="从技能资产添加（skill_inventory 登记技能）"
+                      sx={{ minWidth: 0, px: 0.75, fontSize: 12, color: COLORS.accent }}
+                    >
+                      + 技能资产
                     </Button>
                   )}
                   <Button size="small" disabled={idx === 0} onClick={() => moveModule(idx, -1)} sx={{ minWidth: 0, px: 0.75, fontSize: 12 }}>
@@ -603,7 +886,103 @@ export function ResumesPage() {
                     ↓
                   </Button>
                 </Stack>
-                {m.identity && m.identity.length > 0 ? (
+                {m.entries && m.entries.length > 0 ? (
+                  <Stack sx={{ p: 0.75 }} spacing={0.75}>
+                    {m.entries.map((entry, ei) => (
+                      <Box
+                        key={entry.id}
+                        sx={{
+                          border: `1px solid ${alpha(COLORS.border, 0.7)}`,
+                          borderRadius: '6px',
+                          overflow: 'hidden',
+                          ...(entry.title === '未分组' ? { bgcolor: alpha(COLORS.textMuted, 0.04), borderStyle: 'dashed' } : {}),
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          sx={{ alignItems: 'center', px: 0.75, py: 0.25, bgcolor: COLORS.bgHover, borderBottom: `1px solid ${COLORS.border}` }}
+                        >
+                          <TextField
+                            size="small"
+                            variant="standard"
+                            placeholder={m.title.includes('工作经历') ? '公司名' : '项目名'}
+                            value={entry.title}
+                            onChange={(e) => updateEntry(m.id, entry.id, { title: e.target.value })}
+                            sx={{ fontSize: 12.5, flex: 1.5, '& .MuiInputBase-root': { fontSize: 12.5, fontWeight: 600 } }}
+                          />
+                          <TextField
+                            size="small"
+                            variant="standard"
+                            placeholder="职位/角色"
+                            value={entry.role ?? ''}
+                            onChange={(e) => updateEntry(m.id, entry.id, { role: e.target.value || undefined })}
+                            sx={{ fontSize: 12, flex: 1, '& .MuiInputBase-root': { fontSize: 12 } }}
+                          />
+                          <TextField
+                            size="small"
+                            variant="standard"
+                            placeholder="时间段"
+                            value={entry.period ?? ''}
+                            onChange={(e) => updateEntry(m.id, entry.id, { period: e.target.value || undefined })}
+                            sx={{ fontSize: 12, flex: 1, '& .MuiInputBase-root': { fontSize: 12 } }}
+                          />
+                          {entry.title === '未分组' && (
+                            <Typography sx={{ fontSize: 10.5, color: COLORS.textMuted, flexShrink: 0 }}>待归置</Typography>
+                          )}
+                          {usableClaims.length > 0 && (
+                            <Button
+                              size="small"
+                              onClick={() => setAssetOpen({ moduleId: m.id, entryId: entry.id })}
+                              title="从经历资产添加表达"
+                              sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.accent }}
+                            >
+                              + 资产
+                            </Button>
+                          )}
+                          <Button size="small" disabled={ei === 0} onClick={() => moveEntry(m.id, entry.id, -1)} sx={{ minWidth: 0, px: 0.5, fontSize: 11.5 }}>
+                            ↑
+                          </Button>
+                          <Button size="small" disabled={ei === m.entries!.length - 1} onClick={() => moveEntry(m.id, entry.id, 1)} sx={{ minWidth: 0, px: 0.5, fontSize: 11.5 }}>
+                            ↓
+                          </Button>
+                          <Button
+                            size="small"
+                            onClick={() => setConfirmDeleteEntry({ moduleId: m.id, entryId: entry.id })}
+                            title="删除条目（表述保留在资产池）"
+                            sx={{ minWidth: 0, px: 0.5, fontSize: 11.5, color: COLORS.riskHigh }}
+                          >
+                            ✕
+                          </Button>
+                        </Stack>
+                        <TextField
+                          fullWidth
+                          multiline
+                          value={entry.content}
+                          inputRef={(el: HTMLTextAreaElement | null) => {
+                            textareaRefs.current[`${m.id}:${entry.id}`] = el
+                          }}
+                          onChange={(e) => updateEntry(m.id, entry.id, { content: e.target.value })}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              fontSize: 13,
+                              lineHeight: 1.6,
+                              '& fieldset': { border: 'none' },
+                            },
+                            '& textarea': { padding: '12px !important' },
+                          }}
+                        />
+                      </Box>
+                    ))}
+                    <Button
+                      size="small"
+                      onClick={() => addEntry(m.id)}
+                      sx={{ alignSelf: 'flex-start', fontSize: 11.5, color: COLORS.accent }}
+                    >
+                      + 新建条目
+                    </Button>
+                  </Stack>
+                ) : m.identity && m.identity.length > 0 ? (
                   <Stack sx={{ p: 0.5 }}>
                     {m.identity.map((f) => (
                       <Stack
@@ -700,7 +1079,40 @@ export function ResumesPage() {
                 >
                   {m.title}
                 </Typography>
-                {m.identity && m.identity.length > 0 ? (
+                {m.entries && m.entries.length > 0 ? (
+                  <Box>
+                    {m.entries.map((entry) => (
+                      <Box key={entry.id} sx={{ mb: 1.25 }}>
+                        <Typography
+                          sx={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: '#222',
+                            lineHeight: 1.6,
+                            fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+                          }}
+                        >
+                          {entry.title}
+                          {entry.role ? ` · ${entry.role}` : ''}
+                          {entry.period ? `（${entry.period}）` : ''}
+                        </Typography>
+                        {entry.content && (
+                          <Typography
+                            sx={{
+                              fontSize: 13,
+                              color: '#333',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.65,
+                              fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+                            }}
+                          >
+                            {entry.content}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                ) : m.identity && m.identity.length > 0 ? (
                   <Box>
                     {m.identity.map((f) => (
                       <Typography
@@ -1171,26 +1583,143 @@ export function ResumesPage() {
             </Typography>
           ) : (
             <Stack spacing={1}>
-              {usableClaims.map((c) => (
-                <Box
-                  key={c.id}
-                  onClick={() => insertClaim(c.id)}
-                  sx={{
-                    p: 1.25,
-                    borderRadius: '8px',
-                    border: `1px solid ${alpha(COLORS.border, 0.8)}`,
-                    boxShadow: COLORS.cardShadow,
-                    cursor: 'pointer',
-                    transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
-                    '&:hover': { borderColor: COLORS.accent, bgcolor: COLORS.accentMuted },
-                  }}
-                >
-                  <Typography sx={{ fontSize: 12.5, lineHeight: 1.6 }}>{c.statement}</Typography>
-                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25 }}>
-                    依据：{c.provenance.evidenceIds.map(titleOfEvidence).join('、')}
-                  </Typography>
-                </Box>
-              ))}
+              {orderedClaims.map((c) => {
+                const added = addedClaimIds.has(c.id)
+                const usedModules = claimModules.get(c.id)
+                const crossUsed = usedModules && !usedModules.has(assetOpen?.moduleId ?? '')
+                return (
+                  <Box
+                    key={c.id}
+                    onClick={() => insertClaim(c.id)}
+                    sx={{
+                      p: 1.25,
+                      borderRadius: '8px',
+                      border: `1px solid ${added ? RISK_COLOR.low : alpha(COLORS.border, 0.8)}`,
+                      boxShadow: COLORS.cardShadow,
+                      cursor: added ? 'default' : 'pointer',
+                      ...(added ? { bgcolor: alpha(RISK_COLOR.low, 0.07) } : {}),
+                      transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
+                      ...(added ? {} : { '&:hover': { borderColor: COLORS.accent, bgcolor: COLORS.accentMuted } }),
+                    }}
+                  >
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                      <Typography sx={{ fontSize: 12.5, lineHeight: 1.6, flex: 1 }}>{c.statement}</Typography>
+                      {added && (
+                        <Chip
+                          size="small"
+                          label="✓ 已添加"
+                          sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.low, 0.15), color: RISK_COLOR.low }}
+                        />
+                      )}
+                      {!added && crossUsed && (
+                        <Chip
+                          size="small"
+                          label="已在其他模块使用"
+                          title="重复写两遍是 HR 减分项——添加需确认"
+                          sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.medium, 0.12), color: RISK_COLOR.medium }}
+                        />
+                      )}
+                      {c.evidenceType && (
+                        <Chip
+                          size="small"
+                          label={EVIDENCE_TYPE_LABEL[c.evidenceType] ?? c.evidenceType}
+                          sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography sx={{ fontSize: 11, color: COLORS.textMuted, mt: 0.25 }}>
+                      依据：{c.provenance.evidenceIds.map(titleOfEvidence).join('、')}
+                    </Typography>
+                  </Box>
+                )
+              })}
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 跨模块重复确认（Entry Contract §5 单侧使用——用户显式确认才放行） */}
+      <Dialog open={pendingCross !== null} onClose={() => setPendingCross(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>确认跨模块使用</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, lineHeight: 1.7 }}>
+            该表述已在其他模块使用。工作经历与项目经历重复写两遍是 HR 减分项——确认仍要添加到当前模块？
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 2, justifyContent: 'flex-end' }}>
+            <Button size="small" onClick={() => setPendingCross(null)} sx={{ fontSize: 12 }}>
+              取消
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => {
+                if (pendingCross) doInsertClaim(pendingCross.claimId)
+                setPendingCross(null)
+              }}
+              sx={{ fontSize: 12 }}
+            >
+              确认添加
+            </Button>
+          </Stack>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除条目确认（无锚行删除即弃——需确认） */}
+      <Dialog open={confirmDeleteEntry !== null} onClose={() => setConfirmDeleteEntry(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>删除条目</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, lineHeight: 1.7 }}>
+            条目下已绑定的表述会回到资产池（不删除）；手写的未资产化内容将被丢弃。
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 2, justifyContent: 'flex-end' }}>
+            <Button size="small" onClick={() => setConfirmDeleteEntry(null)} sx={{ fontSize: 12 }}>
+              取消
+            </Button>
+            <Button size="small" variant="contained" color="error" onClick={doDeleteEntry} sx={{ fontSize: 12 }}>
+              删除
+            </Button>
+          </Stack>
+        </DialogContent>
+      </Dialog>
+
+      {/* 技能资产通道（Entry Contract §7：flat 技能资产行——skill_inventory 投影，User Confirmation 登记） */}
+      <Dialog open={skillOpen} onClose={() => setSkillOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 600, pb: 1 }}>从技能资产添加</DialogTitle>
+        <DialogContent>
+          {(person.skills ?? []).length === 0 ? (
+            <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+              暂无登记技能——技能资产在画像采集时确认登记（skill_inventory）
+            </Typography>
+          ) : (
+            <Stack spacing={1}>
+              {(person.skills ?? []).map((s) => {
+                const added = skillModule ? linesOf(skillModule.content).some((l) => l.includes(s.name)) : false
+                const lv = s.level >= 4 ? '熟练' : s.level >= 3 ? '熟悉' : '了解'
+                return (
+                  <Box
+                    key={s.skillId ?? s.name}
+                    onClick={() => insertSkill(s.name)}
+                    sx={{
+                      p: 1.25,
+                      borderRadius: '8px',
+                      border: `1px solid ${added ? RISK_COLOR.low : alpha(COLORS.border, 0.8)}`,
+                      boxShadow: COLORS.cardShadow,
+                      cursor: added ? 'default' : 'pointer',
+                      ...(added ? { bgcolor: alpha(RISK_COLOR.low, 0.07) } : {}),
+                      transition: `background-color 180ms ${EASE}, border-color 180ms ${EASE}`,
+                      ...(added ? {} : { '&:hover': { borderColor: COLORS.accent, bgcolor: COLORS.accentMuted } }),
+                    }}
+                  >
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                      <Typography sx={{ fontSize: 12.5, lineHeight: 1.6, flex: 1 }}>{s.name}</Typography>
+                      {added && (
+                        <Chip size="small" label="✓ 已添加" sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.low, 0.15), color: RISK_COLOR.low }} />
+                      )}
+                      <Chip size="small" label={lv} sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.1), color: COLORS.accent }} />
+                    </Stack>
+                  </Box>
+                )
+              })}
             </Stack>
           )}
         </DialogContent>

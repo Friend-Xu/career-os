@@ -28,11 +28,21 @@ export interface ResumeBullet {
   metadata?: ResumeBulletMeta
 }
 
-/** 章节：bullets 为 Claim 驱动内容；assetRefs 为资产引用（Skills 专用——Assembly 不创建技能内容）；identity 为身份信息（M5.2 G6，非 claim 通道） */
+/** 经历条目（版本层，Resume Entry Contract v0.1）：事实头 + bullet（claim 驱动同现行） */
+export interface ResumeEntry {
+  title: string
+  role?: string
+  period?: string
+  bullets: ResumeBullet[]
+}
+
+/** 章节：bullets 为 Claim 驱动内容；assetRefs 为资产引用（Skills 专用——Assembly 不创建技能内容）；
+ *  identity 为身份信息（M5.2 G6，非 claim 通道）；entries 为条目化内容（经历段专用，与 bullets 互斥） */
 export interface ResumeSection {
   type: ResumeSectionType
   title: string
   bullets: ResumeBullet[]
+  entries?: ResumeEntry[]
   assetRefs?: string[] // 资产引用（技能名/资产 id），来源现有资产
   identity?: ResumeIdentityEntry[] // 身份段条目（profile/education/experience/target_intent 专用——不与 claim 混合）
 }
@@ -65,14 +75,31 @@ export interface WorkingBlock {
   expectationId?: string // 表达锚（P4.1——apply rewrite 时引擎写入：表达对应岗位期望 E；重诊断据此判定表达已写入）
 }
 
-/** 段（层级：WorkingCopy → Section → Block——blocks 属于 section，删除段时块生命周期一并明确） */
+/** 经历条目（Resume Entry Contract v0.1）：事实头（title/role/period）+ 表述块（claim 通道）。
+ *  条目头 = 事实通道（同 identity 语义：不产生 bullet、不校验 claim 锚定） */
+export interface WorkingEntry {
+  id: string
+  title: string // 公司名或项目名
+  role?: string // 职位/角色
+  period?: string // 时间段（自由文本，如 2023.07-2025.03）
+  blocks: WorkingBlock[]
+}
+
+/** 段（层级：WorkingCopy → Section → Entry → Block；条目化段（工作经历/项目经验）用 entries，
+ *  平铺段（专业摘要/技能）用 blocks——两形态互斥（Resume Entry Contract §1）） */
 export interface WorkingSection {
   id: string
   title: string
   blocks: WorkingBlock[]
+  entries?: WorkingEntry[]
   /** M5.2 G6 身份事实通道（非 claim）：字段条目（如 姓名/目标职位/年限/城市）——
    *  promote 时映射 ResumeSection.identity，不产生 bullet、不产生 UNBOUND_BLOCK */
   identity?: ResumeIdentityEntry[]
+}
+
+/** 段内全部表述块（条目化段 = entries[].blocks；平铺段 = blocks）——引擎按块定位统一走此函数 */
+export function blocksOf(s: WorkingSection): WorkingBlock[] {
+  return [...(s.entries ?? []).flatMap((e) => e.blocks), ...s.blocks]
 }
 
 /** 用户创作对象（resumes/working-copies/；promote → ResumeDocument Candidate） */

@@ -10,6 +10,13 @@ import { useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 
+/** 经历分类用户语言（evidenceType → 展示标注） */
+const EVIDENCE_TYPE_LABEL: Record<string, string> = {
+  professional_experience: '职责',
+  independent_project: '项目',
+  learning_record: '学习',
+}
+
 export function ResumeAssets() {
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
@@ -89,6 +96,9 @@ export function ResumeAssets() {
                       {c.statement}
                     </Typography>
                     <Chip size="small" label={c.type === 'fact' ? '事实' : '归纳'} sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(c.type === 'fact' ? RISK_COLOR.low : RISK_COLOR.medium, 0.1), color: c.type === 'fact' ? RISK_COLOR.low : RISK_COLOR.medium }} />
+                    {c.evidenceType && (
+                      <Chip size="small" label={EVIDENCE_TYPE_LABEL[c.evidenceType] ?? c.evidenceType} sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.textMuted, 0.1), color: COLORS.textMuted }} />
+                    )}
                     <Chip size="small" label={c.usable ? '可消费' : '不可消费'} sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(c.usable ? RISK_COLOR.low : RISK_COLOR.high, 0.1), color: c.usable ? RISK_COLOR.low : RISK_COLOR.high }} />
                   </Stack>
                   <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>

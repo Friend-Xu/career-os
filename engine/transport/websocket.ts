@@ -1423,17 +1423,33 @@ export async function startServer(opts: {
     [METHODS.workingCopyList]: () => scanWorkingCopies(workspace),
     [METHODS.workingCopyUpsert]: (params) => {
       const p = params as Record<string, unknown>
+      /** 块白名单透传（丢字段 = 内容静默丢失——同 identity/entries 通道语义） */
+      const mapBlocks = (raw: unknown): { id: string; text: string; provenanceLinks?: string[]; expectationId?: string }[] =>
+        Array.isArray(raw)
+          ? (raw as Record<string, unknown>[]).map((b) => ({
+              id: typeof b?.id === 'string' ? b.id : '',
+              text: typeof b?.text === 'string' ? b.text : '',
+              ...(Array.isArray(b?.provenanceLinks) ? { provenanceLinks: (b.provenanceLinks as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
+              ...(typeof b?.expectationId === 'string' ? { expectationId: b.expectationId } : {}),
+            }))
+          : []
       const sections = Array.isArray(p?.sections)
         ? (p.sections as Record<string, unknown>[]).map((s) => ({
             id: typeof s?.id === 'string' ? s.id : '',
             title: typeof s?.title === 'string' ? s.title : '',
-            blocks: Array.isArray(s?.blocks)
-              ? (s.blocks as Record<string, unknown>[]).map((b) => ({
-                  id: typeof b?.id === 'string' ? b.id : '',
-                  text: typeof b?.text === 'string' ? b.text : '',
-                  ...(Array.isArray(b?.provenanceLinks) ? { provenanceLinks: (b.provenanceLinks as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
-                }))
-              : [],
+            blocks: mapBlocks(s?.blocks),
+            // 条目化段（Resume Entry Contract v0.1）：条目头 + 块透传——丢字段 = 结构静默丢失
+            ...(Array.isArray(s?.entries)
+              ? {
+                  entries: (s.entries as Record<string, unknown>[]).map((e) => ({
+                    id: typeof e?.id === 'string' ? e.id : '',
+                    title: typeof e?.title === 'string' ? e.title : '',
+                    ...(typeof e?.role === 'string' ? { role: e.role } : {}),
+                    ...(typeof e?.period === 'string' ? { period: e.period } : {}),
+                    blocks: mapBlocks(e?.blocks),
+                  })),
+                }
+              : {}),
             // 身份事实通道（M5.2 G6）：字段条目随 section 透传——丢字段会把身份段变空
             ...(Array.isArray(s?.identity)
               ? {

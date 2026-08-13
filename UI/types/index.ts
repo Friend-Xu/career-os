@@ -223,6 +223,17 @@ export interface ResumeModule {
   order: number;
   /** 身份事实字段条目（M5.2 G6 非 claim 通道；profile/education 等模块用——字段级渲染与编辑） */
   identity?: ResumeIdentityEntry[];
+  /** 经历条目（Resume Entry Contract v0.1：工作经历/项目经验模块——条目头 + 表述行；与 content 互斥） */
+  entries?: ResumeEntry[];
+}
+
+/** 经历条目（Entry Contract v0.1）：事实头（title/role/period）+ 表述行（行级 block 契约） */
+export interface ResumeEntry {
+  id: string;
+  title: string;
+  role?: string;
+  period?: string;
+  content: string;
 }
 
 export interface PoolHealth {

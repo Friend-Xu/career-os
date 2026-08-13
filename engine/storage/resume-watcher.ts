@@ -60,20 +60,36 @@ function parseSections(md: string): { sections: ResumeSection[]; issues: { path:
     }
     const content = line.match(/^\s*[-*]\s*(.+)$/)
     if (!content || !current) continue
-    // bullet 行：- {sentence}（claim: {claimId}；expectation: {eid}）；asset 行：- {name}（asset）；identity 行：- {label} | {body}（identity）（M5.2 G6）
+    // bullet 行：- {sentence}（claim: {claimId}；expectation: {eid}）；asset 行：- {name}（asset）；
+    // identity 行：- {label} | {body}（identity）（M5.2 G6）；条目头行：- {title} | {role} | {period}（entry）（Entry Contract v0.1）
     const bulletOpen = content[1].indexOf('（claim: ')
     const asset = content[1].match(/^(.*?)（asset）$/)
     const identity = content[1].match(/^(.*?)（identity）$/)
-    if (bulletOpen >= 0) {
+    const entryHead = content[1].match(/^(.*?)（entry）$/)
+    if (entryHead) {
+      const parts = entryHead[1].split('|').map((p) => p.trim())
+      const dash = (v: string): string | undefined => (v === '' || v === '-' ? undefined : v)
+      const role = dash(parts[1] ?? '')
+      const period = dash(parts[2] ?? '')
+      ;(current.entries ??= []).push({
+        title: parts[0] ?? '',
+        ...(role ? { role } : {}),
+        ...(period ? { period } : {}),
+        bullets: [],
+      })
+    } else if (bulletOpen >= 0) {
       const sentence = content[1].slice(0, bulletOpen).trim()
       const inner = content[1].slice(bulletOpen + '（claim: '.length).replace(/）$/, '')
       const [claimId, ...pairs] = inner.split('；')
       const expectation = pairs.find((p) => p.startsWith('expectation: '))?.slice('expectation: '.length)
-      current.bullets.push({
+      const bullet: ResumeBullet = {
         sentence,
         claimId: claimId.trim(),
         ...(expectation ? { metadata: { expectationId: expectation.trim() } } : {}),
-      })
+      }
+      const entry = current.entries?.[current.entries.length - 1]
+      if (entry) entry.bullets.push(bullet)
+      else current.bullets.push(bullet)
     } else if (asset) {
       ;(current.assetRefs ??= []).push(asset[1].trim())
     } else if (identity) {
@@ -140,9 +156,17 @@ export function serializeResumeDocument(d: ResumeDocument): string {
   ].join('\n')
   const sections = d.sections.map((s) => {
     const bullets = s.bullets.map((b) => `- ${b.sentence}（claim: ${b.claimId}${b.metadata?.expectationId ? `；expectation: ${b.metadata.expectationId}` : ''}）`).join('\n')
+    // 条目化段（Resume Entry Contract v0.1）：条目头行 + 条目下 bullet（round-trip 同 parseSections）
+    const entries = (s.entries ?? [])
+      .map((e) => {
+        const head = `- ${[e.title, e.role ?? '', e.period ?? ''].join(' | ')}（entry）`
+        const eb = e.bullets.map((b) => `- ${b.sentence}（claim: ${b.claimId}${b.metadata?.expectationId ? `；expectation: ${b.metadata.expectationId}` : ''}）`).join('\n')
+        return [head, eb].filter(Boolean).join('\n')
+      })
+      .join('\n')
     const identity = (s.identity ?? []).map((e) => `- ${e.label ? `${e.label} | ${e.body ?? ''}` : (e.body ?? '')}（identity）`).join('\n')
     const assets = (s.assetRefs ?? []).map((a) => `- ${a}（asset）`).join('\n')
-    return `### ${s.type} | ${s.title}\n\n${[bullets, identity, assets].filter(Boolean).join('\n')}`
+    return `### ${s.type} | ${s.title}\n\n${[entries, bullets, identity, assets].filter(Boolean).join('\n')}`
   }).join('\n\n')
   const ops = (d.operations ?? [])
     .map((o) => `- ${o.id} | ${o.actor} | ${o.action} | ${o.at}${o.note ? ` | note: ${o.note}` : ''}${o.rejected ? ' | rejected:true' : ''}`)
@@ -358,10 +382,12 @@ export interface ResumeDiff {
 
 const identityOf = (b: ResumeBullet): ResumeBulletIdentity => ({ sentence: b.sentence, claimId: b.claimId, ...(b.metadata?.expectationId ? { expectationId: b.metadata.expectationId } : {}) })
 const keyOf = (i: ResumeBulletIdentity): string => `${i.claimId}|${i.sentence}|${i.expectationId ?? ''}`
+/** 章节全部 bullet（条目化段含 entries[].bullets——Entry Contract v0.1） */
+const allBullets = (s: ResumeSection): ResumeBullet[] => [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]
 
 export function diffResumes(a: ResumeDocument, b: ResumeDocument): ResumeDiff {
-  const aIds = new Set(a.sections.flatMap((s) => s.bullets.map(identityOf)).map(keyOf))
-  const bList = b.sections.flatMap((s) => s.bullets.map(identityOf))
+  const aIds = new Set(a.sections.flatMap((s) => allBullets(s).map(identityOf)).map(keyOf))
+  const bList = b.sections.flatMap((s) => allBullets(s).map(identityOf))
   return {
     added: bList.filter((i) => !aIds.has(keyOf(i))),
     removed: [...aIds].filter((k) => !bList.some((i) => keyOf(i) === k)).map((k) => {

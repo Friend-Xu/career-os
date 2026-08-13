@@ -325,27 +325,58 @@ export function ResumeStudio() {
                 <Box key={s.type}>
                   <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, mb: 0.5 }}>{s.title}</Typography>
                   <Stack spacing={0.25}>
-                    {s.bullets.map((b, bi) => (
-                      <Typography
-                        key={bi}
-                        onClick={() => setSelectedClaim(b.claimId)}
-                        sx={{
-                          fontSize: 12.5,
-                          color: COLORS.text,
-                          lineHeight: 1.7,
-                          cursor: 'pointer',
-                          p: '2px 4px',
-                          borderRadius: '6px',
-                          bgcolor: selectedClaim === b.claimId ? alpha(COLORS.accent, 0.1) : 'transparent',
-                          '&:hover': { bgcolor: COLORS.bgHover },
-                        }}
-                      >
-                        {b.sentence}
-                        <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted, ml: 0.75 }}>
-                          · 表述 {b.claimId.slice(-4)}
-                        </Typography>
-                      </Typography>
-                    ))}
+                    {s.entries && s.entries.length > 0
+                      ? s.entries.map((entry, ei) => (
+                          <Box key={ei} sx={{ mb: 0.75 }}>
+                            <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.text, lineHeight: 1.7 }}>
+                              {entry.title}
+                              {entry.role ? ` · ${entry.role}` : ''}
+                              {entry.period ? `（${entry.period}）` : ''}
+                            </Typography>
+                            {entry.bullets.map((b, bi) => (
+                              <Typography
+                                key={bi}
+                                onClick={() => setSelectedClaim(b.claimId)}
+                                sx={{
+                                  fontSize: 12.5,
+                                  color: COLORS.text,
+                                  lineHeight: 1.7,
+                                  cursor: 'pointer',
+                                  p: '2px 4px',
+                                  borderRadius: '6px',
+                                  bgcolor: selectedClaim === b.claimId ? alpha(COLORS.accent, 0.1) : 'transparent',
+                                  '&:hover': { bgcolor: COLORS.bgHover },
+                                }}
+                              >
+                                {b.sentence}
+                                <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted, ml: 0.75 }}>
+                                  · 表述 {b.claimId.slice(-4)}
+                                </Typography>
+                              </Typography>
+                            ))}
+                          </Box>
+                        ))
+                      : s.bullets.map((b, bi) => (
+                          <Typography
+                            key={bi}
+                            onClick={() => setSelectedClaim(b.claimId)}
+                            sx={{
+                              fontSize: 12.5,
+                              color: COLORS.text,
+                              lineHeight: 1.7,
+                              cursor: 'pointer',
+                              p: '2px 4px',
+                              borderRadius: '6px',
+                              bgcolor: selectedClaim === b.claimId ? alpha(COLORS.accent, 0.1) : 'transparent',
+                              '&:hover': { bgcolor: COLORS.bgHover },
+                            }}
+                          >
+                            {b.sentence}
+                            <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted, ml: 0.75 }}>
+                              · 表述 {b.claimId.slice(-4)}
+                            </Typography>
+                          </Typography>
+                        ))}
                     {(s.assetRefs ?? []).map((a, ai) => (
                       <Typography key={`a${ai}`} sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.7 }}>
                         {a} <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted }}>· 资产</Typography>

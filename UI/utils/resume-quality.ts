@@ -6,16 +6,27 @@
  */
 
 export interface QualityCheck {
-  category: 'structure' | 'metrics' | 'action' | 'object' | 'method' | 'validation' | 'impact'
+  category: 'structure' | 'metrics' | 'action' | 'object' | 'method' | 'validation' | 'impact' | 'entry'
   label: string
   status: 'ok' | 'partial' | 'missing'
   hint: string // 为什么（当前证据）+ 怎么修
 }
 
+/** 模块全文（平铺 content + 条目 content/头——Entry Contract v0.1 质检覆盖条目化段） */
+interface ModuleLike {
+  title?: string
+  content: string
+  entries?: { title: string; role?: string; period?: string; content: string }[]
+}
+function moduleText(m: ModuleLike): string {
+  const entries = (m.entries ?? []).map((e) => `${e.title} · ${e.role ?? ''}（${e.period ?? ''}）\n${e.content}`).join('\n')
+  return `${m.title ?? ''}\n${m.content}\n${entries}`
+}
+
 /** 质量总分（R0 规则：Dashboard 与编辑区共用单一实现；诊断参考非评分结论） */
-export function computeResumeQuality(modules: { content: string }[]): number {
-  const totalLen = modules.reduce((s, m) => s + m.content.length, 0)
-  const hasMetrics = modules.some((m) => /\d+%|\d+年/.test(m.content))
+export function computeResumeQuality(modules: ModuleLike[]): number {
+  const totalLen = modules.reduce((s, m) => s + moduleText(m).length, 0)
+  const hasMetrics = modules.some((m) => /\d+%|\d+年/.test(moduleText(m)))
   let score = 70
   if (totalLen > 200) score += 10
   if (hasMetrics) score += 12
@@ -39,17 +50,17 @@ function contains(text: string, terms: string[]): boolean {
 }
 
 /** 清单式检查（R1：逐项可解释——为什么 + 怎么修；不做加权总分） */
-export function computeQualityChecks(modules: { title: string; content: string }[]): QualityCheck[] {
-  const all = modules.map((m) => `${m.title}\n${m.content}`).join('\n\n')
-  const expModules = modules.filter((m) => EXPERIENCE_TITLES.some((t) => m.title.includes(t)))
-  const expText = expModules.map((m) => m.content).join('\n')
+export function computeQualityChecks(modules: ModuleLike[]): QualityCheck[] {
+  const all = modules.map(moduleText).join('\n\n')
+  const expModules = modules.filter((m) => EXPERIENCE_TITLES.some((t) => (m.title ?? '').includes(t)))
+  const expText = expModules.map(moduleText).join('\n')
 
   const checks: QualityCheck[] = []
 
   // 结构：核心模块齐全（个人信息/经历/技能）
-  const hasCore = modules.some((m) => /个人|基本信息/.test(m.title)) &&
+  const hasCore = modules.some((m) => /个人|基本信息/.test(m.title ?? '')) &&
     expModules.length > 0 &&
-    modules.some((m) => /技能/.test(m.title))
+    modules.some((m) => /技能/.test(m.title ?? ''))
   checks.push({
     category: 'structure',
     label: '结构完整',
@@ -82,7 +93,7 @@ export function computeQualityChecks(modules: { title: string; content: string }
   })
 
   // 对象：做了什么（经历模块有具体描述）
-  const objectOk = expModules.some((m) => m.content.length > 24)
+  const objectOk = expModules.some((m) => moduleText(m).length > 24)
   checks.push({
     category: 'object',
     label: '对象明确',
@@ -124,6 +135,21 @@ export function computeQualityChecks(modules: { title: string; content: string }
       ? '含效果词或成果指标（提升/降低/缩短 + 数字）'
       : '未说明结果——用一句成果收尾（提升 X%、缩短周期）',
   })
+
+  // 条目结构（Entry Contract v0.1）：条目头完整（公司/项目 · 职位 · 时间段——专业共识：条目头是结构信息）
+  const allEntries = expModules.flatMap((m) => m.entries ?? [])
+  if (allEntries.length > 0) {
+    const incomplete = allEntries.filter((e) => !e.title || !e.role || !e.period).length
+    checks.push({
+      category: 'entry',
+      label: '条目头完整',
+      status: incomplete === 0 ? 'ok' : 'partial',
+      hint:
+        incomplete === 0
+          ? '经历条目均含公司/项目 · 职位 · 时间段'
+          : `${incomplete} 个条目缺职位或时间段——条目头是 HR 定位时间线的结构信息`,
+    })
+  }
 
   return checks
 }

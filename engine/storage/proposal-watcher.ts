@@ -48,11 +48,14 @@ const PROPOSAL_STATUSES: ProposalStatus[] = ['pending', 'accepted', 'rejected']
 const SUGGESTED_SOURCES = ['ai', 'standard_rule', 'user'] as const
 const SECTION_TYPES: ResumeSectionType[] = ['summary', 'experience', 'projects', 'skills', 'education']
 
-/** 源版本内容快照（sha256 of sections——生命周期字段流转不影响，内容变更即失效） */
+/** 源版本内容快照（sha256 of sections——生命周期字段流转不影响，内容变更即失效；
+ *  条目化段（Entry Contract v0.1）含 entries[].bullets） */
 export function checksumOf(d: ResumeDocument): string {
   const content = d.sections
     .map((s) => {
-      const bullets = s.bullets.map((b) => `${s.type}|${b.claimId}|${b.sentence}|${b.metadata?.expectationId ?? ''}`).join('\n')
+      const bullets = [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]
+        .map((b) => `${s.type}|${b.claimId}|${b.sentence}|${b.metadata?.expectationId ?? ''}`)
+        .join('\n')
       const assets = (s.assetRefs ?? []).map((a) => `asset|${a}`).join('\n')
       return `${s.type}|${s.title}\n${bullets}${assets ? `\n${assets}` : ''}`
     })
@@ -259,11 +262,11 @@ export function validateProposal(p: ResumeProposal, ctx: ProposalContext): Resum
   return { status, issues }
 }
 
-/** identity = claimId + sentence（+ expectationId 若给）——oldSentence 必须来自源版本原文 */
+/** identity = claimId + sentence（+ expectationId 若给）——oldSentence 必须来自源版本原文（含条目化段 bullets） */
 function bulletMatches(d: ResumeDocument, c: ProposalChange): boolean {
   const sec = d.sections.find((s) => s.type === c.section)
   if (!sec) return false
-  return sec.bullets.some(
+  return [...sec.bullets, ...(sec.entries ?? []).flatMap((e) => e.bullets)].some(
     (b) => b.claimId === c.targetClaimId && b.sentence === c.oldSentence && (c.expectationId === undefined || b.metadata?.expectationId === c.expectationId),
   )
 }
@@ -493,13 +496,14 @@ export function rejectProposalFile(ws: Workspace, id: string, reason?: string, n
   return updated
 }
 
-/** Proposal → Draft Manifest（确定性：源版本全部 bullet + 被替换 N 条 override_source=proposal） */
+/** Proposal → Draft Manifest（确定性：源版本全部 bullet + 被替换 N 条 override_source=proposal；
+ *  条目化段 bullets 平铺进 claims——Manifest 无条目结构，派生版本经历段回平铺（Entry Contract 已知缺口）） */
 export function buildProposalManifest(source: ResumeDocument, p: ResumeProposal, now: Date): ResumeDraftManifest {
   const date = now.toISOString().slice(0, 10)
   const docId = `${date}-${source.id}-proposal-${p.id.slice(-6)}`
   const claims: DraftClaimRef[] = []
   for (const s of source.sections) {
-    for (const b of s.bullets) {
+    for (const b of [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]) {
       const ref: DraftClaimRef = { claimId: b.claimId, section: s.type, ...(b.metadata?.expectationId ? { expectationId: b.metadata.expectationId } : {}) }
       const change = p.changes.find(
         (c) => c.section === s.type && c.targetClaimId === b.claimId && b.sentence === c.oldSentence && (c.expectationId === undefined || c.expectationId === b.metadata?.expectationId),

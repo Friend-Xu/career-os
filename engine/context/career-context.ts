@@ -35,7 +35,9 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
   const usedByResume = new Map<string, string[]>()
   for (const r of resumes) {
     for (const s of r.sections) {
-      for (const b of s.bullets) {
+      // 条目化段（Entry Contract v0.1）：entries[].bullets 与平铺 bullets 一并反查
+      const bullets = [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]
+      for (const b of bullets) {
         const list = usedByResume.get(b.claimId) ?? []
         if (!list.includes(r.id)) list.push(r.id)
         usedByResume.set(b.claimId, list)
@@ -46,7 +48,9 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
   const expressions: CareerContext['expressions'] = []
   for (const r of resumes) {
     r.sections.forEach((s, si) => {
-      s.bullets.forEach((b, bi) => {
+      // 条目化段（Entry Contract v0.1）：entries[].bullets 与平铺 bullets 一并投影
+      const bullets = [...s.bullets, ...(s.entries ?? []).flatMap((e) => e.bullets)]
+      bullets.forEach((b, bi) => {
         expressions.push({
           id: `${r.id}:${si}:${bi}`,
           claimId: b.claimId,
@@ -99,14 +103,20 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
           ...(e.contribution ? { contribution: e.contribution } : {}),
         })),
     })),
-    claims: claims.map((c) => ({
-      id: c.id,
-      type: c.claimType,
-      statement: c.statement,
-      usable: canUseClaim(c, evidenceById),
-      usedByResume: usedByResume.get(c.id) ?? [],
-      provenance: { evidenceIds: c.provenance.map((p) => p.evidenceId) },
-    })),
+    claims: claims.map((c) => {
+      const firstEvidence = evidenceById.get(c.provenance[0]?.evidenceId)
+      return {
+        id: c.id,
+        type: c.claimType,
+        statement: c.statement,
+        usable: canUseClaim(c, evidenceById),
+        usedByResume: usedByResume.get(c.id) ?? [],
+        provenance: { evidenceIds: c.provenance.map((p) => p.evidenceId) },
+        ...(c.owner ? { owner: c.owner } : {}),
+        // 经历分类从 provenance 首个证据派生（确定性投影，不落盘——编辑器模块建议标注的数据基础）
+        ...(firstEvidence?.type ? { evidenceType: firstEvidence.type } : {}),
+      }
+    }),
     expressions,
     resumes: resumes.map((r) => ({
       id: r.id,
