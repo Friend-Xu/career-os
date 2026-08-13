@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PersonEducation } from '../ir/schema.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
-import { matchEducation, matchExperience } from '../runtime/constraint-matcher.ts'
+import { matchEducation, matchExperience, experienceYearsOf } from '../runtime/constraint-matcher.ts'
 
 const edu = (degree: string, status: PersonEducation['status'] = 'confirmed'): PersonEducation => ({
   school: '某校',
@@ -197,26 +197,73 @@ test('Parser：experience 原文保留；preferred → 不产出；与 education
   assert.equal(ir.major, undefined) // preferred 不产出
 })
 
-// ─── Matcher Policy v0.1：experience 应届判定 ─────────────────────────────
+// ─── Matcher Policy v0.2：experience 应届 + 年限判定 ───────────────────────
+
+function expRow(partial: Partial<import('../ir/schema.ts').PersonWorkExperience>): import('../ir/schema.ts').PersonWorkExperience {
+  return { company: 'Company-A', status: 'confirmed', ...partial }
+}
 
 test('matchExperience：fresh 应届判定——毕业年 ≥ 当前年-1 → MATCHED（Policy 层，事实层只存 graduation_year）', () => {
   const c = { rawValue: 'fresh', confidence: 'high' as const, source: '任职要求 1' }
   const now = new Date('2026-08-08')
-  const fresh = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2026, status: 'confirmed', source: 'resume' }], c, now)
+  const fresh = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2026, status: 'confirmed', source: 'resume' }], undefined, c, now)
   assert.equal(fresh.status, 'MATCHED')
-  const prev = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2025, status: 'confirmed', source: 'resume' }], c, now)
+  const prev = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2025, status: 'confirmed', source: 'resume' }], undefined, c, now)
   assert.equal(prev.status, 'MATCHED')
-  const old = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2023, status: 'confirmed', source: 'resume' }], c, now)
+  const old = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2023, status: 'confirmed', source: 'resume' }], undefined, c, now)
   assert.equal(old.status, 'NOT_MATCHED')
 })
 
-test('matchExperience：无毕业年份 → NEEDS_CONFIRMATION（Unknown ≠ False）；非应届类要求（年限）→ 规则未定义不猜', () => {
+test('matchExperience：应届类无毕业年份 → NEEDS_CONFIRMATION（Unknown ≠ False）', () => {
   const now = new Date('2026-08-08')
   const c = { rawValue: 'fresh', confidence: 'high' as const, source: '任职要求 1' }
-  const noYear = matchExperience([{ school: '某校', degree: '本科', status: 'confirmed', source: 'resume' }], c, now)
+  const noYear = matchExperience([{ school: '某校', degree: '本科', status: 'confirmed', source: 'resume' }], undefined, c, now)
   assert.equal(noYear.status, 'NEEDS_CONFIRMATION')
-  const years = matchExperience([{ school: '某校', degree: '本科', graduationYear: 2023, status: 'confirmed', source: 'resume' }], { rawValue: '3 年以上经验', confidence: 'high' as const, source: '任职要求 2' }, now)
-  assert.equal(years.status, 'NEEDS_CONFIRMATION')
-  const noConstraint = matchExperience(undefined, undefined)
+  assert.equal(noYear.note, '画像未登记毕业年份——需确认')
+  const noConstraint = matchExperience(undefined, undefined, undefined)
   assert.equal(noConstraint.status, 'NOT_DECLARED')
+})
+
+test('matchExperience：年限类——合并年限对比（低于下限 NOT_MATCHED / 满足 MATCHED / 超上限 NEEDS_CONFIRMATION）', () => {
+  const now = new Date('2026-08-08')
+  // 2023.07-2025.03 = 20 个月 = 1.7 年
+  const rows = [expRow({ start: '2023.07', end: '2025.03' })]
+  const below = matchExperience(undefined, rows, { rawValue: '3年以上经验', confidence: 'high', source: '任职要求 2' }, now)
+  assert.equal(below.status, 'NOT_MATCHED')
+  assert.equal(below.evidence.person, '1.7 年经验')
+  const ok = matchExperience(undefined, rows, { rawValue: '1年以上经验', confidence: 'high', source: '任职要求 2' }, now)
+  assert.equal(ok.status, 'MATCHED')
+  const range = matchExperience(undefined, rows, { rawValue: '1-3年经验', confidence: 'high', source: '任职要求 2' }, now)
+  assert.equal(range.status, 'MATCHED')
+  const over = matchExperience(undefined, [expRow({ start: '2020.01', end: '2025.12' })], { rawValue: '1-3年经验', confidence: 'high', source: '任职要求 2' }, now)
+  assert.equal(over.status, 'NEEDS_CONFIRMATION')
+  assert.equal(over.note, '超出年限上限——需确认（超年限可能是薪资错配，不是资格不符）')
+})
+
+test('matchExperience：年限类缺件——无经历行 / 无起止 → NEEDS_CONFIRMATION（Unknown ≠ False）', () => {
+  const now = new Date('2026-08-08')
+  const c = { rawValue: '3年以上经验', confidence: 'high' as const, source: '任职要求 2' }
+  assert.equal(matchExperience(undefined, undefined, c, now).status, 'NEEDS_CONFIRMATION')
+  assert.equal(matchExperience(undefined, [], c, now).status, 'NEEDS_CONFIRMATION')
+  // start 缺失行不参与；end 缺失 → 至今
+  assert.equal(matchExperience(undefined, [expRow({ start: undefined, end: '2025.03' })], c, now).status, 'NEEDS_CONFIRMATION')
+  const ongoing = matchExperience(undefined, [expRow({ start: '2023.07' })], c, now)
+  assert.equal(ongoing.status, 'MATCHED') // 2023.07 → 2026.08 = 3.1 年
+  assert.equal(ongoing.evidence.person, '3.1 年经验')
+  // 非法表述 → 规则未定义不猜
+  assert.equal(matchExperience(undefined, [expRow({ start: '2023.07', end: '2025.03' })], { rawValue: '具有机械行业背景', confidence: 'high', source: '任职要求 2' }, now).status, 'NEEDS_CONFIRMATION')
+})
+
+test('experienceYearsOf：区间并集——重叠行不重复计；pending/rejected 行不参与', () => {
+  const now = new Date('2026-08-08')
+  assert.equal(experienceYearsOf(undefined, now), null)
+  const overlap = [
+    expRow({ start: '2023.07', end: '2025.03' }),
+    expRow({ start: '2024.01', end: '2024.06' }), // 完全包含
+    expRow({ start: '2025.04', end: '2026.03' }), // 相接下一段（Gap 不计——行间空隙不补）
+  ]
+  // 20 + 11 = 31 个月
+  assert.equal(experienceYearsOf(overlap, now), 31)
+  const pendingOnly = [expRow({ status: 'pending', start: '2023.07', end: '2025.03' })]
+  assert.equal(experienceYearsOf(pendingOnly, now), null)
 })

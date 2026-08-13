@@ -765,16 +765,15 @@ export function computeConstraintMatch(workspace: Workspace, jobId: string, pers
     })
   }
   if (ir.experience) {
-    const r = matchExperience(person.education, ir.experience)
-    const gradYears = confirmed.map((e) => e.graduationYear).filter((y): y is number => y !== undefined)
+    const r = matchExperience(person.education, person.experiences, ir.experience)
     rows.push({
       id: constraintRefOf('experience', ir.experience.rawValue),
       dim: 'experience',
       requirement: ir.experience.rawValue,
-      person: gradYears.length > 0 ? `${Math.max(...gradYears)} 年毕业` : '未登记',
-      personEvidence: evidenceOf(confirmed.filter((e) => e.graduationYear !== undefined)),
+      person: r.evidence.person ?? '未登记',
+      personEvidence: r.personEvidence,
       status: r.status,
-      note: r.status === 'NEEDS_CONFIRMATION' ? (gradYears.length === 0 ? '画像未登记毕业年份——需确认' : '经验要求非应届类（年限等）——规则未定义需确认') : undefined,
+      note: r.note,
     })
   }
   return rows

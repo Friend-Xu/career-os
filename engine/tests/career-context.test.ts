@@ -196,7 +196,7 @@ test('T7 currentJob：带 jobId 时 expectations.coverage 三态投影', () => {
   rmSync(root, { recursive: true, force: true })
 })
 
-test('T8 workRowRef 投影校验：evidence ↔ identity 工作经历行（一致无警示 / 周期错位 / 行缺失）', () => {
+test('T8 workRowRef 投影校验：evidence ↔ facts/experience.md 工作经历行（一致无警示 / 周期错位 / 行缺失）', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-ctx8-'))
   const ws = initWorkspace(root)
   const now = new Date('2026-08-13T10:00:00Z')
@@ -217,14 +217,14 @@ status: active
 | name | Person-A |
 | status | active |
 `)
-  ws.write('persons/p1/snapshot/current/identity.md', `# Identity
+  ws.write('persons/p1/facts/experience.md', `# Experience Facts
 
-## 工作经历
+## 工作经历记录
 
-| company | role | start | end |
-|---------|------|-------|-----|
-| Company-A | 机械工程师 | 2021.03 | 2023.08 |
-| Company-B | 结构工程师 | 2018.07 | 2021.02 |
+| candidate_id | company | role | start | end | status | source |
+|--------------|---------|------|-------|-----|--------|--------|
+| c-001 | Company-A | 机械工程师 | 2021.03 | 2023.08 | confirmed | resume |
+| c-002 | Company-B | 结构工程师 | 2018.07 | 2021.02 | confirmed | resume |
 `)
 
   const evidenceMd = (period: string, ref: string): string => `---

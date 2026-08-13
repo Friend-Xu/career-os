@@ -235,11 +235,24 @@ status: v1
 | skill_a | 机械设计 | applied-professional | 结构设计 |
 `,
   )
+  ws.write(
+    'persons/person_001/snapshot/current/preference_constraints.md',
+    `# 偏好约束
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| salary_range | 10-12K/月 |
+| city | 城市甲 |
+`,
+  )
 
   const projection = createProjection({ dbPath: join(root, '.db'), workspace: ws, logger: silentLogger })
   const persons = projection.listPersons()
   assert.equal(persons.length, 1)
   assert.deepEqual(persons[0]!.skills, [{ skillId: 'skill_a', name: '机械设计', level: 4 }])
+  assert.deepEqual(persons[0]!.preference, { salaryRange: '10-12K/月', city: '城市甲' })
   projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
   rmSync(root, { recursive: true, force: true })
 })

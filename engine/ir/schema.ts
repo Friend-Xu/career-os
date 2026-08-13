@@ -50,7 +50,10 @@ export interface Person {
   identity?: PersonIdentity
   skills?: PersonSkill[] // V2 知识层：画像技能声明（`## 技能` 段落，可缺省）
   education?: PersonEducation[] // facts/education.md 登记事实（缺 = 未采集；缺件显式表达见 Person Education Registration Contract）
-  /** 工作经历事实（identity.md `## 工作经历` 表投影——简历公司条目头来源；无 = 未采集） */
+  /** 偏好事实（preference_constraints.md 投影——意向城市/期望薪资；无 = 未采集）。
+   *  与 PersonSnapshot.preference 同形——JD 匹配度城市冲突 FLAG 与画像视图共用此源 */
+  preference?: { salaryRange?: string; city?: string }
+  /** 工作经历事实（facts/experience.md 派生——简历公司条目头来源；无 = 未采集） */
   experiences?: PersonWorkExperience[]
   /** 优势亮点（snapshot/summary_strengths.md 投影——引用型资产，锚 claims；Person Summary Strength Contract v0.1） */
   summaryStrengths?: SummaryStrength[]
@@ -86,8 +89,8 @@ export interface ConstraintMatchRow {
 
 /** 证据引用（Claim Strength ≤ Evidence Strength——只引用事实 ID 不复制文本；Decision Layer 透传） */
 export interface EvidenceRef {
-  source: 'skill_inventory' | 'education' | 'identity'
-  id: string // skillId / 教育候选 ID / 段落 ID
+  source: 'skill_inventory' | 'education' | 'experience' | 'identity'
+  id: string // skillId / 教育候选 ID / 经历候选 ID / 段落 ID
 }
 
 /** 差距行动分类（维度级确定性映射，非职业判断——「岗位偏差/是否值得」归 User 或 Career Ontology 冻结区） */
@@ -189,12 +192,16 @@ export interface PersonIdentity {
   yearsExperience?: string
 }
 
-/** 工作经历事实（identity.md `## 工作经历` 表——简历公司条目头 Candidate；用户确认事实） */
+/** 工作经历事实（persons/{pid}/facts/experience.md 派生——Registration Owner = Engine；
+ *  简历公司条目头 Candidate；无文件 = 未采集。契约：
+ *  references/person-experience-registration-contract.md） */
 export interface PersonWorkExperience {
   company: string
   role?: string
   start?: string
   end?: string
+  candidateId?: string // 候选溯源（candidates.md 条目 id）
+  status: 'pending' | 'confirmed' | 'rejected' // 复用 candidates 状态
 }
 
 /**
@@ -228,7 +235,7 @@ export interface PersonSnapshot {
   education?: PersonEducation[]
   /** skill_inventory 版本（frontmatter status: vX；Decision inputs.skillRefs.version） */
   skillInventoryVersion?: string
-  /** 工作经历事实（identity.md `## 工作经历` 表派生——简历公司条目头来源） */
+  /** 工作经历事实（facts/experience.md 派生——简历公司条目头来源） */
   experiences?: PersonWorkExperience[]
   /** 优势亮点（snapshot/summary_strengths.md 派生——引用型资产：锚 claims，不复制事实；
    *  Person Summary Strength Contract v0.1） */
@@ -255,10 +262,13 @@ export interface InitCandidate {
   status: 'pending' | 'confirmed' | 'rejected'
   sessionRef: string
   /** 结构化载荷（提取端 proposal；candidates.md 通用 payload 列；education 类目 = 键值段
-   *  `学校=…；专业=…；学历=…；起=…；止=…`，其余类目暂空） */
+   *  `学校=…；专业=…；学历=…；起=…；止=…`；experience 类目 = `公司=…；岗位=…；起=…；止=…`；
+   *  其余类目暂空） */
   payload?: string
   /** education 类目候选的结构化解析（listCandidates 派生；其余类目无） */
   education?: { school: string; major?: string; degree?: string; startYear?: number; endYear?: number }
+  /** experience 类目候选的结构化解析（listCandidates 派生；其余类目无） */
+  experience?: { company: string; role?: string; start?: string; end?: string }
 }
 
 /** Person 教育事实（persons/{pid}/facts/education.md 派生；Registration Owner = Engine——

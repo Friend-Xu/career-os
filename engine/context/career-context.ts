@@ -45,7 +45,7 @@ export function buildCareerContext(ws: Workspace, opts: CareerContextOptions = {
     }
   }
 
-  // Resume Entry Contract v0.2 Option A：workRowRef 投影校验（identity 行 = 唯一事实源）。
+  // Resume Entry Contract v0.2 Option A：workRowRef 投影校验（facts/experience.md 行 = 唯一事实源）。
   // 语义 = 包含而非相等：证据事件周期必须落在公司行周期内（ST 2024.07-2025.03 ⊂ 2023.07-2025.03 合法）；
   // 越界（归属错公司/周期笔误）→ 警示。日期归一化 YYYYMM，不可解析 → 跳过不误报。
   const periodBounds = (s: string | undefined): [string, string] | undefined => {

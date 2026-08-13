@@ -113,6 +113,35 @@ test('B 培养型：学历 MATCHED + 专业/经验待确认（相关专业规则
   }
 })
 
+test('D 年限型：画像经历 2023.07-2025.03（1.7 年）vs 3 年以上 → NOT_MATCHED（证据源 = experience 事实）', () => {
+  const ws = setup()
+  try {
+    ws.write('persons/person_001/facts/experience.md', `# 经历事实登记
+
+| candidate_id | company | role | start | end | status | source |
+|--------------|---------|------|-------|-----|--------|--------|
+| c-010 | Company-A 机械 | 机械工程师 | 2023.07 | 2025.03 | confirmed | resume |
+`)
+    ws.write('jobs/2026-08-08-示例医疗-管理培训生.md', '# 管理培训生 — 示例医疗\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| company | 示例医疗 |\n| title | 管理培训生 |\n| created_at | 2026-08-08 |\n')
+    analyze(ws, { ...bProposal, constraints: { experience: { values: ['3年以上经验'], source: '任职要求 1', confidence: 'high' } } })
+    const rows = computeConstraintMatch(ws, B_ID, 'person_001')
+    const exp = rows.find((r) => r.dim === 'experience')!
+    assert.equal(exp.status, 'NOT_MATCHED')
+    assert.equal(exp.person, '1.7 年经验')
+    assert.deepEqual(exp.personEvidence, [{ source: 'experience', id: 'c-010' }])
+    assert.equal(exp.note, undefined)
+    // 无经历事实 → NEEDS_CONFIRMATION（Unknown ≠ False）
+    ws.write('persons/person_001/facts/experience.md', '# 经历事实登记\n\n| candidate_id | company | role | start | end | status | source |\n|--------------|---------|------|-------|-----|--------|--------|\n')
+    const rows2 = computeConstraintMatch(ws, B_ID, 'person_001')
+    const exp2 = rows2.find((r) => r.dim === 'experience')!
+    assert.equal(exp2.status, 'NEEDS_CONFIRMATION')
+    assert.equal(exp2.person, '未登记')
+    assert.equal(exp2.note, '画像未登记工作经历——需确认')
+  } finally {
+    rmSync(ws.paths.root, { recursive: true, force: true })
+  }
+})
+
 test('A 工程型：preferred 门槛不进入投影（学历/经验无 hard 维度）——只留 major 待确认行', () => {
   const ws = setup()
   try {

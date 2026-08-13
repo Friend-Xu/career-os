@@ -36,9 +36,6 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
   const interests = person.initialInterest ?? []
   const targets = person.targetRoles ?? []
 
-  const byCat = (cat: string, st: string) =>
-    candidates.filter((c) => c.category === cat && c.status === st).length
-
   const dims: ProfileDim[] = [
     {
       key: 'skills',
@@ -70,16 +67,21 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
     {
       key: 'experience',
       label: '经历',
-      state: byCat('experience', 'confirmed') > 0 ? 'confirmed' : byCat('experience', 'pending') > 0 ? 'pending' : 'missing',
-      detail:
-        byCat('experience', 'confirmed') > 0
-          ? `${byCat('experience', 'confirmed')} 项已确认`
-          : byCat('experience', 'pending') > 0
-            ? `${byCat('experience', 'pending')} 项待确认`
-            : '未建立',
+      state: (person.experiences ?? []).length > 0 ? 'confirmed' : 'missing',
+      detail: (person.experiences ?? []).length > 0 ? `${person.experiences!.length} 段经历` : '未建立',
     },
-    { key: 'city', label: '城市', state: 'missing', detail: '未评估' },
-    { key: 'preference', label: '偏好', state: 'missing', detail: '未建立' },
+    {
+      key: 'city',
+      label: '城市',
+      state: person.preference?.city ? 'confirmed' : 'missing',
+      detail: person.preference?.city ?? '未采集',
+    },
+    {
+      key: 'preference',
+      label: '偏好',
+      state: person.preference?.salaryRange ? 'confirmed' : 'missing',
+      detail: person.preference?.salaryRange ? `薪资 ${person.preference.salaryRange}` : '未采集',
+    },
   ]
 
   return {
@@ -277,7 +279,7 @@ function StatusContent() {
           <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>
             覆盖维度
             <Box component="span" sx={{ fontFamily: COLORS.mono, color: COLORS.text }}>
-              {' '}{covered}/6
+              {' '}{covered}/{dims.length}
             </Box>
           </Typography>
           <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>

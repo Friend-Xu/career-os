@@ -13,7 +13,7 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { watch } from 'chokidar'
-import type { PersonSkill, PersonSnapshot, PersonWorkExperience, SummaryStrength } from '../ir/schema.ts'
+import type { PersonSkill, PersonSnapshot, SummaryStrength } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
 import { parseSummaryTable } from '../ir/summary-table.ts'
@@ -147,7 +147,8 @@ const CANDIDATE_CATEGORY_LABEL: Record<string, string> = {
 }
 
 /** 候选行 → 表格行（extraction/candidates.md 追加）；category 非法 → 跳过该条（不 invalid 整个批次）。
- *  payload 为通用结构化载荷列（education 类目键值段：学校=…；专业=…；学历=…；起=…；止=…；其余类目留空）——
+ *  payload 为通用结构化载荷列（education 类目键值段：学校=…；专业=…；学历=…；起=…；止=…；
+ *  experience 类目键值段：公司=…；岗位=…；起=…；止=…；其余类目留空）——
  *  空 payload 输出 5 列（旧格式兼容），有 payload 输出 6 列 */
 function candidateRow(c: { category: string; content: string; source: string; payload?: string }): string | null {
   const category = CANDIDATE_CATEGORY_LABEL[c.category]
@@ -201,6 +202,26 @@ export function parseEducationPayload(payload: string | undefined): { school: st
   }
 }
 
+/** 经历候选键值段 → 结构化 proposal（`公司=…；岗位=…；起=…；止=…`；缺公司 → 无结构化——
+ *  结构化失败时 content 原文仍在（Candidate 双层：raw_content + structured_proposal）。
+ *  起/止保留原文（YYYY.MM / YYYY-MM / YYYY 均可——年限计算归 Matcher Policy 层） */
+export function parseExperiencePayload(payload: string | undefined): { company: string; role?: string; start?: string; end?: string } | undefined {
+  if (!payload?.trim()) return undefined
+  const fields: Record<string, string> = {}
+  for (const seg of payload.split(/[；;]/)) {
+    const m = seg.trim().match(/^([^=：]+?)[=：](.+)$/)
+    if (m && m[2]!.trim()) fields[m[1]!.trim()] = m[2]!.trim()
+  }
+  const company = fields['公司'] ?? fields['company']
+  if (!company) return undefined
+  return {
+    company,
+    role: fields['岗位'] ?? fields['role'],
+    start: fields['起'] ?? fields['start'],
+    end: fields['止'] ?? fields['end'],
+  }
+}
+
 /** extraction/candidates.md → 候选列表（状态过滤 pending/confirmed/rejected；文件缺 → 空；
  *  5 列旧格式（无 payload）兼容） */
 export function listCandidates(ws: Workspace, personId: string): import('../ir/schema.ts').InitCandidate[] {
@@ -227,6 +248,10 @@ export function listCandidates(ws: Workspace, personId: string): import('../ir/s
     if (payload && category === 'education') {
       cand.payload = payload
       cand.education = parseEducationPayload(payload)
+    }
+    if (payload && category === 'experience') {
+      cand.payload = payload
+      cand.experience = parseExperiencePayload(payload)
     }
     out.push(cand)
   }
@@ -274,11 +299,41 @@ export function registerEducationFact(
   ws.write(rel, ws.read(rel).replace(/\n?$/, '\n') + row + '\n')
 }
 
+/** facts/experience.md 已登记候选 id 集合（幂等：同一候选不重复登记） */
+function registeredExperienceIds(ws: Workspace, personId: string): Set<string> {
+  const rel = `persons/${personId}/facts/experience.md`
+  if (!ws.exists(rel)) return new Set()
+  const ids = new Set<string>()
+  for (const line of ws.read(rel).split('\n')) {
+    const m = line.match(/^\|\s*(c-\d+)\s*\|/)
+    if (m) ids.add(m[1]!.trim())
+  }
+  return ids
+}
+
+/** 工作经历事实登记（Registration Owner = Engine）：candidate resolve 确认（experience 类目
+ *  + 结构化 payload）→ facts/experience.md 追加行。契约：
+ *  references/person-experience-registration-contract.md */
+export function registerExperienceFact(
+  ws: Workspace,
+  personId: string,
+  fact: { candidateId: string; company: string; role?: string; start?: string; end?: string; source: 'resume' | 'user_reported' },
+): void {
+  const rel = `persons/${personId}/facts/experience.md`
+  if (!ws.exists(rel)) {
+    ws.write(rel, ['# Experience Facts', '', '## 工作经历记录', '', '| candidate_id | company | role | start | end | status | source |', '|--------------|---------|------|-------|-----|--------|--------|', ''].join('\n'))
+  }
+  const cell = (v: string | undefined): string => (v === undefined || v === '' ? '-' : String(v).replace(/\|/g, '\\|'))
+  const row = `| ${fact.candidateId} | ${cell(fact.company)} | ${cell(fact.role)} | ${cell(fact.start)} | ${cell(fact.end)} | confirmed | ${fact.source} |`
+  ws.write(rel, ws.read(rel).replace(/\n?$/, '\n') + row + '\n')
+}
+
 /**
  * 候选裁决（切片 2.3）：更新 candidates.md 状态 + 写 resolution 事件（审计：
  * "为什么档案里有这个事实" → "因为用户在某次初始化会话中确认了这个候选"）。
  * confirmed/modified → status confirmed；rejected → status rejected；modified 替换内容。
- * education 类目 confirmed（含结构化 payload）→ 同步登记 facts/education.md（Registration）。
+ * education 类目 confirmed（含结构化 payload）→ 同步登记 facts/education.md（Registration）；
+ * experience 类目同构 → facts/experience.md。
  */
 export function resolveCandidate(
   ws: Workspace,
@@ -319,6 +374,21 @@ export function resolveCandidate(
         degree: edu.degree,
         startYear: edu.startYear,
         endYear: edu.endYear,
+        source: m5Source(ws, personId, candidateId),
+      })
+    }
+  }
+
+  // Registration：experience 类目确认 + 结构化 payload → facts/experience.md（幂等）
+  if (action !== 'rejected' && categoryLabel === '经历') {
+    const exp = parseExperiencePayload(payload)
+    if (exp && !registeredExperienceIds(ws, personId).has(candidateId)) {
+      registerExperienceFact(ws, personId, {
+        candidateId,
+        company: exp.company,
+        role: exp.role,
+        start: exp.start,
+        end: exp.end,
         source: m5Source(ws, personId, candidateId),
       })
     }
@@ -538,23 +608,6 @@ export function upsertSummaryStrengths(
   return cleaned
 }
 
-/** identity.md `## 工作经历` 表 → PersonWorkExperience[]（公司条目头 Candidate——简历 Entry 契约 §4；
- *  规范键 company/role/start/end；无表/空值 → 空数组，缺件显式） */
-function parseWorkExperiences(md: string): PersonWorkExperience[] {
-  const sec = md.split(/##\s*工作经历/, 2)[1]
-  if (!sec) return []
-  const body = sec.split(/\n##\s+/)[0].split(/\n###\s+/)[0]
-  const out: PersonWorkExperience[] = []
-  for (const line of body.split('\n')) {
-    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/)
-    if (!m) continue
-    if (m[1]!.trim() === 'company' || /^[-:\s]+$/.test(m[1]!.trim())) continue
-    const dash = (v: string): string | undefined => (v.trim() === '' || v.trim() === '-' ? undefined : v.trim())
-    out.push({ company: m[1]!.trim(), role: dash(m[2]!), start: dash(m[3]!), end: dash(m[4]!) })
-  }
-  return out
-}
-
 /** skill_inventory 语义级别 → SFIA 数字（词表映射非打分；inferred/learned/未识别 → 跳过） */
 const SKILL_LEVEL_MAP: Record<string, number> = {
   'applied-professional': 4,
@@ -644,6 +697,25 @@ function parseEducationFacts(md: string): import('../ir/schema.ts').PersonEducat
   return out
 }
 
+/** facts/experience.md → PersonWorkExperience[]（工作经历事实登记表；无行 → 空数组） */
+function parseExperienceFacts(md: string): import('../ir/schema.ts').PersonWorkExperience[] {
+  const out: import('../ir/schema.ts').PersonWorkExperience[] = []
+  for (const line of md.split('\n')) {
+    const m = line.match(/^\|\s*(c-\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|$/)
+    if (!m) continue
+    const dash = (v: string): string | undefined => (v.trim() === '-' ? undefined : v.trim())
+    out.push({
+      candidateId: m[1]!.trim(),
+      company: m[2]!.trim(),
+      role: dash(m[3]!),
+      start: dash(m[4]!),
+      end: dash(m[5]!),
+      status: m[6]!.trim() as never,
+    })
+  }
+  return out
+}
+
 /** persons/ 子目录扫描 → PersonSnapshot[]（manifest 缺 id → 跳过该 person） */
 export function scanPersons(ws: Workspace): PersonSnapshot[] {
   let entries: import('node:fs').Dirent[]
@@ -671,6 +743,8 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     const preference = snapshotOf(ws, pid, 'preference_constraints.md')
     const eduRel = `persons/${pid}/facts/education.md`
     const education = ws.exists(eduRel) ? parseEducationFacts(ws.read(eduRel)) : undefined
+    const expRel = `persons/${pid}/facts/experience.md`
+    const experiences = ws.exists(expRel) ? parseExperienceFacts(ws.read(expRel)) : undefined
 
     let eventCount = 0
     try {
@@ -700,6 +774,10 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
     if (education && education.length > 0) {
       snapshot.education = education
     }
+    // 工作经历真相源 = facts/experience.md（Registration；identity.md 工作经历表为历史遗留投影，不再解析）
+    if (experiences && experiences.length > 0) {
+      snapshot.experiences = experiences
+    }
     if (career) {
       snapshot.careerProfile = {
         currentRole: career.current_role,
@@ -712,10 +790,6 @@ export function scanPersons(ws: Workspace): PersonSnapshot[] {
         salaryRange: preference.salary_range,
         city: preference.city,
       }
-    }
-    if (identityMd) {
-      const experiences = parseWorkExperiences(identityMd)
-      if (experiences.length > 0) snapshot.experiences = experiences
     }
     // M6.6.5：技能真相源 = skill_inventory.md（confirmed → Person.skills；决策 provenance 键）
     const skillRel = `persons/${pid}/snapshot/current/skill_inventory.md`
