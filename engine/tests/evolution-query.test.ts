@@ -48,7 +48,7 @@ status: ${status}
 
 | 字段 | 值 |
 |------|-----|
-| salary | 11-13K/月 |
+| salary | 12-15K/月 |
 | city | City-Circle |
 | preference_count | 1 |
 | constraint_count | 1 |

@@ -29,7 +29,8 @@ docs/*
 
 # Test artifacts
 .playwright-mcp/
-tests/e2e-test-*.md
+# E2E 运行时输出（真实筛选/评估快照——测试产物非架构，Data Source Boundary）
+tests/e2e/
 tests/SKILL-company-research-design.md
 graph-force-1.png
 

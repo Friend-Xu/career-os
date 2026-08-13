@@ -61,7 +61,7 @@ status: v2
 
 | 字段 | 值 |
 |------|-----|
-| salary_range | 11-13K/月 |
+| salary_range | 12-15K/月 |
 `,
 }
 

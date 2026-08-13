@@ -38,7 +38,7 @@ ${rows.map(([id, name, level]) => `| ${id} | ${name} | ${level} | 结构设计 |
 `
 }
 
-function pref(status: string, prefs: [string, string, string][], cons: [string, string, string][], salary = '11-13K/月'): string {
+function pref(status: string, prefs: [string, string, string][], cons: [string, string, string][], salary = '12-15K/月'): string {
   return `---
 id: person_001
 status: ${status}
@@ -164,7 +164,7 @@ test('diffSnapshotVersions：pf/ct 条目分型（preference vs constraint）+ s
     ]))
     archiveCurrentSnapshot(ws, 'person_001', { reason: 'preference_update' })
     const v3pref = ws.read('persons/person_001/snapshot/current/preference_constraints.md')
-    ws.write('persons/person_001/snapshot/current/preference_constraints.md', v3pref.replace('11-13K/月', '13-15K/月'))
+    ws.write('persons/person_001/snapshot/current/preference_constraints.md', v3pref.replace('12-15K/月', '14-16K/月'))
     const v4 = archiveCurrentSnapshot(ws, 'person_001', { reason: 'salary_update' })!.id
 
     const diffs = diffSnapshotVersions(ws, 'person_001', v2, v4)

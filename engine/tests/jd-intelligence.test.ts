@@ -32,7 +32,7 @@ function person(partial: Partial<PersonSnapshot> = {}): PersonSnapshot {
       { skillId: 'skill_b', name: '减速器设计', level: 2 },
     ],
     skillInventoryVersion: partial.skillInventoryVersion ?? 'v2',
-    preference: 'preference' in partial ? partial.preference : { salaryRange: '11-13K/月', city: 'City-Circle' },
+    preference: 'preference' in partial ? partial.preference : { salaryRange: '12-15K/月', city: 'City-Circle' },
     eventCount: partial.eventCount ?? 1,
   }
 }
