@@ -49,14 +49,31 @@ const TYPE_COLOR: Record<InfoNode['type'], string> = {
   skill: '#8AB4F8',
 }
 
+/** 类型中文名（图例 + hover 浮层共用） */
+const TYPE_LABEL: Record<InfoNode['type'], string> = {
+  person: '人',
+  decision: '决策',
+  direction: '方向',
+  city: '城市',
+  company: '公司',
+  role: '岗位',
+  skill: '技能',
+}
+
 // ─── 关系图谱（react-force-graph-2d）：实时力导向 + 拖拽让位 + hover 联动（Obsidian 关系图谱同款模式）──
 // 标签防重叠（调研 d3-force-registry / d3-bboxCollide 定案，手写实现、零新增依赖）：
 // 1. 标签框矩形碰撞力——AABB，position-based 硬约束（每 tick 直接改坐标、全强度 + 2 次迭代）
 // 2. 链接长度随两端标签宽自适应（d3LinkDistance 访问器）——相连节点线长拉够，标签不被拉回重叠
 // 3. 碰撞几何与绘制一致（离屏 measureText 实测字宽 + 标签框位于圆点上方）
 
-type FgNode = InfoNode & { isolated: boolean }
+type FgNode = InfoNode & { isolated: boolean; degree?: number }
 type FgLink = { id: string; source: string; target: string; strength: 'high' | 'medium' | 'low' }
+
+/** 节点半径按度映射（Obsidian 式视觉编码：hub 大、叶小）——结构重要性一眼可辨 */
+function radius(n: { type: InfoNode['type']; degree?: number }): number {
+  const base = n.type === 'person' ? 7 : 5
+  return base + Math.min(5, Math.sqrt(n.degree ?? 0))
+}
 
 /** 边/节点强度配色（浅色主题，绿=高配 蓝=中配 灰=低配） */
 const LINK_COLOR: Record<FgLink['strength'], string> = {
@@ -92,8 +109,8 @@ function displayLabel(label: string, type: InfoNode['type']): string {
   return s + '…'
 }
 
-function boxGeom(n: { type: InfoNode['type']; label: string; matchScore?: number }): BoxGeom {
-  const r = n.type === 'person' ? 8 : 6
+function boxGeom(n: { type: InfoNode['type']; label: string; matchScore?: number; degree?: number }): BoxGeom {
+  const r = radius(n)
   const boxH = n.type === 'person' ? 24 : 22
   const top = r + 8 + boxH // 标签框上沿
   const bottom = n.matchScore != null ? r + 22 : r + 8 // matchScore 小框下沿；无则到圆点
@@ -122,7 +139,9 @@ function labelRectCollide(pad = COLLIDE_PAD) {
     return g
   }
   function force(alpha: number): void {
-    for (let iter = 0; iter < 2; iter++) {
+    // 退火：冷却期（alpha 低）布局已基本定型，迭代降到 1——O(n²) 碰撞是重布局掉帧主因
+    const iters = alpha < 0.12 ? 1 : 2
+    for (let iter = 0; iter < iters; iter++) {
       for (let i = 0; i < nodesArr.length; i++) {
         const a = nodesArr[i]!
         const ga = geomOf(a)
@@ -205,19 +224,28 @@ function GraphCanvas({
   edges,
   typeFilter,
   search,
+  selectedNode,
   onNodeContext,
+  onNodeClick,
+  onBackgroundClick,
 }: {
   nodes: InfoNode[];
   edges: typeof INFO_EDGES;
   typeFilter: string;
   search: string;
+  selectedNode: string | null;
   onNodeContext: (e: MouseEvent, node: InfoNode) => void;
+  onNodeClick: (node: InfoNode) => void;
+  onBackgroundClick: () => void;
 }) {
   const engineStatus = useAppStore((s) => s.engineStatus)
+  const setInfopoolFilter = useAppStore((s) => s.setInfopoolFilter)
   // hover 状态存 ref（非 React state）：force-graph 的 nodeCanvasObject prop 更新链路不可靠，
-  // drawNode 每帧执行时直接读 ref 最新值 → 重绘反映 hover（autoPauseRedraw=false 保证渲染循环常驻）
+  // drawNode 每帧执行时直接读 ref 最新值 → 重绘反映 hover（autoPauseRedraw 下 hover 自动恢复渲染循环）
   const hoveredRef = useRef<string | null>(null)
   const fgRef = useRef<any>(undefined)
+  // 初始适配只做一次：拖拽回弹/过滤 resume 都会再触发 engineStop，重复 zoomToFit = 「总是自动缩小」
+  const fittedRef = useRef(false)
 
   /** 孤立节点：edges 中无任何连接的节点（健康检查，桥接真实数据后自动生效） */
   const linkedIds = useMemo(() => {
@@ -246,22 +274,18 @@ function GraphCanvas({
     return map
   }, [edges])
 
-  /** 搜索/类型过滤：graphData 子集 + 语义预设布局（团簇间距可控，力导向微调） */
+  /** 全量图数据（挂载/数据源变化才重建）：过滤只改可见性，不重建 simulation——
+   * graphData 变化会重置布局并同步跑 warmup 循环（O(n²) 碰撞 × tick 阻塞主线程 = 搜索卡死 1-2fps 的根因），
+   * 布局稳定后过滤 = 纯渲染层隐藏（Obsidian 关系图谱同款行为：过滤不动布局） */
   const data = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const visible = nodes.filter((n) => {
-      const matchType = typeFilter === 'all' || n.type === typeFilter
-      const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
-      return matchType && matchSearch
-    })
-    const visibleIds = new Set(visible.map((n) => n.id))
-    const layout = semanticLayout(visible)
+    const layout = semanticLayout(nodes)
     return {
-      nodes: visible.map((n) => {
+      nodes: nodes.map((n) => {
         const p = layout.get(n.id) ?? { x: 0, y: 0 }
         return {
           ...n,
           isolated: !linkedIds.has(n.id),
+          degree: (neighborSets.get(n.id)?.nodes.size ?? 1) - 1,
           x: p.x,
           y: p.y,
           // person 钉在中心（人中心布局的语义锚点；拖拽时 force-graph 以 fx/fy 跟随，松手后停在拖拽处）
@@ -269,11 +293,23 @@ function GraphCanvas({
           fy: n.type === 'person' ? p.y : undefined,
         }
       }),
-      links: edges
-        .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
-        .map((e) => ({ id: e.id, source: e.source, target: e.target, strength: e.strength })),
+      links: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, strength: e.strength })),
     }
-  }, [nodes, edges, typeFilter, search, linkedIds])
+  }, [nodes, edges, linkedIds, neighborSets])
+
+  /** 过滤可见集（搜索/类型过滤 → 渲染层隐藏；布局与模拟保持全量稳定） */
+  const visibleIds = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return new Set(
+      nodes
+        .filter((n) => {
+          const matchType = typeFilter === 'all' || n.type === typeFilter
+          const matchSearch = !q || n.label.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
+          return matchType && matchSearch
+        })
+        .map((n) => n.id),
+    )
+  }, [nodes, typeFilter, search])
 
   // 布局平衡（整体居中 + 团簇间距 + 标签框防重叠）：
   // - 标签框矩形碰撞力（position-based 硬约束，见 labelRectCollide）；随 data 重注册以绑定新节点数组
@@ -298,8 +334,8 @@ function GraphCanvas({
     })
     // 统一强度：默认按度倒数（单连叶节点满强度 1.0），0.5 均匀吸附（person 已钉中心，无拉偏风险）
     lf.strength(0.5)
-    // 消除默认 charge 斥力（-30 会把团簇推开），布局完全由链接 + 碰撞决定
-    ;(fgRef.current?.d3Force('charge') as { strength(v: number): void } | undefined)?.strength(0)
+    // 全局斥力（Obsidian repel force）：团簇均匀散开不挤中心；链接 + 碰撞 + 弱斥力三方平衡
+    ;(fgRef.current?.d3Force('charge') as { strength(v: number): void } | undefined)?.strength(-70)
   }
 
   // 布局平衡（整体居中 + 团簇间距 + 标签框防重叠）：
@@ -312,22 +348,31 @@ function GraphCanvas({
     linkParamsRef.current()
   }, [data])
 
-  /** 节点绘制：光晕圆点 + 标签（按 scale 分级显隐防重叠）；hover 时非邻居淡出（读 ref 最新值） */
+  // 过滤可见集变化 → resume 触发重绘：autoPauseRedraw 停渲染后，visibility 变化只置 needsRedraw
+  // 标志、无渲染循环消费它；resume 一帧消费后模拟已冷却自动停回（无重排）
+  useEffect(() => {
+    fgRef.current?.resumeAnimation()
+  }, [visibleIds])
+
+  /** 节点绘制：度映射半径 + 标签连续淡出；hover/选中时非邻居淡出（focus 优先 hover） */
   const drawNode = useCallback(
     (node: FgNode & { x: number; y: number }, ctx: CanvasRenderingContext2D, scale: number) => {
       const color = TYPE_COLOR[node.type]
-      const r = node.type === 'person' ? 8 : 6
-      const hovered = hoveredRef.current
-      const dim = hovered !== null && hovered !== node.id && !neighborSets.get(hovered)?.nodes.has(node.id)
+      const r = radius(node)
+      const focusId = hoveredRef.current ?? selectedNode
+      const dim = focusId != null && focusId !== node.id && !neighborSets.get(focusId)?.nodes.has(node.id)
       ctx.save()
       ctx.globalAlpha = dim ? 0.12 : 1
-      // 光晕（hover 增强）
-      ctx.shadowColor = color
-      ctx.shadowBlur = hovered === node.id ? 26 : 14
+      // 光晕仅 hover 聚焦节点——每帧 shadowBlur 是最贵的 Canvas 操作，静态零光晕（Obsidian 极简同款）
+      if (hoveredRef.current === node.id) {
+        ctx.shadowColor = color
+        ctx.shadowBlur = 10
+      }
       ctx.beginPath()
       ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
       ctx.fillStyle = color
       ctx.fill()
+      ctx.shadowBlur = 0
       // 孤立节点：虚线外环
       if (node.isolated) {
         ctx.setLineDash([2, 2])
@@ -336,11 +381,12 @@ function GraphCanvas({
         ctx.stroke()
         ctx.setLineDash([])
       }
-      ctx.shadowBlur = 0
-      // 标签分级显隐（Obsidian 式）：核心节点（人/公司/方向）早显示，细节节点（决策/技能/岗位）放大才显示——
-      // 默认视图不糊在一起，缩放逐级展开；标签带半透明背景框（文字与线/节点清晰分离）
+      // 标签连续淡出（Obsidian text fade threshold 语义）：阈值附近渐变透明度替代硬显隐——
+      // 默认视图细节节点标签低透明度在场，放大后渐显；背景框分离文字与线/节点
       const labelThreshold = node.type === 'person' || node.type === 'company' || node.type === 'direction' ? 0.7 : 1.2
-      if (scale > labelThreshold) {
+      const labelAlpha = Math.min(1, Math.max(0, (scale - labelThreshold * 0.55) / (labelThreshold * 0.45)))
+      if (labelAlpha > 0.02) {
+        ctx.globalAlpha = (dim ? 0.12 : 1) * labelAlpha
         const dLabel = displayLabel(node.label, node.type)
         ctx.font = `600 ${node.type === 'person' ? 13.5 : 13}px "Geist", system-ui, sans-serif`
         ctx.textAlign = 'center'
@@ -375,16 +421,16 @@ function GraphCanvas({
       }
       ctx.restore()
     },
-    [neighborSets],
+    [neighborSets, selectedNode],
   )
 
-  /** 边绘制：线性渐变（source 实 → target 虚）+ hover 非邻居淡出 */
+  /** 边绘制：线性渐变（source 实 → target 虚）+ hover/选中非邻居淡出 */
   const drawLink = useCallback(
     (link: FgLink & { source: { x: number; y: number }; target: { x: number; y: number } }, ctx: CanvasRenderingContext2D) => {
       const { source: s, target: t } = link
       if (s.x == null || t.x == null) return
-      const hovered = hoveredRef.current
-      const dim = hovered !== null && !neighborSets.get(hovered)?.links.has(link.id)
+      const focusId = hoveredRef.current ?? selectedNode
+      const dim = focusId != null && !neighborSets.get(focusId)?.links.has(link.id)
       ctx.save()
       ctx.globalAlpha = dim ? 0.06 : 1
       const grad = ctx.createLinearGradient(s.x, s.y, t.x, t.y)
@@ -399,7 +445,7 @@ function GraphCanvas({
       ctx.stroke()
       ctx.restore()
     },
-    [neighborSets],
+    [neighborSets, selectedNode],
   )
 
   return (
@@ -418,44 +464,64 @@ function GraphCanvas({
         ref={fgRef}
         // force-graph 链接类型为解析后节点对象；字符串 id 是运行时合法输入（内部映射），cast 处理
         graphData={data as any}
+        // 过滤 = 渲染层隐藏（布局与模拟不动——搜索/过滤零重排零卡顿）
+        nodeVisibility={(node) => visibleIds.has((node as FgNode).id)}
+        linkVisibility={(link) => {
+          const l = link as FgLink & { source: FgNode; target: FgNode }
+          return visibleIds.has(l.source.id) && visibleIds.has(l.target.id)
+        }}
         nodeCanvasObject={drawNode}
         linkCanvasObject={drawLink}
-        // 长标签截断后完整名称走 hover 提示（默认 HTML tooltip）
-        nodeLabel={(node) => (node as FgNode).label}
-        // 指针命中区域与绘制一致（自定义 nodeCanvasObject 后默认命中半径仅 1px，hover/右键都点不中）
+        // hover 浮层：完整名称 + 类型 + 连接数（度）——结构信息即时可见
+        nodeLabel={(node) => {
+          const n = node as FgNode
+          const deg = neighborSets.get(n.id)?.nodes.size ?? 1
+          return `${n.label}\n${TYPE_LABEL[n.type]} · ${deg - 1} 条连接${n.matchScore != null ? ` · 匹配 ${n.matchScore}%` : ''}`
+        }}
+        // 指针命中区域 = 圆点 + 标签框（与绘制几何一致）——hover/点击标签同样命中节点，不再只能点中小圆点
         nodePointerAreaPaint={(node, color, ctx) => {
           const n = node as FgNode
+          const r = radius(n)
           ctx.fillStyle = color
           ctx.beginPath()
-          ctx.arc(n.x!, n.y!, n.type === 'person' ? 7 : 5, 0, 2 * Math.PI)
+          ctx.arc(n.x!, n.y!, r + 4, 0, 2 * Math.PI)
+          ctx.fill()
+          const dLabel = displayLabel(n.label, n.type)
+          ctx.font = `600 ${n.type === 'person' ? 13.5 : 13}px "Geist", system-ui, sans-serif`
+          const tw = ctx.measureText(dLabel).width
+          const bw = tw + 16
+          const bh = n.type === 'person' ? 24 : 22
+          ctx.beginPath()
+          ctx.roundRect(n.x! - bw / 2, n.y! - r - 8 - bh, bw, bh, 6)
           ctx.fill()
         }}
         onNodeHover={(node) => {
           hoveredRef.current = node ? (node as FgNode).id : null
         }}
+        // 单击选中（Obsidian 单击打开同款）：聚焦邻居 + 打开详情 Drawer；空白单击取消
+        onNodeClick={(node) => onNodeClick(node as FgNode)}
+        onBackgroundClick={onBackgroundClick}
         onNodeRightClick={(node, e) => onNodeContext(e as unknown as MouseEvent, node as FgNode)}
-        // 拖拽后钉住节点（Obsidian 同款：拖到哪就留在哪）+ reheat 让碰撞力推开被压住的邻居
-        // （force-graph 默认松手后清除 fx/fy 弹回原簇，且不 reheat——钉住后模拟已停、重叠残留）
-        onNodeDragEnd={(node) => {
-          const n = node as FgNode & SimulationNodeDatum
-          n.fx = n.x
-          n.fy = n.y
-          fgRef.current?.d3ReheatSimulation()
+        // 拖拽松手回弹（Obsidian 同款：拖拽是临时移位，不回弹会把布局永久钉乱）；reheat 让碰撞力推开被压住的邻居
+        onNodeDragEnd={() => fgRef.current?.d3ReheatSimulation()}
+        // 模拟冷却（布局稳定）后仅首次整体适配居中——之后缩放归用户掌控（Obsidian 行为：不抢用户缩放）
+        // 延时一帧避开 force-graph 内部 onFinishUpdate 的 scaleTo 竞态（同帧触发会打断 fit 动画）
+        onEngineStop={() => {
+          if (!fittedRef.current) {
+            fittedRef.current = true
+            setTimeout(() => fgRef.current?.zoomToFit(400, 60), 50)
+          }
         }}
-        // 模拟冷却（布局稳定）后整体适配居中——初始 zoomToFit 太早（节点未散开，fit 范围错误）
-        onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
         // 每 tick 幂等重设链接力参数（force-graph 重建 link force 时兜底恢复，见 linkParamsRef）
         onEngineTick={() => linkParamsRef.current()}
-        // Obsidian 式行为：warmup 快速散开 → 冷却静止；拖拽自动 reheat（邻居让位）+ hover 联动
-        // autoPauseRedraw=false：渲染循环常驻（hover/点击检测依赖它；冷却后停渲染则 hover 永不触发）
-        autoPauseRedraw={false}
+        // 冷却后停止渲染循环（autoPauseRedraw）——hover/拖拽时 force-graph 自动恢复；静态零 CPU 重绘
+        autoPauseRedraw
         d3AlphaMin={0.001}
-        d3AlphaDecay={0.02}
-        // 模拟冷却阈值调大：默认 cooldownTicks 150 在种子重叠未收敛时就停（布局停在中间态），
-        // 600 tick（≈alpha 自然衰减到 0.001 的 340 tick 之上）保证链接力充分收敛
-        cooldownTicks={600}
+        d3AlphaDecay={0.025}
+        // 模拟冷却阈值：warmup 快速散开 → 冷却静止（收敛更快，重布局卡顿窗口更短）
+        cooldownTicks={350}
         d3VelocityDecay={0.35}
-        warmupTicks={140}
+        warmupTicks={100}
         nodeRelSize={1}
         backgroundColor="rgba(0, 0, 0, 0)"
         minZoom={0.3}
@@ -481,7 +547,7 @@ function GraphCanvas({
         </Box>
       )}
 
-      {/* Legend */}
+      {/* Legend：可点击按类型过滤（当前过滤项高亮，再点取消回全部） */}
       <Stack
         direction="row"
         spacing={1.5}
@@ -495,18 +561,28 @@ function GraphCanvas({
           borderRadius: '8px',
           bgcolor: alpha(COLORS.canvas, 0.85),
           border: `1px solid ${COLORS.border}`,
-          pointerEvents: 'none',
         }}
       >
         {Object.entries(TYPE_COLOR).map(([type, color]) => (
-          <Stack key={type} direction="row" sx={{ alignItems: 'center' }} spacing={0.5}>
+          <Stack
+            key={type}
+            direction="row"
+            sx={{
+              alignItems: 'center',
+              spacing: 0.5,
+              cursor: 'pointer',
+              px: 0.5,
+              py: 0.25,
+              borderRadius: '4px',
+              bgcolor: typeFilter === type ? alpha(color, 0.18) : 'transparent',
+            }}
+            onClick={() => setInfopoolFilter(typeFilter === type ? 'all' : type)}
+          >
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
-            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-              {{ person: '人', decision: '决策', direction: '方向', city: '城市', company: '公司', role: '岗位', skill: '技能' }[type]}
-            </Typography>
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>{TYPE_LABEL[type as InfoNode['type']]}</Typography>
           </Stack>
         ))}
-        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, ml: 1 }}>
+        <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, ml: 1, pointerEvents: 'none' }}>
           绿线高配 · 蓝线中配 · 虚线低配/风险
         </Typography>
       </Stack>
@@ -516,10 +592,17 @@ function GraphCanvas({
 
 export function InfoPoolPage() {
   const [tab, setTab] = useState(0)
+  // 搜索防抖：输入过程不触发图谱重布局（重布局是主线程重活，连续输入会 1fps 卡死），停顿 300ms 后过滤
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
   const [selected, setSelected] = useState<InfoNode | null>(null)
   const [menu, setMenu] = useState<{ anchor: { top: number; left: number }; node: InfoNode } | null>(null)
   const setPage = useAppStore((s) => s.setPage)
+  const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
   const startAnalysis = useAppStore((s) => s.startAnalysis)
   const infopoolFilter = useAppStore((s) => s.infopoolFilter)
   const decisions = useAppStore((s) => s.decisions)
@@ -599,8 +682,8 @@ export function InfoPoolPage() {
         <TextField
           size="small"
           placeholder="搜索节点…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           slotProps={{
             input: {
               startAdornment: (
@@ -626,6 +709,9 @@ export function InfoPoolPage() {
           edges={edges}
           typeFilter={infopoolFilter}
           search={search}
+          selectedNode={selected?.id ?? null}
+          onNodeClick={(node) => setSelected(node)}
+          onBackgroundClick={() => setSelected(null)}
           onNodeContext={(e, node) => {
             setMenu({ anchor: { top: e.clientY, left: e.clientX }, node })
           }}
@@ -850,25 +936,33 @@ export function InfoPoolPage() {
               <Row label="协议" value="info-pool v2.1" />
             </Stack>
             <Stack spacing={1} sx={{ mt: 3 }}>
-              <Button
-                variant="outlined"
-                fullWidth
-                size="small"
-                onClick={() => push('info', '演示模式：文件系统接入将在阶段 3 实现')}
-              >
-                打开记录文件
-              </Button>
-              <Button
-                variant="contained"
-                fullWidth
-                size="small"
-                onClick={() => {
-                  setSelected(null)
-                  setPage('companies')
-                }}
-              >
-                跳转公司探索
-              </Button>
+              {selected.type === 'decision' && (
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                  onClick={() => {
+                    setSelected(null)
+                    setPage('workbench')
+                    setWorkbenchView('decisions')
+                  }}
+                >
+                  定位决策记录
+                </Button>
+              )}
+              {selected.type === 'company' && (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  size="small"
+                  onClick={() => {
+                    setSelected(null)
+                    setPage('companies')
+                  }}
+                >
+                  跳转公司探索
+                </Button>
+              )}
             </Stack>
           </Box>
         )}
