@@ -49,17 +49,9 @@ export interface UpsertResult {
 // ─── 序列化（md：frontmatter + `## {title}` 段 + `- {text}` 块；块 claims 标注 `（claims: c1, c2）`；
 //     条目化段（Resume Entry Contract v0.2）：条目头行 `- {title} | {role} | {period} | {description}（entry）`，其下块行归属该条目）──
 
-export function serializeWorkingCopy(wc: WorkingCopy): string {
-  const meta = [
-    `id: ${wc.id}`,
-    `owner: ${wc.owner}`,
-    ...(wc.name && wc.name.trim() ? [`name: ${wc.name.trim()}`] : []),
-    `status: ${wc.status}`,
-    `revision: ${wc.revision}`,
-    `updated_at: ${wc.updatedAt}`,
-    ...(wc.targetContext?.jobId ? [`target_job_id: ${wc.targetContext.jobId}`] : []),
-  ]
-  const body = wc.sections
+/** 段体序列化（derivation-proposal 复用同一格式——派生内容与副本内容同构） */
+export function serializeWorkingSections(sections: WorkingSection[]): string {
+  return sections
     .map((s) => {
       const blocks = (list: WorkingBlock[]): string =>
         list
@@ -86,11 +78,23 @@ export function serializeWorkingCopy(wc: WorkingCopy): string {
       return `## ${s.title}\n\n${[entries, blocks(s.blocks), identity].filter(Boolean).join('\n')}`
     })
     .join('\n\n')
-  return `---\n${meta.join('\n')}\n---\n# 简历工作副本\n\n${body}\n`
 }
 
-export function parseWorkingCopyMarkdown(md: string, sourceFile: string): WorkingCopy {
-  const { meta, body } = splitFrontmatter(md)
+export function serializeWorkingCopy(wc: WorkingCopy): string {
+  const meta = [
+    `id: ${wc.id}`,
+    `owner: ${wc.owner}`,
+    ...(wc.name && wc.name.trim() ? [`name: ${wc.name.trim()}`] : []),
+    `status: ${wc.status}`,
+    `revision: ${wc.revision}`,
+    `updated_at: ${wc.updatedAt}`,
+    ...(wc.targetContext?.jobId ? [`target_job_id: ${wc.targetContext.jobId}`] : []),
+  ]
+  return `---\n${meta.join('\n')}\n---\n# 简历工作副本\n\n${serializeWorkingSections(wc.sections)}\n`
+}
+
+/** 段体解析（derivation-proposal 复用——同一格式共享解析，避免双份实现漂移） */
+export function parseWorkingSections(body: string): WorkingSection[] {
   const sections: WorkingSection[] = []
   let current: WorkingSection | null = null
   let currentEntry: WorkingEntry | null = null
@@ -147,11 +151,16 @@ export function parseWorkingCopyMarkdown(md: string, sourceFile: string): Workin
       })
     }
   }
+  return sections
+}
+
+export function parseWorkingCopyMarkdown(md: string, sourceFile: string): WorkingCopy {
+  const { meta, body } = splitFrontmatter(md)
   return {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     owner: meta.owner ?? '',
     ...(meta.name && meta.name.trim() ? { name: meta.name.trim() } : {}),
-    sections,
+    sections: parseWorkingSections(body),
     ...(meta.target_job_id ? { targetContext: { jobId: meta.target_job_id } } : {}),
     status: (meta.status as WorkingCopy['status']) ?? 'active',
     revision: Number(meta.revision ?? '0'),

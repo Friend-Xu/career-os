@@ -88,6 +88,7 @@ import {
   submitOpportunityProposal,
 } from '../storage/opportunity-proposal-registry.ts'
 import { decideStrengthProposal, scanStrengthProposals } from '../storage/strength-proposal-registry.ts'
+import { decideDerivationProposal, scanDerivationProposals } from '../storage/derivation-proposal-registry.ts'
 import {
   promoteToDocumentCandidate,
   scanWorkingCopies,
@@ -464,6 +465,27 @@ function summaryStrengthsParams(v: unknown): { personId: string; items: { text: 
 
 /** person/strength-proposals/decide 入参校验（RPC 边界：id + action 白名单；reason 可选） */
 function strengthProposalDecideParams(v: unknown): { id: string; action: 'accept' | 'reject'; reason?: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { id, action }')
+  const p = v as Record<string, unknown>
+  const id = typeof p.id === 'string' ? p.id : ''
+  if (!id) throw new Error('id 必填')
+  if (p.action !== 'accept' && p.action !== 'reject') throw new Error('action 必须是 accept / reject')
+  return { id, action: p.action, ...(typeof p.reason === 'string' && p.reason ? { reason: p.reason } : {}) }
+}
+
+/** resumes/derivation-proposals/list 入参校验（RPC 边界：可选过滤字段） */
+function derivationProposalListParams(v: unknown): { owner?: string; sourceWcId?: string; jobId?: string } {
+  if (typeof v !== 'object' || v === null) return {}
+  const p = v as Record<string, unknown>
+  return {
+    ...(typeof p.owner === 'string' && p.owner ? { owner: p.owner } : {}),
+    ...(typeof p.sourceWcId === 'string' && p.sourceWcId ? { sourceWcId: p.sourceWcId } : {}),
+    ...(typeof p.jobId === 'string' && p.jobId ? { jobId: p.jobId } : {}),
+  }
+}
+
+/** resumes/derivation-proposals/decide 入参校验（RPC 边界：id + action 白名单；reason 可选） */
+function derivationProposalDecideParams(v: unknown): { id: string; action: 'accept' | 'reject'; reason?: string } {
   if (typeof v !== 'object' || v === null) throw new Error('需要 params { id, action }')
   const p = v as Record<string, unknown>
   const id = typeof p.id === 'string' ? p.id : ''
@@ -1613,6 +1635,17 @@ export async function startServer(opts: {
       const proposal = decideStrengthProposal(workspace, p.id, p.action, p.reason)
       broadcast({ event: EVENTS.strengthProposalsChanged })
       if (p.action === 'accept') broadcast({ event: EVENTS.personsChanged })
+      return proposal
+    },
+    [METHODS.listDerivationProposals]: (params) => {
+      const p = derivationProposalListParams(params)
+      return scanDerivationProposals(workspace, p)
+    },
+    [METHODS.decideDerivationProposal]: (params) => {
+      const p = derivationProposalDecideParams(params)
+      const proposal = decideDerivationProposal(workspace, p.id, p.action, p.reason)
+      broadcast({ event: EVENTS.derivationProposalsChanged })
+      if (p.action === 'accept') broadcast({ event: EVENTS.workingCopiesChanged })
       return proposal
     },
     [METHODS.claimBridgeContext]: (params) => {

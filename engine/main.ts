@@ -29,6 +29,7 @@ import { ServerError, startServer, computeResumeRewriteContext } from './transpo
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
+import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
@@ -173,6 +174,26 @@ async function main(args: string[]): Promise<void> {
       return
     }
 
+    // ─── Derivation Bridge（--derive-context {wcId} {jobId} / --derive-submit {file}）：
+    //      简历派生提案 Agent 消费通道（与 strength Bridge 同模式——Agent 生成整份派生候选，
+    //      Engine 校验登记；accept 建副本必须用户经 RPC 触发，Agent 不能自建副本）
+    if (args.includes('--derive-context')) {
+      const idx = args.indexOf('--derive-context')
+      const wcId = args[idx + 1]
+      const jobId = args[idx + 2]
+      if (!wcId || !jobId) throw new Error('--derive-context 需要 {wcId} {jobId}')
+      console.log(JSON.stringify(buildDeriveContext(ws, wcId, jobId), null, 2))
+      return
+    }
+    if (args.includes('--derive-submit')) {
+      const idx = args.indexOf('--derive-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--derive-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as DerivationProposalInput
+      console.log(JSON.stringify(submitDerivationProposal(ws, input), null, 2))
+      return
+    }
+
     // ─── 投影层（SQLite，markdown 真相源的查询投影）──────────────────────
     const projection = createProjection({ dbPath: config.paths.db, workspace: ws, logger })
     const initial = scanDecisions(ws)
@@ -299,6 +320,11 @@ async function main(args: string[]): Promise<void> {
       watchStrengthProposals(ws, (parsed) => {
         broadcast({ event: EVENTS.strengthProposalsChanged })
         logger.info(`strength-proposals/ 变更：重扫 ${parsed.length} 条并广播`)
+      })
+      // derivation-proposals/ 变更只发信号（简历派生提案——Agent CLI 桥提交 + RPC 裁决都触发）
+      watchDerivationProposals(ws, (parsed) => {
+        broadcast({ event: EVENTS.derivationProposalsChanged })
+        logger.info(`derivation-proposals/ 变更：重扫 ${parsed.length} 条并广播`)
       })
       // interviews/ 变更只发信号（M4-2：问答资产 + 提案——文件登记 + RPC 状态流转/transition 都触发）
       watchInterviews(ws, () => {

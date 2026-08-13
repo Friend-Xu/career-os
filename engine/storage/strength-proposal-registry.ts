@@ -43,7 +43,12 @@ export interface StrengthProposalInput {
 export function buildStrengthProposalContext(
   ws: Workspace,
   personId: string,
-): { personId: string; claims: unknown[]; evidence: unknown[]; existingStrengths: SummaryStrength[] } {
+): {
+  personId: string
+  claims: { id: string; statement: string; evidenceTitles: string[] }[]
+  evidence: { id: string; title: string; contribution: string }[]
+  existingStrengths: SummaryStrength[]
+} {
   const evidence = scanEvidence(ws).map((p) => p.record).filter((e) => e.status === 'trusted' && e.owner === personId)
   const evidenceById = indexEvidence(evidence)
   const claims = scanClaims(ws).map((p) => p.record).filter((c) => c.owner === personId && canUseClaim(c, evidenceById))

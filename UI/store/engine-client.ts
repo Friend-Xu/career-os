@@ -33,6 +33,7 @@ import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alig
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
+import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
 import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -639,6 +640,16 @@ export class EngineClient {
   /** 优势提案裁决（accept 并入优势亮点——用户确认；Agent 不能自批） */
   decideStrengthProposal(id: string, action: 'accept' | 'reject', reason?: string): Promise<StrengthProposal> {
     return this.rpc<StrengthProposal>(METHODS.decideStrengthProposal, { id, action, ...(reason ? { reason } : {}) })
+  }
+
+  /** 简历派生提案列表（owner/sourceWcId/jobId 可选过滤——优化空间派生模式） */
+  listDerivationProposals(filter?: { owner?: string; sourceWcId?: string; jobId?: string }): Promise<DerivationProposal[]> {
+    return this.rpc<DerivationProposal[]>(METHODS.listDerivationProposals, { ...(filter ?? {}) })
+  }
+
+  /** 派生提案裁决（accept → 引擎创建新工作副本；Agent 不能自建副本） */
+  decideDerivationProposal(id: string, action: 'accept' | 'reject', reason?: string): Promise<DerivationProposal> {
+    return this.rpc<DerivationProposal>(METHODS.decideDerivationProposal, { id, action, ...(reason ? { reason } : {}) })
   }
 
   /** 创建 Person + Initialization Session（引擎写 manifest.md + intake/session-001.md） */

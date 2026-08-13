@@ -25,7 +25,6 @@ import type { Person, ResumeEntry, ResumeModule } from '../types'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { EvidenceItem } from '../../engine/ir/schema.ts'
 import { modulesToSections, sectionsToModules, buildSkeletonModules } from '../utils/resume-working-copy'
-import { ResumeDeriveDialog } from '../components/resume-derive-dialog'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
 import { ResumeDashboard } from '../components/resume/ResumeDashboard'
@@ -185,6 +184,8 @@ export function ResumesPage() {
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
   const resumeWorkspaceView = useAppStore((s) => s.resumeWorkspaceView)
+  const setResumeOptimizeMode = useAppStore((s) => s.setResumeOptimizeMode)
+  const setResumeWorkspaceView = useAppStore((s) => s.setResumeWorkspaceView)
   const engineStatus = useAppStore((s) => s.engineStatus)
   const rewrite = useAppStore((s) => s.rewrite)
   const startRewrite = useAppStore((s) => s.startRewrite)
@@ -249,7 +250,6 @@ export function ResumesPage() {
   /** 显式降级开关：error 后用户点「使用规则建议」→ 展示规则候选（R007 降级必须显式） */
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [revert, setRevert] = useState<{ moduleId: string; prevContent: string } | null>(null)
-  const [deriveOpen, setDeriveOpen] = useState(false)
   /** P1.2：从经历资产添加（assetOpen = 目标模块 + 条目 id——用户主动应用表达资产进草稿） */
   const [assetOpen, setAssetOpen] = useState<{ moduleId: string; entryId: string } | null>(null)
   /** R1：表达检查清单展开态（质量条「查看详情」——逐项诊断非评分结论） */
@@ -831,7 +831,13 @@ export function ResumesPage() {
       {/* Dashboard（落地页，非第五空间——ADR-021 §1） */}
       {resumeWorkspaceView === 'dashboard' && (
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-          <ResumeDashboard onDerive={() => setDeriveOpen(true)} />
+          {/* 派生入口深链优化空间派生模式（P2-2：派生 = 优化空间内的整份重写提案通道） */}
+          <ResumeDashboard
+            onDerive={() => {
+              setResumeOptimizeMode('derive')
+              setResumeWorkspaceView('optimize')
+            }}
+          />
         </Box>
       )}
 
@@ -2150,8 +2156,6 @@ export function ResumesPage() {
           )}
         </DialogContent>
       </Dialog>
-
-      <ResumeDeriveDialog open={deriveOpen} onClose={() => setDeriveOpen(false)} />
     </Box>
   )
 }

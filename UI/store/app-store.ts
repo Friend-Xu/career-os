@@ -50,6 +50,7 @@ import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alig
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
+import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
 import {
   EVENTS,
   createEngineClient,
@@ -187,6 +188,8 @@ interface AppState {
   /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
   claimProposals: ClaimProposal[];
   strengthProposals: StrengthProposal[];
+  /** 简历派生提案（优化空间派生模式）：derivation-proposals/ 引擎实时派生（整份派生候选——用户裁决后建副本） */
+  derivationProposals: DerivationProposal[];
   /** 工作副本（ADR-023 P2.2）：resumes/working-copies/ 引擎实时派生（用户创作对象——编辑空间数据源） */
   workingCopies: WorkingCopy[];
   /** 当前编辑对象（P2.3：编辑空间读写的工作副本 id） */
@@ -238,6 +241,8 @@ interface AppState {
   workbenchView: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile';
   /** 简历工作台视图（ADR-021 R0：Dashboard 落地页 + 四空间——编辑/优化/历史/素材） */
   resumeWorkspaceView: ResumeWorkspaceView;
+  /** 优化空间子模式（诊断 = 逐条提案 / 派生 = 整份重写提案；Dashboard 深链入口可直达派生 tab） */
+  resumeOptimizeMode: 'diagnose' | 'derive';
   /** Artifact Studio 视图（M4-5：Assets 概览 / Proposals 提案中心 / Evolution 演化时间线——v0.3 信息架构四区按 slice 落地） */
   artifactsView: 'assets' | 'proposals' | 'evolution';
   /** 四 Artifact 演化 Timeline（M4-5.3）：artifacts/timeline 引擎实时派生（已确定性排序，UI 不重排） */
@@ -317,6 +322,8 @@ interface AppState {
   setArtifactsView: (view: 'assets' | 'proposals' | 'evolution') => void;
   /** 简历工作台视图切换（ADR-021 R0：四空间——编辑/优化/历史/素材；Dashboard 为默认落地不占 tab） */
   setResumeWorkspaceView: (view: ResumeWorkspaceView) => void;
+  /** 切换优化空间子模式（诊断/派生） */
+  setResumeOptimizeMode: (mode: 'diagnose' | 'derive') => void;
   /** 选中简历版本（M3.5.5：切到历史空间并定位——Agent/Deep Link/导出跳转共用） */
   selectResume: (id: string) => void;
   createSession: (title?: string) => string;
@@ -413,6 +420,12 @@ interface AppState {
   decideStrengthProposal: (id: string, action: 'accept' | 'reject', reason?: string) => Promise<StrengthProposal>;
   /** 启动 AI 总结任务（agent CLI 桥：--strength-context 读池 → 候选 → --strength-submit 提交） */
   generateStrengthProposals: (personId: string) => Promise<string>;
+  /** 派生提案全量（优化空间派生模式：owner/sourceWcId/jobId 过滤） */
+  listDerivationProposals: (filter?: { owner?: string; sourceWcId?: string; jobId?: string }) => Promise<DerivationProposal[]>;
+  /** 派生提案裁决（accept → 引擎创建新工作副本；reject → 审计保留） */
+  decideDerivationProposal: (id: string, action: 'accept' | 'reject', reason?: string) => Promise<DerivationProposal>;
+  /** 启动派生任务（agent CLI 桥：--derive-context 读池 → 整份派生候选 → --derive-submit 提交） */
+  generateDerivation: (wcId: string, jobId: string) => Promise<string>;
   /** 取消后台任务（agent/cancel RPC + backgroundTasks 清理——CLI 桥类任务无会话簿记） */
   cancelBackgroundTask: (taskId: string) => Promise<void>;
   /** 创建版本（P2.3：promote → ResumeDocument Candidate） */
@@ -512,6 +525,7 @@ export const useAppStore = create<AppState>()(
       /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
       claimProposals: [],
       strengthProposals: [],
+      derivationProposals: [],
       /** 工作副本（P2.2）：用户创作对象（working-copies/） */
       workingCopies: [],
       activeWorkingCopyId: null,
@@ -552,6 +566,7 @@ export const useAppStore = create<AppState>()(
       workbenchView: 'dashboard',
       companiesView: 'profile',
       resumeWorkspaceView: 'dashboard',
+      resumeOptimizeMode: 'diagnose',
       artifactsView: 'assets',
       timelineEvents: [],
       traceability: null,
@@ -1385,6 +1400,54 @@ export const useAppStore = create<AppState>()(
     return res.taskId
   },
 
+  /** 派生提案全量（RPC 拉取——CLI 提交经事件广播，但直接 RPC 保持调用一致性） */
+  listDerivationProposals: async (filter) => {
+    if (!engine) throw new Error('引擎未连接')
+    const list = await engine.listDerivationProposals(filter)
+    useAppStore.setState({ derivationProposals: list })
+    return list
+  },
+
+  /** 派生提案裁决（accept → 引擎创建新工作副本并广播 workingCopiesChanged；reject → 审计保留） */
+  decideDerivationProposal: async (id, action, reason) => {
+    if (!engine) throw new Error('引擎未连接')
+    const proposal = await engine.decideDerivationProposal(id, action, reason)
+    useAppStore.setState((s) => ({
+      derivationProposals: s.derivationProposals.map((p) => (p.id === id ? proposal : p)),
+    }))
+    if (action === 'accept') void pullWorkingCopies()
+    return proposal
+  },
+
+  /** 启动派生任务（agent CLI 桥：--derive-context 读池 → 整份派生候选 → --derive-submit 提交；
+   *  任务状态由 backgroundTasks 呈现，提交后 derivationProposalsChanged 广播驱动提案刷新） */
+  generateDerivation: async (wcId: string, jobId: string) => {
+    if (!engine) throw new Error('引擎未连接')
+    const person = useAppStore.getState().currentPerson()
+    const task = `你是 Career OS 的简历派生助手。当前任务：基于工作副本 ${wcId} 和目标岗位 JD ${jobId} 生成整份简历派生候选。
+
+步骤：
+1. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --derive-context ${wcId} ${jobId}\`（从项目根；用项目内便携 node，环境隔离）读取上下文 JSON（source 源副本模块 + job 岗位要求与 JD 原文 + claims 可用表达资产 + evidence 可信事实 + strengths 已有优势）
+2. 基于上下文生成整份派生简历：保留源副本与 JD 对齐的内容，改写/补充不对齐部分。规则：内容不编造上下文外的事实与数字（能力声明不得高于证据原文）；能锚定的表达必须用 claims 里已存在的 claimId 标注（provenanceLinks），不编造 claimId；模块标题沿用中文规范（个人信息/个人优势/工作经历/项目经验/技能）；每模块 3-6 条表达，含量化指标与 JD 关键词；身份事实（姓名/联系方式）不编造——用占位符或不含。
+3. 用 Write 写候选 JSON 到项目根 .local/derive-candidate-${wcId}.json：{"owner": "${person.personId ?? ''}", "sourceWcId": "${wcId}", "jobId": "${jobId}", "changeNotes": ["模块：改动说明（逐模块）"], "sections": [{"id": "sec_1", "title": "模块标题", "blocks": [{"id": "blk_1", "text": "表达内容", "provenanceLinks": ["claim_xxx"] 或 []}]}]}（blocks 是段落级表达数组；entries 可选用于条目化段，格式 {"title": "条目标题", "role": "岗位", "period": "时间段", "blocks": [...]}）
+4. Bash: 运行 \`./.local/node/node.exe ../engine/main.ts --derive-submit .local/derive-candidate-${wcId}.json\` 提交。失败读错误（claim 不可消费/源副本不存在等），修正重试最多 1 次。
+5. 输出一句话总结：提案 id 或失败原因。
+
+硬约束：不得修改除候选 JSON 外的任何文件；不得直接创建工作副本（建副本必须用户接受提案后由引擎完成）。`
+    const res = await engine.startAgent({
+      task,
+      personId: person.personId ?? undefined,
+      allowedTools: ['Bash', 'Write', 'Read', 'Glob'],
+      permissionMode: 'bypassPermissions',
+      maxTurns: 20,
+    })
+    // 后台任务登记（backgroundTasks）——done/error 事件清除；UI 用类型匹配显示运行态（毛玻璃蒙版）
+    useAppStore.setState((s) => ({
+      backgroundTasks: { ...s.backgroundTasks, [res.taskId]: { type: 'resume_derive', startedAt: Date.now() } },
+    }))
+    return res.taskId
+  },
+
   /** 创建版本（P2.3：promote → 版本空间可见） */
   promoteWorkingCopy: async (id) => {
     if (!engine) throw new Error('引擎未连接')
@@ -1590,6 +1653,8 @@ export const useAppStore = create<AppState>()(
   setCompaniesView: (view) => set({ companiesView: view }),
   /** 简历工作台四空间切换（ADR-021 R0） */
   setResumeWorkspaceView: (view) => set({ resumeWorkspaceView: view }),
+
+  setResumeOptimizeMode: (mode) => set({ resumeOptimizeMode: mode }),
   setArtifactsView: (view) => set({ artifactsView: view }),
   /** 选中简历版本（M3.5.5：切到历史空间并定位） */
   selectResume: (id) => set({ selectedResumeId: id, resumeWorkspaceView: 'history' }),
@@ -2340,6 +2405,17 @@ async function pullStrengthProposals(): Promise<void> {
   }
 }
 
+/** 派生提案（优化空间派生模式）：全量拉取；derivationProposalsChanged 事件驱动重拉 */
+async function pullDerivationProposals(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listDerivationProposals()
+    useAppStore.setState({ derivationProposals: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 工作副本（P2.2）：working-copies/list 全量拉取；workingCopiesChanged 事件驱动重拉 */
 async function pullWorkingCopies(): Promise<void> {
   if (!engine) return
@@ -2638,6 +2714,7 @@ export function connectEngine(): void {
   })
   engine.on(EVENTS.claimProposalsChanged, () => void pullClaimProposals())
   engine.on(EVENTS.strengthProposalsChanged, () => void pullStrengthProposals())
+  engine.on(EVENTS.derivationProposalsChanged, () => void pullDerivationProposals())
   engine.on(EVENTS.workingCopiesChanged, () => {
     void pullWorkingCopies()
     void pullResumes() // promote 可能产生版本

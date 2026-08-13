@@ -222,6 +222,10 @@ export const METHODS = {
   listStrengthProposals: 'person/strength-proposals/list',
   /** 优势提案裁决（params { id, action: accept|reject, reason? }——accept 并入优势亮点；Agent 不能自批） */
   decideStrengthProposal: 'person/strength-proposals/decide',
+  /** 简历派生提案列表（derivation-proposals/ 扫描 + owner/sourceWcId/jobId 过滤；优化空间派生模式） */
+  listDerivationProposals: 'resumes/derivation-proposals/list',
+  /** 派生提案裁决（params { id, action: accept|reject, reason? }——accept 引擎创建新工作副本；Agent 不能自建副本） */
+  decideDerivationProposal: 'resumes/derivation-proposals/decide',
   /** 全量 Interview QA（interviews/ 扫描；M4-2 问答资产——Fact/Expression/Strategy 三层） */
   listInterviewQas: 'interviews/list',
   /** 全量 Interview 提案（interviews/proposals/ 扫描 + 校验标记；M4-2 Intent Layer） */
@@ -300,6 +304,8 @@ export const EVENTS = {
   portfolioChanged: 'data.portfolio.changed',
   /** strength-proposals/ 目录变更后推送（不含数据，客户端用 person/strength-proposals/list 拉快照） */
   strengthProposalsChanged: 'data.strength-proposals.changed',
+  /** derivation-proposals/ 目录变更后推送（不含数据，客户端用 resumes/derivation-proposals/list 拉快照） */
+  derivationProposalsChanged: 'data.derivation-proposals.changed',
   /** interviews/ 目录变更后推送（不含数据，客户端用 interviews/list 拉快照；M4-2） */
   interviewChanged: 'data.interviews.changed',
   /** cover-letters/ 目录变更后推送（不含数据，客户端用 cover-letters/list 拉快照；M4-3） */

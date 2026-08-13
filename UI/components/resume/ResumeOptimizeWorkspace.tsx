@@ -5,17 +5,23 @@
  * 非历史版本；诊断引擎不变（working-copies/alignment 复用 computeResumeAlignment）。
  * - 四态：已覆盖 / 表达缺口 / 证据不足声明（红线）/ 能力缺口
  * - R2.2 边界：只展示四态 + 可追溯引用；不做 AI 改写 / 提案创建（P3 Opportunity Loop）
+ * 派生模式（P2-2 提案通道）：源副本 × JD → 整份派生提案（Agent CLI 桥提交）→ 用户裁决
+ * （accept → 引擎创建新工作副本；reject → 审计保留）。拆分视图 = 左源只读 / 右提案框，
+ * 生成中毛玻璃蒙版覆盖右栏（backgroundTasks 'resume_derive'）。
  */
 import { Box, Chip, MenuItem, Select, Stack, Typography, Button, CircularProgress, Checkbox, FormControlLabel } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { useToastStore } from '../../store/toast-store'
 import { alpha, COLORS } from '../../data/constants'
 import { workingCopyLabel } from '../../utils/resume-label'
 import type { AlignmentState, ResumeAlignmentProjection } from '../../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../../engine/runtime/opportunity.ts'
 import type { OpportunityProposal } from '../../../engine/storage/opportunity-proposal-registry.ts'
 import type { ClaimProposal } from '../../../engine/storage/claim-proposal-registry.ts'
+import type { DerivationProposal } from '../../../engine/storage/derivation-proposal-registry.ts'
+import type { WorkingSection } from '../../../engine/ir/resume.ts'
 
 const STATE_META: Record<AlignmentState, { icon: string; label: string; color: string }> = {
   covered: { icon: '✓', label: '已覆盖', color: COLORS.riskLow },
@@ -31,11 +37,72 @@ const OPPORTUNITY_META: Record<string, { icon: string; tag: string; color: strin
   'activate_asset': { icon: '🟡', tag: '可利用经历', color: COLORS.riskLow },
 }
 
+/** 派生提案状态（P2-2 提案通道——状态驱动视觉：待决定醒目，已决灰化留痕） */
+const DERIVE_STATUS_META: Record<DerivationProposal['status'], { label: string; color: string }> = {
+  pending: { label: '待决定', color: COLORS.riskMedium },
+  accepted: { label: '已接受', color: COLORS.riskLow },
+  rejected: { label: '已拒绝', color: COLORS.textMuted },
+}
+
 /** 影响范围（applyTarget 用户语言——不显示 blockId 系统标识） */
 const TARGET_TEXT: Record<string, string> = {
   insert: '新增一条表达',
   rewrite: '改写已有表达',
   delete: '处理已有表达',
+}
+
+/** 拆分视图纸面渲染（只读 WorkingSection[] → A4 白纸样式；源副本与派生提案共用同一渲染器） */
+function SectionPaper({ sections }: { sections: WorkingSection[] }) {
+  if (sections.length === 0) {
+    return (
+      <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, textAlign: 'center', py: 4 }}>
+        暂无模块内容
+      </Typography>
+    )
+  }
+  return (
+    <Box sx={{ bgcolor: '#fff', p: 3.5, borderRadius: '4px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', minHeight: 420 }}>
+      {sections.map((s) => (
+        <Box key={s.id} sx={{ mb: 2.5 }}>
+          <Typography
+            sx={{ fontSize: 13, fontWeight: 700, color: '#222', borderBottom: '1.5px solid #222', pb: 0.5, mb: 1, letterSpacing: '0.02em' }}
+          >
+            {s.title}
+          </Typography>
+          {(s.entries ?? []).map((e) => (
+            <Box key={e.id} sx={{ mb: 1.25 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#222', lineHeight: 1.6 }}>
+                {e.title}
+                {e.role ? ` · ${e.role}` : ''}
+                {e.period ? `（${e.period}）` : ''}
+              </Typography>
+              {e.description && (
+                <Typography sx={{ fontSize: 12.5, color: '#555', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{e.description}</Typography>
+              )}
+              {e.blocks.map((b) => (
+                <Typography key={b.id} sx={{ fontSize: 13, color: '#333', lineHeight: 1.65 }}>
+                  • {b.text}
+                </Typography>
+              ))}
+            </Box>
+          ))}
+          {s.blocks.map((b) => (
+            <Typography key={b.id} sx={{ fontSize: 13, color: '#333', lineHeight: 1.65 }}>
+              • {b.text}
+            </Typography>
+          ))}
+          {(s.identity ?? []).map((f, i) => (
+            <Typography key={i} sx={{ fontSize: 13, color: '#333', lineHeight: 1.65 }}>
+              <Box component="span" sx={{ fontWeight: 700, color: '#222' }}>
+                {f.label ? `${f.label}：` : ''}
+              </Box>
+              {f.body}
+            </Typography>
+          ))}
+        </Box>
+      ))}
+    </Box>
+  )
 }
 
 export function ResumeOptimizeWorkspace() {
@@ -66,9 +133,100 @@ export function ResumeOptimizeWorkspace() {
   // P5.3 资产化面板：素材选择（用户主动——不自动扫描，ADR-027 边界）+ 生成状态
   const [assetPanel, setAssetPanel] = useState<{ oppId: string; selected: string[]; generating: boolean } | null>(null)
   const [bindResult, setBindResult] = useState<{ claimId: string; ok: boolean; text: string } | null>(null)
+  // ─── 派生模式（P2-2 提案通道；mode 在 store——Dashboard 深链入口可直达派生 tab）──
+  const mode = useAppStore((s) => s.resumeOptimizeMode)
+  const setMode = useAppStore((s) => s.setResumeOptimizeMode)
+  const [viewedProposalId, setViewedProposalId] = useState<string | null>(null)
+  const [notesOpen, setNotesOpen] = useState(true)
+  const [deriveError, setDeriveError] = useState('')
+  const derivationProposals = useAppStore((s) => s.derivationProposals)
+  const backgroundTasks = useAppStore((s) => s.backgroundTasks)
+  const generateDerivation = useAppStore((s) => s.generateDerivation)
+  const decideDerivationProposal = useAppStore((s) => s.decideDerivationProposal)
+  const cancelBackgroundTask = useAppStore((s) => s.cancelBackgroundTask)
+  const push = useToastStore((s) => s.push)
 
   const personWorkingCopies = workingCopies.filter((w) => w.owner === person.personId)
   const wc = personWorkingCopies.find((w) => w.id === wcId) ?? personWorkingCopies.find((w) => w.id === activeWorkingCopyId)
+
+  // 派生提案拉取（derivationProposalsChanged 事件驱动 store 全量刷新——本组件只读 store 投影）
+  useEffect(() => {
+    if (engineStatus !== 'connected') return
+    void useAppStore.getState().listDerivationProposals()
+  }, [engineStatus])
+
+  // 进入派生模式：未显式选源 → 默认当前编辑对象（拆分视图左栏需要有源；覆盖 Dashboard 深链入口）
+  useEffect(() => {
+    if (mode === 'derive' && !wcId && activeWorkingCopyId) setWcId(activeWorkingCopyId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+
+  /** 当前配对（源副本 × JD）的提案（新在前）；viewed 缺省 = 最新 pending ?? 最新 */
+  const pairProposals = useMemo(
+    () =>
+      derivationProposals
+        .filter((p) => p.sourceWcId === wcId && p.jobId === jobId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [derivationProposals, wcId, jobId],
+  )
+  const viewed = pairProposals.find((p) => p.id === viewedProposalId) ?? pairProposals.find((p) => p.status === 'pending') ?? pairProposals[0] ?? null
+
+  // 新候选自动聚焦：出现 pending 且当前未在看 pending → 重置到默认（最新 pending）
+  useEffect(() => {
+    const pending = pairProposals.find((p) => p.status === 'pending')
+    if (pending && viewedProposalId !== pending.id) setViewedProposalId(null)
+  }, [pairProposals, viewedProposalId])
+
+  // 切换查看对象 → 变更说明重新展开
+  useEffect(() => {
+    setNotesOpen(true)
+  }, [viewed?.id])
+
+  // 切换配对 → 清除历史查看选择
+  useEffect(() => {
+    setViewedProposalId(null)
+    setDeriveError('')
+  }, [wcId, jobId])
+
+  const deriveTaskEntry = Object.entries(backgroundTasks).find(([, t]) => t.type === 'resume_derive')
+  const deriveRunning = Boolean(deriveTaskEntry)
+  const pendingBadgeCount = derivationProposals.filter((p) => p.owner === person.personId && p.status === 'pending').length
+
+  const startDerive = async () => {
+    if (!wcId || !jobId) return
+    setDeriveError('')
+    try {
+      await generateDerivation(wcId, jobId)
+      push('info', '派生任务已启动——完成后右侧显示待确认提案')
+    } catch (e: unknown) {
+      setDeriveError(e instanceof Error ? e.message : '派生任务启动失败')
+    }
+  }
+
+  const cancelDerive = async () => {
+    if (!deriveTaskEntry) return
+    try {
+      await cancelBackgroundTask(deriveTaskEntry[0])
+      push('info', '已取消派生任务')
+    } catch (e: unknown) {
+      setDeriveError(e instanceof Error ? e.message : '取消失败')
+    }
+  }
+
+  const decideDerive = async (p: DerivationProposal, action: 'accept' | 'reject') => {
+    setDeriveError('')
+    try {
+      if (action === 'accept') {
+        const decided = await decideDerivationProposal(p.id, 'accept')
+        push('success', `已接受派生——新副本「${selectedJob ? `${selectedJob.company} · ${selectedJob.title}` : decided.acceptedWcId ?? ''}」已创建`)
+      } else {
+        await decideDerivationProposal(p.id, 'reject')
+        push('info', '已拒绝派生提案（审计保留，可重新生成）')
+      }
+    } catch (e: unknown) {
+      setDeriveError(e instanceof Error ? e.message : '裁决失败')
+    }
+  }
 
   useEffect(() => {
     if (!wcId || !jobId || engineStatus !== 'connected') return
@@ -317,9 +475,14 @@ export function ResumeOptimizeWorkspace() {
     }
   }
 
+  /** 模式切换（store 态——Dashboard 深链与 tab 点击共用同一写入点） */
+  const switchMode = (m: 'diagnose' | 'derive') => {
+    setMode(m)
+  }
+
   return (
-    <Box sx={{ p: 2, maxWidth: 860, mx: 'auto' }}>
-      {/* 选择区：工作副本 × 目标 JD（P2.4——优化检查当前创作对象，非历史版本） */}
+    <Box sx={{ p: 2, maxWidth: mode === 'derive' ? 1180 : 860, mx: 'auto' }}>
+      {/* 选择区：工作副本 × 目标 JD（P2.4——优化检查当前创作对象，非历史版本）+ 模式切换 */}
       <Box
         sx={{
           p: 1.5,
@@ -374,6 +537,62 @@ export function ResumeOptimizeWorkspace() {
           {engineStatus !== 'connected' && (
             <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>引擎离线——对齐计算不可用</Typography>
           )}
+          {/* 模式切换：诊断（逐条提案）/ 派生（整份重写提案）——粒度不同所以层级并列 */}
+          <Box
+            sx={{
+              ml: 'auto',
+              display: 'flex',
+              flexShrink: 0,
+              borderRadius: '8px',
+              border: `1px solid ${COLORS.border}`,
+              overflow: 'hidden',
+            }}
+          >
+            <Button
+              size="small"
+              disableRipple
+              onClick={() => switchMode('diagnose')}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 0,
+                fontSize: 12,
+                minWidth: 0,
+                textTransform: 'none',
+                fontWeight: mode === 'diagnose' ? 700 : 400,
+                color: mode === 'diagnose' ? COLORS.accent : COLORS.textMuted,
+                bgcolor: mode === 'diagnose' ? alpha(COLORS.accent, 0.1) : 'transparent',
+              }}
+            >
+              诊断
+            </Button>
+            <Button
+              size="small"
+              disableRipple
+              onClick={() => switchMode('derive')}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 0,
+                fontSize: 12,
+                minWidth: 0,
+                textTransform: 'none',
+                fontWeight: mode === 'derive' ? 700 : 400,
+                color: mode === 'derive' ? COLORS.accent : COLORS.textMuted,
+                bgcolor: mode === 'derive' ? alpha(COLORS.accent, 0.1) : 'transparent',
+              }}
+            >
+              派生
+              {pendingBadgeCount > 0 && (
+                <Box
+                  component="span"
+                  sx={{ ml: 0.5, fontSize: 10, px: 0.75, borderRadius: 8, bgcolor: COLORS.riskMedium, color: '#fff', lineHeight: '15px' }}
+                >
+                  {pendingBadgeCount}
+                </Box>
+              )}
+            </Button>
+          </Box>
         </Stack>
         {wc && (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1, flexWrap: 'wrap', gap: 0.5 }}>
@@ -391,6 +610,9 @@ export function ResumeOptimizeWorkspace() {
         )}
       </Box>
 
+      {/* ─── 诊断模式：对齐投影 + 发现机会（逐条提案——外科手术） ─── */}
+      {mode === 'diagnose' && (
+        <>
       {/* 引导态：未选择 */}
       {!wcId || !jobId ? (
         <Box
@@ -870,6 +1092,238 @@ export function ResumeOptimizeWorkspace() {
               })}
             </Stack>
           )}
+        </Box>
+      )}
+        </>
+      )}
+
+      {/* ─── 派生模式：拆分视图（整份重写提案——左源只读 / 右提案框；毛玻璃蒙版覆盖右栏） ─── */}
+      {mode === 'derive' && (
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'stretch' }}>
+          {/* 左：源副本（只读——生成中保持可读，用户对照原稿） */}
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              maxHeight: 'calc(100vh - 250px)',
+              overflow: 'auto',
+              borderRadius: '10px',
+              border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+              bgcolor: '#FAFAFA',
+              p: 1.5,
+            }}
+          >
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: COLORS.textSecondary, flex: 1 }}>源副本（只读）</Typography>
+              {wc && <Chip size="small" label={workingCopyLabel(wc, jobs)} sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(COLORS.accent, 0.08), color: COLORS.accent }} />}
+            </Stack>
+            {wc ? (
+              <SectionPaper sections={wc.sections} />
+            ) : (
+              <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, textAlign: 'center', py: 4 }}>
+                先在左上选择区选择源副本
+              </Typography>
+            )}
+          </Box>
+
+          {/* 右：派生提案框（提案 = 右栏的框——内容、元信息、决策动作同一容器） */}
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              position: 'relative',
+              maxHeight: 'calc(100vh - 250px)',
+              overflow: 'auto',
+              borderRadius: '10px',
+              border: `1px solid ${alpha(COLORS.border, 0.8)}`,
+              bgcolor: '#FAFAFA',
+              p: 1.5,
+            }}
+          >
+            {viewed ? (
+              <>
+                {/* 提案头：状态 + 决策动作 + 历史下拉 + 可折叠变更说明 */}
+                <Box
+                  sx={{
+                    mb: 1,
+                    p: 1.25,
+                    borderRadius: '8px',
+                    border: `1px solid ${alpha(viewed.status === 'pending' ? COLORS.accent : COLORS.border, 0.6)}`,
+                    bgcolor: alpha(COLORS.bgHover, 0.35),
+                  }}
+                >
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>派生提案</Typography>
+                    <Chip
+                      size="small"
+                      label={DERIVE_STATUS_META[viewed.status].label}
+                      sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(DERIVE_STATUS_META[viewed.status].color, 0.12), color: DERIVE_STATUS_META[viewed.status].color }}
+                    />
+                    <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>生成于 {viewed.createdAt.slice(11, 16)}</Typography>
+                    {viewed.status === 'accepted' && viewed.acceptedWcId && (
+                      <Typography sx={{ fontSize: 11, color: COLORS.riskLow }}>已创建副本 {viewed.acceptedWcId}（选择器可见）</Typography>
+                    )}
+                    {pairProposals.length > 1 && (
+                      <Select
+                        size="small"
+                        value={viewed.id}
+                        onChange={(e) => setViewedProposalId(e.target.value as string)}
+                        sx={{ ml: 'auto', fontSize: 11, height: 24, '& .MuiSelect-select': { py: 0.5, fontSize: 11 } }}
+                      >
+                        {pairProposals.map((p) => (
+                          <MenuItem key={p.id} value={p.id} sx={{ fontSize: 11 }}>
+                            {p.id.slice(-6)} · {DERIVE_STATUS_META[p.status].label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    )}
+                    {viewed.status === 'pending' && (
+                      <>
+                        <Button
+                          size="small"
+                          onClick={() => void decideDerive(viewed, 'accept')}
+                          sx={{
+                            ml: pairProposals.length > 1 ? 0 : 'auto',
+                            fontSize: 11.5,
+                            textTransform: 'none',
+                            color: COLORS.riskLow,
+                            border: `1px solid ${alpha(COLORS.riskLow, 0.4)}`,
+                            borderRadius: '8px',
+                            px: 1.25,
+                            py: 0.25,
+                            '&:hover': { bgcolor: alpha(COLORS.riskLow, 0.08) },
+                          }}
+                        >
+                          接受
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => void decideDerive(viewed, 'reject')}
+                          sx={{
+                            fontSize: 11.5,
+                            textTransform: 'none',
+                            color: COLORS.textMuted,
+                            border: `1px solid ${alpha(COLORS.border, 1)}`,
+                            borderRadius: '8px',
+                            px: 1.25,
+                            py: 0.25,
+                            '&:hover': { bgcolor: alpha(COLORS.bgHover, 0.6) },
+                          }}
+                        >
+                          拒绝
+                        </Button>
+                      </>
+                    )}
+                    {viewed.status === 'rejected' && (
+                      <Button
+                        size="small"
+                        disabled={deriveRunning}
+                        onClick={() => void startDerive()}
+                        sx={{
+                          ml: 'auto',
+                          fontSize: 11.5,
+                          textTransform: 'none',
+                          color: COLORS.accent,
+                          border: `1px solid ${alpha(COLORS.accent, 0.35)}`,
+                          borderRadius: '8px',
+                          px: 1.25,
+                          py: 0.25,
+                          '&:hover': { bgcolor: alpha(COLORS.accent, 0.08) },
+                        }}
+                      >
+                        重新生成
+                      </Button>
+                    )}
+                  </Stack>
+                  {/* 变更说明（决策时参考材料——默认展开，看完折叠让位全文） */}
+                  <Button
+                    size="small"
+                    disableRipple
+                    onClick={() => setNotesOpen((v) => !v)}
+                    sx={{
+                      mt: 0.75,
+                      p: 0,
+                      minWidth: 0,
+                      fontSize: 11,
+                      textTransform: 'none',
+                      color: COLORS.textMuted,
+                      '&:hover': { bgcolor: 'transparent', color: COLORS.accent },
+                    }}
+                  >
+                    {notesOpen ? '收起变更说明 ▴' : `变更说明（${viewed.changeNotes.length} 条） ▾`}
+                  </Button>
+                  {notesOpen && (
+                    <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                      {viewed.changeNotes.map((n, i) => (
+                        <Typography key={i} sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.55 }}>
+                          • {n}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  )}
+                  {deriveError && (
+                    <Typography sx={{ fontSize: 11.5, color: COLORS.riskHigh, mt: 0.5, lineHeight: 1.6 }}>{deriveError}</Typography>
+                  )}
+                </Box>
+                <SectionPaper sections={viewed.sections} />
+              </>
+            ) : (
+              /* 空态：生成入口 */
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: 320, p: 3, textAlign: 'center' }}>
+                <AutoAwesomeIcon sx={{ fontSize: 22, color: COLORS.accent }} />
+                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                  {!wcId ? '先在左上选择区选择源副本与目标岗位' : '基于源副本与目标 JD 生成整份派生简历'}
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.7, maxWidth: 340 }}>
+                  派生结果先作为提案呈现——对照左栏原稿审核，接受后才创建新副本；拒绝则审计保留
+                </Typography>
+                {deriveError && (
+                  <Typography sx={{ fontSize: 11.5, color: COLORS.riskHigh, lineHeight: 1.6, maxWidth: 340 }}>{deriveError}</Typography>
+                )}
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={!wcId || !jobId || engineStatus !== 'connected' || deriveRunning}
+                  onClick={() => void startDerive()}
+                  sx={{ mt: 0.5, fontSize: 12.5 }}
+                >
+                  生成派生
+                </Button>
+              </Box>
+            )}
+            {/* 生成中：毛玻璃蒙版只覆盖右栏（左栏源副本保持可读） */}
+            {deriveRunning && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 3,
+                  borderRadius: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1,
+                  p: 2,
+                  backdropFilter: 'blur(10px) saturate(150%)',
+                  WebkitBackdropFilter: 'blur(10px) saturate(150%)',
+                  bgcolor: alpha(COLORS.bgElevated, 0.55),
+                  border: `1px solid ${alpha(COLORS.accent, 0.3)}`,
+                }}
+              >
+                <CircularProgress size={22} sx={{ color: COLORS.accent }} />
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>AI 正在生成派生简历…</Typography>
+                <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>对照左栏原稿，完成后右侧显示待确认提案</Typography>
+                <Button
+                  size="small"
+                  onClick={() => void cancelDerive()}
+                  sx={{ mt: 0.5, px: 1, fontSize: 11, color: COLORS.riskHigh, border: `1px solid ${alpha(COLORS.riskHigh, 0.35)}` }}
+                >
+                  取消任务
+                </Button>
+              </Box>
+            )}
+          </Box>
         </Box>
       )}
     </Box>
