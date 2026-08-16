@@ -218,17 +218,17 @@ created_at: 2026-08-07
 | 字段 | 值 |
 |------|-----|
 | skill | jd-analysis |
-| direction | 机器人本体设计 |
+| direction | 合成方向 |
 | direction_match | 52% |
 | direction_confidence | 中 |
-| city | 苏州 |
+| city | 城市X |
 | city_score | 60% |
 | salary_feasible | true |
 | risk_level | 中 |
 | key_risk | 行业竞争 |
 | status | 进行中 |
 | protocol_version | 2.1 |
-| profile | 我 |
+| profile | 合成用户 |
 `,
     )
     const parsed = parseDecisionMarkdown(ws.read('decisions/legacy-1.md'), 'legacy-1.md')
@@ -255,16 +255,16 @@ test('summary 非摘要表格（自由文本）→ 拒绝（fail fast，不写�
 
 test('composeAutoSummaryTable：一键存档摘要表（固定字段 + direction_match 填 - + keyRisk 截断 30 字）', () => {
   const table = composeAutoSummaryTable({
-    direction: '流体机械工程师',
-    profile: '李工',
+    direction: '合成岗位',
+    profile: '合成用户',
     riskLevel: '中',
-    keyRisk: '技能缺口：泵选型/阀门选型/传感器选型等',
+    keyRisk: '技能缺口：技能A/技能B/技能C等',
   })
   assert.ok(table.startsWith('| 字段 | 值 |'))
   assert.ok(table.includes('| skill | jd-analysis |'))
-  assert.ok(table.includes('| direction | 流体机械工程师 |'))
+  assert.ok(table.includes('| direction | 合成岗位 |'))
   assert.ok(table.includes('| direction_match | - |'))
-  assert.ok(table.includes('| profile | 李工 |'))
+  assert.ok(table.includes('| profile | 合成用户 |'))
   assert.ok(table.includes('| risk_level | 中 |'))
   assert.ok(table.includes('| status | complete |'))
   assert.ok(table.includes('| protocol_version | 2.9 |'))
