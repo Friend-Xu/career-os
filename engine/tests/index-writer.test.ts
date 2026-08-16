@@ -26,7 +26,7 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
         '',
         '| 用户 | 文件 |',
         '|------|------|',
-        '| 你好 | persons/person_003/ |',
+        '| 合成用户 | persons/person_syn_00001/ |',
         '',
         '## 决策记录',
         '',
@@ -49,8 +49,8 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
     )
     // person manifest（scanPersons 解析 personId/name）
     ws.write(
-      'persons/person_003/manifest.md',
-      '---\nid: person_003\nname: 你好\nstatus: active\n---\n# Person 003\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| id | person_003 |\n| name | 你好 |\n',
+      'persons/person_syn_00001/manifest.md',
+      '---\nid: person_syn_00001\nname: 合成用户\nstatus: active\n---\n# Person Syn\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| id | person_syn_00001 |\n| name | 合成用户 |\n',
     )
     // 决策文件（frontmatter person_id）
     ws.write(
@@ -59,7 +59,7 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
         '---',
         'id: decision_20260807_00001',
         'created_at: 2026-08-07',
-        'person_id: person_003',
+        'person_id: person_syn_00001',
         '---',
         '# 城市评估 — City-X vs City-W',
         '',
@@ -91,7 +91,7 @@ test('writeIndexDecisionSections：决策/城市段落引擎化 + generated 标�
     assert.ok(!next.includes('旧手写行'), '旧手写决策行应被替换')
     assert.ok(!next.includes('旧城市'), '旧城市评估行应被替换')
     // person 列继承（person_id → display_name）
-    assert.ok(next.includes('| 你好 |'), 'person 列应由 person_id 派生为展示名')
+    assert.ok(next.includes('| 合成用户 |'), 'person 列应由 person_id 派生为展示名')
     assert.ok(next.includes('城市评估 — City-X vs City-W'), '新决策应出现在决策段落')
     assert.ok(next.includes('City-X 7.6 / City-W 6.95'), '城市得分应来自摘要表原文')
     // 其他段落保留
@@ -115,7 +115,7 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
         '',
         '| 用户 | 文件 |',
         '|------|------|',
-        '| 你好 | persons/person_003/ |',
+        '| 合成用户 | persons/person_syn_00001/ |',
         '',
         '## 决策记录',
         '',
@@ -124,14 +124,14 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
         '| - | - | - | - | - |',
       ].join('\n'),
     )
-    ws.write('persons/person_003/manifest.md', '---\nid: person_003\nname: 你好\nstatus: active\n---\n# Person 003\n')
+    ws.write('persons/person_syn_00001/manifest.md', '---\nid: person_syn_00001\nname: 合成用户\nstatus: active\n---\n# Person Syn\n')
     ws.write(
       'decisions/2026-08-07-城市评估.md',
       [
         '---',
         'id: decision_20260807_00001',
         'created_at: 2026-08-07',
-        'person_id: person_003',
+        'person_id: person_syn_00001',
         '---',
         '# 城市评估 — City-X vs City-W',
         '',
@@ -140,7 +140,7 @@ test('writeIndexDecisionSections：城市段得分从明细段落 payload 派生
         '| 字段 | 值 |',
         '|------|-----|',
         '| skill | city-advisor |',
-        '| profile | 你好 |',
+        '| profile | 合成用户 |',
         '| direction | 机器人结构设计 |',
         '| direction_match | - |',
         '| city | - |',

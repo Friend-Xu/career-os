@@ -66,6 +66,7 @@ import { detectDecisionChange } from '../runtime/decision-change-detector.ts'
 import { whyChanged, replayDecision, whyChangedRecently } from '../runtime/evolution-query.ts'
 import { updateDecisionFile, readDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
+import { scanTargets } from '../storage/target-watcher.ts'
 import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -363,6 +364,13 @@ function jobIdParams(v: unknown): string {
     throw new Error('params.id 缺失')
   }
   return (v as Record<string, unknown>).id as string
+}
+
+/** targets/get 入参校验（RPC 边界：id 必填 string 非空——target id 来自 frontmatter，非目录名） */
+function targetGetParams(v: unknown): string {
+  const id = typeof v === 'object' && v !== null ? (v as Record<string, unknown>).id : undefined
+  if (typeof id !== 'string' || id.length === 0) throw new Error('params.id 缺失（target id）')
+  return id
 }
 
 /** applications/create 入参校验（RPC 边界）：createdBy 必须 'user'——Agent 禁止创建（Step 3.2） */
@@ -873,7 +881,7 @@ function agentStartParams(v: unknown): AgentStartParams {
   }
   if (p.personId !== undefined) {
     if (typeof p.personId !== 'string' || p.personId.length === 0) {
-      throw new Error('params.personId 应为非空字符串（person_003）')
+      throw new Error('params.personId 应为非空字符串（person_XXX）')
     }
     out.personId = p.personId
   }
@@ -1175,6 +1183,16 @@ export async function startServer(opts: {
     [METHODS.listCompanies]: () => attachCompanyAssessments(workspace, store.listCompanies() as CompanyView[]),
     [METHODS.companyGet]: (params) => readCompanyFile(workspace, jobIdParams(params)),
     [METHODS.decisionGet]: (params) => readDecisionFile(workspace, jobIdParams(params)),
+    [METHODS.targetsList]: () => scanTargets(workspace).map((t) => ({
+      ...t.record,
+      ...(t.validation ? { validation: t.validation } : {}),
+    })),
+    [METHODS.targetsGet]: (params) => {
+      const id = targetGetParams(params)
+      const target = scanTargets(workspace).find((t) => t.record.id === id)
+      if (!target) throw new Error(`目标不存在：${id}`)
+      return target.record
+    },
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.upsertSummaryStrengths]: (params) => {
       const p = summaryStrengthsParams(params)

@@ -19,7 +19,7 @@ function decision(payload?: DecisionPayload, over: Partial<DecisionRecord> = {})
       riskLevel: 'medium' as RiskLevel,
       keyRisk: 'k',
       status: 'complete',
-      profile: '你好',
+      profile: '合成用户',
       summary: 's',
       createdAt: '2026-08-07',
       protocolVersion: '2.8',

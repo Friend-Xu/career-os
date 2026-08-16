@@ -510,6 +510,31 @@ export interface JobRecord {
   createdAt: string
 }
 
+// ─── M6：Target 机会资产（targets/{target_id}/target.md 真相源，engine 只读解析不写）──
+
+/** 目标机会记录（TargetRecord）：targets/{target_id}/target.md 的 frontmatter + 正文 focus/exclude。
+ *  - id/companyId 必填（frontmatter id/company_id）；缺失 → invalid
+ *  - candidatePerson/currentJdPath/createdAt/contextStatus 缺省空串（可选语义字段缺失填 - 属常态）
+ *  - researchScopeStatus 值域 draft/confirmed，非法值 → degraded warn（保留原值展示）
+ *  - companionFiles = 同目录存在的伴生资产文件名（确定性列举，不复制文件内容） */
+export interface TargetRecord {
+  id: string
+  companyId: string
+  candidatePerson: string
+  /** 原始 JD 引用（frontmatter original_jd_id；断链填 - → 缺省，不在 IR 保留占位） */
+  originalJdId?: string
+  currentJdPath: string
+  createdAt: string
+  /** 上下文就绪度复合值（company=ready|product=ready|... 原样保留，引擎不解释） */
+  contextStatus: string
+  researchScopeId?: string
+  researchScopeStatus?: 'draft' | 'confirmed'
+  role?: string
+  focus: string[]
+  exclude: string[]
+  companionFiles: string[]
+}
+
 // ─── V2.3：Evidence Inventory（M2：个人证据资产——"我有什么证明"，与 Job/Decision 平行的第三实体）──
 
 /** 证据生命周期（原地演进不追加版本；trusted = 可表达授权，仅 trusted 可被消费者读取） */

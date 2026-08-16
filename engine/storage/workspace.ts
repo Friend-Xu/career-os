@@ -51,6 +51,7 @@ export interface WorkspacePaths {
   coverLetterProposals: string
   knowledge: string
   persons: string
+  targets: string
   metadata: string
   indexFile: string
   protocolFile: string
@@ -102,6 +103,7 @@ export function buildPaths(root: string): WorkspacePaths {
     coverLetterProposals: join(root, 'cover-letters', 'proposals'),
     knowledge: join(root, 'knowledge'),
     persons: join(root, 'persons'),
+    targets: join(root, 'targets'),
     metadata: join(root, 'metadata'),
     indexFile: join(root, 'INDEX.md'),
     protocolFile: join(root, 'metadata', 'protocol.json'),
@@ -159,6 +161,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.coverLetterProposals, { recursive: true })
     mkdirSync(paths.knowledge, { recursive: true })
     mkdirSync(paths.persons, { recursive: true })
+    mkdirSync(paths.targets, { recursive: true })
     mkdirSync(paths.metadata, { recursive: true })
   } catch {
     throw new WorkspaceError(root, '目录创建失败（权限/路径非法）')

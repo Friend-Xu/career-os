@@ -143,7 +143,7 @@ const cityDetailMd = `# 城市评估 — City-X vs City-W
 | 字段 | 值 |
 |------|-----|
 | skill | city-advisor |
-| profile | 你好 |
+| profile | 合成用户 |
 | direction | 机器人结构设计 |
 | direction_match | - |
 | city | - |
@@ -174,7 +174,7 @@ const dirDetailMd = `# 职业方向探索
 | 字段 | 值 |
 |------|-----|
 | skill | career-path |
-| profile | 你好 |
+| profile | 合成用户 |
 | direction | - |
 | direction_match | - |
 | direction_confidence | - |

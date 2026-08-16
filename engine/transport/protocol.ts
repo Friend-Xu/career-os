@@ -123,6 +123,10 @@ export const METHODS = {
   listJobs: 'jobs/list',
   /** 单个岗位（params: { id } → JobRecord） */
   getJob: 'jobs/get',
+  /** 全量目标机会列表（targets/ 目录扫描 + 校验标记；M6） */
+  targetsList: 'targets/list',
+  /** 单个目标机会（params: { id } → TargetRecord） */
+  targetsGet: 'targets/get',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
@@ -318,6 +322,8 @@ export const EVENTS = {
   applicationsChanged: 'data.applications.changed',
   /** persons/ 目录变更后推送（不含数据，客户端用 persons/list 拉快照；P1 Person Aggregate 生命周期闭环） */
   personsChanged: 'data.persons.changed',
+  /** targets/ 目录变更后推送（不含数据，客户端用 targets/list 拉快照；M6） */
+  targetsChanged: 'data.targets.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */

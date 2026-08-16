@@ -851,11 +851,20 @@ export const useAppStore = create<AppState>()(
   }) => {
     const { personName, sourceMode, interests, personId } = ctx
     const resumeChannel = sourceMode === 'resume'
+    // 上下文隔离指令：动态枚举已登记档案（排除当前初始化对象自身），禁止硬编码 person id
+    const registeredOthers = get()
+      .persons.filter((p) => p.personId && p.personId !== personId)
+      .map((p) => `${p.name}（persons/${p.personId}/）`)
+      .join('、')
+    const isolationLine =
+      registeredOthers.length > 0
+        ? `上下文隔离（必须遵守）：当前初始化对象是「${personName}」，一个全新的 Person——没有历史档案。workspace 中已登记的其他档案：${registeredOthers}；禁止读取或引用它们的内容，也不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。`
+        : `上下文隔离：当前初始化对象是「${personName}」，一个全新的 Person——没有历史档案。workspace 中没有其他已登记档案；不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。`
     const lines = [
       `你是「${personName}」的初始化助手（${resumeChannel ? '简历通道' : '访谈通道'}）。`,
       '任务：帮助用户建立第一份职业档案（认知基线）——整理"我做过什么 / 掌握什么能力 / 想探索什么方向"，不是替用户做职业决策。',
       '开场白（直接说出，不要分析）："你好，我会帮你建立一份职业档案。这里记录的不只是简历，而是你做过什么、积累了什么能力，以及未来想探索什么方向。这些信息以后会成为职业分析的基础。我们先从你的经历开始。"',
-      '上下文隔离（必须遵守）：当前初始化对象是「' + personName + '」，一个全新的 Person——没有历史档案。workspace 中 persons/person_001/（"我"）是另一个人的档案，禁止读取或引用其内容；不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。',
+      isolationLine,
       resumeChannel
         ? personId
           ? `采集：先读取 persons/${personId}/documents/resumes/extraction/ 目录中最新编号（resume-00X 中编号最大）的 resume-*.md 文件——这是用户上传简历的提取结果，从中提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；若该目录为空，先引导用户粘贴简历文本。再补问简历外的项目与非正式经历。`

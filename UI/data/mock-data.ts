@@ -22,7 +22,7 @@ export const PERSONS: Person[] = [
     matchScore: 82,
     riskLevel: 'medium',
     archived: false,
-    profilePath: 'profiles/我.md',
+    profilePath: '',
     targetRoles: ['CAE 工程师', '机械设计工程师', '流体仿真工程师', '机器人研发'],
     sourceMode: 'resume',
     initStatus: 'active',

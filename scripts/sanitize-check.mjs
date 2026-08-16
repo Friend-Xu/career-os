@@ -15,7 +15,9 @@ const ID_RE = /\b\d{17}[\dXx]\b/
 // mock 占位邮箱白名单（显式占位格式，非真实联系信息）
 const EMAIL_ALLOW = /me@email\.com|family@email\.com|@example\.(com|org)/
 
-const files = execSync('git ls-files', { encoding: 'utf8' }).split('\n').map((f) => f.trim()).filter(Boolean)
+// core.quotepath=false：git 默认对非 ASCII 文件名做八进制转义，readFileSync 将 ENOENT 并被下方
+// catch 静默跳过——中文文件名（方向画像卡/案例/截图）永不入扫。禁用转义拿到真实路径。
+const files = execSync('git -c core.quotepath=false ls-files', { encoding: 'utf8' }).split('\n').map((f) => f.trim()).filter(Boolean)
 const hits = []
 for (const f of files) {
   // 脚本自身包含禁止清单定义（有意为之的防御代码），跳过自扫描

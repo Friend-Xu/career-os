@@ -20,6 +20,7 @@ import { registerPendingCoverLetters, registerPendingCoverLetterProposals, watch
 import { watchContexts } from './storage/context-watcher.ts'
 import { watchCompanies } from './storage/company-watcher.ts'
 import { watchPersons } from './storage/person-watcher.ts'
+import { watchTargets } from './storage/target-watcher.ts'
 import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -291,6 +292,11 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.personsChanged })
         logger.info('persons/ 变更：已广播（persons/list 按需重扫）')
       })
+      // targets/ 变更只发信号（M6：目标机会资产——UI 收到 targetsChanged 重拉 targets/list）
+      watchTargets(ws, () => {
+        broadcast({ event: EVENTS.targetsChanged })
+        logger.info('targets/ 变更：已广播（targets/list 按需重扫）')
+      })
       // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
       watchEvidence(ws, (parsed) => {
         broadcast({ event: EVENTS.evidenceChanged })
@@ -341,6 +347,7 @@ async function main(args: string[]): Promise<void> {
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
       logger.info('companies/ 监听已启用（watcher.enabled=true）')
       logger.info('persons/ 监听已启用（watcher.enabled=true）')
+      logger.info('targets/ 监听已启用（watcher.enabled=true）')
       logger.info('evidence/ 监听已启用（watcher.enabled=true）')
       logger.info('claims/ 监听已启用（watcher.enabled=true）')
       logger.info('resumes/ 监听已启用（watcher.enabled=true）')
