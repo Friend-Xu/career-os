@@ -8,7 +8,7 @@ Describe your situation in one sentence. Get an executable, data-backed career d
 from direction exploration to resume writing, covering the full decision chain.
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.1.0--beta.1-blue)
+![Version](https://img.shields.io/badge/version-1.1.0--beta.2-blue)
 
 [English](README.en.md) | [中文](README.md)
 

@@ -8,7 +8,7 @@
 从方向探索到简历撰写，覆盖求职决策全链路。
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.1.0--beta.1-blue)
+![Version](https://img.shields.io/badge/version-1.1.0--beta.2-blue)
 
 [中文](README.md) | [English](README.en.md)
 
