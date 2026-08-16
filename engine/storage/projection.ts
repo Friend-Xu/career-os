@@ -3,7 +3,7 @@
  * 4 张表（applications_projection 已删——ADR-019 投递记录是 Engine Registry
  * applications/{id}.json，非 SQLite 投影）：
  *   persons_projection / decisions_projection /
- *   sessions_projection / timeline_projection（人生决策时间线视图）
+ *   timeline_projection（人生决策时间线视图）
  * - syncFromDecisions：全量重建 decisions_projection + timeline_projection（单事务）
  *   + persons_projection upsert（profiles/ 扫描，id 稳定保留）
  * - listDecisions：全部返回（含 validation 标记；invalid 实体由调用方决定过滤）
@@ -73,14 +73,6 @@ CREATE TABLE IF NOT EXISTS decisions_projection (
   payload TEXT,
   validation_status TEXT,
   validation_issues TEXT
-);
-CREATE TABLE IF NOT EXISTS sessions_projection (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  person_id INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  archived INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS timeline_projection (
   id TEXT PRIMARY KEY,
@@ -250,7 +242,7 @@ export function scanProfiles(workspace: Workspace): ProfileScan[] {
 }
 
 /** 投影 schema 版本：升级时 +1；旧版本 drop 重建（投影是 md 真相源的派生，重建零损失） */
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 export function createProjection(opts: { dbPath: string; workspace: Workspace; logger: Logger }): ProjectionStore {
   const { dbPath, workspace } = opts
