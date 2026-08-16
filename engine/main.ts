@@ -19,6 +19,10 @@ import { registerPendingInterviewQas, registerPendingInterviewProposals, watchIn
 import { registerPendingCoverLetters, registerPendingCoverLetterProposals, watchCoverLetters } from './storage/cover-letter-watcher.ts'
 import { watchContexts } from './storage/context-watcher.ts'
 import { watchCompanies } from './storage/company-watcher.ts'
+import { watchClaimProposals } from './storage/claim-proposal-registry.ts'
+import { watchOpportunityProposals } from './storage/opportunity-proposal-registry.ts'
+import { watchWorkingCopies } from './storage/working-copy-registry.ts'
+import { watchKnowledge } from './storage/knowledge-watcher.ts'
 import { watchPersons } from './storage/person-watcher.ts'
 import { watchTargets } from './storage/target-watcher.ts'
 import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
@@ -262,86 +266,118 @@ async function main(args: string[]): Promise<void> {
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────
     // 先于就绪日志接线：ready = 桥 + 监听全部可用（避免就绪后首个事件窗口丢失）
+    // 管线守护：watcher 回调异常不再击穿进程（chokidar 事件处理器抛出 = 未捕获崩溃）；
+    // 失败记日志 + 广播 error.engine（UI 全局错误卡消费——管线错误对用户可见）
+    const guarded = <A extends unknown[]>(name: string, fn: (...args: A) => void): ((...args: A) => void) =>
+      (...args: A): void => {
+        try {
+          fn(...args)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          logger.error(`${name} 变更处理失败：${message}`)
+          broadcast({ event: EVENTS.engineError, data: { message: `${name}：${message}` } })
+        }
+      }
     if (config.watcher.enabled) {
-      watchDecisions(ws, (parsed) => {
+      watchDecisions(ws, guarded('decisions', (parsed) => {
         // 身份校验 + 投影；校验后数据驱动 INDEX 决策段落（ADR-014：INDEX 是投影，Agent 不得手写）
         const checked = projection.syncFromDecisions(parsed)
         writeIndexDecisionSections(ws, checked)
         broadcast({ event: EVENTS.decisionsChanged })
         broadcast({ event: EVENTS.poolChanged })
         logger.info(`decisions/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // contexts/list 按需组装（context 文件 + 决策投影），变更只发信号；UI 收到 decisionsChanged 会重拉 contexts/list
-      watchContexts(ws, () => {
+      watchContexts(ws, guarded('contexts', () => {
         broadcast({ event: EVENTS.decisionsChanged })
         logger.info('decision-contexts/ 变更：已广播（contexts/list 按需重扫组装）')
-      })
+      }))
       // jobs/ 变更只发信号；UI 收到 jobsChanged 重拉 jobs/list（jobs 是独立实体，不参与决策投影）
-      watchJobs(ws, (parsed) => {
+      watchJobs(ws, guarded('jobs', (parsed) => {
         broadcast({ event: EVENTS.jobsChanged })
         logger.info(`jobs/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // companies/ 变更只发信号（skill 尽调直写档案；UI 收到 companiesChanged 重拉 companies/list + 图谱）
-      watchCompanies(ws, () => {
+      watchCompanies(ws, guarded('companies', () => {
         broadcast({ event: EVENTS.companiesChanged })
         logger.info('companies/ 变更：已广播（companies/list 按需重扫）')
-      })
+      }))
       // persons/ 变更只发信号（P1 Person Aggregate：identity/career_profile/skill_inventory 等
       // 变化 → personsChanged → UI 重拉 persons/list——对齐其他业务目录，补 944b147 刷新页面临时覆盖）
-      watchPersons(ws, () => {
+      watchPersons(ws, guarded('persons', () => {
         broadcast({ event: EVENTS.personsChanged })
         logger.info('persons/ 变更：已广播（persons/list 按需重扫）')
-      })
+      }))
       // targets/ 变更只发信号（M6：目标机会资产——UI 收到 targetsChanged 重拉 targets/list）
-      watchTargets(ws, () => {
+      watchTargets(ws, guarded('targets', () => {
         broadcast({ event: EVENTS.targetsChanged })
         logger.info('targets/ 变更：已广播（targets/list 按需重扫）')
-      })
+      }))
       // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
-      watchEvidence(ws, (parsed) => {
+      watchEvidence(ws, guarded('evidence', (parsed) => {
         broadcast({ event: EVENTS.evidenceChanged })
         logger.info(`evidence/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // claims/ 变更只发信号（M3-0：表达 IR 是独立资产，UI 收到 claimsChanged 重拉 claims/list）
-      watchClaims(ws, (parsed) => {
+      watchClaims(ws, guarded('claims', (parsed) => {
         broadcast({ event: EVENTS.claimsChanged })
         logger.info(`claims/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
+      // claim-proposals/ 变更只发信号（CLI 桥 --claim-bridge-submit 外部写盘 → UI 提案卡刷新）
+      watchClaimProposals(ws, guarded('claim-proposals', () => {
+        broadcast({ event: EVENTS.claimProposalsChanged })
+        logger.info('claim-proposals/ 变更：已广播（claim-proposals/list 按需重扫）')
+      }))
+      // opportunity-proposals/ 变更只发信号（CLI 桥 --opportunity-submit 外部写盘 → UI 提案卡刷新）
+      watchOpportunityProposals(ws, guarded('opportunity-proposals', () => {
+        broadcast({ event: EVENTS.opportunityProposalsChanged })
+        logger.info('opportunity-proposals/ 变更：已广播（opportunity-proposals/list 按需重扫）')
+      }))
+      // working-copies/ 变更只发信号（外部写盘 → UI 简历工作区刷新；RPC upsert 亦触发）
+      watchWorkingCopies(ws, guarded('working-copies', () => {
+        broadcast({ event: EVENTS.workingCopiesChanged })
+        logger.info('working-copies/ 变更：已广播（working-copies/list 按需重扫）')
+      }))
+      // knowledge/ 词表变更 → poolChanged（图谱 role/skill 节点派生自 knowledge；UI 重拉图谱）
+      watchKnowledge(ws, guarded('knowledge', () => {
+        broadcast({ event: EVENTS.poolChanged })
+        logger.info('knowledge/ 变更：已广播 poolChanged（图谱按需重扫）')
+      }))
       // resumes/ 变更只发信号（M3.5：版本系统——drafts/ 组装登记 + documents/ 变更都触发）
-      watchResumes(ws, (parsed) => {
+      watchResumes(ws, guarded('resumes', (parsed) => {
         broadcast({ event: EVENTS.resumesChanged })
         logger.info(`resumes/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // proposals/ 变更只发信号（M3.5.6：AI 建议层——AI 写文件登记 + RPC 状态流转都触发）
-      watchProposals(ws, (parsed) => {
+      watchProposals(ws, guarded('proposals', (parsed) => {
         broadcast({ event: EVENTS.proposalsChanged })
         logger.info(`proposals/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // portfolio/ 变更只发信号（M4-1：项目事实 + 提案——文件登记 + RPC 状态流转/transition 都触发）
-      watchPortfolio(ws, () => {
+      watchPortfolio(ws, guarded('portfolio', () => {
         broadcast({ event: EVENTS.portfolioChanged })
         logger.info('portfolio/ 变更：已广播（portfolio/projects|proposals/list 按需重扫）')
-      })
+      }))
       // strength-proposals/ 变更只发信号（优势亮点提案——Agent CLI 桥提交 + RPC 裁决都触发）
-      watchStrengthProposals(ws, (parsed) => {
+      watchStrengthProposals(ws, guarded('strength-proposals', (parsed) => {
         broadcast({ event: EVENTS.strengthProposalsChanged })
         logger.info(`strength-proposals/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // derivation-proposals/ 变更只发信号（简历派生提案——Agent CLI 桥提交 + RPC 裁决都触发）
-      watchDerivationProposals(ws, (parsed) => {
+      watchDerivationProposals(ws, guarded('derivation-proposals', (parsed) => {
         broadcast({ event: EVENTS.derivationProposalsChanged })
         logger.info(`derivation-proposals/ 变更：重扫 ${parsed.length} 条并广播`)
-      })
+      }))
       // interviews/ 变更只发信号（M4-2：问答资产 + 提案——文件登记 + RPC 状态流转/transition 都触发）
-      watchInterviews(ws, () => {
+      watchInterviews(ws, guarded('interviews', () => {
         broadcast({ event: EVENTS.interviewChanged })
         logger.info('interviews/ 变更：已广播（interviews/list 按需重扫）')
-      })
+      }))
       // cover-letters/ 变更只发信号（M4-3：求职信 + 提案——文件登记 + RPC 状态流转/transition 都触发）
-      watchCoverLetters(ws, () => {
+      watchCoverLetters(ws, guarded('cover-letters', () => {
         broadcast({ event: EVENTS.coverLetterChanged })
         logger.info('cover-letters/ 变更：已广播（cover-letters/list 按需重扫）')
-      })
+      }))
       logger.info('decisions/ 监听已启用（watcher.enabled=true）')
       logger.info('decision-contexts/ 监听已启用（watcher.enabled=true）')
       logger.info('jobs/ 监听已启用（watcher.enabled=true）')
@@ -350,6 +386,10 @@ async function main(args: string[]): Promise<void> {
       logger.info('targets/ 监听已启用（watcher.enabled=true）')
       logger.info('evidence/ 监听已启用（watcher.enabled=true）')
       logger.info('claims/ 监听已启用（watcher.enabled=true）')
+      logger.info('claim-proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('opportunity-proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('working-copies/ 监听已启用（watcher.enabled=true）')
+      logger.info('knowledge/ 监听已启用（watcher.enabled=true）')
       logger.info('resumes/ 监听已启用（watcher.enabled=true）')
       logger.info('proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('portfolio/ 监听已启用（watcher.enabled=true）')

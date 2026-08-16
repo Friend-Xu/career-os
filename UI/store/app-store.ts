@@ -2748,6 +2748,20 @@ export function connectEngine(): void {
   engine.on(EVENTS.claimProposalsChanged, () => void pullClaimProposals())
   engine.on(EVENTS.strengthProposalsChanged, () => void pullStrengthProposals())
   engine.on(EVENTS.derivationProposalsChanged, () => void pullDerivationProposals())
+  engine.on(EVENTS.opportunitiesChanged, () => {
+    void pullWorkingCopies() // apply 事务改写工作副本（含外部 apply 写入）
+  })
+  engine.on(EVENTS.engineError, (data: unknown) => {
+    // 引擎管线错误（watcher 回调异常等）——全局错误卡，用户可见而非静默
+    const message = (data as { message?: string } | undefined)?.message ?? '未知引擎错误'
+    useAttentionStore.getState().addAttention({
+      id: `engine-error-${Date.now()}`,
+      level: 'warning',
+      title: '引擎错误',
+      description: message,
+      source: 'system',
+    })
+  })
   engine.on(EVENTS.workingCopiesChanged, () => {
     void pullWorkingCopies()
     void pullResumes() // promote 可能产生版本

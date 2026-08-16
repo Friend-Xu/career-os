@@ -2,8 +2,8 @@
  * knowledge-watcher：V2 知识层——knowledge/skills.md（技能受控词表）+ knowledge/roles.md（岗位清单）。
  * - parseSkillsMarkdown：skills.md → Skill[]（`## 技能名` + 列表项：`别名：`逗号分隔 / `N级：`行为锚点）
  * - parseRolesMarkdown：roles.md → Role[]（`## 岗位名（公司名）` + 列表项：`essential/nice-to-have：技能（来源：xxx）`）
- * - scanKnowledge：knowledge/ 目录扫描 → { skills, roles }（文件缺任一个 → 该列表为空；无监听，
- *   目录扫描式同 companies，每次调用重扫）
+ * - scanKnowledge：knowledge/ 目录扫描 → { skills, roles }（文件缺任一个 → 该列表为空；
+ *   目录扫描式同 companies，每次调用重扫；目录变更经 watchKnowledge 广播 poolChanged）
  * - extractPersonSkills：profiles md 的 `## 技能` 段落 → PersonSkill[]（无段落 → 空数组）
  * - buildSkillIndex / canonicalSkillName：别名归一化（gap 计算与图谱连线共用）
  *
@@ -15,6 +15,23 @@ import type { PersonSkill, Role, Skill } from '../ir/schema.ts'
 import { finalize, type FieldCheck, type Validated } from '../ir/validator.ts'
 import type { Workspace } from './workspace.ts'
 import { listItems, sectionLines, splitFirstColon, splitList } from './context-watcher.ts'
+import { watch } from 'chokidar'
+
+/** knowledge/ 目录监听（V2 知识层词表——skills.md/roles.md 由用户/Agent 维护）：
+ *  变更 → onChanged（main.ts 广播 poolChanged；图谱 role/skill 节点派生自 scanKnowledge） */
+export function watchKnowledge(ws: Workspace, onChanged: () => void): { close: () => Promise<void> } {
+  const watcher = watch(ws.paths.knowledge, { ignoreInitial: true })
+  watcher.on('add', (p: string) => {
+    if (p.endsWith('.md')) onChanged()
+  })
+  watcher.on('change', (p: string) => {
+    if (p.endsWith('.md')) onChanged()
+  })
+  watcher.on('unlink', (p: string) => {
+    if (p.endsWith('.md')) onChanged()
+  })
+  return { close: () => watcher.close() }
+}
 
 const H2_RE = /^##\s+(.+?)\s*$/gm
 const ALIAS_RE = /^别名[：:]\s*(.+)$/

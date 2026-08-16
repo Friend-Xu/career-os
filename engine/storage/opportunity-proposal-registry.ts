@@ -24,6 +24,23 @@ import { scanWorkingCopies, workingCopyToDocument, serializeWorkingCopy } from '
 import { anchorCheck, evidenceText, createClaimProposal, type ClaimProposal, type ClaimProposalInput } from './claim-proposal-registry.ts'
 import { computeOpportunities, type Opportunity } from '../runtime/opportunity.ts'
 import { computeResumeAlignment, type AlignmentState } from '../runtime/resume-alignment.ts'
+import { watch } from 'chokidar'
+
+/** opportunity-proposals/ 目录监听：变更 → 广播（CLI 桥 --opportunity-submit 外部写盘 / RPC 裁决均触发） */
+export function watchOpportunityProposals(ws: Workspace, onChanged: (parsed: OpportunityProposal[]) => void): { close: () => Promise<void> } {
+  const watcher = watch(ws.paths.opportunityProposals, { ignoreInitial: true })
+  const rescan = (): void => onChanged(scanOpportunityProposals(ws))
+  watcher.on('add', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  watcher.on('change', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  watcher.on('unlink', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  return { close: () => watcher.close() }
+}
 
 export const OPPORTUNITY_PROPOSAL_SPEC: ArtifactSpec = {
   type: 'opportunity_proposal',

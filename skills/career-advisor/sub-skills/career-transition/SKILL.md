@@ -31,13 +31,13 @@
 
 ```
 career-path (职业方向层)       →  "我该做什么方向？"
-        │ 写 directions/
+        │ 写 decisions/（方向评估明细）
         ▼
 career-transition (转行分析层) →  "怎么从现在的位置走到想去的位置？"
         │ 读 directions/ + persons/{person_id}/snapshot/  写 decisions/
         ▼
 city-advisor (城市选择层)      →  "我该去哪个城市？"
-        │ 写 cities/ + decisions/
+        │ 写 decisions/（cities/ 目录已废弃，城市结论只落决策记录）
         ▼
 company-screener (发现层)       →  "这个城市有什么好公司？"
         │ 写 decisions/

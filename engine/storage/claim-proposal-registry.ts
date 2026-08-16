@@ -14,6 +14,23 @@ import { scanEvidence } from './evidence-watcher.ts'
 import { canConsumeEvidence } from './evidence-policy.ts'
 import { parseSummaryTable } from '../ir/summary-table.ts'
 import { CLAIM_SPEC } from './claim-watcher.ts'
+import { watch } from 'chokidar'
+
+/** claim-proposals/ 目录监听：变更 → 广播（CLI 桥 --claim-bridge-submit 外部写盘 / RPC 裁决均触发） */
+export function watchClaimProposals(ws: Workspace, onChanged: (parsed: ClaimProposal[]) => void): { close: () => Promise<void> } {
+  const watcher = watch(ws.paths.claimProposals, { ignoreInitial: true })
+  const rescan = (): void => onChanged(scanClaimProposals(ws))
+  watcher.on('add', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  watcher.on('change', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  watcher.on('unlink', (p: string) => {
+    if (p.endsWith('.md')) rescan()
+  })
+  return { close: () => watcher.close() }
+}
 
 export const CLAIM_PROPOSAL_SPEC: ArtifactSpec = {
   type: 'claim_proposal',
