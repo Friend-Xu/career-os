@@ -392,6 +392,8 @@ async function main(args: string[]): Promise<void> {
       logger.info('knowledge/ 监听已启用（watcher.enabled=true）')
       logger.info('resumes/ 监听已启用（watcher.enabled=true）')
       logger.info('proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('strength-proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('derivation-proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('portfolio/ 监听已启用（watcher.enabled=true）')
       logger.info('interviews/ 监听已启用（watcher.enabled=true）')
       logger.info('cover-letters/ 监听已启用（watcher.enabled=true）')

@@ -3,8 +3,8 @@
  * - paths：子目录解析（决策文件名规范见 decision-registry：系统 ID 登记，引擎单方命名）
  * - read/write：统一 fs 封装（同步；本地个人工具、文件小）
  * - initWorkspace：首次运行创建目录树（对齐 AGENTS.md 既有承诺）
- *   + metadata/protocol.json（{ protocol: 'career-os', version: '2.2', created }，
- *   引擎单方维护，skill 不读写）
+ *   + metadata/protocol.json（{ protocol: 'career-os', version: ProtocolVersion, created }，
+ *   引擎单方维护，skill 不读写；版本漂移时回写当前版本，created 保留首次时间戳）
  * 目录创建失败/不可写 → WorkspaceError fail fast（系统边界校验）。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -120,6 +120,22 @@ const PROTOCOL_TEMPLATE = {
   version: ProtocolVersion,
 }
 
+/** 版本标记收敛（断链审计 F14/Y1）：缺失 → 创建；版本漂移（旧引擎写入）→ 回写当前
+ *  ProtocolVersion（created 保留首次时间戳）；已对齐 → 不写盘（幂等）。损坏的标记文件按缺失重建。 */
+function writeProtocolMarker(protocolFile: string): void {
+  let created: string | undefined
+  if (existsSync(protocolFile)) {
+    try {
+      const existing = JSON.parse(readFileSync(protocolFile, 'utf8')) as { protocol?: string; version?: string; created?: string }
+      if (existing.protocol === 'career-os' && existing.version === ProtocolVersion) return
+      created = existing.created
+    } catch {
+      // 损坏的标记文件：按缺失处理（系统边界——文件内容不在契约内）
+    }
+  }
+  writeFileSync(protocolFile, JSON.stringify({ ...PROTOCOL_TEMPLATE, created: created ?? new Date().toISOString() }, null, 2) + '\n', 'utf8')
+}
+
 function assertWritable(root: string): void {
   const probe = join(root, '.write-probe')
   try {
@@ -169,9 +185,7 @@ export function initWorkspace(root: string): Workspace {
   assertWritable(root)
 
   if (!existsSync(paths.indexFile)) writeFileSync(paths.indexFile, INDEX_TEMPLATE, 'utf8')
-  if (!existsSync(paths.protocolFile)) {
-    writeFileSync(paths.protocolFile, JSON.stringify({ ...PROTOCOL_TEMPLATE, created: new Date().toISOString() }, null, 2) + '\n', 'utf8')
-  }
+  writeProtocolMarker(paths.protocolFile)
 
   return {
     paths,

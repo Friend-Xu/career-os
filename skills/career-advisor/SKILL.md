@@ -133,7 +133,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 | risk_level | 是 | 低/中/中高/高 |
 | key_risk | 是 | ≤30字 |
 | status | 是 | complete/partial/draft |
-| protocol_version | 是 | 2.8（v2.8 起含评估明细段落；存量 2.0 记录仍合法） |
+| protocol_version | 是 | 2.9（v2.8 起含评估明细段落；存量 2.0/2.8 记录仍合法） |
 
 ### 评估明细段落（v2.8 业务协议结构化）
 

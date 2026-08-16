@@ -24,14 +24,19 @@ test('initWorkspace：创建目录树 + INDEX.md + protocol.json', () => {
   rmSync(root, { recursive: true, force: true })
 })
 
-test('重复 init：不覆盖已有 INDEX.md / protocol.json', () => {
+test('重复 init：不覆盖已有 INDEX.md；protocol.json 版本漂移 → 回写当前版本（created 保留）', () => {
   const root = tempWorkspace()
   const ws = initWorkspace(root)
   ws.write('INDEX.md', '自定义索引内容')
-  ws.write('metadata/protocol.json', '{"自定义": true}')
+  ws.write('metadata/protocol.json', JSON.stringify({ protocol: 'career-os', version: '2.1', created: '2026-08-02T00:00:00.000Z' }))
   const again = initWorkspace(root)
   assert.equal(again.read('INDEX.md'), '自定义索引内容')
-  assert.equal(again.read('metadata/protocol.json'), '{"自定义": true}')
+  const protocol = JSON.parse(again.read('metadata/protocol.json'))
+  assert.equal(protocol.version, ProtocolVersion) // 漂移回写
+  assert.equal(protocol.created, '2026-08-02T00:00:00.000Z') // created 保留
+  const aligned = again.read('metadata/protocol.json')
+  initWorkspace(root) // 已对齐 → 不写盘
+  assert.equal(readFileSync(ws.paths.protocolFile, 'utf8'), aligned)
   rmSync(root, { recursive: true, force: true })
 })
 

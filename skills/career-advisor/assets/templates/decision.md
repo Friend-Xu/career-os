@@ -19,7 +19,7 @@ person_id: {person_id}
 | risk_level | {低/中/中高/高} |
 | key_risk | - |
 | status | complete |
-| protocol_version | 2.8 |
+| protocol_version | 2.9 |
 
 > **person_id 是系统身份字段（frontmatter，ADR-013/014）**：不是自由填写内容。
 > 取值来源 = 任务上下文注入的「当前分析对象」（如 person_XXX），从上下文**复制**到此处，禁止自行编造、禁止填「我」、禁止留空。
