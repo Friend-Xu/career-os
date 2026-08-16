@@ -8,7 +8,7 @@ import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { computeConstraintMatch, computeDecisionCandidate, computeJobMatch } from '../transport/websocket.ts'
 import { resolveGapDisplay } from '../runtime/decision-draft.ts'
-import { writeDecisionRecord } from '../storage/decision-writer.ts'
+import { composeAutoSummaryTable, writeDecisionRecord } from '../storage/decision-writer.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { parseDecisionMarkdown } from '../storage/report-watcher.ts'
 import type { JDAnalysisProposal } from '../ir/schema.ts'
@@ -251,4 +251,24 @@ test('summary 非摘要表格（自由文本）→ 拒绝（fail fast，不写�
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
   }
+})
+
+test('composeAutoSummaryTable：一键存档摘要表（固定字段 + direction_match 填 - + keyRisk 截断 30 字）', () => {
+  const table = composeAutoSummaryTable({
+    direction: '流体机械工程师',
+    profile: '李工',
+    riskLevel: '中',
+    keyRisk: '技能缺口：泵选型/阀门选型/传感器选型等',
+  })
+  assert.ok(table.startsWith('| 字段 | 值 |'))
+  assert.ok(table.includes('| skill | jd-analysis |'))
+  assert.ok(table.includes('| direction | 流体机械工程师 |'))
+  assert.ok(table.includes('| direction_match | - |'))
+  assert.ok(table.includes('| profile | 李工 |'))
+  assert.ok(table.includes('| risk_level | 中 |'))
+  assert.ok(table.includes('| status | complete |'))
+  assert.ok(table.includes('| protocol_version | 2.9 |'))
+  const long = composeAutoSummaryTable({ direction: 'd', profile: 'p', riskLevel: '低', keyRisk: '风'.repeat(50) })
+  const keyRiskRow = long.split('\n').find((l) => l.startsWith('| key_risk |')) ?? ''
+  assert.ok(keyRiskRow.length <= '| key_risk |  |'.length + 30 + 1)
 })

@@ -46,7 +46,7 @@ import { buildResumeRewriteContext, parseNarrativeSections } from '../runtime/re
 import { parseCompanyFacts } from '../runtime/company-fact-parser.ts'
 import { computeCompanyAssessment } from '../runtime/company-assessment.ts'
 import { computeJDMatchScore } from '../runtime/jd-match-score.ts'
-import { writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
+import { composeAutoSummaryTable, writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
 import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
@@ -1956,11 +1956,36 @@ export async function startServer(opts: {
       const candidate = computeDecisionCandidate(workspace, jobId, p.personId)
       const rows = computeConstraintMatch(workspace, jobId, p.personId)
       const missing = computeJobMatch(workspace, jobId, person.name).missing
+      const displayRows = resolveGapDisplay(candidate, rows, missing)
+      const narrative = narrativeParams(p.narrative)
+      if (!narrative.summary) {
+        // 一键存档（2026-08-16 简化）：摘要表由引擎按当前岗位/公司/缺口数据确定性组装——
+        // 用户叙述走 AI 面板，不进提交表单
+        const job = scanJobs(workspace).find((j) => j.record.id === jobId)
+        const company = job
+          ? (store.listCompanies() as CompanyView[]).find((c) => c.name === job.record.company || c.aliases?.includes(job.record.company))
+          : undefined
+        if (!company?.riskLevel) {
+          throw new Error('公司档案缺失风险评级（请先完成公司尽调）——无法自动生成决策摘要')
+        }
+        const riskLabel: Record<string, string> = { low: '低', medium: '中', high: '中高', risk: '高' }
+        const skillGaps = displayRows.filter((r) => r.actionCategory === 'SKILL_GAP')
+        const keyRisk =
+          skillGaps.length > 0
+            ? `技能缺口：${skillGaps.slice(0, 3).map((r) => r.requirement).join('/')}${skillGaps.length > 3 ? '等' : ''}`
+            : '暂无明确技能缺口'
+        narrative.summary = composeAutoSummaryTable({
+          direction: job?.record.title ?? '-',
+          profile: person.name,
+          riskLevel: riskLabel[company.riskLevel] ?? company.riskLevel,
+          keyRisk,
+        })
+      }
       const decisionId = writeDecisionRecord(workspace, {
         jobId,
         personId: p.personId,
-        displayRows: resolveGapDisplay(candidate, rows, missing),
-        narrative: narrativeParams(p.narrative),
+        displayRows,
+        narrative,
       })
       broadcast({ event: EVENTS.decisionsChanged })
       return { decisionId }

@@ -37,6 +37,23 @@ export interface DecisionWriteInput {
 }
 
 const RESERVED_FACT_HEADERS = ['## 岗位差距明细', '## 城市评估明细', '## 方向评估明细']
+
+/** 一键存档摘要表（2026-08-16 简化：引擎确定性组装——方向/风险/关键风险来自当前岗位与公司数据，
+ *  用户叙述走 AI 面板不进表单；direction_match 填 -（匹配详情见岗位差距明细段，不混用 Agent 匹配口径）） */
+export function composeAutoSummaryTable(fields: { direction: string; profile: string; riskLevel: string; keyRisk: string }): string {
+  return [
+    '| 字段 | 值 |',
+    '|------|-----|',
+    '| skill | jd-analysis |',
+    `| direction | ${fields.direction || '-'} |`,
+    '| direction_match | - |',
+    `| profile | ${fields.profile || '-'} |`,
+    `| risk_level | ${fields.riskLevel} |`,
+    `| key_risk | ${fields.keyRisk.slice(0, 30)} |`,
+    '| status | complete |',
+    '| protocol_version | 2.9 |',
+  ].join('\n')
+}
 const AI_REF_MARK = '> AI 参考：以下内容由 Agent 生成，不构成系统事实；系统事实见「岗位差距明细」（Engine 投影）。'
 const DIM_LABEL: Record<GapDisplayRow['dim'], string> = {
   education: '学历',

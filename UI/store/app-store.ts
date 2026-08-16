@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionCandidate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
@@ -188,8 +188,6 @@ interface AppState {
   constraintRows: Record<string, ConstraintMatchRow[]>;
   /** 岗位匹配度（契约 jd-match-score-contract-v0.1：规则合成投影，缓存 jobMatchScores[jobId]） */
   jobMatchScores: Record<string, JDMatchScore>;
-  /** 岗位决策草稿缓存（M7：jobId → DecisionCandidate；草稿按岗位稳定，decisionsChanged 不清空） */
-  decisionDrafts: Record<string, DecisionCandidate>;
   /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable——可消费性引擎推导） */
   claims: (CareerClaim & { usable: boolean })[];
   /** Claim 提案（P1.1）：claim-proposals/ 引擎实时派生（待确认表达——用户确认后登记为 Claim） */
@@ -404,8 +402,6 @@ interface AppState {
   fetchJobCoverage: (jobId: string) => Promise<void>;
   /** 岗位 Claim 表达候选（M3-1：responsibility → 关联 trusted evidence → 可消费 Claims；缓存 claimCoverage[jobId]） */
   fetchClaimCoverage: (jobId: string) => Promise<void>;
-  /** 岗位决策草稿（M7：引擎确定性投影；缓存 decisionDrafts[jobId]——错误 toast 后不清缓存） */
-  fetchDecisionDraft: (jobId: string, personId: string) => Promise<void>;
   /** 提交决策叙述（M7：引擎写 decisions/ → 返回 decisionId；成功 toast「决策记录已写入」，失败 toast 错误信息） */
   submitDecisionNarrative: (params: { jobId: string; personId: string; narrative?: DecisionNarrativeDraft }) => Promise<{ decisionId: string }>;
   /** 岗位表达候选（M7：直通 engine.claimSelect——组件持本地 state，store 不缓存） */
@@ -539,7 +535,6 @@ export const useAppStore = create<AppState>()(
       evidenceCoverage: {},
       constraintRows: {},
       jobMatchScores: {},
-      decisionDrafts: {},
       /** Claim 资产（M3-0）：表达 IR 全量条目（claims/ 目录，引擎实时派生 + usable） */
       claims: [],
       /** Claim 提案（P1.1）：待确认表达（claim-proposals/） */
@@ -1260,17 +1255,6 @@ export const useAppStore = create<AppState>()(
       set((state) => ({ claimCoverage: { ...state.claimCoverage, [jobId]: coverage } }))
     } catch {
       // offline：保持现有缓存
-    }
-  },
-
-  /** 岗位决策草稿（M7：引擎确定性投影——匹配行 + 差距；错误 toast 后不清缓存，草稿按岗位稳定） */
-  fetchDecisionDraft: async (jobId, personId) => {
-    if (!engine) return
-    try {
-      const draft = await engine.decisionDraft(jobId, personId)
-      set((state) => ({ decisionDrafts: { ...state.decisionDrafts, [jobId]: draft } }))
-    } catch (err) {
-      useToastStore.getState().push('warning', `决策草稿生成失败：${err instanceof Error ? err.message : String(err)}`)
     }
   },
 

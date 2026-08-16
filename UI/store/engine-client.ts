@@ -12,7 +12,6 @@ import type {
   CompanyRecord,
   ConstraintMatchRow,
   DecisionAggregate,
-  DecisionCandidate,
   DecisionHistory,
   DecisionRecord,
   EvidenceItem,
@@ -531,11 +530,6 @@ export class EngineClient {
   }
 
   // ─── M7 决策投决闭环（确定性通道：引擎算候选/写记录，不走 Agent 直写）───
-
-  /** 岗位决策草稿：匹配行 + 差距 → DecisionCandidate（纯投影；无候选 = gaps 空数组） */
-  decisionDraft(jobId: string, personId: string): Promise<DecisionCandidate> {
-    return this.rpc<DecisionCandidate>(METHODS.decisionDraft, { id: jobId, personId })
-  }
 
   /** 提交决策叙述 → 引擎写 decisions/（完整字段，天然 valid）→ 返回 decisionId（引擎按 params.id 取岗位 id） */
   narrativeSubmit(params: { jobId: string; personId: string; narrative?: DecisionNarrativeDraft }): Promise<{ decisionId: string }> {
