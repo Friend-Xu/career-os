@@ -187,7 +187,15 @@ export function parseDecisionMarkdown(md: string, sourceFile: string): Validated
   const { meta, body } = splitFrontmatter(md)
   const fields = parseSummaryTable(body)
   if (!fields) {
-    return finalize({} as DecisionRecord, [
+    // invalid 也保留身份字段（id/title/createdAt/personId/subjectId）——投影需可存储该行
+    // （NOT NULL 约束），信息池「待人工处理」按 id 可识别（决策投影同型惯例）
+    return finalize({
+      id: meta.id ?? sourceFile.replace(/\.md$/, ''),
+      title: deriveTitle(body, sourceFile),
+      createdAt: meta.created_at ?? deriveCreatedAt(sourceFile),
+      ...(meta.person_id ? { personId: meta.person_id } : {}),
+      ...(meta.subject_id ? { subjectId: meta.subject_id } : {}),
+    } as DecisionRecord, [
       { path: sourceFile, reason: '未找到 `## 分析摘要` 表格', severity: 'error' },
     ])
   }

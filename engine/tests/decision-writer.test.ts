@@ -240,3 +240,15 @@ created_at: 2026-08-07
     rmSync(ws.paths.root, { recursive: true, force: true })
   }
 })
+
+test('summary 非摘要表格（自由文本）→ 拒绝（fail fast，不写必判 invalid 的记录）', () => {
+  const ws = setup()
+  try {
+    assert.throws(
+      () => writeDecisionRecord(ws, { jobId: A_ID, personId: 'person_001', displayRows: [], narrative: { summary: '自由文本不是表格' } }, NOW),
+      /摘要表格/,
+    )
+  } finally {
+    rmSync(ws.paths.root, { recursive: true, force: true })
+  }
+})

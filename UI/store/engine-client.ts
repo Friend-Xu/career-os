@@ -14,7 +14,6 @@ import type {
   DecisionAggregate,
   DecisionCandidate,
   DecisionHistory,
-  DecisionNarrativeDraft,
   DecisionRecord,
   EvidenceItem,
   GapResult,
@@ -31,6 +30,7 @@ import type {
   Skill,
   Validation,
 } from '../../engine/ir/schema.ts'
+import type { DecisionNarrativeDraft } from '../../engine/storage/decision-writer.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResponsibilityCandidates } from '../../engine/runtime/claim-selector.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
@@ -537,9 +537,10 @@ export class EngineClient {
     return this.rpc<DecisionCandidate>(METHODS.decisionDraft, { id: jobId, personId })
   }
 
-  /** 提交决策叙述 → 引擎写 decisions/（完整字段，天然 valid）→ 返回 decisionId */
+  /** 提交决策叙述 → 引擎写 decisions/（完整字段，天然 valid）→ 返回 decisionId（引擎按 params.id 取岗位 id） */
   narrativeSubmit(params: { jobId: string; personId: string; narrative?: DecisionNarrativeDraft }): Promise<{ decisionId: string }> {
-    return this.rpc<{ decisionId: string }>(METHODS.narrativeSubmit, params)
+    const { jobId, personId, narrative } = params
+    return this.rpc<{ decisionId: string }>(METHODS.narrativeSubmit, { id: jobId, personId, ...(narrative ? { narrative } : {}) })
   }
 
   /** 决策记录 → 简历改写上下文（id = 决策 id，非岗位 id——引擎按 decisions/{id}.md 回源） */

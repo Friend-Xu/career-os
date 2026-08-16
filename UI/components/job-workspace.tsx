@@ -5,7 +5,7 @@
  * - 投决 = 岗位匹配（能不能胜任）+ 公司评估（能不能去）两维度并列
  * - Agent 是能力层：Actions 按钮预置上下文唤起；决策记录是证据层（本岗位分析历史）
  */
-import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, MenuItem, Select, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
@@ -18,11 +18,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useAppStore } from '../store/app-store'
+import { getEngine, useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import { EVIDENCE_DIMENSIONS_V0, EVIDENCE_PATTERNS_V0 } from '../../engine/ir/schema.ts'
-import type { ConstraintMatchRow, GapResult, JobRecord, Validation } from '../../engine/ir/schema.ts'
+import type { ConstraintMatchRow, GapRow, GapResult, JobRecord, ResumeRewriteContext, Validation } from '../../engine/ir/schema.ts'
+import type { DecisionNarrativeDraft } from '../../engine/storage/decision-writer.ts'
 import type { Company } from '../types'
 import { resolveCompanyReference } from '../data/company-ref'
 import { decisionMatchesJob } from '../utils/decision-job-link'
@@ -51,6 +52,13 @@ const CONSTRAINT_STATUS: Record<ConstraintMatchRow['status'], { icon: string; co
   NOT_DECLARED: { icon: '—', color: COLORS.textMuted, label: '岗位未要求' },
 }
 const CONSTRAINT_LABEL: Record<ConstraintMatchRow['dim'], string> = { education: '学历', major: '专业', experience: '经验' }
+
+/** 决策差距行动类别中文标签（GapActionCategory → 用户语言；UI 只投影，不解释语义） */
+const GAP_CATEGORY_LABEL: Record<GapRow['actionCategory'], string> = {
+  SKILL_GAP: '技能缺口',
+  POLICY_UNDEFINED: '政策未定义',
+  BACKGROUND_RISK: '背景风险',
+}
 
 /** 门槛维度行：岗位要求 / 你的情况 / 四态结果（来源锚点 = Matcher evidence，UI 只投影） */
 function ConstraintRow({ row }: { row: ConstraintMatchRow }) {
@@ -153,6 +161,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+/** 决策记录 → 简历改写上下文 → AI 面板提示文本（ResumeRewriteContext 是引擎投影，UI 只组装不解释） */
+function buildResumeRewritePrompt(ctx: ResumeRewriteContext): string {
+  const lines: string[] = [`请基于决策记录「${ctx.jobId}」的改写上下文，帮我优化简历：`]
+  if (ctx.confirmedGaps.length > 0) {
+    lines.push('已确认差距：')
+    for (const g of ctx.confirmedGaps) {
+      lines.push(`- ${g.dimension} · ${g.requirement}（${g.status}）`)
+    }
+  }
+  if (ctx.evidenceHighlights.length > 0) {
+    lines.push(`证据亮点：${ctx.evidenceHighlights.map((e) => `${e.source}:${e.id}`).join('、')}`)
+  }
+  for (const n of ctx.preparationNotes) {
+    lines.push(`【${n.section}】${n.content}`)
+  }
+  return lines.join('\n')
+}
+
 export function JobWorkspace({ jobId }: { jobId: string }) {
   const jobs = useAppStore((s) => s.jobs)
   const decisions = useAppStore((s) => s.decisions)
@@ -177,10 +203,22 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const setResumeOptimizeMode = useAppStore((s) => s.setResumeOptimizeMode)
   const setResumeOptimizeJobId = useAppStore((s) => s.setResumeOptimizeJobId)
   const push = useToastStore((s) => s.push)
+  const decisionDrafts = useAppStore((s) => s.decisionDrafts)
+  const fetchDecisionDraft = useAppStore((s) => s.fetchDecisionDraft)
+  const submitDecisionNarrative = useAppStore((s) => s.submitDecisionNarrative)
 
   const [gap, setGap] = useState<GapResult | null>(null)
   const [gapLoading, setGapLoading] = useState(false)
   const [jdOpen, setJdOpen] = useState(false)
+  /** M7 决策叙述三段（自由段落，可选；结构化摘要单独维护） */
+  const [narrative, setNarrative] = useState<DecisionNarrativeDraft>({})
+  /** M7 结构化摘要字段（引擎登记协议：summary 必须为 14 字段摘要表格，非表格会被引擎拒绝） */
+  const [summaryDirection, setSummaryDirection] = useState('')
+  const [summaryDirectionMatch, setSummaryDirectionMatch] = useState('')
+  const [summaryRiskLevel, setSummaryRiskLevel] = useState<'低' | '中' | '中高' | '高'>('中')
+  const [summaryKeyRisk, setSummaryKeyRisk] = useState('')
+  /** M7 提交成功后回显的决策 id（出现「生成简历改写上下文」按钮） */
+  const [submittedDecisionId, setSubmittedDecisionId] = useState<string | null>(null)
 
   const job = jobs.find((j) => j.id === jobId)
   const company = job ? resolveCompanyReference(companies, job.company) : undefined
@@ -209,6 +247,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   )
   const aiResponsibilities = job.responsibilities.filter((r) => r.source === 'ai')
   const cRows = constraintRows[job.id] ?? null
+  const draft = decisionDrafts[job.id] ?? null
 
   const analyze = (): void => {
     startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`, {
@@ -271,6 +310,64 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
       { taskType: 'explanation', contextRefs: [{ type: 'job', id: job.id }] },
     )
     push('info', '已预置「证据沉淀」上下文')
+  }
+
+  /** M7 生成决策草稿（引擎确定性投影——匹配行 + 差距；需画像 personId） */
+  const genDraft = (): void => {
+    const pid = person.personId
+    if (!pid) {
+      push('warning', '请先完成画像初始化')
+      return
+    }
+    fetchDecisionDraft(job.id, pid)
+  }
+  /** M7 提交决策记录（摘要组装为 14 字段表格；三段自由叙述可选；引擎每次写新记录，UI 不拦截同名） */
+  const submitDecision = (): void => {
+    const pid = person.personId
+    if (!pid) {
+      push('warning', '请先完成画像初始化')
+      return
+    }
+    // 摘要表格（引擎 SUMMARY_RE 协议）：direction/direction_match 留空填 -；key_risk 必填由按钮 disabled 保证
+    const summaryTable = [
+      '| 字段 | 值 |',
+      '|------|-----|',
+      '| skill | jd-analysis |',
+      `| direction | ${summaryDirection.trim() || '-'} |`,
+      `| direction_match | ${summaryDirectionMatch.trim() ? `${summaryDirectionMatch.trim()}%` : '-'} |`,
+      `| profile | ${person.name.trim() || '-'} |`,
+      `| risk_level | ${summaryRiskLevel} |`,
+      `| key_risk | ${summaryKeyRisk.trim()} |`,
+      '| status | complete |',
+      '| protocol_version | 2.9 |',
+    ].join('\n')
+    const draftNarrative: DecisionNarrativeDraft = { summary: summaryTable }
+    if (narrative.understanding?.trim()) draftNarrative.understanding = narrative.understanding.trim()
+    if (narrative.preparationPlan?.trim()) draftNarrative.preparationPlan = narrative.preparationPlan.trim()
+    if (narrative.resumeAdvice?.trim()) draftNarrative.resumeAdvice = narrative.resumeAdvice.trim()
+    submitDecisionNarrative({
+      jobId: job.id,
+      personId: pid,
+      ...(Object.keys(draftNarrative).length > 0 ? { narrative: draftNarrative } : {}),
+    })
+      .then(({ decisionId }) => setSubmittedDecisionId(decisionId))
+      .catch(() => {
+        // 错误已由 store action toast
+      })
+  }
+  /** M7 生成简历改写上下文（decisionId 回源 decisions/{id}.md → 组装提示 → 预置 AI 面板） */
+  const genResumeContext = (): void => {
+    const pid = person.personId
+    if (!submittedDecisionId || !pid) return
+    const engine = getEngine()
+    if (!engine) {
+      push('warning', '引擎未连接')
+      return
+    }
+    engine
+      .resumeContext(submittedDecisionId, pid)
+      .then((ctx) => startAnalysis(buildResumeRewritePrompt(ctx)))
+      .catch((err) => push('warning', `生成简历改写上下文失败：${err instanceof Error ? err.message : String(err)}`))
   }
 
   const step = (done: boolean, label: string): ReactNode => (
@@ -762,6 +859,135 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                 </Typography>
               </Box>
             </Stack>
+
+            {/* 决策记录（M7 投决闭环：草稿 → 叙述 → 提交 → 简历改写上下文） */}
+            <Box sx={{ mt: 1.5, p: 1.5, borderRadius: '10px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bg }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+                <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, fontWeight: 600, letterSpacing: '0.04em' }}>决策记录</Typography>
+                <Button size="small" variant="outlined" onClick={genDraft} sx={{ fontSize: 12 }}>
+                  生成决策草稿
+                </Button>
+              </Stack>
+
+              {/* 草稿预览（gaps 列表：行动类别 + 待确认问题模板） */}
+              {draft && (
+                <Stack spacing={0.75} sx={{ mb: 1 }}>
+                  {draft.gaps.length === 0 ? (
+                    <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>无识别差距</Typography>
+                  ) : (
+                    draft.gaps.map((g, i) => (
+                      <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                        <Chip
+                          size="small"
+                          label={GAP_CATEGORY_LABEL[g.actionCategory]}
+                          sx={{ height: 20, fontSize: 11, flexShrink: 0, bgcolor: COLORS.bgHover, color: COLORS.textSecondary }}
+                        />
+                        {g.question && (
+                          <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: '20px' }}>
+                            待确认：{g.question.template}
+                          </Typography>
+                        )}
+                      </Stack>
+                    ))
+                  )}
+                </Stack>
+              )}
+
+              {/* 摘要（结构化字段——引擎登记协议要求 14 字段表格；自由叙述放下面三段） */}
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
+                摘要为结构化字段（引擎登记协议）；自由叙述放下面三段
+              </Typography>
+              <Stack spacing={1} sx={{ mt: 0.75 }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="方向 direction（可选）"
+                  value={summaryDirection}
+                  onChange={(e) => setSummaryDirection(e.target.value)}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="方向匹配度 directionMatch（可选，输数字）"
+                  value={summaryDirectionMatch}
+                  onChange={(e) => setSummaryDirectionMatch(e.target.value.replace(/[^0-9]/g, ''))}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+                <Select
+                  size="small"
+                  value={summaryRiskLevel}
+                  onChange={(e) => setSummaryRiskLevel(e.target.value as '低' | '中' | '中高' | '高')}
+                  sx={{ '& .MuiSelect-select': { fontSize: 12 } }}
+                >
+                  <MenuItem value="低">低</MenuItem>
+                  <MenuItem value="中">中</MenuItem>
+                  <MenuItem value="中高">中高</MenuItem>
+                  <MenuItem value="高">高</MenuItem>
+                </Select>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="关键风险 keyRisk（必填，≤30 字）"
+                  value={summaryKeyRisk}
+                  onChange={(e) => setSummaryKeyRisk(e.target.value)}
+                  slotProps={{ htmlInput: { maxLength: 30 } }}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+                <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                  固定字段：skill = jd-analysis · status = complete · protocol_version = 2.9
+                </Typography>
+              </Stack>
+
+              {/* 自由叙述（三段可选，全部可留空） */}
+              <Stack spacing={1} sx={{ mt: 1 }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="理解 understanding"
+                  value={narrative.understanding ?? ''}
+                  onChange={(e) => setNarrative((n) => ({ ...n, understanding: e.target.value }))}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="准备计划 preparationPlan"
+                  value={narrative.preparationPlan ?? ''}
+                  onChange={(e) => setNarrative((n) => ({ ...n, preparationPlan: e.target.value }))}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="简历建议 resumeAdvice"
+                  value={narrative.resumeAdvice ?? ''}
+                  onChange={(e) => setNarrative((n) => ({ ...n, resumeAdvice: e.target.value }))}
+                  sx={{ '& .MuiInputLabel-root': { fontSize: 12 } }}
+                />
+              </Stack>
+
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1.25, flexWrap: 'wrap', gap: 0.75 }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={!summaryKeyRisk.trim()}
+                  title={summaryKeyRisk.trim() ? undefined : '请填写关键风险'}
+                  onClick={submitDecision}
+                  sx={{ fontSize: 12, bgcolor: COLORS.accent, color: COLORS.onAccent, '&:hover': { bgcolor: COLORS.accent, opacity: 0.9 } }}
+                >
+                  提交决策记录
+                </Button>
+                {submittedDecisionId && (
+                  <>
+                    <Typography sx={{ fontSize: 12, color: RISK_COLOR.low }}>决策已写入：{submittedDecisionId}</Typography>
+                    <Button size="small" variant="outlined" onClick={genResumeContext} sx={{ fontSize: 12 }}>
+                      生成简历改写上下文
+                    </Button>
+                  </>
+                )}
+              </Stack>
+            </Box>
           </Section>
         )}
 

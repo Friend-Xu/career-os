@@ -73,6 +73,13 @@ export function writeDecisionRecord(ws: Workspace, input: DecisionWriteInput, no
       throw new Error(`narrative 禁止包含引擎事实区标题（${RESERVED_FACT_HEADERS.join(' / ')}）`)
     }
   }
+  // 边界校验：summary 语义 = 14 字段摘要表格（SUMMARY_RE 协议）——自由文本会写出必判 invalid 的记录；
+  // 拒绝而非写脏（自由文本归 understanding/preparationPlan/resumeAdvice 段）
+  if (input.narrative?.summary && input.narrative.summary.trim().length > 0) {
+    if (!/^\| 字段 \| 值 \|/m.test(input.narrative.summary)) {
+      throw new Error('narrative.summary 需为摘要表格（首行 | 字段 | 值 |，字段见 SKILL 摘要字段表）；自由文本请放 understanding/preparationPlan/resumeAdvice')
+    }
+  }
   const id = nextDecisionId(ws, now)
   const day = now.toISOString().slice(0, 10)
   const md = [

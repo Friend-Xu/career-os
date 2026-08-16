@@ -255,3 +255,24 @@ test('明细得分缺单位（裸数字）→ 该行跳过（协议要求显式�
   assert.equal(p.cities[0].name, 'City-W')
 })
 
+test('摘要表缺失 → invalid 但保留身份字段（投影可存储；待人工处理按 id 可识别）', () => {
+  const md = `---
+id: decision_20260816_00001
+created_at: 2026-08-16
+person_id: person_001
+subject_id: 2026-08-07-某岗位
+---
+# 岗位决策 — 2026-08-07-某岗位
+
+## 分析摘要
+
+自由文本无表格
+`
+  const parsed = parseDecisionMarkdown(md, 'decision_20260816_00001.md')
+  assert.equal(parsed.validation?.status, 'invalid')
+  assert.equal(parsed.value.id, 'decision_20260816_00001')
+  assert.equal(parsed.value.title, '岗位决策 — 2026-08-07-某岗位')
+  assert.equal(parsed.value.personId, 'person_001')
+  assert.equal(parsed.value.subjectId, '2026-08-07-某岗位')
+})
+

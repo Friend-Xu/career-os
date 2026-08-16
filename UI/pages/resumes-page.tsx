@@ -8,8 +8,11 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
+  Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
@@ -24,6 +27,7 @@ import { alpha, COLORS, EASE, RISK_COLOR } from '../data/constants'
 import type { Person, ResumeEntry, ResumeModule } from '../types'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { EvidenceItem } from '../../engine/ir/schema.ts'
+import type { ResponsibilityCandidates } from '../../engine/runtime/claim-selector.ts'
 import { modulesToSections, sectionsToModules, buildSkeletonModules } from '../utils/resume-working-copy'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
@@ -197,6 +201,8 @@ export function ResumesPage() {
   const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
   const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
   const upsertWorkingCopy = useAppStore((s) => s.upsertWorkingCopy)
+  const jobs = useAppStore((s) => s.jobs)
+  const fetchClaimCandidates = useAppStore((s) => s.fetchClaimCandidates)
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
   const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
@@ -256,6 +262,44 @@ export function ResumesPage() {
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const btnRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+
+  /** M7 表达候选面板：岗位选择 + 候选列表（组件持本地 state——store 直通不缓存） */
+  const [claimJobId, setClaimJobId] = useState('')
+  const [claimCandidates, setClaimCandidates] = useState<ResponsibilityCandidates[]>([])
+  const [claimLoading, setClaimLoading] = useState(false)
+
+  // M7：表达候选岗位默认取当前工作副本目标岗位（targetContext.jobId——可选，未设则手动选）
+  useEffect(() => {
+    setClaimJobId(workingCopy?.targetContext?.jobId ?? '')
+    setClaimCandidates([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workingCopy?.id, workingCopy?.targetContext?.jobId])
+
+  /** M7 加载表达候选（engine.claimSelect 纯派生——按岗位拉取，不落盘） */
+  const loadClaimCandidates = () => {
+    if (!claimJobId) {
+      push('warning', '请先选择目标岗位')
+      return
+    }
+    setClaimLoading(true)
+    fetchClaimCandidates(claimJobId)
+      .then(setClaimCandidates)
+      .catch((e: unknown) => push('warning', e instanceof Error ? e.message : '加载表达候选失败'))
+      .finally(() => setClaimLoading(false))
+  }
+
+  /** M7 点击候选 chip → 复制 claimId（编辑区暂无选块机制，绑定入口未接线——诚实标注，不假装可绑定） */
+  const copyClaimId = (claimId: string) => {
+    const clipboard = navigator.clipboard
+    if (!clipboard) {
+      push('warning', '复制失败：当前环境不支持剪贴板（绑定入口未接线）')
+      return
+    }
+    void clipboard.writeText(claimId).then(
+      () => push('info', `已复制「${claimId}」到剪贴板（绑定入口未接线：编辑区暂不支持选块绑定）`),
+      () => push('warning', '复制失败：浏览器未授予剪贴板权限'),
+    )
+  }
 
   /** 改写目标岗位上下文（prompt 注入；契约允许"参考 JD 上下文"，非自动匹配） */
   const jdContext = resume?.targetPosition
@@ -1361,6 +1405,66 @@ export function ResumesPage() {
               </Box>
             ))}
           </Box>
+        </Box>
+
+        {/* 表达候选（M7：岗位表达候选选择面板——点击复制 claimId，绑定入口未接线） */}
+        <Box sx={{ flex: '0 0 260px', overflow: 'auto', p: 1.5, borderLeft: `1px solid ${COLORS.border}`, bgcolor: COLORS.bg }}>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: COLORS.textMuted, letterSpacing: '0.04em', mb: 0.75 }}>
+            表达候选
+          </Typography>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1 }}>
+            <Select
+              size="small"
+              displayEmpty
+              value={claimJobId}
+              onChange={(e) => {
+                setClaimJobId(e.target.value as string)
+                setClaimCandidates([])
+              }}
+              sx={{ minWidth: 0, flex: 1, '& .MuiSelect-select': { fontSize: 11.5, py: 0.75 } }}
+            >
+              <MenuItem value="" disabled>
+                选择岗位
+              </MenuItem>
+              {jobs.map((j) => (
+                <MenuItem key={j.id} value={j.id} sx={{ fontSize: 11.5 }}>
+                  {j.company} · {j.title}
+                </MenuItem>
+              ))}
+            </Select>
+            <Button size="small" variant="outlined" disabled={!claimJobId || claimLoading} onClick={loadClaimCandidates} sx={{ fontSize: 11.5, minWidth: 0, px: 1 }}>
+              {claimLoading ? '加载中…' : '加载候选'}
+            </Button>
+          </Stack>
+          {claimCandidates.length === 0 ? (
+            <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.6 }}>
+              选择岗位并加载候选——表达候选由引擎按岗位派生（可解释优先级），点击复制 claimId
+            </Typography>
+          ) : (
+            <Stack spacing={1.25}>
+              {claimCandidates.map((rc, i) => (
+                <Box key={`${rc.responsibility}-${i}`}>
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 600, mb: 0.5 }}>{rc.responsibility}</Typography>
+                  {rc.candidates.length === 0 ? (
+                    <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>暂无匹配表达候选</Typography>
+                  ) : (
+                    <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                      {rc.candidates.map((c) => (
+                        <Tooltip key={c.claimId} title={`${c.reason.coverageStatus} · ${c.reason.matchedDimension}`}>
+                          <Chip
+                            size="small"
+                            label={`${c.claimId} · P${c.priority}`}
+                            onClick={() => copyClaimId(c.claimId)}
+                            sx={{ height: 20, fontSize: 10.5, cursor: 'pointer', bgcolor: COLORS.bgHover, color: COLORS.textSecondary }}
+                          />
+                        </Tooltip>
+                      ))}
+                    </Stack>
+                  )}
+                </Box>
+              ))}
+            </Stack>
+          )}
         </Box>
       </Box>
 
