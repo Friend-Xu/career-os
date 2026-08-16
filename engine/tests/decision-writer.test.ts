@@ -109,6 +109,7 @@ test('Case A 工程型：差距明细表 = Engine 事实（泵选型 NOT_DECLARE
     assert.match(md, /^id: decision_\d{8}_\d{5}$/m)
     assert.match(md, /^type: jd-analysis$/m)
     assert.match(md, /^subject_id: 2026-08-08-示例流体-流体机械工程师$/m)
+    assert.match(md, /^person_id: person_001$/m) // ADR-014：系统身份字段必写入 frontmatter（缺失 → 投影 invalid）
     // 差距明细：能力行（NOT_DECLARED + 未声明≠不具备）+ 专业行（BACKGROUND_RISK）
     assert.ok(md.includes('## 岗位差距明细'))
     assert.ok(md.includes('| 能力 | 泵选型 | 未声明 | NOT_DECLARED（未声明——不代表不具备） | SKILL_GAP | 是否具备「泵选型」？ |'))

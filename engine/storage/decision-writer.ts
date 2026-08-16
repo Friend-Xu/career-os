@@ -82,6 +82,7 @@ export function writeDecisionRecord(ws: Workspace, input: DecisionWriteInput, no
     `source_file: ${input.jobId}`,
     'type: jd-analysis',
     `subject_id: ${input.jobId}`,
+    `person_id: ${input.personId}`,
     '---',
     '',
     `# 岗位决策 — ${input.jobId}`,

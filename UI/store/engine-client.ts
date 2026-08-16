@@ -12,7 +12,9 @@ import type {
   CompanyRecord,
   ConstraintMatchRow,
   DecisionAggregate,
+  DecisionCandidate,
   DecisionHistory,
+  DecisionNarrativeDraft,
   DecisionRecord,
   EvidenceItem,
   GapResult,
@@ -24,11 +26,13 @@ import type {
   Person,
   PoolEdge,
   PoolNode,
+  ResumeRewriteContext,
   Role,
   Skill,
   Validation,
 } from '../../engine/ir/schema.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
+import type { ResponsibilityCandidates } from '../../engine/runtime/claim-selector.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
 import type { Opportunity } from '../../engine/runtime/opportunity.ts'
 import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
@@ -524,6 +528,28 @@ export class EngineClient {
   /** 表达单元溯源（M4-5.4：只读定位——查看 ≠ 产生 Artifact state） */
   getTraceability(params: { artifact: 'cover-letter'; scopeId: string; unitId: string }): Promise<TraceabilityContext> {
     return this.rpc<TraceabilityContext>(METHODS.artifactTraceability, params)
+  }
+
+  // ─── M7 决策投决闭环（确定性通道：引擎算候选/写记录，不走 Agent 直写）───
+
+  /** 岗位决策草稿：匹配行 + 差距 → DecisionCandidate（纯投影；无候选 = gaps 空数组） */
+  decisionDraft(jobId: string, personId: string): Promise<DecisionCandidate> {
+    return this.rpc<DecisionCandidate>(METHODS.decisionDraft, { id: jobId, personId })
+  }
+
+  /** 提交决策叙述 → 引擎写 decisions/（完整字段，天然 valid）→ 返回 decisionId */
+  narrativeSubmit(params: { jobId: string; personId: string; narrative?: DecisionNarrativeDraft }): Promise<{ decisionId: string }> {
+    return this.rpc<{ decisionId: string }>(METHODS.narrativeSubmit, params)
+  }
+
+  /** 决策记录 → 简历改写上下文（id = 决策 id，非岗位 id——引擎按 decisions/{id}.md 回源） */
+  resumeContext(decisionId: string, personId: string): Promise<ResumeRewriteContext> {
+    return this.rpc<ResumeRewriteContext>(METHODS.resumeContext, { id: decisionId, personId })
+  }
+
+  /** 每职责单元的表达候选（可解释优先级：fact 主体 > 覆盖状态 > 命中维度数；纯派生不落盘） */
+  claimSelect(jobId: string): Promise<ResponsibilityCandidates[]> {
+    return this.rpc<ResponsibilityCandidates[]>(METHODS.claimSelect, { id: jobId })
   }
 
   // ─── M4 Artifact 数据（M4-5.2 Proposal Center：四类 proposal 读取 + accept/reject 走原 watcher）──
