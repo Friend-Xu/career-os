@@ -30,7 +30,8 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
@@ -228,6 +229,10 @@ interface AppState {
   candidates: CandidatePoolEntry[];
   /** 岗位线索（公司适配榜投递层；引擎 job-leads/list） */
   jobLeads: JobLead[];
+  /** 薪资基准（二期 §7；引擎 salary-benchmarks/list） */
+  salaryBenchmarks: SalaryBenchmarkEntry[];
+  /** 个人估价卡投影（二期 §7.5；引擎 salary-benchmarks/valuation——三态对照 + 缺数据状态） */
+  valuationCard: SalaryValuationCard | null;
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
@@ -567,6 +572,8 @@ export const useAppStore = create<AppState>()(
       companies: COMPANIES,
       candidates: [],
       jobLeads: [],
+      salaryBenchmarks: [],
+      valuationCard: null,
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
       agentDraft: '',
@@ -2445,6 +2452,33 @@ async function pullJobLeads(): Promise<void> {
   }
 }
 
+/** 薪资基准（二期 §7；salaryBenchmarksChanged 事件驱动重拉） */
+async function pullSalaryBenchmarks(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listSalaryBenchmarks()
+    useAppStore.setState({ salaryBenchmarks: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 个人估价卡（二期 §7.5；当前人 personId 驱动——缺省清空，UI 显式缺数据状态） */
+async function pullValuationCard(): Promise<void> {
+  if (!engine) return
+  try {
+    const personId = useAppStore.getState().currentPerson()?.personId
+    if (!personId) {
+      useAppStore.setState({ valuationCard: null })
+      return
+    }
+    const card = await engine.salaryValuation(personId)
+    useAppStore.setState({ valuationCard: card })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 证据资产（M2）：evidence/list 全量拉取；evidenceChanged 事件驱动重拉 */
 async function pullEvidence(): Promise<void> {
   if (!engine) return
@@ -2746,7 +2780,7 @@ export function connectEngine(): void {
     }
     if (s === 'connected') {
       void pullDecisions()
-      void pullPersons()
+      void pullPersons().then(() => void pullValuationCard())
       void pullHistories()
       void pullCompanies()
       void pullGraph()
@@ -2757,6 +2791,7 @@ export function connectEngine(): void {
       void pullApplications()
       void pullCandidates()
       void pullJobLeads()
+      void pullSalaryBenchmarks()
       void pullEvidence()
       void pullClaims()
       void pullClaimProposals()
@@ -2855,10 +2890,14 @@ export function connectEngine(): void {
   })
   engine.on(EVENTS.candidatesChanged, () => void pullCandidates())
   engine.on(EVENTS.jobLeadsChanged, () => void pullJobLeads())
+  engine.on(EVENTS.salaryBenchmarksChanged, () => {
+    void pullSalaryBenchmarks()
+    void pullValuationCard()
+  })
   engine.on(EVENTS.personsChanged, () => {
     // P1 Person Aggregate：identity/career_profile/skill_inventory 变化 → 重拉 persons/list
-    //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）
-    void pullPersons()
+    //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）；估价卡档位/期望依赖画像 → 重拉后重算
+    void pullPersons().then(() => void pullValuationCard())
     void pullGraph()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())

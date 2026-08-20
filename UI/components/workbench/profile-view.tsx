@@ -11,6 +11,7 @@ import { useAppStore } from '../../store/app-store'
 import { COLORS, alpha } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
 import { hasPersonDirection, latestPersonDirection } from '../../utils/direction-state'
+import { aggregateBenchmarks, expTierLabel } from '../../../engine/ir/salary'
 
 type DimKey = 'skills' | 'education' | 'goals' | 'direction' | 'experience' | 'city' | 'preference'
 type DimState = 'confirmed' | 'pending' | 'inferred' | 'missing'
@@ -260,6 +261,101 @@ function ProfileMap() {
   )
 }
 
+/** 个人估价卡（二期 §7.5）：市场带 + 你的期望 + 三态结论（Engine 投影）+ 四种显式状态。
+ *  档位未知 → 各档位带并列展示（客户端复用引擎聚合规则），无三态结论——缺数据是显式状态，不兜底。 */
+function ValuationCard() {
+  const card = useAppStore((s) => s.valuationCard)
+  const salaryBenchmarks = useAppStore((s) => s.salaryBenchmarks)
+  const startAnalysis = useAppStore((s) => s.startAnalysis)
+
+  if (!card) return null // 引擎离线 / 无 personId——无卡可显（卡片内各状态才是有数据时的显式分支）
+
+  const fmt = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+  const fmtExpectation = (e: { min: number; max: number }): string => (e.min === e.max ? `${fmt(e.min)}K` : `${fmt(e.min)}-${fmt(e.max)}K`)
+
+  const promptBench = (): void =>
+    startAnalysis(
+      `请做薪资基准检索（salary-benchmark）：岗位「${card.role}」、城市「${card.city}」、经验档位「${card.tier}」——检索招聘平台与薪酬报告的市场薪资单来源快照，输出薪资基准登记 JSON`,
+      { taskType: 'salary_benchmark_search' },
+    )
+
+  // 档位未知（§7.5）：各档位带并列展示、无三态结论（复用引擎聚合计算源）
+  const tierBands =
+    card.tier === null && card.role !== null && card.city !== null
+      ? aggregateBenchmarks(salaryBenchmarks).filter((s) => s.role === card.role && s.city === card.city)
+      : []
+
+  const verdictColor = card.verdict === '合理' ? COLORS.riskLow : card.verdict === '偏低' ? COLORS.accent : COLORS.riskHigh
+
+  return (
+    <Box sx={{ p: 2, borderRadius: '12px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', mb: 1.25 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary }}>个人估价卡</Typography>
+        <Typography sx={{ fontSize: 10.5, color: COLORS.textMuted }}>市场对照 · 只对照不定价</Typography>
+      </Stack>
+      {card.role === null || card.city === null ? (
+        <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, lineHeight: 1.7 }}>岗位或城市未采集——画像补全后可对照市场</Typography>
+      ) : card.tier === null ? (
+        <Stack spacing={1}>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.7 }}>
+            经验档位未采集——补充经历后可对齐三态结论；以下为 {card.city}·{card.role} 各档位市场带
+          </Typography>
+          {tierBands.length === 0 ? (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, flex: 1 }}>各档位均无基准数据</Typography>
+              <Button size="small" variant="outlined" onClick={promptBench} sx={{ fontSize: 12 }}>发起基准检索</Button>
+            </Stack>
+          ) : (
+            tierBands.map((b) => (
+              <Typography key={b.expTier} sx={{ fontSize: 12.5, color: COLORS.textSecondary, fontFamily: COLORS.mono }}>
+                {expTierLabel(b.expTier)} · {fmt(b.p25)}-{fmt(b.p75)}K（P50 {fmt(b.p50)}K，样本 {b.sampleN}，{b.latestCapturedAt}
+                {b.stale ? ' · 数据较旧' : ''}）
+              </Typography>
+            ))
+          )}
+        </Stack>
+      ) : card.stats === null ? (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Typography sx={{ fontSize: 12.5, color: COLORS.textMuted, flex: 1 }}>
+            {card.city}×{card.role}×{expTierLabel(card.tier)} 无基准数据
+          </Typography>
+          <Button size="small" variant="outlined" onClick={promptBench} sx={{ fontSize: 12 }}>发起基准检索</Button>
+        </Stack>
+      ) : (
+        <Stack spacing={1}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>
+              {card.city} · {card.role} · {expTierLabel(card.tier)} 市场带
+            </Typography>
+            <Typography sx={{ fontSize: 15, fontWeight: 700, fontFamily: COLORS.mono }}>
+              {fmt(card.stats.p25)}-{fmt(card.stats.p75)}K
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: COLORS.textMuted, fontFamily: COLORS.mono }}>
+              P50 {fmt(card.stats.p50)}K · 样本 {card.stats.sampleN} · {card.stats.latestCapturedAt}
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary }}>你的期望</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, fontFamily: COLORS.mono }}>
+              {card.expectation ? fmtExpectation(card.expectation) : '未采集（画像偏好补充后可对照）'}
+            </Typography>
+            {card.verdict && (
+              <Chip size="small" label={card.verdict} variant="outlined" sx={{ height: 20, fontSize: 11, color: verdictColor, borderColor: verdictColor }} />
+            )}
+          </Stack>
+          {card.reason && <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.65 }}>{card.reason}</Typography>}
+          {card.stats.stale && (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>数据较旧（&gt;90 天）</Typography>
+              <Button size="small" variant="outlined" onClick={promptBench} sx={{ fontSize: 11.5, minWidth: 0, px: 1 }}>刷新检索</Button>
+            </Stack>
+          )}
+        </Stack>
+      )}
+    </Box>
+  )
+}
+
 /** 状态 + 内容：左列画像状态（覆盖度/证据轴计数），右列画像内容（技能/目标/意向） */
 function StatusContent() {
   const person = useAppStore((s) => s.currentPerson())
@@ -440,6 +536,7 @@ export function ProfileView() {
       <Stack spacing={2}>
         <IdentityCard />
         <ProfileMap />
+        <ValuationCard />
         <StatusContent />
         <ActionRow />
       </Stack>

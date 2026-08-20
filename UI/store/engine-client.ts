@@ -38,7 +38,8 @@ import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
-import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead } from '../../engine/ir/schema.ts'
+import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead, SalaryBenchmarkEntry } from '../../engine/ir/schema.ts'
+import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
@@ -658,6 +659,16 @@ export class EngineClient {
   /** 岗位线索（公司适配榜投递层；jobLeadsChanged 事件驱动重拉） */
   listJobLeads(): Promise<JobLead[]> {
     return this.rpc<JobLead[]>(METHODS.jobLeadsList)
+  }
+
+  /** 薪资基准（二期 §7；salaryBenchmarksChanged 事件驱动重拉） */
+  listSalaryBenchmarks(): Promise<SalaryBenchmarkEntry[]> {
+    return this.rpc<SalaryBenchmarkEntry[]>(METHODS.salaryBenchmarksList)
+  }
+
+  /** 个人估价卡投影（二期 §7.5；Engine 确定性规则——分位聚合 + 档位映射 + 三态对照） */
+  salaryValuation(personId: string): Promise<SalaryValuationCard> {
+    return this.rpc<SalaryValuationCard>(METHODS.salaryValuation, { personId })
   }
 
   listPersons(): Promise<Person[]> {

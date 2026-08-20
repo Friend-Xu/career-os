@@ -177,6 +177,15 @@ test('buildSalaryValuationCard：全状态分支显式（三态结论 / 档位�
   const noExp = buildSalaryValuationCard(person({ preference: { city: '城市A' } }), entries)
   assert.ok(noExp.stats)
   assert.equal(noExp.verdict, null)
+
+  // Person 形输入（无 careerProfile，顶层 targetRoles）→ 岗位解析兜住（引擎投影 store 是 Person 形）
+  const personShaped = buildSalaryValuationCard(
+    { targetRoles: ['岗位X'], preference: { city: '城市A', salaryRange: '11-13K' }, experiences: [{ company: '公司A', start: '2023-01-01', end: '2026-01-01', status: 'confirmed' }] },
+    entries,
+  )
+  assert.equal(personShaped.role, '岗位X')
+  assert.equal(personShaped.tier, '3-5')
+  assert.equal(personShaped.verdict, '合理')
 })
 
 test('benchmarkGroupKey：role+city+tier 三元组唯一键', () => {

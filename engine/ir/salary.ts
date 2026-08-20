@@ -179,9 +179,11 @@ function fmt(n: number): string {
 
 // ─── 个人估价卡投影（§7.5 输入：画像 → 状态分支，全显式无兜底）──
 
-/** 估价卡输入的最小画像形状（Person 与 PersonSnapshot 均满足——只消费岗位/城市/期望/经历四字段） */
+/** 估价卡输入的最小画像形状（PersonSnapshot 与 Person 两形均满足——岗位解析兼容两处：
+ *  PersonSnapshot.careerProfile（currentRole ?? targetRoles[0]）与 Person 顶层 targetRoles[0]） */
 export interface SalaryValuationPersonInput {
   careerProfile?: { currentRole?: string; targetRoles?: string[] }
+  targetRoles?: string[]
   preference?: { salaryRange?: string; city?: string }
   experiences?: PersonWorkExperience[]
 }
@@ -198,7 +200,7 @@ export interface SalaryValuationCard {
 }
 
 export function buildSalaryValuationCard(person: SalaryValuationPersonInput, entries: SalaryBenchmarkEntry[]): SalaryValuationCard {
-  const role = person.careerProfile?.currentRole ?? person.careerProfile?.targetRoles?.[0] ?? null
+  const role = person.careerProfile?.currentRole ?? person.careerProfile?.targetRoles?.[0] ?? person.targetRoles?.[0] ?? null
   const city = person.preference?.city ?? null
   const tier = person.experiences ? (() => {
     const years = computeWorkYears(person.experiences)

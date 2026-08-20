@@ -13,7 +13,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../../data/constants'
-import type { CandidatePoolEntry, JobLead, JobRecord } from '../../../engine/ir/schema.ts'
+import type { CandidatePoolEntry, JobLead, JobRecord, SalaryExpTier } from '../../../engine/ir/schema.ts'
+import { aggregateBenchmarks, expTierLabel, parseSalaryRangeK } from '../../../engine/ir/salary'
 import type { Company } from '../../types'
 
 type CompanyWithRating = Company & { validation?: { status?: string } }
@@ -261,6 +262,42 @@ function CompanyRow(props: {
   const tierText = tier ? TIER_LABEL[tier] : '未评级'
   const total = jobs.length + leads.length
 
+  // 二期 §7.4：市场对照——岗位薪资 vs 该 (岗位, 城市, 我的档位) 基准带（确定性，客户端复用引擎聚合）
+  const salaryBenchmarks = useAppStore((s) => s.salaryBenchmarks)
+  const personTier: SalaryExpTier | null = useAppStore((s) => s.valuationCard?.tier ?? null)
+  const marketCompare = (role: string, city: string, salaryStr: string): string | null => {
+    if (!personTier) return null
+    const salary = parseSalaryRangeK(salaryStr)
+    if (!salary) return null // 薪资无法解析（年薪/面议等）→ 不对比
+    const band = aggregateBenchmarks(salaryBenchmarks).find((b) => b.role === role && b.city === city && b.expTier === personTier)
+    if (!band) return '无市场基准'
+    const mid = (salary.min + salary.max) / 2
+    if (mid < band.p25) return '低于市场带（开价低）'
+    return '带内'
+  }
+  const marketRows: { key: string; title: string; salary: string; cmp: string }[] = []
+  if (personTier) {
+    const seen = new Set<string>()
+    for (const l of leads) {
+      if (!l.salary || !l.city) continue
+      const cmp = marketCompare(l.title, l.city, l.salary)
+      const key = `${l.title}|${l.salary}`
+      if (cmp && !seen.has(key)) {
+        seen.add(key)
+        marketRows.push({ key, title: l.title, salary: l.salary, cmp })
+      }
+    }
+    for (const j of jobs) {
+      if (!j.salary || !j.location) continue
+      const cmp = marketCompare(j.title, j.location, j.salary)
+      const key = `${j.title}|${j.salary}`
+      if (cmp && !seen.has(key)) {
+        seen.add(key)
+        marketRows.push({ key, title: j.title, salary: j.salary, cmp })
+      }
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -344,6 +381,18 @@ function CompanyRow(props: {
                     去递交 JD
                   </Button>
                 </Stack>
+              ))}
+            </Stack>
+          )}
+          {/* 二期 §7.4：市场对照（我的档位已知时显示；无基准 → 显式标注，不计入排序） */}
+          {personTier && marketRows.length > 0 && (
+            <Stack spacing={0.5} sx={{ mb: 1 }}>
+              <Typography sx={{ fontSize: 10.5, color: COLORS.textMuted }}>市场对照（{expTierLabel(personTier)} 档 · 岗位薪资 vs 市场带）</Typography>
+              {marketRows.map((r) => (
+                <Typography key={r.key} sx={{ fontSize: 11.5, color: COLORS.textSecondary }}>
+                  {r.title} {r.salary} →{' '}
+                  {r.cmp === '带内' ? <span style={{ color: COLORS.riskLow }}>市场带内 ✓</span> : r.cmp}
+                </Typography>
               ))}
             </Stack>
           )}
