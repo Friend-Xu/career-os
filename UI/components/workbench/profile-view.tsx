@@ -81,7 +81,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
       key: 'preference',
       label: '偏好',
       state: person.preference?.salaryRange ? 'confirmed' : 'missing',
-      detail: person.preference?.salaryRange ? `薪资 ${person.preference.salaryRange}` : '未采集',
+      detail: person.preference?.salaryRange ?? '未采集',
     },
   ]
 
@@ -186,10 +186,11 @@ function ProfileMap() {
   const { dims } = useProfileDims()
 
   const CX = 160
-  const CY = 158
-  const R = 106
+  const CY = 160
+  const R = 100
   const pos = (i: number) => {
-    const a = ((-90 + i * 60) * Math.PI) / 180
+    // 维度数驱动等分（7 维 → 360/7；曾硬编码 60°×6 位，第 7 维与第 1 维同点叠字）
+    const a = ((-90 + (i * 360) / dims.length) * Math.PI) / 180
     return { x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) }
   }
 
@@ -218,7 +219,7 @@ function ProfileMap() {
         placeItems: 'center',
       }}
     >
-      <svg viewBox="0 0 320 300" style={{ width: '100%', maxWidth: 400, height: 'auto' }}>
+      <svg viewBox="0 0 320 320" style={{ width: '100%', maxWidth: 400, height: 'auto' }}>
         {/* 中心人物节点 + 呼吸光晕 */}
         <circle cx={CX} cy={CY} r={40} fill={alpha(COLORS.accent, 0.08)} style={{ animation: 'cos-profile-breathe 4.5s ease-in-out infinite' }} />
         <circle cx={CX} cy={CY} r={27} fill={person.color} stroke="rgba(255,255,255,0.65)" strokeWidth={1.5} />
