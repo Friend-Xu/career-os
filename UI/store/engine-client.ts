@@ -38,7 +38,7 @@ import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
-import type { CareerClaim, ClaimCoverageRow } from '../../engine/ir/schema.ts'
+import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead } from '../../engine/ir/schema.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
@@ -648,6 +648,16 @@ export class EngineClient {
 
   listCompanies(): Promise<(CompanyRecord & { validation?: Validation })[]> {
     return this.rpc<(CompanyRecord & { validation?: Validation })[]>(METHODS.listCompanies)
+  }
+
+  /** 候选池（公司适配榜候选层；candidatesChanged 事件驱动重拉） */
+  listCandidatePool(): Promise<CandidatePoolEntry[]> {
+    return this.rpc<CandidatePoolEntry[]>(METHODS.candidatesList)
+  }
+
+  /** 岗位线索（公司适配榜投递层；jobLeadsChanged 事件驱动重拉） */
+  listJobLeads(): Promise<JobLead[]> {
+    return this.rpc<JobLead[]>(METHODS.jobLeadsList)
   }
 
   listPersons(): Promise<Person[]> {

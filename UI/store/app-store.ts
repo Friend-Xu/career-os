@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, Skill, Validation } from '../../engine/ir/schema.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
 import type { ClaimProposal } from '../../engine/storage/claim-proposal-registry.ts'
@@ -224,6 +224,10 @@ interface AppState {
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
   health: HealthReport | null;
   companies: CompanyView[];
+  /** 候选池（公司适配榜候选层；引擎 candidates/list） */
+  candidates: CandidatePoolEntry[];
+  /** 岗位线索（公司适配榜投递层；引擎 job-leads/list） */
+  jobLeads: JobLead[];
   persons: Person[];
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
@@ -261,7 +265,7 @@ interface AppState {
   /** 当前选中的草稿（预留：Agent 定位编辑区；M3.5.5 暂不深度使用） */
   selectedDraftId: string | null;
   /** 公司空间子视图（档案：卡片+尽调正文 / 地图：散点定位） */
-  companiesView: 'profile' | 'map';
+  companiesView: 'profile' | 'map' | 'leaderboard';
   /** 挂起的权限请求（授权弹窗数据源）；null = 无待决授权 */
   pendingPermission: PendingPermission | null;
   /** 批量放行：sessionId → 本会话内已自动放行的工具名（随会话持久化，刷新不丢） */
@@ -324,7 +328,7 @@ interface AppState {
   setCurrentSession: (id: string) => void;
   setSelectedCompanyId: (id: string | null) => void;
   setWorkbenchView: (view: 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile') => void;
-  setCompaniesView: (view: 'profile' | 'map') => void;
+  setCompaniesView: (view: 'profile' | 'map' | 'leaderboard') => void;
   /** 简历中心三空间切换（M3.5.5） */
   setArtifactsView: (view: 'assets' | 'proposals' | 'evolution') => void;
   /** 简历工作台视图切换（ADR-021 R0：四空间——编辑/优化/历史/素材；Dashboard 为默认落地不占 tab） */
@@ -561,6 +565,8 @@ export const useAppStore = create<AppState>()(
       careerContext: null,
       health: null,
       companies: COMPANIES,
+      candidates: [],
+      jobLeads: [],
       persons: PERSONS,
       personStages: buildInitialPersonStages(),
       agentDraft: '',
@@ -1705,8 +1711,7 @@ export const useAppStore = create<AppState>()(
   setSelectedJobId: (id) => set({ selectedJobId: id }),
   setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
   setWorkbenchView: (view) => set({ workbenchView: view }),
-  setCompaniesView: (view) => set({ companiesView: view }),
-  /** 简历工作台四空间切换（ADR-021 R0） */
+  setCompaniesView: (view) => set({ companiesView: view }),  /** 简历工作台四空间切换（ADR-021 R0） */
   setResumeWorkspaceView: (view) => set({ resumeWorkspaceView: view }),
 
   setResumeOptimizeMode: (mode) => set({ resumeOptimizeMode: mode }),
@@ -2418,6 +2423,28 @@ async function pullApplications(): Promise<void> {
   }
 }
 
+/** 候选池（公司适配榜候选层；candidatesChanged 事件驱动重拉） */
+async function pullCandidates(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listCandidatePool()
+    useAppStore.setState({ candidates: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 岗位线索（公司适配榜投递层；jobLeadsChanged 事件驱动重拉） */
+async function pullJobLeads(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listJobLeads()
+    useAppStore.setState({ jobLeads: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
 /** 证据资产（M2）：evidence/list 全量拉取；evidenceChanged 事件驱动重拉 */
 async function pullEvidence(): Promise<void> {
   if (!engine) return
@@ -2728,6 +2755,8 @@ export function connectEngine(): void {
       void pullHealth()
       void pullJobs()
       void pullApplications()
+      void pullCandidates()
+      void pullJobLeads()
       void pullEvidence()
       void pullClaims()
       void pullClaimProposals()
@@ -2824,6 +2853,8 @@ export function connectEngine(): void {
     void pullCompanies()
     void pullGraph()
   })
+  engine.on(EVENTS.candidatesChanged, () => void pullCandidates())
+  engine.on(EVENTS.jobLeadsChanged, () => void pullJobLeads())
   engine.on(EVENTS.personsChanged, () => {
     // P1 Person Aggregate：identity/career_profile/skill_inventory 变化 → 重拉 persons/list
     //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）

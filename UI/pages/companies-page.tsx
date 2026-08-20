@@ -23,6 +23,7 @@ import type { Components } from 'react-markdown'
 import { load as loadAMap } from '@amap/amap-jsapi-loader'
 import '@amap/amap-jsapi-types'
 import { GapAnalysisSection } from '../components/gap-analysis-section'
+import { LeaderboardView } from '../components/companies/leaderboard-view'
 import { getEngine, useAppStore } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
@@ -715,7 +716,7 @@ export function CompaniesPage() {
           size="small"
           exclusive
           value={view}
-          onChange={(_, v: 'profile' | 'map' | null) => v && setView(v)}
+          onChange={(_, v: 'profile' | 'map' | 'leaderboard' | null) => v && setView(v)}
           sx={{
             '& .MuiToggleButton-root': {
               px: 1.5,
@@ -732,12 +733,13 @@ export function CompaniesPage() {
         >
           <ToggleButton value="profile">公司档案</ToggleButton>
           <ToggleButton value="map">地图探索</ToggleButton>
+          <ToggleButton value="leaderboard">投递榜单</ToggleButton>
         </ToggleButtonGroup>
         <Box sx={{ flex: 1 }} />
         <Chip size="small" label={`${companies.length} 家档案`} sx={{ height: 22, fontSize: 12 }} />
       </Stack>
 
-      {view === 'map' ? <MapView /> : <ProfileView selected={selected} />}
+      {view === 'map' ? <MapView /> : view === 'leaderboard' ? <LeaderboardView /> : <ProfileView selected={selected} />}
     </Box>
   )
 }
