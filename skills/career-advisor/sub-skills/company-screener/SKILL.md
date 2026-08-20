@@ -44,9 +44,10 @@ company-research (评估层)    →  "这家公司值不值得投？"
 ```
 Step 1: 两问定框架 → 职业 + 地区
 Step 2: 行业推导   → Read references/career-industry-map.md
-Step 3: 4路并行搜索 → 资质/融资/职业反推/风险初筛
+Step 3: 4路并行搜索 → 资质/融资/职业反推/风险初筛（资质第 1 路先读沉淀名单）
 Step 4: 去重+打分+分桶
 Step 5: 输出 Markdown 清单（强信号展开 + 中等信号折叠）
+Step 6: 候选池登记 → 清单每家公司输出候选池 JSON（Engine 登记）
 ```
 
 ---
@@ -108,6 +109,8 @@ Read `references/screener-search-strategy.md` 获取搜索模板。
 
 每路 2-3 个关键词变体，第 1-3 路用 Agent 并行派发。
 
+**第 1 路资质信号——先读沉淀名单（契约 §2.4）**：Read `workspace/career-advisor/knowledge/资质名单-{城市}-{年份}.md`（格式契约见 `../../references/qualification-list-format.md`）——目标城市有沉淀名单 → 直接命中登记，零搜索成本；未覆盖城市 → 再走搜索模板。
+
 **第 3 路（职业反推）是核心创新**：不预设行业，搜"公司在招这个岗位"。搜索结果中带公司名的链接本身就是有效信号——"有招聘"就是最好的筛选条件。
 
 ---
@@ -139,6 +142,36 @@ Read `references/screener-template.md` 获取输出模板。
 - 每家公司一行关键信号，附一句话说明
 - 数据来源标注年份
 - 尾部提示：对强信号公司用 company-research 做深度背调
+- 清单中每条公司同时输出「候选池登记」JSON（见 Step 6，同一动作双输出）
+
+---
+
+## Step 6: 候选池登记（Engine 双输出）
+
+清单给用户看，登记给榜单消费——同一动作双输出（契约 §2.1）。Agent 无文件写权限——只输出 JSON，由 Engine 登记 `workspace/career-advisor/company-pool/{name}.md`。
+
+**候选池登记（Agent Output Contract）**：JSON 直接输出为文本行（不要放入代码块），参照 jd-analysis「岗位分析提交」模式：
+
+```
+候选池登记：{"type":"candidate-pool-upsert","entries":[{"name":"示例公司A（示例市）有限公司","city":"城市A","industry":["行业桶1","行业桶2"],"signals":[{"tag":"专精特新","source":"[工信部·2025]","date":"2025"}],"fitStars":4,"source":"-"}]}
+```
+
+字段规则（严格对齐 `engine/storage/candidate-pool.ts` 的 `CandidatePoolInput`）：
+
+| 字段 | 规则 |
+|------|------|
+| `name` | canonical 全称；**锚定铁律：简称/品牌名不得自行补全**——先检索确认精确全称（尽量带统一社会信用代码）再登记 |
+| `city` | 城市（非空，带来源） |
+| `industry` | 行业桶数组，可多值（对齐 career-industry-map.md 行业簇） |
+| `signals` | `{tag, source, date}` 数组，每条 tag/source 非空；第 1 路资质命中优先取自沉淀名单 |
+| `fitStars` | 1-5 整数（screener ★对口；仅用于候补段排序，不进入主排序） |
+| `source` | 报告链接或 `-`（可省略） |
+| `capturedAt` | 省略——Engine 生成 |
+
+- 引擎 RPC：`candidates/upsert`（params `{entries}`）
+- Engine 登记 `id`/`capturedAt`；同公司重写保留原 id
+- 校验 fail fast：`name`/`city` 非空、`industry` 数组、`fitStars` 1-5 整数、`signals` 每条 `tag`/`source` 非空
+- 仅清单中保留的公司输出；清单展示与登记互不替代
 
 ---
 

@@ -69,10 +69,11 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 | "有什么公司"/"公司筛选"/"扫一下" | sub-skills/company-screener/SKILL.md | 公司筛选 |
 | "这家公司怎么样"/"尽调" | sub-skills/company-research/SKILL.md | 公司尽调 |
 | "分析JD"/"这个岗位" | sub-skills/jd-analysis/SKILL.md | JD分析 |
+| "这家公司在招什么岗位"/"刷新线索"/"岗位线索" | sub-skills/company-jobs/SKILL.md | 岗位线索检索 |
 | "写简历"/"简历"/"帮我把经历写成简历"/"整理简历" | sub-skills/resume-writing/SKILL.md | 简历撰写 |
 | "出结论"/"总结"/"下一步" | 本文件的决策汇总协议 | 综合评估 |
 
-如果意图不明确 → 先问用户当前处于哪个阶段，展示 7 个可用步骤。
+如果意图不明确 → 先问用户当前处于哪个阶段，展示 8 个可用步骤。
 如果用户提供了多个意图 → 按链路顺序依次执行。
 
 ---
@@ -198,12 +199,13 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 ```
 career-advisor/
 ├── SKILL.md                           ← 本文件（管理层入口）
-├── sub-skills/                        ← 7 个子流程
+├── sub-skills/                        ← 8 个子流程
 │   ├── career-path/SKILL.md
 │   ├── career-transition/SKILL.md
 │   ├── city-advisor/SKILL.md
 │   ├── company-screener/SKILL.md
 │   ├── company-research/SKILL.md
+│   ├── company-jobs/SKILL.md
 │   ├── jd-analysis/SKILL.md
 │   └── resume-writing/SKILL.md
 ├── references/
