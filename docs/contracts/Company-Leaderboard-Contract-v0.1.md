@@ -1,6 +1,6 @@
-# 公司适配榜契约 Company Leaderboard Contract v0.1（草案）
+# 公司适配榜契约 Company Leaderboard Contract v0.2（草案）
 
-> 状态：**v0.1 草案**（2026-08-16 起拟，待用户评审）
+> 状态：**v0.2 草案**（2026-08-16 起拟 v0.1，一期已实施并验收；本版新增二期启动方案 §7，待用户评审）
 > 来源：用户需求「城市×行业公司榜单，按序投递，避免无头苍蝇」+ 断链审计后讨论收敛
 > （榜单位置 / 匹配因子口径 / 检索 skill 分工 / 数据源双通道 / 天眼查 MCP 借鉴）
 > 定位：公司空间第三视图——与「列表」（明细查阅）、「地图」（空间直觉）并列，
@@ -226,13 +226,123 @@ risk_level 不变）：
 | 投递状态变化 | 现有投递事件 | 榜行状态联动 |
 | 线索过期 | 14 天到期 | 标记「可能过期」 |
 
-## 7. 二期预留：薪资基准知识层
+## 7. 二期启动方案：薪资基准知识层 + 个人估价卡
 
-- Schema 预留：`薪资基准-{城市}-{岗位}-{经验档位}.md` 表
-  ——`来源 | 岗位 | 城市 | 经验档位 | P25 | P50 | P75 | 抓取日期`（Agent 检索登记，带来源）
-- 个人估价卡输出契约：`市场估价 {区间}（P50，样本 N，日期）→ 你的期望 {值} → 报价建议 {合理/偏低/偏高 + 一句话依据}`
-- 榜行薪资因子二期接入：岗位薪资 vs 个人市场估值（复用同一数据源）。
-- 一期不实现，接口位置预留（榜行因子位 + knowledge 目录）。
+> 状态：方案已定稿待评审，**代码未动**。本 § 为施工图——启动 = 一句话命令，照 §7.8 顺序执行。
+> 触发条件（满足其一即启）：投递/面试被问期望薪资没底；榜单或投决需要市场对照；用户直接下令。
+
+### 7.1 四层位置（已拍板）
+
+| 层 | 位置 | 说明 |
+|----|------|------|
+| UI | 估价卡 → `UI/components/workbench/profile-view.tsx` 画像视图（preference 薪资维度卡旁，同屏对照）；榜行 → `leaderboard-view.tsx` 展开区「市场对照」行 | 不新开页面/侧边栏 |
+| 数据 | `workspace/career-advisor/knowledge/薪资基准-{城市}-{岗位}-{档位}.md` | 与资质名单同目录，gitignored 用户资产 |
+| 引擎 | `engine/ir/schema.ts`（+条目类型）、`engine/ir/salary.ts`（新规则模块）、`engine/storage/salary-benchmarks.ts`（照 job-leads 模式）、`engine/transport/*`、`engine/main.ts` watcher | 四套生产模式均照一期复制 |
+| Skill | `skills/career-advisor/sub-skills/salary-benchmark/SKILL.md` | 与 company-jobs 同层并列，主 skill 路由 +1 |
+
+### 7.2 数据模型与 Producer Ownership（样本点模式）
+
+**基准条目 = 单来源快照**；分位不存条目，由 Engine 聚合（§7.3.1）。
+
+#### 7.2.1 条目 SalaryBenchmarkEntry
+
+| 字段 | 类型 | Producer | 说明 |
+|------|------|----------|------|
+| `id` | benchmark_{date}_{seq} | **Engine 登记** | 系统命名 |
+| `role` | string | Agent 检索 | 岗位名 |
+| `city` | string | Agent 检索 | — |
+| `exp_tier` | `0-2` \| `3-5` \| `6-10` \| `10+` \| `any` | Agent 提取 | 枚举 Engine 定义；来源表述映射到枚举（「不限经验」→ any）；映射有歧义则该条标缺不登记 |
+| `salary` | number? | Agent 检索 | 月薪（K，税前）；单点 |
+| `salary_range` | {min,max}? | Agent 检索 | 月薪区间；`salary`/`salary_range` 至少其一 |
+| `sample_n` | number? | Agent 检索 | 来源样本量；缺省 Engine 聚合按 1 计 |
+| `source` | string | Agent 检索 | 来源链接 |
+| `note` | string? | Agent 检索 | 原始口径备注（年薪来源换算月薪后登记，note 留原始值） |
+| `captured_at` | date | Engine 登记 | — |
+| `expires_at` | date | Engine 计算 | captured_at + 90 天；过期标「数据较旧」不删 |
+
+#### 7.2.2 Producer 边界（原则 8）
+
+| 值 | Producer |
+|----|----------|
+| 条目检索事实（role/city/tier/薪资/样本/来源） | Agent 检索登记（外部事实，带来源） |
+| id / captured_at / expires_at | Engine 登记 |
+| P25 / P50 / P75 聚合 | **Engine 计算**（确定性聚合） |
+| 年限 → 档位映射 | Engine 计算 |
+| 估价三态结论 | **Engine 计算**（确定性规则，§7.3.3） |
+| 期望薪资 | 用户事实（person.preference.salaryRange，已有） |
+
+> 分位直接进报价建议，是系统消费的数值——Agent 不心算分位、不把分位当检索事实登记。
+
+### 7.3 确定性规则（engine/ir/salary.ts）
+
+**7.3.1 分位聚合**：同 (role, city, exp_tier) 组内，每条目取中点（单点 = 自身），
+权重 = sample_n（缺省 1），构成加权样本集 → P25/P50/P75（最近秩）；
+样本 N = Σ sample_n。过期条目仍参与并标「数据较旧」。N < 5 → 结论旁标「样本少，仅供参考」。
+
+**7.3.2 档位映射**：person.experiences 起止 → 工作年限 → `0-2`/`3-5`/`6-10`/`10+`；
+无经历记录 → **档位未知**（显式状态，见 §7.5）。
+
+**7.3.3 三态估价**（输入：期望 [E1,E2] ← preference.salaryRange；基准带 [P25,P75]）：
+
+| 判定 | 规则 | 一句话依据短语 |
+|------|------|----------------|
+| 偏低 | E2 < P25 | 「低于市场低四分位，报价空间可上调」 |
+| 偏高 | E1 > P75 | 「高于市场高四分位，需以经历/成果支撑溢价」 |
+| 合理 | 其余（期望与市场带重叠） | 「与市场中枢一致」 |
+
+一句话依据模板：`你的期望 {E1}-{E2}K 落在 {city}·{role}·{tier} 市场带 {P25}-{P75}K（P50 {P50}K，样本 N，{日期}）——{结论短语}`
+
+- **不替用户定价**：卡片只对照，编辑期望仍走画像 preference 流程。
+
+### 7.4 榜行薪资因子接入（§3.2 / §3.3 二期修订）
+
+- §3.2 因子 2「匹配因子加权」中的子项「薪资可行（decision salary_feasible）」升级为**薪资对照**：
+  JD 薪资 / JobLead 薪资 vs 该 (role, city, tier) 基准带——带内加分；低于 P25 减分（岗位开价低）；
+  **无基准 → 因子不计入并显式标注「无市场基准」**（数据可选状态，非兜底）。
+- 榜行展开新增「市场对照」行：公司岗位线薪资带 vs 你的市场估值带。
+- 排序仍确定性，不现场 AI 打分。
+
+### 7.5 估价卡 UI 契约（画像视图）
+
+| 状态 | 显示 |
+|------|------|
+| 有基准 + 档位已知 | 市场带 [P25,P75] + P50 锚 + 你的期望 + 三态徽标 + 一句话依据 + 样本/日期 |
+| 无基准（该 city×role×tier） | 「该城市×岗位×档位无基准数据 · 发起基准检索」（预置 salary-benchmark prompt） |
+| 档位未知 | 各档位带并列展示、**无三态结论**，标「经验档位未采集——补充经历后可对齐」 |
+| 基准过期 | 数据照显 + 「数据较旧（>90 天）· 刷新检索」动作 |
+
+- 期望编辑 → 画像 preference 流程（现有），保存后三态自动重算。
+
+### 7.6 salary-benchmark skill 契约
+
+- 输入：岗位 + 城市 + 经验档位（可批量）；输出 `{"type":"salary-benchmark-upsert","entries":[{role,city,expTier,salary?,salaryRange?,sampleN?,source,note?}]}`
+  → RPC `salary-benchmarks/upsert`；**禁止空数组**。
+- 检索纪律照 §5.2：来源链接 + 抓取日期；检索不到显式标缺；**不编造薪资**。
+- 通道照 §5.3 双通道：WebSearch/Exa 为主，天眼查 MCP 薪资能力发现可选；降级纪律一致。
+- 联动：agent-task-contract §3 + CONTEXT_POLICY 同步
+  （+`salary_benchmark_search` 类型，required 空 / optional role·city·exp_tier / emptyAllowed true）。
+
+### 7.7 事件
+
+| 事件 | 触发 | 动作 |
+|------|------|------|
+| `data.salary-benchmarks.changed` | 基准登记/更新 | 估价卡 + 榜行市场对照重算 |
+| `personsChanged`（现有） | 期望/经历变化 | 档位映射 + 三态结论重算 |
+
+### 7.8 开工顺序与 DoD
+
+| 步 | 内容 | 单步 DoD |
+|----|------|---------|
+| 0 | 本契约（§7 评审通过） | 用户评审通过 |
+| 1 | 引擎：schema + storage + watcher + protocol + salary.ts 规则模块 | 单测含手算核对（三态各 ≥1 例 + 聚合分位） |
+| 2 | salary-benchmark skill + agent-task-contract §3 + 路由 | 检索登记走通 |
+| 3 | UI：画像页估价卡 + 榜行市场对照行 + 事件刷新 | 三态 + 四种状态（§7.5）可显示 |
+| 4 | 真实数据：首份基准（当前画像岗位 × 城市A × 对应档位）Agent 实跑登记 | 带来源 + 样本 N |
+| 5 | 全链 Playwright：检索登记 → 估价卡三态结论 → 榜行对照；期望编辑 → 自动重算 | 通过 |
+
+**DoD（二期整体）**：真实数据下完成一次「基准检索登记 → 估价卡结论 → 榜行市场对照」全链
+Playwright 实测；三态结论手算可核对；§7.5 四种状态显式可见且动作可触发；
+期望薪资编辑后结论自动重算。
 
 ## 8. 实施分期与 DoD
 
@@ -246,7 +356,7 @@ risk_level 不变）：
 **DoD**：真实数据下完成一次「screener 捕捉 → 尽调 → 榜单排序 → 投递」全链
 Playwright 实测；排序理由与因子明细可展开核对；空网格入口可触发预置 prompt。
 
-**二期**：薪资基准 + 个人估价卡 + 榜行薪资因子。
+**二期**：见 §7.8 开工顺序与 DoD（薪资基准知识层 + 个人估价卡 + 榜行薪资对照因子）。
 
 ## 9. 明确不做
 
@@ -255,3 +365,8 @@ Playwright 实测；排序理由与因子明细可展开核对；空网格入口
 - ❌ 新「捕捉+评分混合」skill（screener/research 分层已自洽）
 - ❌ 榜单现场 AI 打分（排序必须确定性、可解释）
 - ❌ 城市×行业二维矩阵视图（一期不做，作为后续可选）
+- ❌ Agent 直接登记/心算分位 P25/P50/P75（分位是 Engine 聚合事实，§7.2.2）
+- ❌ 估价卡自动改写期望薪资（期望是用户事实，卡片只对照）
+- ❌ 实时薪资 API（基准是知识资产，按需/季度刷新）
+- ❌ 市场对照现场 AI 打分（排序因子仍确定性）
+- ❌ 新页面/新侧边栏承载估价卡（内嵌画像视图 + 榜行）
