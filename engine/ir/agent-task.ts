@@ -7,7 +7,7 @@
  * - contextRefs 是领域对象引用，禁止 file/markdown/workspace_path
  */
 
-/** 冻结枚举（Task Type Registry，11 型）——完整语义表见契约文档 §3 */
+/** 冻结枚举（Task Type Registry，12 型）——完整语义表见契约文档 §3 */
 export type AgentTaskType =
   | 'job_analysis'
   | 'company_research'
@@ -20,6 +20,7 @@ export type AgentTaskType =
   | 'career_direction'
   | 'company_screening'
   | 'job_lead_search'
+  | 'salary_benchmark_search'
 
 /** Output Boundary：允许 decision/artifact/none；application/company_assessment 禁止 */
 export type OutputTarget = 'decision' | 'artifact' | 'none'
@@ -40,6 +41,7 @@ export const AGENT_TASK_TYPES: AgentTaskType[] = [
   'career_direction',
   'company_screening',
   'job_lead_search',
+  'salary_benchmark_search',
 ]
 
 export const CONTEXT_REF_TYPES: ContextReference['type'][] = ['job', 'company', 'resume', 'decision']
@@ -65,6 +67,7 @@ export const CONTEXT_POLICY: Record<AgentTaskType, ContextPolicy> = {
   career_direction: { required: [], optional: ['resume'], emptyAllowed: true },
   company_screening: { required: [], optional: ['company'], emptyAllowed: true },
   job_lead_search: { required: ['company'], optional: [], emptyAllowed: false },
+  salary_benchmark_search: { required: [], optional: ['job', 'company'], emptyAllowed: true },
 }
 
 /** TaskRejected reason（契约 §6 失败语义：required 缺失 ≠ 引用不存在，语义分离） */

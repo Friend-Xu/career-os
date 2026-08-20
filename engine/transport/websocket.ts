@@ -69,6 +69,8 @@ import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '..
 import { scanTargets } from '../storage/target-watcher.ts'
 import { scanCandidatePool, upsertCandidatePool, type CandidatePoolInput } from '../storage/candidate-pool.ts'
 import { scanJobLeads, upsertJobLeads, type JobLeadInput } from '../storage/job-leads.ts'
+import { scanSalaryBenchmarks, upsertSalaryBenchmarks, type SalaryBenchmarkInput } from '../storage/salary-benchmarks.ts'
+import { buildSalaryValuationCard } from '../ir/salary.ts'
 import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -1207,6 +1209,17 @@ export async function startServer(opts: {
     [METHODS.jobLeadsUpsert]: (params) => {
       const p = params as { company?: unknown; leads?: unknown }
       return upsertJobLeads(workspace, String(p.company ?? ''), p.leads as JobLeadInput[])
+    },
+    [METHODS.salaryBenchmarksList]: () => scanSalaryBenchmarks(workspace),
+    [METHODS.salaryBenchmarksUpsert]: (params) => {
+      const p = params as { entries?: unknown }
+      return upsertSalaryBenchmarks(workspace, p.entries as SalaryBenchmarkInput[])
+    },
+    [METHODS.salaryValuation]: (params) => {
+      const personId = personIdParams(params)
+      const person = (store.listPersons() as Person[]).find((p) => p.personId === personId)
+      if (!person) throw new Error(`人员不存在：${personId}`)
+      return buildSalaryValuationCard(person, scanSalaryBenchmarks(workspace))
     },
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.upsertSummaryStrengths]: (params) => {

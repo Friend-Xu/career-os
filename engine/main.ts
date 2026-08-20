@@ -27,6 +27,7 @@ import { watchPersons } from './storage/person-watcher.ts'
 import { watchTargets } from './storage/target-watcher.ts'
 import { watchCandidatePool } from './storage/candidate-pool.ts'
 import { watchJobLeads } from './storage/job-leads.ts'
+import { watchSalaryBenchmarks } from './storage/salary-benchmarks.ts'
 import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -324,6 +325,11 @@ async function main(args: string[]): Promise<void> {
       watchJobLeads(ws, guarded('job-leads', () => {
         broadcast({ event: EVENTS.jobLeadsChanged })
         logger.info('job-leads/ 变更：已广播（job-leads/list 按需重扫）')
+      }))
+      // knowledge/薪资基准-* 变更只发信号（二期 §7.7——UI 收到 salaryBenchmarksChanged 重拉 salary-benchmarks/list）
+      watchSalaryBenchmarks(ws, guarded('salary-benchmarks', () => {
+        broadcast({ event: EVENTS.salaryBenchmarksChanged })
+        logger.info('salary-benchmarks 变更：已广播（salary-benchmarks/list 按需重扫）')
       }))
       // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
       watchEvidence(ws, guarded('evidence', (parsed) => {

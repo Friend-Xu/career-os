@@ -702,6 +702,28 @@ export interface JobLead {
   fraudFlags: string[] // 求职诈骗信号（收费内推/保offer/培训贷等；提示不否决）
 }
 
+// ─── 二期：薪资基准知识层（Company-Leaderboard-Contract-v0.1 §7.2）──
+
+/** 经验档位枚举（Engine 定义；来源表述「3-5年」「不限」由 Engine parseExpTier 归一） */
+export type SalaryExpTier = '0-2' | '3-5' | '6-10' | '10+' | 'any'
+
+/** 薪资基准条目（knowledge/薪资基准-{城市}-{岗位}-{档位}.md，样本点模式 §7.2.1）。
+ *  条目 = 单来源快照（Agent 检索登记）；分位不落盘，由 engine/ir/salary.ts 聚合。
+ *  expiresAt = capturedAt + 90 天（Engine 派生，过期照显标「数据较旧」）。 */
+export interface SalaryBenchmarkEntry {
+  id: string // benchmark_{capturedAt}_{seq}（Engine 按文件行序派生；跨组 key 用 ${id}:${role}:${city}）
+  role: string
+  city: string
+  expTier: SalaryExpTier
+  salary?: number // 月薪 K（税前）；单点
+  salaryRange?: { min: number; max: number } // 月薪区间；salary/salaryRange 至少其一
+  sampleN?: number // 来源样本量；缺省聚合按 1 计
+  source: string // 来源链接
+  note?: string // 原始口径备注（年薪来源换算月薪后登记）
+  capturedAt: string
+  expiresAt: string
+}
+
 // ─── Company Intelligence Layer v0.1：公司事实 → 职业价值评分（契约 references/company-assessment-contract-v0.1.md）──
 
 export type CompanyFactType =

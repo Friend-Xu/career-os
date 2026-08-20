@@ -135,6 +135,12 @@ export const METHODS = {
   jobLeadsList: 'job-leads/list',
   /** 岗位线索登记（params: { company, leads: JobLeadInput[] } → JobLead[]；全量覆盖该公司线索文件） */
   jobLeadsUpsert: 'job-leads/upsert',
+  /** 薪资基准列表（knowledge/薪资基准-* 扫描；契约 §7.2，二期） */
+  salaryBenchmarksList: 'salary-benchmarks/list',
+  /** 薪资基准登记（params: { entries: SalaryBenchmarkInput[] } → SalaryBenchmarkEntry[]；一次调用一组、全量覆盖 = 刷新语义，§7.6） */
+  salaryBenchmarksUpsert: 'salary-benchmarks/upsert',
+  /** 个人估价卡投影（params: { personId } → SalaryValuationCard；Engine 确定性规则：分位聚合 + 档位映射 + 三态对照，§7.3/§7.5） */
+  salaryValuation: 'salary-benchmarks/valuation',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
@@ -336,6 +342,8 @@ export const EVENTS = {
   candidatesChanged: 'data.candidates.changed',
   /** job-leads/ 目录变更后推送（不含数据，客户端用 job-leads/list 拉快照；公司适配榜） */
   jobLeadsChanged: 'data.job-leads.changed',
+  /** knowledge/薪资基准-* 变更后推送（不含数据，客户端用 salary-benchmarks/list 重拉；二期 §7.7） */
+  salaryBenchmarksChanged: 'data.salary-benchmarks.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */

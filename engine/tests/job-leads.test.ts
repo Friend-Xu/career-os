@@ -63,7 +63,7 @@ test('upsertJobLeads：全量覆盖该公司文件；id/expiresAt 派生；非�
 
     assert.throws(() => upsertJobLeads(ws, '', [{ title: 'x', url: 'https://a', source: '官网' }]), /company 非空/)
     assert.throws(() => upsertJobLeads(ws, '候选公司A', [{ title: '', url: 'https://a', source: '官网' }]), /title 非空/)
-    assert.throws(() => upsertJobLeads(ws, '候选公司A', [{ title: 'x', url: 'https://a', source: '内推' }]), /合法值/)
+    assert.throws(() => upsertJobLeads(ws, '候选公司A', [{ title: 'x', url: 'https://a', source: '内推' as never }]), /合法值/)
   } finally {
     rmSync(ws.paths.root, { recursive: true, force: true })
   }
