@@ -56,6 +56,7 @@ interface AgentTaskRequest {
 | `career_direction` | optional(person); emptyAllowed:true | decision |
 | `company_screening` | optional(company); emptyAllowed:true | none |
 | `job_lead_search` | required(company); emptyAllowed:false | none |
+| `salary_benchmark_search` | optional(job,company); emptyAllowed:true | none |
 
 ## 4. ContextReference（冻结级）
 
