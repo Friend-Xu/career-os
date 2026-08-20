@@ -64,14 +64,19 @@ test('mapExpTier：边界 <3/<6/<11/≥11（确定性分档）', () => {
   assert.equal(mapExpTier(11), '10+')
 })
 
-test('parseSalaryRangeK：「11-13K」「11K」「13-11」→ 区间；非法 → null', () => {
+test('parseSalaryRangeK：「11-13K」「11K」「13-11」→ 区间；「11-13K/月」剥单位；非法 → null', () => {
   assert.deepEqual(parseSalaryRangeK('11-13K'), { min: 11, max: 13 })
+  assert.deepEqual(parseSalaryRangeK('11-13K/月'), { min: 11, max: 13 }) // 画像真实格式（preference_constraints）
+  assert.deepEqual(parseSalaryRangeK('9-13K·13薪'), { min: 9, max: 13 }) // JD 真实格式（jobs 摘要表）
+  assert.deepEqual(parseSalaryRangeK('8-15k·15薪'), { min: 8, max: 15 }) // 小写 k + 薪后缀
+  assert.deepEqual(parseSalaryRangeK('12K/月'), { min: 12, max: 12 })
   assert.deepEqual(parseSalaryRangeK('11k'), { min: 11, max: 11 })
   assert.deepEqual(parseSalaryRangeK('11 - 13'), { min: 11, max: 13 })
   assert.deepEqual(parseSalaryRangeK('13-11'), { min: 11, max: 13 }) // 乱序归一
   assert.equal(parseSalaryRangeK('面议'), null)
   assert.equal(parseSalaryRangeK(''), null)
   assert.equal(parseSalaryRangeK('0-13'), null) // 非法值不兜底
+  assert.equal(parseSalaryRangeK('15-25w'), null) // 年薪口径不在此解析（Agent 换算月薪后登记）
 })
 
 test('aggregateBenchmarks：加权最近秩分位（手算核对）+ 样本和 + 过期标记', () => {

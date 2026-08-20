@@ -131,9 +131,14 @@ export function aggregateBenchmarks(entries: SalaryBenchmarkEntry[], now?: strin
 
 // ─── 三态估价（§7.3.3）──
 
-/** preference.salaryRange 文本 → 数值区间（「11-13K」「11K」「11 - 13」）；无法解析 → null */
+/** preference.salaryRange / JD 薪资文本 → 数值区间（「11-13K」「11-13K/月」「9-13K·13薪」「11K」）；无法解析 → null */
 export function parseSalaryRangeK(s: string): { min: number; max: number } | null {
-  const t = s.trim().replace(/[kK]$/, '').replace(/\s+/g, '')
+  const t = s
+    .trim()
+    .replace(/k/gi, '')
+    .replace(/\/月/g, '')
+    .replace(/[·x×]\d+\s*薪/g, '')
+    .replace(/\s+/g, '')
   if (!t) return null
   const parts = t.split(/[-–~～—]/).map((x) => Number(x))
   if (parts.some((n) => Number.isNaN(n) || n <= 0)) return null

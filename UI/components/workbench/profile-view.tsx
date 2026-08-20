@@ -344,6 +344,7 @@ function ValuationCard() {
             )}
           </Stack>
           {card.reason && <Typography sx={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.65 }}>{card.reason}</Typography>}
+          {card.stats.sampleN < 5 && <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>样本少，仅供参考（契约 §7.3.1）</Typography>}
           {card.stats.stale && (
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>数据较旧（&gt;90 天）</Typography>
