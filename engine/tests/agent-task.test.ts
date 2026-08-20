@@ -8,11 +8,11 @@ import {
 
 /**
  * Agent Task Contract IR（ADR-020 Commit A：类型与白名单常量进入系统）。
- * 断言：Registry 9 型 / contextRef 4 型 / Output Boundary 3 型（禁 application/company_assessment）。
+ * 断言：Registry 11 型 / contextRef 4 型 / Output Boundary 3 型（禁 application/company_assessment）。
  */
 
-test('Task Type Registry：9 型冻结枚举（契约 §3 语义表）', () => {
-  assert.equal(AGENT_TASK_TYPES.length, 9)
+test('Task Type Registry：11 型冻结枚举（契约 §3 语义表）', () => {
+  assert.equal(AGENT_TASK_TYPES.length, 11)
   assert.deepEqual(AGENT_TASK_TYPES, [
     'job_analysis',
     'company_research',
@@ -23,6 +23,8 @@ test('Task Type Registry：9 型冻结枚举（契约 §3 语义表）', () => {
     'interview_preparation',
     'explanation',
     'career_direction',
+    'company_screening',
+    'job_lead_search',
   ])
 })
 

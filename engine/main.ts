@@ -25,6 +25,8 @@ import { watchWorkingCopies } from './storage/working-copy-registry.ts'
 import { watchKnowledge } from './storage/knowledge-watcher.ts'
 import { watchPersons } from './storage/person-watcher.ts'
 import { watchTargets } from './storage/target-watcher.ts'
+import { watchCandidatePool } from './storage/candidate-pool.ts'
+import { watchJobLeads } from './storage/job-leads.ts'
 import { migrateSnapshotLayout } from './storage/snapshot-archive.ts'
 import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-watcher.ts'
 import { createProjection } from './storage/projection.ts'
@@ -312,6 +314,16 @@ async function main(args: string[]): Promise<void> {
       watchTargets(ws, guarded('targets', () => {
         broadcast({ event: EVENTS.targetsChanged })
         logger.info('targets/ 变更：已广播（targets/list 按需重扫）')
+      }))
+      // company-pool/ 变更只发信号（公司适配榜候选层——UI 收到 candidatesChanged 重拉 candidates/list）
+      watchCandidatePool(ws, guarded('company-pool', () => {
+        broadcast({ event: EVENTS.candidatesChanged })
+        logger.info('company-pool/ 变更：已广播（candidates/list 按需重扫）')
+      }))
+      // job-leads/ 变更只发信号（公司适配榜投递层——UI 收到 jobLeadsChanged 重拉 job-leads/list）
+      watchJobLeads(ws, guarded('job-leads', () => {
+        broadcast({ event: EVENTS.jobLeadsChanged })
+        logger.info('job-leads/ 变更：已广播（job-leads/list 按需重扫）')
       }))
       // evidence/ 变更只发信号（M2：证据是独立资产，UI 收到 evidenceChanged 重拉 evidence/list）
       watchEvidence(ws, guarded('evidence', (parsed) => {

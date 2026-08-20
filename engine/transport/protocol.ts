@@ -127,6 +127,14 @@ export const METHODS = {
   targetsList: 'targets/list',
   /** 单个目标机会（params: { id } → TargetRecord） */
   targetsGet: 'targets/get',
+  /** 候选池列表（company-pool/ 扫描；公司适配榜候选层） */
+  candidatesList: 'candidates/list',
+  /** 候选池登记（params: { entries: CandidatePoolInput[] } → CandidatePoolEntry[]；Agent 输出 → Engine 写文件） */
+  candidatesUpsert: 'candidates/upsert',
+  /** 岗位线索列表（job-leads/ 扫描聚合；公司适配榜投递层） */
+  jobLeadsList: 'job-leads/list',
+  /** 岗位线索登记（params: { company, leads: JobLeadInput[] } → JobLead[]；全量覆盖该公司线索文件） */
+  jobLeadsUpsert: 'job-leads/upsert',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
@@ -324,6 +332,10 @@ export const EVENTS = {
   personsChanged: 'data.persons.changed',
   /** targets/ 目录变更后推送（不含数据，客户端用 targets/list 拉快照；M6） */
   targetsChanged: 'data.targets.changed',
+  /** company-pool/ 目录变更后推送（不含数据，客户端用 candidates/list 拉快照；公司适配榜） */
+  candidatesChanged: 'data.candidates.changed',
+  /** job-leads/ 目录变更后推送（不含数据，客户端用 job-leads/list 拉快照；公司适配榜） */
+  jobLeadsChanged: 'data.job-leads.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */

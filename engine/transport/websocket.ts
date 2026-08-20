@@ -67,6 +67,8 @@ import { whyChanged, replayDecision, whyChangedRecently } from '../runtime/evolu
 import { updateDecisionFile, readDecisionFile } from '../storage/decision-editor.ts'
 import { createJobFile, deleteJobFile, scanJobs, type CreateJobParams } from '../storage/job-watcher.ts'
 import { scanTargets } from '../storage/target-watcher.ts'
+import { scanCandidatePool, upsertCandidatePool, type CandidatePoolInput } from '../storage/candidate-pool.ts'
+import { scanJobLeads, upsertJobLeads, type JobLeadInput } from '../storage/job-leads.ts'
 import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
@@ -1192,6 +1194,19 @@ export async function startServer(opts: {
       const target = scanTargets(workspace).find((t) => t.record.id === id)
       if (!target) throw new Error(`目标不存在：${id}`)
       return target.record
+    },
+    [METHODS.candidatesList]: () => scanCandidatePool(workspace).map((p) => ({
+      ...p.record,
+      ...(p.validation ? { validation: p.validation } : {}),
+    })),
+    [METHODS.candidatesUpsert]: (params) => {
+      const entries = (params as { entries?: unknown }).entries
+      return upsertCandidatePool(workspace, entries as CandidatePoolInput[])
+    },
+    [METHODS.jobLeadsList]: () => scanJobLeads(workspace),
+    [METHODS.jobLeadsUpsert]: (params) => {
+      const p = params as { company?: unknown; leads?: unknown }
+      return upsertJobLeads(workspace, String(p.company ?? ''), p.leads as JobLeadInput[])
     },
     [METHODS.listPersons]: () => store.listPersons(),
     [METHODS.upsertSummaryStrengths]: (params) => {

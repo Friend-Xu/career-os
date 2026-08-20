@@ -52,6 +52,8 @@ export interface WorkspacePaths {
   knowledge: string
   persons: string
   targets: string
+  companyPool: string
+  jobLeads: string
   metadata: string
   indexFile: string
   protocolFile: string
@@ -104,6 +106,8 @@ export function buildPaths(root: string): WorkspacePaths {
     knowledge: join(root, 'knowledge'),
     persons: join(root, 'persons'),
     targets: join(root, 'targets'),
+    companyPool: join(root, 'company-pool'),
+    jobLeads: join(root, 'job-leads'),
     metadata: join(root, 'metadata'),
     indexFile: join(root, 'INDEX.md'),
     protocolFile: join(root, 'metadata', 'protocol.json'),
@@ -178,6 +182,8 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.knowledge, { recursive: true })
     mkdirSync(paths.persons, { recursive: true })
     mkdirSync(paths.targets, { recursive: true })
+    mkdirSync(paths.companyPool, { recursive: true })
+    mkdirSync(paths.jobLeads, { recursive: true })
     mkdirSync(paths.metadata, { recursive: true })
   } catch {
     throw new WorkspaceError(root, '目录创建失败（权限/路径非法）')

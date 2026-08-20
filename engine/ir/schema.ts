@@ -665,8 +665,41 @@ export interface CompanyRecord {
   headcount?: string
   /** 别名（业务名/简称——同一主体的其他称呼；Agent 提议、引擎校验登记；消费端 canonical/alias 精确解析，禁止模糊匹配） */
   aliases?: string[]
+  /** 尽调评级回链（Company-Leaderboard-Contract-v0.1 §2.2）：tier = 榜单排序因子；caveat = 保留条件（升档前置条件展示）。可选字段——未尽调公司无评级（缺席是常态，非异常） */
+  ratingTier?: 'recommend' | 'consider' | 'cautious'
+  ratingCaveat?: string
   /** 职业价值评估（Projection Artifact——transport 层附加，不写回 markdown；无 `## 公司事实` 段 → null，未评估 ≠ 0 分） */
   assessment?: CompanyAssessment | null
+}
+
+// ─── 公司适配榜数据层（Company-Leaderboard-Contract-v0.1）──
+
+/** 候选池条目（company-pool/{name}.md）：screener 捕捉、未尽调的候选公司。
+ *  信号/对口星 = Agent 检索+打分（AI 推理）；id/锚定名/captured_at = Engine 登记。 */
+export interface CandidatePoolEntry {
+  id: string // candidate_{date}_{seq}（Engine 生成；同公司重写保留原 id）
+  name: string // canonical 锚定名（文件名——实体锚定铁律，禁止简称自补全）
+  city: string
+  industry: string[] // 行业桶，可多值
+  signals: { tag: string; source: string; date?: string }[] // 资质/融资/招聘信号，每条带来源
+  fitStars: number // 1-5（screener ★对口，仅候选段排序，不进入主排序）
+  source: string // screener 报告链接
+  capturedAt: string
+}
+
+/** 岗位线索（job-leads/{company}.md）：company-jobs 检索的外部事实（带来源+日期）。
+ *  线索 ≠ 已递交 JD（jobs/ 才是递交真相源）；expiresAt = capturedAt + 14 天（Engine 派生，不落盘）。 */
+export interface JobLead {
+  id: string // lead_{capturedAt}_{seq}（Engine 按文件行序派生，UI key 用，无外部引用）
+  company: string // canonical 锚定名（文件名）
+  title: string
+  salary?: string
+  city?: string
+  url: string
+  source: '官网' | '招聘平台' | '其他'
+  capturedAt: string
+  expiresAt: string
+  fraudFlags: string[] // 求职诈骗信号（收费内推/保offer/培训贷等；提示不否决）
 }
 
 // ─── Company Intelligence Layer v0.1：公司事实 → 职业价值评分（契约 references/company-assessment-contract-v0.1.md）──

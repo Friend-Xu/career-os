@@ -54,6 +54,8 @@ interface AgentTaskRequest {
 | `interview_preparation` | required(job); optional(resume,company); emptyAllowed:false | none |
 | `explanation` | optional(任意引用); emptyAllowed:true | none |
 | `career_direction` | optional(person); emptyAllowed:true | decision |
+| `company_screening` | optional(company); emptyAllowed:true | none |
+| `job_lead_search` | required(company); emptyAllowed:false | none |
 
 ## 4. ContextReference（冻结级）
 

@@ -121,6 +121,29 @@ test('aliases：摘要表 aliases 行 → CompanyRecord.aliases（逗号分隔�
   assert.equal(parseCompanyMarkdown(companyMd, 'Company-C 自动化.md').value.aliases, undefined)
 })
 
+test('rating 回链：tier 中英文映射 + caveat 透传；无评级行 → undefined（可选字段缺席合法）', () => {
+  const md = companyMd.replace(
+    '| contacted | 否 |',
+    '| contacted | 否 |\n| rating_tier | 推荐 |\n| rating_caveat | 城市冲突 + 研发收缩为待确认项 |',
+  )
+  const { value, validation } = parseCompanyMarkdown(md, 'Company-C 自动化.md')
+  assert.equal(validation, undefined)
+  assert.equal(value.ratingTier, 'recommend') // 推荐 → recommend
+  assert.equal(value.ratingCaveat, '城市冲突 + 研发收缩为待确认项')
+  // 谨慎推荐 → consider；谨慎 → cautious；英文直通
+  const tierOf = (t: string) => parseCompanyMarkdown(md.replace('| rating_tier | 推荐 |', `| rating_tier | ${t} |`), 'Company-C 自动化.md').value.ratingTier
+  assert.equal(tierOf('谨慎推荐'), 'consider')
+  assert.equal(tierOf('可投'), 'consider')
+  assert.equal(tierOf('谨慎'), 'cautious')
+  assert.equal(tierOf('recommend'), 'recommend')
+  // 非法值 → warn 保留原值
+  const bad = parseCompanyMarkdown(md.replace('| rating_tier | 推荐 |', '| rating_tier | 强烈推荐 |'), 'Company-C 自动化.md')
+  assert.equal(bad.validation?.status, 'degraded')
+  assert.equal(bad.value.ratingTier, '强烈推荐')
+  // 无评级行 → undefined，不 invalid
+  assert.equal(parseCompanyMarkdown(companyMd, 'Company-C 自动化.md').value.ratingTier, undefined)
+})
+
 test('resolveCompany：canonical exact → alias exact → undefined，禁止模糊匹配', () => {
   const list = [parseCompanyMarkdown(companyMd, 'Company-C 自动化.md').value]
   assert.equal(resolveCompany(list, 'Company-C 自动化')?.id, 'Company-C 自动化') // canonical

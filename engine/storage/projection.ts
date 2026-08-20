@@ -127,6 +127,17 @@ const COMPANY_FIELD_MAP: Record<string, CompanyFieldSpec> = {
   park_id: { field: 'parkId', parse: (raw) => parseParkId(raw), legal: '数字' },
   headcount: { field: 'headcount', parse: (raw) => raw, legal: '人数规模（如 1.5万人 / 1000-5000）' },
   aliases: { field: 'aliases', parse: (raw) => raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean), legal: '逗号分隔的别名列表' },
+  rating_tier: { field: 'ratingTier', parse: (raw) => parseRatingTier(raw), legal: '推荐/可投/谨慎（或 recommend/consider/cautious）' },
+  rating_caveat: { field: 'ratingCaveat', parse: (raw) => raw, legal: '非空字符串（保留条件）' },
+}
+
+/** 评级 tier 解析：中文（推荐/可投/值得考虑/谨慎/谨慎推荐）映射英文枚举；非法 → undefined（warn 保留原值） */
+function parseRatingTier(v: string): CompanyRecord['ratingTier'] {
+  const t = v.trim()
+  if (t === 'recommend' || t === '推荐') return 'recommend'
+  if (t === 'consider' || t === '可投' || t === '值得考虑' || t === '谨慎推荐') return 'consider'
+  if (t === 'cautious' || t === '谨慎') return 'cautious'
+  return undefined
 }
 
 function parseContacted(v: string): boolean | undefined {
