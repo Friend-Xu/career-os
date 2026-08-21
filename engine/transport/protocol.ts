@@ -71,6 +71,11 @@ export const METHODS = {
   listCandidates: 'person/candidates/list',
   /** 候选裁决（切片 2.3：params { personId, candidateId, action, modifiedContent? } → { candidateId, action, status }；更新 candidates.md + 写 resolution 事件） */
   resolveCandidate: 'person/candidates/resolve',
+  /** 方向池投影（v0.2：params { personId, workflowId? } → StageArtifact[]；只返回已登记 artifact，暂存提案无身份不出现） */
+  directionsList: 'person/directions/list',
+  /** 方向裁决（v0.2 §4.3：params { personId, directionId, action: 'confirm'|'reject' } → ResolveStageArtifactResult；
+   *  同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆；directionId 在 person 命名空间内解析） */
+  directionsResolve: 'person/directions/resolve',
   /** 重置初始化（Person 生命周期 v0.1：params { personId } → { personId }；清 intake/extraction/events/snapshot，manifest 保留，init_state 重置 in_progress） */
   resetPerson: 'person/reset',
   /** 完成初始化（用户声明基础信息达到可用状态，非封闭：params { personId } → { personId, initState: 'completed' }；manifest init_state → completed） */
@@ -153,6 +158,9 @@ export const METHODS = {
   workflowAdvance: 'workflow/advance',
   /** 用户终止工作流（params: { workflowId } → WorkflowState；append-only 审计） */
   workflowAbort: 'workflow/abort',
+  /** 当前 Stage 重跑（v0.2 §4.2：params { workflowId } → WorkflowState；仅 waiting_gate 且 gate 未过 / failed 可 restage；
+   *  重置 running + 清 gate，方向池不重置（append-only 累积池）） */
+  workflowRestage: 'workflow/restage',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */

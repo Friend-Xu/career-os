@@ -7,9 +7,16 @@ import {
   abortWorkflow,
   getWorkflow,
   scanWorkflows,
+  onExplorationDone,
   onFactCollectionReady,
+  restageWorkflow,
   isPersonInitComplete,
+  evaluateStageCompletion,
+  CAREER_DIRECTION_STAGES,
 } from '../storage/workflow-registry.ts'
+import { countStageArtifacts, registerStageArtifact, resolveStageArtifact } from '../storage/stage-artifact-registry.ts'
+import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+import { freshIntakeFiles } from '../transport/websocket.ts'
 import { createPersonSession, scanPersons } from '../storage/person-watcher.ts'
 import { compileStageTask } from '../storage/workflow-registry.ts'
 
@@ -62,6 +69,7 @@ function seedConstraintOnlyCandidates(ws: Workspace, personId: string): void {
 }
 
 const GOAL = '帮我确定职业方向'
+const NOW = new Date('2026-08-21T00:00:00Z')
 
 // ─── Path A：全新 Person（无 pending candidates）──────────────────────────
 
@@ -355,4 +363,437 @@ test('compileStageTask：advance 推进到 Stage 2 后可编译 Stage 2 Envelope
     assert.ok(envelope.includes('stage_index: 2'))
     assert.ok(envelope.includes('禁止进入：direction_evaluation、recommendation'))
   }
+})
+
+// ─── v0.2 L2-3：artifact-exists evaluator（evaluator 自报缺件，只 count）────
+
+const EXPLORATION_SPEC = CAREER_DIRECTION_STAGES.find((s) => s.id === 'direction_exploration')!
+
+/** 造一条合法 direction 提案并登记 */
+function registerDirectionFixture(ws: Workspace, pid: string, workflowId: string, fileName: string): string {
+  ws.write(`persons/${pid}/facts/education.md`, '# 教育\n\n| 学校 |\n|------|\n| University-A |\n')
+  ws.write(`persons/${pid}/directions/${fileName}`, [
+    '---',
+    `person_id: ${pid}`,
+    `workflow_id: ${workflowId}`,
+    'stage_id: direction_exploration',
+    '---',
+    '',
+    '## 方向主张',
+    '',
+    '方向甲值得考虑。',
+    '',
+    '## 事实依据',
+    '',
+    '- facts/education.md：专业对口',
+    '',
+  ].join('\n'))
+  const res = registerStageArtifact(ws, DIRECTION_SPEC, {
+    personId: pid,
+    workflowId,
+    stageId: 'direction_exploration',
+    proposalFile: fileName,
+  }, new Date('2026-08-21T00:00:00Z'))
+  assert.equal(res.ok, true)
+  if (!res.ok) throw new Error('fixture 登记失败')
+  return res.artifact.artifact_id
+}
+
+test('evaluateStageCompletion（artifact-exists）：0 条登记 → failed + 缺件自报（含 artifact_type/state）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const res = evaluateStageCompletion(ws, EXPLORATION_SPEC, pid, 'workflow_20260821_00001')
+  assert.equal(res.passed, false)
+  assert.ok(res.missing.some((m) => m.includes('0/1')))
+  assert.ok(res.missing.some((m) => m.includes('artifact_type=direction_candidate')))
+  assert.ok(res.missing.some((m) => m.includes('state 不限')))
+})
+
+test('evaluateStageCompletion（artifact-exists）：登记 1 条 → passed（按 workflow/stage 过滤）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  registerDirectionFixture(ws, pid, 'workflow_20260821_00001', '20260821-方向甲.md')
+  const res = evaluateStageCompletion(ws, EXPLORATION_SPEC, pid, 'workflow_20260821_00001')
+  assert.equal(res.passed, true)
+  // 另一 workflow 不匹配 → failed
+  const other = evaluateStageCompletion(ws, EXPLORATION_SPEC, pid, 'workflow_20260821_00002')
+  assert.equal(other.passed, false)
+})
+
+test('evaluateStageCompletion（artifact-exists）：state 不限——confirmed 后仍算「有产物」（L2-6 裁决 A）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const id = registerDirectionFixture(ws, pid, 'workflow_20260821_00001', '20260821-方向甲.md')
+  // confirmed 后：产物仍存在 → 完成判定仍 passed（完成 vs 确认分离：裁决结果归 Gate，§3.2）
+  const ok = resolveStageArtifact(ws, DIRECTION_SPEC, pid, id, 'confirm', new Date('2026-08-21T00:00:00Z'))
+  assert.equal(ok.ok, true)
+  const res = evaluateStageCompletion(ws, EXPLORATION_SPEC, pid, 'workflow_20260821_00001')
+  assert.equal(res.passed, true)
+  // rejected 同样算产物存在（全拒场景：完成判定过、Gate 拦——restage 出口）
+  const pid2 = makePerson(ws)
+  const id2 = registerDirectionFixture(ws, pid2, 'workflow_20260821_00001', '20260821-方向乙.md')
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid2, id2, 'reject', new Date('2026-08-21T00:00:00Z')).ok, true)
+  assert.equal(evaluateStageCompletion(ws, EXPLORATION_SPEC, pid2, 'workflow_20260821_00001').passed, true)
+})
+
+test('evaluateStageCompletion（person-init）：缺件自报（快照缺 + 候选缺），与 advance 缺件清单同源', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const spec = CAREER_DIRECTION_STAGES.find((s) => s.id === 'fact_collection')!
+  const res = evaluateStageCompletion(ws, spec, pid, 'workflow_20260821_00001')
+  assert.equal(res.passed, false)
+  assert.ok(res.missing.some((m) => m.includes('画像缺：identity.md')))
+  assert.ok(res.missing.some((m) => m.includes('候选缺')))
+  assert.ok(res.missing.some((m) => m.includes('需 education/experience 类候选')))
+})
+
+test('evaluateStageCompletion（artifact-exists）：挂参但类型注册表缺 spec → fail fast 抛错（配置错误）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const bad: typeof EXPLORATION_SPEC = { ...EXPLORATION_SPEC, evaluatorParams: { artifactType: '未登记类型', min: 1 } }
+  assert.throws(() => evaluateStageCompletion(ws, bad, pid, 'workflow_20260821_00001'), /artifactType 未登记/)
+})
+
+// ─── v0.2 L2-4：onExplorationDone（done 钩子 → 登记 → guard → waiting_gate/failed）──
+
+/** advance 到 Stage 2 running 的 fixture（复用 person-init 确认链路） */
+function advanceToExploration(ws: Workspace, pid: string) {
+  seedPendingCandidates(ws, pid)
+  seedCompleteSnapshots(ws, pid)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const res = advanceWorkflow(ws, workflow.id)
+  assert.equal(res.ok, true)
+  if (!res.ok) throw new Error('fixture advance 失败')
+  return workflow.id
+}
+
+/** 只写提案不登记（onExplorationDone 的 intake 输入；教育事实文件先行；workflowId 动态传入） */
+function writeDirectionProposal(ws: Workspace, pid: string, fileName: string, evidenceRef = 'facts/education.md', workflowId = 'workflow_20260821_00001'): void {
+  ws.write(`persons/${pid}/facts/education.md`, '# 教育\n\n| 学校 |\n|------|\n| University-A |\n')
+  ws.write(`persons/${pid}/directions/${fileName}`, [
+    '---',
+    `person_id: ${pid}`,
+    `workflow_id: ${workflowId}`,
+    'stage_id: direction_exploration',
+    '---',
+    '',
+    '## 方向主张',
+    '',
+    '方向甲值得考虑。',
+    '',
+    '## 事实依据',
+    '',
+    `- ${evidenceRef}：依据`,
+    '',
+  ].join('\n'))
+}
+
+test('onExplorationDone：合法提案登记 → waiting_gate + confirm_directions + artifacts 列（落盘可回读）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflowId)
+
+  const result = onExplorationDone(ws, workflowId, ['20260821-方向甲.md'], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.registered.length, 1)
+  assert.equal(result.rejected.length, 0)
+  const stage = result.workflow!.stages.find((s) => s.id === 'direction_exploration')!
+  assert.equal(stage.status, 'waiting_gate')
+  assert.deepEqual(stage.gate, { id: 'confirm_directions', status: 'waiting' })
+  assert.equal(stage.artifacts!.length, 1)
+  assert.match(stage.artifacts![0]!, /^direction_\d{8}_\d{5}$/)
+  // 落盘回读一致
+  const reloaded = getWorkflow(ws, workflowId)!
+  assert.equal(reloaded.stages.find((s) => s.id === 'direction_exploration')!.status, 'waiting_gate')
+  assert.ok(ws.read(`workflows/${workflowId}.md`).includes(stage.artifacts![0]!))
+})
+
+test('onExplorationDone：全部提案被拒 → failed + 拒绝明细（不信任自报，无登记产物不挂 gate）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-坏提案.md', 'facts/不存在的文件.md', workflowId)
+
+  const result = onExplorationDone(ws, workflowId, ['20260821-坏提案.md'], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.registered.length, 0)
+  assert.equal(result.rejected.length, 1)
+  assert.equal(result.rejected[0]!.code, 'EVIDENCE_UNRESOLVABLE')
+  const stage = result.workflow!.stages.find((s) => s.id === 'direction_exploration')!
+  assert.equal(stage.status, 'failed')
+  assert.equal(stage.gate, undefined)
+  // 坏提案保留原样（无系统身份）
+  assert.equal(ws.exists(`persons/${pid}/directions/20260821-坏提案.md`), true)
+})
+
+test('onExplorationDone：部分成功 → waiting_gate + 拒绝明细并存', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflowId)
+  writeDirectionProposal(ws, pid, '20260821-方向乙.md', 'facts/不存在的文件.md', workflowId)
+
+  const result = onExplorationDone(ws, workflowId, ['20260821-方向甲.md', '20260821-方向乙.md'], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.registered.length, 1)
+  assert.equal(result.rejected.length, 1)
+  assert.equal(result.workflow!.stages.find((s) => s.id === 'direction_exploration')!.status, 'waiting_gate')
+})
+
+test('onExplorationDone 幂等：非 running（已 waiting_gate）→ workflow null，不重复登记', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflowId)
+  const first = onExplorationDone(ws, workflowId, ['20260821-方向甲.md'], NOW)
+  assert.ok(first.workflow)
+  const second = onExplorationDone(ws, workflowId, ['20260821-方向甲.md'], NOW)
+  assert.equal(second.workflow, null)
+  assert.equal(second.registered.length, 0)
+})
+
+test('onExplorationDone：workflow 非 active / 不存在 → workflow null', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  assert.equal(onExplorationDone(ws, 'workflow_20260821_99999', [], NOW).workflow, null)
+  const workflowId = advanceToExploration(ws, pid)
+  abortWorkflow(ws, workflowId)
+  assert.equal(onExplorationDone(ws, workflowId, [], NOW).workflow, null)
+})
+
+// ─── v0.2 L2-6：confirm_directions Gate + advance 全链 ─────────────────────
+
+/** Stage 2 waiting_gate fixture：advance → 写提案 → onExplorationDone → 返回 { workflowId, directionId } */
+function waitingGateExploration(ws: Workspace, pid: string) {
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflowId)
+  const done = onExplorationDone(ws, workflowId, ['20260821-方向甲.md'], NOW)
+  assert.ok(done.workflow)
+  assert.equal(done.registered.length, 1)
+  return { workflowId, directionId: done.registered[0]!.artifact_id }
+}
+
+test('advance（confirm_directions）：registered 但 confirmed=0 → GATE_BLOCKED（缺件：无已确认方向）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId } = waitingGateExploration(ws, pid)
+  const res = advanceWorkflow(ws, workflowId, 'confirm_directions')
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'GATE_BLOCKED')
+  assert.ok(res.missing.some((m) => m.includes('confirm_directions')))
+  assert.ok(res.missing.some((m) => m.includes('无已确认方向')))
+  // 未推进
+  const reloaded = getWorkflow(ws, workflowId)!
+  assert.equal(reloaded.stages.find((s) => s.id === 'direction_exploration')!.status, 'waiting_gate')
+  assert.equal(reloaded.stages.length, 2)
+})
+
+test('advance（confirm_directions）：confirmed ≥ 1 → Stage 2 completed + gate passed + Stage 3 创建', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = waitingGateExploration(ws, pid)
+  // 用户确认 1 条方向
+  const r = resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'confirm', NOW)
+  assert.equal(r.ok, true)
+
+  const res = advanceWorkflow(ws, workflowId, 'confirm_directions')
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+  assert.equal(res.nextStage, 'direction_evaluation')
+  const reloaded = getWorkflow(ws, workflowId)!
+  const stage2 = reloaded.stages.find((s) => s.id === 'direction_exploration')!
+  assert.equal(stage2.status, 'completed')
+  assert.equal(stage2.gate!.id, 'confirm_directions')
+  assert.equal(stage2.gate!.status, 'passed')
+  assert.ok(stage2.gate!.confirmedAt)
+  assert.equal(reloaded.stages[2]!.id, 'direction_evaluation')
+  assert.equal(reloaded.currentStage, 'direction_evaluation')
+})
+
+test('advance（confirm_directions）：gate 条件过但 Stage 3 inputs 缺 person_aggregate → MISSING_INPUTS', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = waitingGateExploration(ws, pid)
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'confirm', NOW).ok, true)
+  // Stage 2 期间画像被重置（resetPerson 语义）→ Stage 3 的 person_aggregate input 缺件
+  ws.delete(`persons/${pid}/snapshot/current/identity.md`)
+  const res = advanceWorkflow(ws, workflowId, 'confirm_directions')
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'MISSING_INPUTS')
+  assert.ok(res.missing.some((m) => m.includes('person_aggregate')))
+  // 未推进
+  assert.equal(getWorkflow(ws, workflowId)!.stages.length, 2)
+})
+
+test('advance（confirm_directions）：gateId 缺失/不匹配 → 拒绝（gateId 校验与 v0.1 一致）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = waitingGateExploration(ws, pid)
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'confirm', NOW).ok, true)
+  const wrong = advanceWorkflow(ws, workflowId, 'confirm_person_facts')
+  assert.equal(wrong.ok, false)
+  if (wrong.ok) return
+  assert.equal(wrong.code, 'ILLEGAL_STATE')
+  // gateId 缺失：confirm_directions 有 gate 定义，允许省略（与 v0.1 一致——gateId 可选，缺失时按 spec.gate 校验）
+  const omitted = advanceWorkflow(ws, workflowId)
+  assert.equal(omitted.ok, true)
+})
+
+// ─── v0.2 L2-7：workflow/restage + intake boundary ─────────────────────────
+
+test('restage：waiting_gate（gate 未过）→ running + 清 gate + 已完成 stage 不动 + 方向池不重置', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId } = waitingGateExploration(ws, pid)
+  const before = getWorkflow(ws, workflowId)!
+  assert.equal(before.stages.find((s) => s.id === 'direction_exploration')!.status, 'waiting_gate')
+
+  const next = restageWorkflow(ws, workflowId, NOW)
+  assert.equal(next.stages.find((s) => s.id === 'direction_exploration')!.status, 'running')
+  assert.equal(next.stages.find((s) => s.id === 'direction_exploration')!.gate, undefined)
+  // 已完成 stage 不动
+  assert.equal(next.stages.find((s) => s.id === 'fact_collection')!.status, 'completed')
+  // 方向池文件不动（registered 保留，累积池）
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid, { workflowId, stageId: 'direction_exploration' }), 1)
+  // 落盘回读
+  assert.equal(getWorkflow(ws, workflowId)!.stages.find((s) => s.id === 'direction_exploration')!.status, 'running')
+})
+
+test('restage：failed → running（全拒出口）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-坏提案.md', 'facts/不存在的文件.md', workflowId)
+  const done = onExplorationDone(ws, workflowId, ['20260821-坏提案.md'], NOW)
+  assert.equal(done.workflow!.stages.find((s) => s.id === 'direction_exploration')!.status, 'failed')
+  const next = restageWorkflow(ws, workflowId, NOW)
+  assert.equal(next.stages.find((s) => s.id === 'direction_exploration')!.status, 'running')
+})
+
+test('restage 前置条件：running 中拒绝；abort 后（非 active）拒绝；workflow 不存在拒绝', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  // running 中（advance 后 Stage 2 running）→ 拒绝
+  const workflowId = advanceToExploration(ws, pid)
+  assert.throws(() => restageWorkflow(ws, workflowId, NOW), /不可 restage/)
+  // abort 后（非 active）→ 拒绝
+  const ws2 = testWorkspace()
+  const pid2 = makePerson(ws2)
+  const w2 = advanceToExploration(ws2, pid2)
+  abortWorkflow(ws2, w2)
+  assert.throws(() => restageWorkflow(ws2, w2, NOW), /不可 restage/)
+  // 不存在
+  assert.throws(() => restageWorkflow(ws, 'workflow_20260821_99999', NOW), /workflow 不存在/)
+})
+
+test('restage 后二次执行：artifacts 列累积（方向池 append-only）+ 已裁决保持终态', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = waitingGateExploration(ws, pid)
+  // 用户 reject 第一条 → restage → 第二次执行产第二条
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'reject', NOW).ok, true)
+  const restaged = restageWorkflow(ws, workflowId, NOW)
+  assert.equal(restaged.stages.find((s) => s.id === 'direction_exploration')!.status, 'running')
+
+  writeDirectionProposal(ws, pid, '20260821-方向乙.md', 'facts/education.md', workflowId)
+  const done2 = onExplorationDone(ws, workflowId, ['20260821-方向乙.md'], NOW)
+  assert.ok(done2.workflow)
+  const stage = done2.workflow!.stages.find((s) => s.id === 'direction_exploration')!
+  assert.equal(stage.status, 'waiting_gate')
+  // artifacts 累积：第一次 1 条 + 第二次 1 条
+  assert.equal(stage.artifacts!.length, 2)
+  // 已 rejected 保持终态（不复活）
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid, { workflowId, stageId: 'direction_exploration', state: 'rejected' }), 1)
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid, { workflowId, stageId: 'direction_exploration', state: 'registered' }), 1)
+  // 新登记方向可 confirm → gate 通过（累积池语义：跨执行确认）
+  const newId = stage.artifacts![1]!
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, newId, 'confirm', NOW).ok, true)
+  const adv = advanceWorkflow(ws, workflowId, 'confirm_directions')
+  assert.equal(adv.ok, true)
+})
+
+// ─── intake boundary 纯函数（§1.6：R8 重复消费回归）────────────────────────
+
+test('freshIntakeFiles：只返回快照外新文件；历史提案（含失败）不被重复消费', () => {
+  // 第一次执行：快照空 → 全部是新文件
+  assert.deepEqual(freshIntakeFiles(['20260821-方向甲.md', '20260821-坏提案.md'], []), ['20260821-方向甲.md', '20260821-坏提案.md'])
+  // 第二次执行：快照含第一次的坏提案（保留暂存名）→ 不被再次消费（R8）
+  const intake2 = ['20260821-坏提案.md', 'direction_20260821_00001.md']
+  assert.deepEqual(freshIntakeFiles(['20260821-坏提案.md', 'direction_20260821_00001.md', '20260821-方向乙.md'], intake2), ['20260821-方向乙.md'])
+  // 无新文件 → 空（done 时 registered=0 → failed 语义）
+  assert.deepEqual(freshIntakeFiles(['20260821-坏提案.md'], ['20260821-坏提案.md']), [])
+})
+
+// ─── Envelope 注入方向池裁决状态（§4.2：用户已排除的方向不得重新提案）──────
+
+test('compileStageTask（Stage 2）：注入 DIRECTION_POOL_STATE（已保留/已排除方向）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToExploration(ws, pid)
+  // 预先有裁决状态：一条 rejected（既有执行产物）
+  writeDirectionProposal(ws, pid, '20260821-旧方向.md', 'facts/education.md', workflowId)
+  const done = onExplorationDone(ws, workflowId, ['20260821-旧方向.md'], NOW)
+  assert.ok(done.workflow)
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, done.registered[0]!.artifact_id, 'reject', NOW).ok, true)
+  // restage → running → 编译 Envelope
+  restageWorkflow(ws, workflowId, NOW)
+  const { envelope } = compileStageTask(ws, workflowId, 'direction_exploration')
+  assert.ok(envelope.includes('【DIRECTION_POOL_STATE】'))
+  assert.ok(envelope.includes('用户已排除的方向（不得作为候选重新提案）'))
+  assert.ok(envelope.includes('方向甲值得考虑。')) // 被排除方向的 claim 投影进入 Envelope
+})
+
+// ─── v0.2 L2-8：Golden Flow 端到端（契约 §八正例：Stage 1 → 2 → 3 全链串行）──
+
+test('Golden Flow：事实收集 → 方向探索 → 用户裁决 → confirm_directions Gate → Stage 3', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+
+  // Stage 1（Path B）：候选齐备 → waiting_gate → 用户确认 → advance → Stage 2 running
+  seedPendingCandidates(ws, pid)
+  seedCompleteSnapshots(ws, pid)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
+  const adv1 = advanceWorkflow(ws, workflow.id)
+  assert.equal(adv1.ok, true)
+  if (!adv1.ok) return
+  assert.equal(adv1.nextStage, 'direction_exploration')
+
+  // Stage 2：Agent 产出 3 条方向提案 → done 钩子 → 登记 → waiting_gate
+  for (const [name, ref] of [['20260821-方向甲.md', 'facts/education.md'], ['20260821-方向乙.md', 'snapshot/current/skill_inventory.md'], ['20260821-方向丙.md', 'facts/education.md']] as const) {
+    writeDirectionProposal(ws, pid, name, ref, workflow.id)
+  }
+  const done = onExplorationDone(ws, workflow.id, ['20260821-方向甲.md', '20260821-方向乙.md', '20260821-方向丙.md'], NOW)
+  assert.ok(done.workflow)
+  assert.equal(done.registered.length, 3)
+  assert.equal(done.rejected.length, 0)
+  assert.equal(done.workflow!.stages.find((s) => s.id === 'direction_exploration')!.status, 'waiting_gate')
+  const ids = done.registered.map((a) => a.artifact_id)
+
+  // 用户裁决：confirm 2 / reject 1
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, ids[0]!, 'confirm', NOW).ok, true)
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, ids[1]!, 'confirm', NOW).ok, true)
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, ids[2]!, 'reject', NOW).ok, true)
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid, { workflowId: workflow.id, state: 'confirmed' }), 2)
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid, { workflowId: workflow.id, state: 'rejected' }), 1)
+
+  // advance（confirm_directions）：四步校验全过 → Stage 2 completed + Stage 3
+  const adv2 = advanceWorkflow(ws, workflow.id, 'confirm_directions')
+  assert.equal(adv2.ok, true)
+  if (!adv2.ok) return
+  assert.equal(adv2.nextStage, 'direction_evaluation')
+  const final = getWorkflow(ws, workflow.id)!
+  assert.equal(final.status, 'active')
+  assert.equal(final.currentStage, 'direction_evaluation')
+  const stage2 = final.stages.find((s) => s.id === 'direction_exploration')!
+  assert.equal(stage2.status, 'completed')
+  assert.equal(stage2.gate!.status, 'passed')
+  assert.equal(stage2.artifacts!.length, 3)
+  // 落盘审计：workflow 文件含 artifacts 与 gate 记录
+  const md = ws.read(`workflows/${workflow.id}.md`)
+  assert.ok(md.includes('confirm_directions/passed'))
+  for (const id of ids) assert.ok(md.includes(id))
 })

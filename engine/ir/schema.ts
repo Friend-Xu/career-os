@@ -271,6 +271,31 @@ export interface InitCandidate {
   experience?: { company: string; role?: string; start?: string; end?: string }
 }
 
+/** Stage Artifact 生命周期投影（契约 Career-Workflow-Contract-v0.2 §1.2）——
+ *  引擎↔UI 共享类型。身份/状态由引擎登记、用户裁决流转（终态不可逆）；Agent 只提案、不持有身份。
+ *  stage_id/workflow_id 用 string（ir 不依赖 storage 层 StageId，保持依赖方向单向）。 */
+export type StageArtifactState = 'registered' | 'confirmed' | 'rejected'
+
+export interface StageArtifact {
+  artifact_type: string
+  artifact_id: string
+  workflow_id: string
+  stage_id: string
+  person_id: string
+  state: StageArtifactState
+  evidence_refs: string[]
+  version: number
+  registered_by: 'engine'
+  /** 裁决时间/裁决人（confirmed 与 rejected 共用「裁决」语义，引擎写盘） */
+  confirmed_at?: string
+  confirmed_by?: 'user'
+  /** 提案暂存文件名（登记时快照，审计溯源） */
+  source_file?: string
+  created_at?: string
+  /** 主张摘要（marker 段后首个非空段落，UI 投影用） */
+  claim?: string
+}
+
 /** Person 教育事实（persons/{pid}/facts/education.md 派生；Registration Owner = Engine——
  *  candidate resolve 确认时登记；无文件 = 未采集（缺件语义，与「无教育」区分）。契约：
  *  references/person-education-registration-contract.md */

@@ -8,10 +8,14 @@
  *   状态=waiting_gate → 完成条件满足 → gate 未过 → 下一 Stage inputs 齐备；任一失败 → 拒绝 + 缺件。
  * - 「暂不登记，继续探索」= 受控 exploration branch：不登记、Stage 1 不 completed、
  *   不通过正常 advance 越过 Stage 1（契约 §4.3）。
- * - v0.1 单一类型 career_direction，四 Stage 串行；Stage 2-4 本轮只定义不深改业务（§十）。
+ * - v0.2（契约 Career-Workflow-Contract-v0.2）：artifact-exists evaluator 参数化落地
+ *  （evaluateStageCompletion 自报缺件）；confirm_directions Gate 与 restage 见同名契约。
  */
 import type { Workspace } from './workspace.ts'
+import type { StageArtifact } from '../ir/schema.ts'
 import { completePersonInit, scanPersons } from './person-watcher.ts'
+import { countStageArtifacts, listStageArtifacts, registerStageArtifactBatch, type StageArtifactRejection } from './stage-artifact-registry.ts'
+import { DIRECTION_SPEC, getArtifactSpec } from './artifact-type-registry.ts'
 import { watch } from 'chokidar'
 
 // ─── 类型（契约 §一/§二）──────────────────────────────────────────────────
@@ -20,7 +24,7 @@ export type WorkflowType = 'career_direction'
 export type WorkflowStatus = 'active' | 'completed' | 'aborted'
 export type StageStatus = 'pending' | 'running' | 'waiting_gate' | 'completed' | 'failed'
 export type StageId = 'fact_collection' | 'direction_exploration' | 'direction_evaluation' | 'recommendation'
-export type GateId = 'confirm_person_facts' | 'review_recommendation'
+export type GateId = 'confirm_person_facts' | 'confirm_directions' | 'review_recommendation'
 
 export interface WorkflowGate {
   id: GateId
@@ -60,6 +64,9 @@ export interface StageSpec {
   inputs: string[] // Artifact 语义名（非文件路径）
   outputs: string[]
   evaluator: 'person-init' | 'artifact-exists' | 'decision-registered'
+  /** artifact-exists 参数（契约 v0.2 §3.1，L2-6 裁决 A）：完成判定 = 已登记产物存在（state 不限）；
+   *  未挂 = 占位放行（Stage 3 下一切片） */
+  evaluatorParams?: { artifactType: string; min: number }
   gate?: GateId
   /** 阶段执行任务（Execution Contract——Agent Execution Boundary Repair P0-B：
    *  结构化声明而非自由 Prompt；compileStageTask 编译成单一 Stage Execution Envelope 注入 agent/start）。
@@ -99,6 +106,8 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     inputs: ['person_aggregate'],
     outputs: ['exploration_artifact'],
     evaluator: 'artifact-exists',
+    evaluatorParams: { artifactType: 'direction_candidate', min: 1 },
+    gate: 'confirm_directions',
     task: {
       objective: '方向探索：基于已确认的个人事实，执行 career-path 的 Step 1-3（三问定框架 / 方向画像卡 / Cross Off 排除 + IKIGAI）',
       instructions: ['只消费已登记事实（facts/ 与快照投影）', '输出方向候选清单与画像卡对比（exploration_artifact）', '不要进入加权打分（下一阶段）'],
@@ -176,6 +185,22 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     spec.task.declaredBoundaries.forbiddenStages.length > 0
       ? `本阶段禁止进入：${spec.task.declaredBoundaries.forbiddenStages.join('、')}。用户若问到这些方向的问题，回答"该问题会在后续阶段处理"，然后继续当前阶段任务。`
       : '无阶段禁令。'
+  // 方向池裁决状态注入（契约 §4.2「restage 后的 Stage task 上下文」）：每次 direction_exploration 执行
+  // 都注入既有裁决——用户已排除的方向不得作为候选重新提案（标准约束，Envelope 层；引擎不做硬去重）
+  let directionPoolState = ''
+  if (stageId === 'direction_exploration') {
+    const existing = listStageArtifacts(ws, DIRECTION_SPEC, w.personId, { workflowId: w.id, stageId })
+    const confirmed = existing.filter((a) => a.state === 'confirmed').map((a) => a.claim).filter((c): c is string => Boolean(c))
+    const rejected = existing.filter((a) => a.state === 'rejected').map((a) => a.claim).filter((c): c is string => Boolean(c))
+    if (confirmed.length > 0 || rejected.length > 0) {
+      directionPoolState = [
+        '【DIRECTION_POOL_STATE】',
+        ...(confirmed.length > 0 ? [`用户已保留的方向：${confirmed.join('、')}。`] : []),
+        ...(rejected.length > 0 ? [`用户已排除的方向（不得作为候选重新提案）：${rejected.join('、')}。`] : []),
+        '',
+      ].join('\n')
+    }
+  }
   const envelope = [
     '【WORKFLOW_STAGE】',
     `workflow_id: ${w.id}`,
@@ -198,6 +223,7 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     '【STOP_CONDITION】',
     spec.task.stopCondition,
     '',
+    ...(directionPoolState ? [directionPoolState] : []),
     '【STAGE_BOUNDARY】',
     boundaryLine,
     `Gate：${spec.gate ? `本阶段完成需通过 ${spec.gate}（由引擎裁决，用户确认）` : '本阶段无 Gate'}`,
@@ -360,28 +386,69 @@ export function isPersonInitComplete(ws: Workspace, personId: string): boolean {
   return REQUIRED.every((f) => ws.exists(`persons/${personId}/snapshot/current/${f}`))
 }
 
-function stageMissingInputs(ws: Workspace, spec: StageSpec, personId: string): string[] {
-  // v0.1：只实现 person-init 输入判定（person_aggregate = 三件快照）；artifact-exists/decision-registered
-  // 为 Stage 2-4 预留（本轮不深改业务），其 inputs 校验留空（Stage 2-4 定义完整但 advance 推进时由 evaluator 把关）
+function stageMissingInputs(ws: Workspace, spec: StageSpec, personId: string, workflowId: string): string[] {
+  // v0.2：person_aggregate（三件快照）+ exploration_artifact（方向池 confirmed ≥ 1）；
+  // evaluation_artifact/decision 的 input 判定随 Stage 3/4 下一切片落地
   const missing: string[] = []
   for (const input of spec.inputs) {
     if (input === 'person_aggregate' && !isPersonInitComplete(ws, personId)) {
       missing.push('person_aggregate（画像三件快照未齐备）')
     }
+    if (input === 'exploration_artifact' && confirmedDirectionCount(ws, workflowId, personId) < 1) {
+      missing.push('exploration_artifact（方向池 confirmed = 0——无用户批准的方向）')
+    }
   }
   return missing
 }
 
-function stageEvaluatorPassed(ws: Workspace, spec: StageSpec, personId: string): boolean {
+/**
+ * 完成判定（契约 v0.2 §3）：evaluator 自报缺件（advance 第 2 步直接透传，不硬编码缺件名）。
+ * - person-init：复用 completePersonInit 门禁（快照三件齐备）；缺件 = 快照缺 + 可补足候选缺
+ * - artifact-exists：count(workflow/stage/artifactType/state) ≥ min（登记校验已由注册时完成，
+ *   evaluator 只统计——单一真相源）；未挂 evaluatorParams = 占位放行（Stage 3 下一切片）
+ * - decision-registered：仍占位（Stage 4 下一切片）
+ */
+export function evaluateStageCompletion(
+  ws: Workspace,
+  spec: StageSpec,
+  personId: string,
+  workflowId: string,
+): { passed: boolean; missing: string[] } {
   switch (spec.evaluator) {
-    case 'person-init':
-      return isPersonInitComplete(ws, personId)
-    case 'artifact-exists':
-      // Stage 2-4 业务未深改：本轮推进由调用方（UI）显式触发后由 gate/inputs 把关；
-      // evaluator 留接口，返回 true 仅表示"无已实现阻断项"
-      return true
+    case 'person-init': {
+      const REQUIRED = ['identity.md', 'skill_inventory.md', 'preference_constraints.md']
+      const missingSnapshots = REQUIRED.filter((f) => !ws.exists(`persons/${personId}/snapshot/current/${f}`))
+      if (missingSnapshots.length === 0) return { passed: true, missing: [] }
+      const missing: string[] = missingSnapshots.map((f) => `画像缺：${f}`)
+      const candidatesMissing = missingSnapshots
+        .map((f) => {
+          const cover = SNAPSHOT_CANDIDATE_COVERAGE[f.replace(/\.md$/, '')] ?? []
+          return `${f}（需 ${cover.join('/')} 类候选）`
+        })
+      if (candidatesMissing.length > 0) {
+        missing.push(`候选缺：${candidatesMissing.join('；')}——需先采集并确认对应候选（Agent 依据已确认候选写快照）`)
+      }
+      return { passed: false, missing }
+    }
+    case 'artifact-exists': {
+      const p = spec.evaluatorParams
+      if (!p) return { passed: true, missing: [] } // 未挂参 = 占位（Stage 3 下一切片）
+      const artifactSpec = getArtifactSpec(p.artifactType) // 挂参即需登记 spec——缺 = 配置错误 fail fast
+      // L2-6 裁决 A：state 不限——已登记产物存在即完成（registered 是瞬态，裁决后仍算「有产物」；确认与否归 Gate）
+      const count = countStageArtifacts(ws, artifactSpec, personId, {
+        workflowId,
+        stageId: spec.id,
+      })
+      if (count >= p.min) return { passed: true, missing: [] }
+      return {
+        passed: false,
+        missing: [
+          `已登记 Artifact 数 ${count}/${p.min}（artifact_type=${p.artifactType}，state 不限）`,
+        ],
+      }
+    }
     case 'decision-registered':
-      return true
+      return { passed: true, missing: [] }
   }
 }
 
@@ -492,7 +559,35 @@ export function startWorkflow(
 
 export type AdvanceResult =
   | { ok: true; workflow: WorkflowState; nextStage: StageId | null; status: WorkflowStatus }
-  | { ok: false; code: 'ILLEGAL_STATE' | 'STAGE_INCOMPLETE' | 'NO_GATE' | 'GATE_PASSED' | 'MISSING_INPUTS'; missing: string[] }
+  | {
+      ok: false
+      code: 'ILLEGAL_STATE' | 'STAGE_INCOMPLETE' | 'NO_GATE' | 'GATE_PASSED' | 'GATE_BLOCKED' | 'MISSING_INPUTS'
+      missing: string[]
+    }
+
+/** 方向池 confirmed 计数（confirm_directions gate 判定与 Stage 3 input 判定的单一事实源） */
+function confirmedDirectionCount(ws: Workspace, workflowId: string, personId: string): number {
+  return countStageArtifacts(ws, DIRECTION_SPEC, personId, {
+    workflowId,
+    stageId: 'direction_exploration',
+    state: 'confirmed',
+  })
+}
+
+/**
+ * Gate 可过判定（契约 v0.2 §4.1 第 3 步）：gate 存在且未过时的附加确定性条件。
+ * confirm_person_facts：完成条件已含（person-init 第 2 步判）→ 无条件；
+ * confirm_directions：方向池 confirmed ≥ 1（用户批准至少 1 个方向作为 Stage 3 输入）→ 否则拒绝。
+ */
+function gateConditionPassed(ws: Workspace, gateId: GateId, w: WorkflowState): { passed: boolean; missing: string } {
+  if (gateId === 'confirm_directions') {
+    const confirmed = confirmedDirectionCount(ws, w.id, w.personId)
+    if (confirmed < 1) {
+      return { passed: false, missing: '无已确认方向（方向池 confirmed = 0——需用户确认至少 1 个方向候选后才能进入 Stage 3）' }
+    }
+  }
+  return { passed: true, missing: '' }
+}
 
 export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: string, now: Date = new Date()): AdvanceResult {
   const w = getWorkflow(ws, workflowId)
@@ -508,26 +603,16 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
   if (cur.status !== 'waiting_gate') {
     return { ok: false, code: 'ILLEGAL_STATE', missing: [`当前 Stage ${cur.id} 状态 ${cur.status}（需 waiting_gate）`] }
   }
-  // 2. 完成条件满足（确定性 Evaluator）
-  if (!stageEvaluatorPassed(ws, spec, w.personId)) {
-    const REQUIRED = ['identity.md', 'skill_inventory.md', 'preference_constraints.md']
-    const missingSnapshots = REQUIRED.filter((f) => !ws.exists(`persons/${w.personId}/snapshot/current/${f}`))
-    const missingCandidates = missingSnapshots
-      .map((f) => {
-        const cover = SNAPSHOT_CANDIDATE_COVERAGE[f.replace(/\.md$/, '')] ?? []
-        return `${f}（需 ${cover.join('/')} 类候选）`
-      })
+  // 2. 完成条件满足（确定性 Evaluator；缺件由 evaluator 自报——契约 v0.2 §3.3，advance 不硬编码缺件名）
+  const completion = evaluateStageCompletion(ws, spec, w.personId, w.id)
+  if (!completion.passed) {
     return {
       ok: false,
       code: 'STAGE_INCOMPLETE',
-      missing: [
-        `${cur.id} 完成条件未满足（evaluator=${spec.evaluator}）`,
-        `画像缺：${missingSnapshots.length > 0 ? missingSnapshots.join('、') : '（快照已齐但判定失败——需人工排查）'}`,
-        ...(missingCandidates.length > 0 ? [`候选缺：${missingCandidates.join('；')}——需先采集并确认对应候选（Agent 依据已确认候选写快照）`] : []),
-      ],
+      missing: [`${cur.id} 完成条件未满足（evaluator=${spec.evaluator}）`, ...completion.missing],
     }
   }
-  // 3. Gate 存在且未过
+  // 3. Gate 存在且未过 + gate 可过判定（契约 v0.2 §4.1：confirm_directions 需 confirmed ≥ 1）
   if (spec.gate) {
     const gate = cur.gate
     if (!gate) return { ok: false, code: 'NO_GATE', missing: [`Stage ${cur.id} 缺 gate ${spec.gate}`] }
@@ -535,10 +620,12 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
     if (gateId !== undefined && gateId !== spec.gate) {
       return { ok: false, code: 'ILLEGAL_STATE', missing: [`gateId 不匹配（期望 ${spec.gate}，收到 ${gateId}）`] }
     }
+    const gateCond = gateConditionPassed(ws, spec.gate, w)
+    if (!gateCond.passed) return { ok: false, code: 'GATE_BLOCKED', missing: [`gate ${spec.gate} 条件未满足`, gateCond.missing] }
   }
   // 4. 下一 Stage inputs 齐备
   const nextSpec = CAREER_DIRECTION_STAGES[curIdx + 1]
-  const missingInputs = nextSpec ? stageMissingInputs(ws, nextSpec, w.personId) : []
+  const missingInputs = nextSpec ? stageMissingInputs(ws, nextSpec, w.personId, w.id) : []
   if (missingInputs.length > 0) return { ok: false, code: 'MISSING_INPUTS', missing: missingInputs }
 
   // 推进：当前 → completed（gate passed）；创建下一 Stage
@@ -594,7 +681,85 @@ export function abortWorkflow(ws: Workspace, workflowId: string, now: Date = new
   return next
 }
 
-// ─── 状态变更钩子（Agent 完成 Stage 输出时由调用方触发；v0.1 只实现 fact_collection）──
+/**
+ * workflow/restage（契约 v0.2 §4.2）：当前 Stage 重跑出口。
+ * 前置条件（收紧）：仅 current stage = waiting_gate 且 gate.status != passed，或 current stage = failed。
+ * 禁止：completed / gate=passed / pending / running（restage 只作用于 currentStage，无 stageId 参数）。
+ * 动作：当前 stage → running、清 gate；已完成 stage 不动；方向池不重置（append-only 累积池）。
+ * 新 intake boundary 由 transport 层在下一次 agent/start 时建立。
+ */
+export function restageWorkflow(ws: Workspace, workflowId: string, now: Date = new Date()): WorkflowState {
+  const w = getWorkflow(ws, workflowId)
+  if (!w) throw new Error(`workflow 不存在：${workflowId}`)
+  if (w.status !== 'active') throw new Error(`workflow 状态 ${w.status}，不可 restage`)
+  const stage = w.stages.find((s) => s.id === w.currentStage)
+  if (!stage) throw new Error('currentStage 未定位，不可 restage')
+  const allowed = stage.status === 'failed' || (stage.status === 'waiting_gate' && stage.gate?.status !== 'passed')
+  if (!allowed) {
+    throw new Error(`Stage ${stage.id} 状态 ${stage.status}（gate ${stage.gate?.status ?? '无'}），不可 restage（仅 waiting_gate 且 gate 未过 / failed）`)
+  }
+  const ts = now.toISOString()
+  const next: WorkflowState = {
+    ...w,
+    updatedAt: ts,
+    stages: w.stages.map((s) =>
+      s.id === w.currentStage ? { ...s, status: 'running' as StageStatus, gate: undefined } : s,
+    ),
+  }
+  writeWorkflow(ws, next, now)
+  return next
+}
+
+/**
+ * direction_exploration 输出就绪回调（契约 v0.2 §4.1 done 钩子）：Agent 完成方向探索后调用。
+ * - intake 清单（本次执行新产生的提案文件）逐个登记：合法 → registered；非法 → 拒绝明细（调用方广播）
+ * - guard（确定性，不信任自报）：registered ≥ 1 → waiting_gate（挂 confirm_directions）+ artifacts 列写盘；
+ *   registered = 0 → failed（无登记产物 = 完成判定必败）
+ * - 幂等：非 running 的 direction_exploration 不处理。
+ */
+export function onExplorationDone(
+  ws: Workspace,
+  workflowId: string,
+  proposalFiles: string[],
+  now: Date = new Date(),
+): { workflow: WorkflowState | null; registered: StageArtifact[]; rejected: StageArtifactRejection[] } {
+  const w = getWorkflow(ws, workflowId)
+  if (!w || w.status !== 'active') return { workflow: null, registered: [], rejected: [] }
+  const stage = w.stages.find((s) => s.id === 'direction_exploration')
+  if (!stage || stage.status !== 'running') return { workflow: null, registered: [], rejected: [] }
+
+  const batch = registerStageArtifactBatch(
+    ws,
+    DIRECTION_SPEC,
+    { personId: w.personId, workflowId: w.id, stageId: 'direction_exploration', proposalFiles },
+    now,
+  )
+  const ts = now.toISOString()
+  const passed = batch.registered.length > 0
+  const next: WorkflowState = {
+    ...w,
+    stages: w.stages.map((s) =>
+      s.id === 'direction_exploration'
+        ? {
+            ...s,
+            status: passed ? ('waiting_gate' as StageStatus) : ('failed' as StageStatus),
+            ...(passed
+              ? {
+                  // 累积池（§4.2）：restage 后二次执行的登记追加到既有 artifacts 列，不覆盖
+                  artifacts: [...(stage.artifacts ?? []), ...batch.registered.map((a) => a.artifact_id)],
+                  gate: { id: 'confirm_directions' as GateId, status: 'waiting' as const },
+                }
+              : {}),
+          }
+        : s,
+    ),
+    updatedAt: ts,
+  }
+  writeWorkflow(ws, next, now)
+  return { workflow: next, registered: batch.registered, rejected: batch.rejected }
+}
+
+// ─── 状态变更钩子（Agent 完成 Stage 输出时由调用方触发；v0.2：fact_collection + direction_exploration）──
 
 /**
  * fact_collection 输出就绪回调：Agent 完成候选收集（Path A）后调用——

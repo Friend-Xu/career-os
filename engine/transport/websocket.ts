@@ -32,7 +32,9 @@ import {
   advanceWorkflow,
   compileStageTask,
   getWorkflow,
+  onExplorationDone,
   onFactCollectionReady,
+  restageWorkflow,
   scanWorkflows,
   STAGE_IDS,
   startWorkflow,
@@ -165,6 +167,20 @@ import {
 } from '../storage/application-registry.ts'
 import type { CreateApplicationRequest } from '../ir/schema.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
+import { listStageArtifacts, resolveStageArtifact, type StageArtifactRejection } from '../storage/stage-artifact-registry.ts'
+import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+
+/** intake 边界判定（契约 v0.2 §1.6）：本次执行新产生的提案文件 = 当前目录 - 启动时快照（纯函数，可单测） */
+export function freshIntakeFiles(current: string[], intake: string[]): string[] {
+  return current.filter((f) => !intake.includes(f))
+}
+
+/** 登记拒绝 → error.engine 广播 message（契约 v0.2 §1.5：管线错误对用户可见）。
+ *  纯格式化（可单测）；broadcast + logger 接线由 done 钩子闭包完成。 */
+export function formatRegistrationRejectionMessage(artifactType: string, rejected: StageArtifactRejection[]): string {
+  const lines = rejected.map((r) => `${r.proposalFile}（${r.code}：${r.reason}）`)
+  return `阶段产出登记被拒（${artifactType}）${rejected.length} 条：\n${lines.join('\n')}`
+}
 
 /** 端口占用递增兜底次数（config.server.port 起最多 +5） */
 const MAX_PORT_RETRIES = 5
@@ -324,6 +340,27 @@ function resolveCandidateParams(params: unknown): { personId: string; candidateI
   const modifiedContent = typeof p.modifiedContent === 'string' ? p.modifiedContent.trim() : undefined
   if (action === 'modified' && !modifiedContent) throw new Error('modified 需提供 modifiedContent')
   return { personId, candidateId, action, modifiedContent }
+}
+
+/** person/directions/list 入参校验（RPC 边界；workflowId 可选过滤） */
+function directionsListParams(params: unknown): { personId: string; workflowId?: string } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  if (!personId) throw new Error('personId 必填')
+  const workflowId = typeof p.workflowId === 'string' && p.workflowId.trim() ? p.workflowId.trim() : undefined
+  return { personId, workflowId }
+}
+
+/** person/directions/resolve 入参校验（RPC 边界：action 白名单；directionId 在 person 命名空间内） */
+function directionsResolveParams(params: unknown): { personId: string; directionId: string; action: 'confirm' | 'reject' } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  const directionId = typeof p.directionId === 'string' ? p.directionId.trim() : ''
+  const action = p.action
+  if (!personId) throw new Error('personId 必填')
+  if (!directionId) throw new Error('directionId 必填')
+  if (action !== 'confirm' && action !== 'reject') throw new Error('action 必须为 confirm/reject')
+  return { personId, directionId, action }
 }
 
 /** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -1230,8 +1267,19 @@ export async function startServer(opts: {
   // Agent 事件推送：广播（个人工具单客户端；与 data.* 事件同语义）
   // Stage Task 完成钩子（BUG-006 修复）：带 workflowId/stageId 的任务 done →
   //   fact_collection 调 onFactCollectionReady（确定性 guard：候选不足 → failed，不信任 Agent 自报）
+  //   direction_exploration 调 onExplorationDone（契约 v0.2 §4.1：intake 内提案登记 → guard）
   //   → 广播 workflowChanged（UI 重拉投影）。引擎侧闭环，不依赖 UI 事件处理。
-  const stageTasks = new Map<string, { workflowId: string; stageId: StageId }>()
+  // intake（§1.6）：agent/start 时记录 directions/ 既有文件名快照；done 只消费快照外新文件——
+  //   历史提案（含此前登记失败的）不被后续 done 自动重复消费。
+  const stageTasks = new Map<string, { workflowId: string; stageId: StageId; personId: string; intake: string[] }>()
+  /** 本次执行新产生的提案文件（§1.6 intake boundary：当前目录 - 启动时快照；目录缺失 → 空） */
+  const currentDirectionFiles = (personId: string): string[] => {
+    try {
+      return workspace.listMarkdown(`persons/${personId}/directions`)
+    } catch {
+      return []
+    }
+  }
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
@@ -1242,6 +1290,19 @@ export async function startServer(opts: {
           const next = onFactCollectionReady(workspace, ref.workflowId)
           if (next) {
             logger.info(`Stage 完成钩子：${ref.workflowId} fact_collection → ${next.stages.find((s) => s.id === 'fact_collection')?.status}（Agent 任务 ${taskId} done）`)
+            broadcast({ event: EVENTS.workflowChanged })
+          }
+        } else if (ref.stageId === 'direction_exploration') {
+          const result = onExplorationDone(workspace, ref.workflowId, freshIntakeFiles(currentDirectionFiles(ref.personId), ref.intake))
+          if (result.workflow) {
+            // §1.5：登记拒绝 → logger.error + error.engine（管线错误用户可见；提案保留原样）
+            if (result.rejected.length > 0) {
+              const message = formatRegistrationRejectionMessage(DIRECTION_SPEC.artifactType, result.rejected)
+              logger.error(message)
+              broadcast({ event: EVENTS.engineError, data: { message } })
+            }
+            const status = result.workflow.stages.find((s) => s.id === 'direction_exploration')?.status
+            logger.info(`Stage 完成钩子：${ref.workflowId} direction_exploration → ${status}（登记 ${result.registered.length} 条，拒绝 ${result.rejected.length} 条；Agent 任务 ${taskId} done）`)
             broadcast({ event: EVENTS.workflowChanged })
           }
         }
@@ -1325,6 +1386,21 @@ export async function startServer(opts: {
     [METHODS.resetPerson]: (params) => resetPerson(workspace, personIdParams(params)),
     [METHODS.completePersonInit]: (params) => completePersonInit(workspace, personIdParams(params)),
     [METHODS.deletePerson]: (params) => deletePerson(workspace, personIdParams(params)),
+    // ─── v0.2 方向池（Stage Artifact Lifecycle：投影 + 用户裁决；§4.3 幂等语义由 storage 层保证）──
+    [METHODS.directionsList]: (params) => {
+      const p = directionsListParams(params)
+      return listStageArtifacts(workspace, DIRECTION_SPEC, p.personId, p.workflowId ? { workflowId: p.workflowId } : {})
+    },
+    [METHODS.directionsResolve]: (params) => {
+      const p = directionsResolveParams(params)
+      const result = resolveStageArtifact(workspace, DIRECTION_SPEC, p.personId, p.directionId, p.action)
+      // 契约 §五：裁决复用 workflow.changed（仅真实状态变更广播；同动作幂等不打扰）
+      if (result.ok && !result.unchanged) {
+        logger.info(`方向裁决：${p.personId} ${p.directionId} → ${result.artifact.state}`)
+        broadcast({ event: EVENTS.workflowChanged })
+      }
+      return result
+    },
     // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写 workflows/，UI 只投影）──
     [METHODS.workflowStart]: (params) => startWorkflow(workspace, workflowStartParams(params)),
     [METHODS.workflowGet]: (params) => {
@@ -1338,6 +1414,12 @@ export async function startServer(opts: {
       return advanceWorkflow(workspace, p.workflowId, p.gateId)
     },
     [METHODS.workflowAbort]: (params) => abortWorkflow(workspace, workflowIdParams(params)),
+    [METHODS.workflowRestage]: (params) => {
+      const workflow = restageWorkflow(workspace, workflowIdParams(params))
+      logger.info(`workflow/restage：${workflow.id} currentStage → running（用户重跑当前阶段；方向池不重置）`)
+      broadcast({ event: EVENTS.workflowChanged })
+      return workflow
+    },
     [METHODS.resumeExtract]: (params) => {
       const p = extractResumeParams(params)
       // 双通道：pdfBase64 → 本地文本层（免费离线）；pages → 逐页视觉（UI 已渲染多页图）
@@ -1451,9 +1533,24 @@ export async function startServer(opts: {
         },
         workspace.paths.root,
       )
-      // 注册 Stage Task 完成钩子（BUG-006：Agent done → onFactCollectionReady → workflowChanged）
+      // 注册 Stage Task 完成钩子（BUG-006：Agent done → 按 stage 分派状态钩子 → workflowChanged）
       if (p.workflowId !== undefined && p.stageId !== undefined) {
-        stageTasks.set(taskId, { workflowId: p.workflowId, stageId: p.stageId as StageId })
+        const wf = getWorkflow(workspace, p.workflowId)
+        // intake（§1.6）：仅 direction_exploration 需要提案消费边界（start 时快照既有文件名）
+        let intake: string[] = []
+        if (p.stageId === 'direction_exploration') {
+          try {
+            intake = workspace.listMarkdown(`persons/${wf?.personId ?? p.personId ?? ''}/directions`)
+          } catch {
+            intake = []
+          }
+        }
+        stageTasks.set(taskId, {
+          workflowId: p.workflowId,
+          stageId: p.stageId as StageId,
+          personId: wf?.personId ?? p.personId ?? '',
+          intake,
+        })
       }
       return {
         taskId,
