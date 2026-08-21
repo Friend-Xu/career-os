@@ -96,8 +96,43 @@ Agent 实际行为（Stage 2 direction_exploration Envelope 注入）：
 UI/components/workbench/workflow-card.tsx   ← BUG-008 修复（本轮唯一产品改动）
 ```
 
-## 第五轮验证重点（移植后）
+## 第五轮验证结果（2026-08-21，测试区实测）
 
-1. UI 全链路回归：发起 → Path A Agent 收集 → 确认候选 → 确认并继续 → Stage 2 + 横幅消失（BUG-007 UI 侧已在第四轮确认，重跑只为确认 BUG-008 无回归）
-2. failed workflow 卡片：显示「阶段 1 / 4」+「重新发起」按钮 → 点击后 abort + 新 workflow Path A
-3. 观察记录复核：多 active 场景 UI 单卡行为是否符合预期
+### BUG-008 ✅ FIXED 确认
+
+| 验证项 | 结果 |
+|--------|------|
+| failed 卡进度 | ✅ 00004「阶段 1 / 4」（不再 0/4） |
+| failed Chip | ✅ 「阶段失败」（去掉空话「可重试」）+ 失败原因文案 |
+| 「重新发起」按钮 | ✅ 点击 → abort toast + start toast（Path B waiting_gate）链式生效 |
+| 多 active 单卡行为 | ✅ abort 00004 后 00005 上位（「阶段 2 / 4 · Agent 正在工作」）——观察记录符合预期 |
+
+### 全链路回归 ✅
+
+| 验证项 | 结果 |
+|--------|------|
+| 清理遗留 active 后唯一卡（00010 waiting_gate） | ✅「阶段 1 / 4 · 等待你的确认」 |
+| 点「确认并继续」→ advance | ✅ toast「已进入阶段 direction_exploration（方向探索）」+ 卡片「阶段 2 / 4 · Agent 正在工作」 |
+| BUG-007 联动无回归 | ✅ manifest 已 completed（幂等重校验通过） |
+
+### 新 BUG-009（本轮发现，已修复开发区）
+
+**workflow 卡候选文案双失真**（页面刷新场景）：
+1. `initCandidates` 是初始化会话态缓存——页面刷新后为空 → 引擎侧有 6 条 pending（兴趣/约束），卡片却显示「当前无待确认候选」
+2. 文案未考虑「画像已齐备」场景——Path B guard 允许快照齐备时直接 waiting_gate（advance 的 evaluator 只看快照三件），但文案仍说「不足以完成画像登记，请先补充采集」——advance 实际会直接成功，文案误导
+
+修复（UI/components/workbench/workflow-card.tsx）：
+- `useEffect` 挂载时 `loadInitCandidates(personId)`（候选源与引擎同步）
+- gateCopy 新增优先分支：`initStatus !== 'pending'`（manifest completed）→「画像已齐备——确认后直接进入下一阶段」
+
+## 移植清单（测试区，第六轮验证）
+
+```
+UI/components/workbench/workflow-card.tsx   ← BUG-009 修复
+```
+
+## 第六轮验证重点（移植后）
+
+1. 页面刷新后 workflow 卡候选文案与引擎一致（有 6 条 pending 兴趣/约束 → 应显示对应分支或齐备分支）
+2. initStatus=active（画像齐备）时 waiting_gate 文案「画像已齐备——确认后直接进入下一阶段」
+3. 初始化中档案（initStatus=pending）回归：三分支文案按候选类别正确渲染
