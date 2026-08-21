@@ -38,6 +38,7 @@ import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
+import { registerPendingRoleProposals, submitRoleProposal, watchRoleProposals, type RoleProposalInput } from './storage/role-proposal-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
@@ -93,6 +94,9 @@ async function main(args: string[]): Promise<void> {
     if (clRegistered > 0) logger.info(`Cover Letter 登记：${clRegistered} 个求职信文件分配系统 ID（cl_YYYYMMDD_NNNNN）`)
     const clpRegistered = registerPendingCoverLetterProposals(ws)
     if (clpRegistered > 0) logger.info(`Cover Letter 提案登记：${clpRegistered} 个提案文件分配系统 ID（clp_YYYYMMDD_NNNNN）`)
+    // ─── Role 补登（roles-contract v0.2）：引擎离线期间 Agent 手工写入的 registered 提案 → 投影 roles.md（幂等）
+    const roleRegistered = registerPendingRoleProposals(ws)
+    if (roleRegistered > 0) logger.info(`Role 提案投影：${roleRegistered} 个 registered 提案并入 knowledge/roles.md`)
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)
@@ -199,6 +203,18 @@ async function main(args: string[]): Promise<void> {
       if (!file) throw new Error('--derive-submit 需要 {json文件}')
       const input = JSON.parse(readFileSync(file, 'utf8')) as DerivationProposalInput
       console.log(JSON.stringify(submitDerivationProposal(ws, input), null, 2))
+      return
+    }
+
+    // ─── Role Bridge（--role-submit {file}）：岗位提案 Agent 消费通道（roles-contract.md v0.2——
+    //      Agent 从 JD/尽调提取岗位技能需求提交，Engine 校验登记投影 knowledge/roles.md；
+    //      校验失败 throw（错误给 Agent 看拦截原因））
+    if (args.includes('--role-submit')) {
+      const idx = args.indexOf('--role-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--role-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as RoleProposalInput
+      console.log(JSON.stringify(submitRoleProposal(ws, input), null, 2))
       return
     }
 
@@ -361,6 +377,11 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.poolChanged })
         logger.info('knowledge/ 变更：已广播 poolChanged（图谱按需重扫）')
       }))
+      // role-proposals/ 变更 → 补登投影 + poolChanged（岗位提案登记后 roles.md 变化；UI 差距分析/图谱重拉）
+      watchRoleProposals(ws, guarded('role-proposals', (parsed) => {
+        broadcast({ event: EVENTS.poolChanged })
+        logger.info(`role-proposals/ 变更：投影 ${parsed.length} 个提案并广播 poolChanged`)
+      }))
       // resumes/ 变更只发信号（M3.5：版本系统——drafts/ 组装登记 + documents/ 变更都触发）
       watchResumes(ws, guarded('resumes', (parsed) => {
         broadcast({ event: EVENTS.resumesChanged })
@@ -412,6 +433,7 @@ async function main(args: string[]): Promise<void> {
       logger.info('proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('strength-proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('derivation-proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('role-proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('portfolio/ 监听已启用（watcher.enabled=true）')
       logger.info('interviews/ 监听已启用（watcher.enabled=true）')
       logger.info('cover-letters/ 监听已启用（watcher.enabled=true）')
