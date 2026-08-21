@@ -10,7 +10,7 @@ import {
   onFactCollectionReady,
   isPersonInitComplete,
 } from '../storage/workflow-registry.ts'
-import { createPersonSession } from '../storage/person-watcher.ts'
+import { createPersonSession, scanPersons } from '../storage/person-watcher.ts'
 import { compileStageTask } from '../storage/workflow-registry.ts'
 
 let wsSeq = 0
@@ -161,6 +161,8 @@ test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPL
   const reloaded = getWorkflow(ws, workflow.id)!
   assert.equal(reloaded.currentStage, 'fact_collection')
   assert.equal(reloaded.stages.length, 1)
+  // BUG-007 负向：advance 被拒不联动 init_state（仍 in_progress）
+  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'in_progress')
 })
 
 test('advance：person-init 完成 → 推进 Stage 2 running（Golden Flow 确认路径）', () => {
@@ -182,6 +184,27 @@ test('advance：person-init 完成 → 推进 Stage 2 running（Golden Flow 确�
     assert.equal(reloaded.stages[1]!.status, 'running')
     assert.equal(reloaded.currentStage, 'direction_exploration')
   }
+})
+
+test('BUG-007：advance 过 confirm_person_facts → manifest init_state 联动 completed（引擎登记权威时刻）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedPendingCandidates(ws, pid)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  // advance 前：init_state = in_progress（createPersonSession 默认）
+  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'in_progress')
+  seedCompleteSnapshots(ws, pid)
+  const res = advanceWorkflow(ws, workflow.id)
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+  // gate passed → 引擎联动 manifest（用户确认事实的权威时刻；UI 的「完成初始化」按钮为另一正向路径）
+  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'completed')
+  // 联动幂等：再次 advance 同 gate → GATE_PASSED，init_state 不退化
+  const res2 = advanceWorkflow(ws, workflow.id, 'confirm_person_facts')
+  assert.equal(res2.ok, false)
+  if (res2.ok) return
+  assert.equal(res2.code, 'ILLEGAL_STATE') // Stage 2 已 running
+  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'completed')
 })
 
 test('advance：running 状态推进 → ILLEGAL_STATE 拒绝（用户不能决定完成）', () => {

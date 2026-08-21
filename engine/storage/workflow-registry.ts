@@ -11,7 +11,7 @@
  * - v0.1 单一类型 career_direction，四 Stage 串行；Stage 2-4 本轮只定义不深改业务（§十）。
  */
 import type { Workspace } from './workspace.ts'
-import { scanPersons } from './person-watcher.ts'
+import { completePersonInit, scanPersons } from './person-watcher.ts'
 import { watch } from 'chokidar'
 
 // ─── 类型（契约 §一/§二）──────────────────────────────────────────────────
@@ -543,6 +543,12 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
 
   // 推进：当前 → completed（gate passed）；创建下一 Stage
   const ts = now.toISOString()
+  // BUG-007 修复：confirm_person_facts gate passed = 用户确认事实的权威时刻 →
+  //   联动 manifest init_state → completed（Engine Registration 拥有 Canonical State；
+  //   复用 completePersonInit 单一门禁——advance 第 2 步已判三件齐备，此处重校验同源不会抛）
+  if (cur.id === 'fact_collection' && spec.gate === 'confirm_person_facts') {
+    completePersonInit(ws, w.personId)
+  }
   const stages = w.stages.map((s, i) =>
     i === curIdx
       ? {
