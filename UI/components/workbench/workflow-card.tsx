@@ -36,8 +36,8 @@ export function WorkflowCard() {
           <Button
             size="small"
             variant="outlined"
-            disabled={!person.personId || person.initStatus === 'pending'}
-            title={person.initStatus === 'pending' ? '完成基础档案后可发起工作流' : undefined}
+            disabled={!person.personId}
+            title="发起「职业方向」工作流：阶段 1 收集个人事实（含候选确认）→ 方向探索 → 评估 → 推荐"
             onClick={() => void startWorkflow('帮我确定职业方向')}
             sx={{ fontSize: 11.5 }}
           >

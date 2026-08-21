@@ -39,7 +39,7 @@ import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext,
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
 import { registerPendingRoleProposals, submitRoleProposal, watchRoleProposals, type RoleProposalInput } from './storage/role-proposal-registry.ts'
-import { scanWorkflows, type WorkflowState } from './storage/workflow-registry.ts'
+import { watchWorkflows } from './storage/workflow-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
@@ -96,7 +96,7 @@ async function main(args: string[]): Promise<void> {
     const clpRegistered = registerPendingCoverLetterProposals(ws)
     if (clpRegistered > 0) logger.info(`Cover Letter 提案登记：${clpRegistered} 个提案文件分配系统 ID（clp_YYYYMMDD_NNNNN）`)
     // ─── Role 补登（roles-contract v0.2）：引擎离线期间 Agent 手工写入的 registered 提案 → 投影 roles.md（幂等）
-    const roleRegistered = registerPendingRoleProposals(ws)
+    const roleRegistered = registerPendingRoleProposals(ws).registered
     if (roleRegistered > 0) logger.info(`Role 提案投影：${roleRegistered} 个 registered 提案并入 knowledge/roles.md`)
 
     if (args.includes('--scan-decisions')) {
