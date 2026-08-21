@@ -46,6 +46,7 @@ import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts
 import type { TraceabilityContext } from '../../engine/ir/traceability.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { WorkflowState } from '../../engine/storage/workflow-registry.ts'
+import type { StageArtifact } from '../../engine/ir/schema.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
@@ -203,6 +204,9 @@ interface AppState {
   activeWorkingCopyId: string | null;
   /** 工作流（Career Workflow Contract v0.1）：workflows/ 引擎单方写，UI 只投影 + Human Action */
   workflows: WorkflowState[];
+  /** 方向池投影（v0.2：workflowId → StageArtifact[]，Store 层按 workflow scope 管理——Artifact 归属 workflow_id+stage_id，
+   *  组件按 active workflow 取 key，不做跨 workflow 过滤；person/directions/list 引擎实时派生） */
+  directionsByWorkflow: Record<string, StageArtifact[]>;
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
   claimCoverage: Record<string, ClaimCoverageRow[]>;
   /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
@@ -304,6 +308,9 @@ interface AppState {
   advanceWorkflow: (workflowId: string, gateId?: string) => Promise<void>;
   /** 用户终止工作流（workflow/abort） */
   abortWorkflow: (workflowId: string) => Promise<void>;
+  /** 方向裁决（v0.2：person/directions/resolve——UI 只表达 Human Action，状态机判定归引擎；
+   *  同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆；结果经 workflowChanged → pullDirections 重投影） */
+  resolveDirection: (directionId: string, action: 'confirm' | 'reject') => Promise<void>;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setJdAddOpen: (open: boolean) => void;
@@ -316,8 +323,10 @@ interface AppState {
    *  type=任务识别（P2 状态条显示）；与 sendAgentMessage（聊天入口，当前现场）职责分离 */
   startAgentTask: (prompt: string, opts?: { type?: string; title?: string; taskRequest?: AgentTaskRequest }) => void;
   expandToFullAgent: () => void;
-  /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示） */
-  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string } }) => void;
+  /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示）
+   *  executionContext 双平面（BUG-010 裁决）：conversation=用户主动对话（受 Person Capability Gate）；
+   *  workflow_stage=Workflow Stage 执行（控制平面任务，授权来源=用户创建 workflow——只受 Stage evaluator/gate 约束，不经过对话能力门禁） */
+  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string }; executionContext?: 'conversation' | 'workflow_stage' }) => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -564,6 +573,7 @@ export const useAppStore = create<AppState>()(
       activeWorkingCopyId: null,
       /** 工作流（Career Workflow Contract v0.1）：Engine 单方写，UI 投影 */
       workflows: [],
+      directionsByWorkflow: {},
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
       claimCoverage: {},
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
@@ -811,7 +821,7 @@ export const useAppStore = create<AppState>()(
       // Path A：当前 Stage running——发用户目标原文；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
       // （Agent Execution Boundary：UI 不拼阶段指令，引擎是唯一 Stage 编译器）
       if (res.path === 'A' && wf.currentStage) {
-        get().sendAgentMessage(statement, { silent: true, stageRef: { workflowId: wf.id, stageId: wf.currentStage } })
+        get().sendAgentMessage(statement, { silent: true, stageRef: { workflowId: wf.id, stageId: wf.currentStage }, executionContext: 'workflow_stage' })
       }
     } catch (err) {
       useToastStore.getState().push('warning', `发起工作流失败：${err instanceof Error ? err.message : String(err)}`)
@@ -839,7 +849,7 @@ export const useAppStore = create<AppState>()(
       )
       // 新 Stage running：发简短提示；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
       if (res.nextStage && res.workflow.status === 'active') {
-        get().sendAgentMessage(`工作流已进入阶段 ${stageLabel(res.nextStage)}。`, { silent: true, stageRef: { workflowId: res.workflow.id, stageId: res.nextStage } })
+        get().sendAgentMessage(`工作流已进入阶段 ${stageLabel(res.nextStage)}。`, { silent: true, stageRef: { workflowId: res.workflow.id, stageId: res.nextStage }, executionContext: 'workflow_stage' })
       }
       void pullWorkflows()
     } catch (err) {
@@ -859,6 +869,36 @@ export const useAppStore = create<AppState>()(
       void pullWorkflows()
     } catch (err) {
       useToastStore.getState().push('warning', `终止失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 方向裁决（v0.2 §4.3：UI 只表达 Human Action；引擎判定幂等/反动作/终态不可逆——
+   *  UI 不维护 confirmed 计数与 allowed transition，投影以引擎结果为准） */
+  resolveDirection: async (directionId, action) => {
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：方向裁决需连接引擎')
+      return
+    }
+    const personId = get().currentPerson().personId
+    const active = get().workflows.find((w) => w.status === 'active')
+    if (!personId || !active) return
+    try {
+      const res = await engine.resolveDirection(personId, directionId, action)
+      if (res.ok) {
+        useToastStore.getState().push(
+          res.unchanged ? 'info' : 'success',
+          res.unchanged
+            ? `方向已${action === 'confirm' ? '保留' : '排除'}（重复操作，状态未变）`
+            : `方向已${action === 'confirm' ? '保留' : '排除'}`,
+        )
+      } else if (res.code === 'ALREADY_RESOLVED') {
+        useToastStore.getState().push('warning', `该方向已裁决（${res.currentState === 'confirmed' ? '已保留' : '已排除'}），终态不可逆`)
+      } else {
+        useToastStore.getState().push('warning', `方向不存在或已失效（${res.code}）`)
+      }
+      void pullDirections(active.id)
+    } catch (err) {
+      useToastStore.getState().push('warning', `裁决失败：${err instanceof Error ? err.message : String(err)}`)
     }
   },
 
@@ -1018,10 +1058,13 @@ export const useAppStore = create<AppState>()(
     // ADR-020：发送合并预置 TaskRequest（startAnalysis 暂存；显式传参优先），发送后清空
     const taskRequest = opts?.taskRequest ?? pendingTaskRequest
     if (taskRequest) set({ pendingTaskRequest: undefined })
-    // Person Capability Gate：当前人初始化中且非初始化会话 → 拒绝新消息（历史可看，发送前拦截）
+    // Person Capability Gate（仅 conversation 平面；BUG-010 裁决：workflow_stage 控制平面任务不经过对话能力门禁——
+    // 授权来源 = 用户创建 workflow，Person 数据前置由 Stage evaluator/contract 下沉，UI 不提前猜）：
+    // 当前人初始化中且非初始化会话 → 拒绝新消息（历史可看，发送前拦截）
+    const isWorkflowStage = opts?.executionContext === 'workflow_stage'
     const currentPerson = get().currentPerson()
     const gateSessionId = get().currentSessionId
-    if (currentPerson.initStatus === 'pending' && gateSessionId !== get().initSessionId) {
+    if (!isWorkflowStage && currentPerson.initStatus === 'pending' && gateSessionId !== get().initSessionId) {
       useToastStore.getState().push('warning', `完成「${currentPerson.name}」的基础档案后可继续对话`)
       return
     }
@@ -2631,6 +2674,22 @@ async function pullWorkflows(): Promise<void> {
     const personId = useAppStore.getState().currentPerson().personId
     const list = await engine.listWorkflows(personId ?? undefined)
     useAppStore.setState({ workflows: list })
+    // v0.2 方向池联动：active workflow 的方向池随工作流状态同步（Store 层 scope，组件不拉取）
+    const active = list.find((w) => w.status === 'active')
+    if (active) void pullDirections(active.id)
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 方向池投影（v0.2：person/directions/list 按 workflow 拉取；Store 层过滤，组件只取 key） */
+async function pullDirections(workflowId: string): Promise<void> {
+  if (!engine) return
+  try {
+    const personId = useAppStore.getState().currentPerson().personId
+    if (!personId) return
+    const list = await engine.listDirections(personId, workflowId)
+    useAppStore.setState((s) => ({ directionsByWorkflow: { ...s.directionsByWorkflow, [workflowId]: list } }))
   } catch {
     // offline：保持现有数据
   }

@@ -6,7 +6,6 @@
 ---
 
 ## 〇、L2-8a：真实 Agent 链路 Smoke（测试区验证，2026-08-22）
-
 **目标**：`agent/start → Agent 产出 Proposal → done → Engine intake → Registration → waiting_gate → resolve → advance → Stage 3` 真实串链（单测为白盒直调，此处走真实 WS 端口 + 真实文件系统 + 真实 SDK 事件流：stageTasks 注册 / done 钩子分派 / error.engine 广播 / workflowChanged 广播）。
 
 **实现**：`engine/tests/agent-golden-flow-smoke.mjs` + `engine/tests/fixtures/fake-claude.mjs`（受控假 CLI）。
@@ -73,7 +72,26 @@
 - 引擎 tsc：0 错；UI tsc：0 错
 - Stage 1 零改动回归：person-watcher / candidates 链未触碰（回迁评估 ADR 触发条件未到）
 
+## 五·五、UX 轮（UI-1/UI-2 + R10，2026-08-22 测试区 Playwright）
+
+### BUG-010：advance 后 Stage 2 自动 Agent 触发被 Person Capability Gate 拦截（UI 行为层，已修复）
+
+- 现象：person init pending → 发起工作流 → Path B → advance → Stage 2 running → UI 自动 `sendAgentMessage(stageRef)` 被 Gate 拦截（app-store 提前 return）→ Agent 任务从未发出，工作流卡 running（无 done/failed/出口）
+- 根因：Gate 面向"用户对话"设计；控制平面 Stage 任务（silent + stageRef）走同一入口被误拦
+- **裁决（用户）**：`executionContext: 'workflow_stage'` 显式双平面——Stage 执行绕过 Person Capability Gate（授权来源 = 用户创建 workflow，Person 数据前置下沉 Stage evaluator）；conversation 平面 Gate 保留。Workflow start 不检查 init（Stage 输入由 evaluator/gate 表达，UI 不提前猜）
+- 修复：`sendAgentMessage` opts +`executionContext`；Gate 条件 `!isWorkflowStage && initStatus==='pending'`；start/advance 两处 stageRef 调用标记 workflow_stage
+- **R10 验证（双平面隔离测试）**：init pending 下 advance → stageRef agent/start 自动触发（引擎日志 done 出现）✓；conversation 平面 Gate 保留 ✓
+
+### UI-1/UI-2 验收（Playwright）
+
+| 项 | 结果 |
+|----|------|
+| UI-1 方向池投影：claim / evidence_refs 原样 / state 芯片 / 无按钮（首轮） | ✅ |
+| UI-2 确认 → 已保留 + toast + 按钮消失；排除 → 已排除；终态无动作按钮 | ✅ |
+| direction scope：仅 active workflow 已登记 artifact（暂存提案无身份不出现） | ✅ |
+
 ## 六、提交链
 
 - 开发区 main：`feat: Career Workflow Control Plane v0.2（Stage Artifact Lifecycle + 方向池闭环）——L2-1~L2-8`
+- 开发区 main：`test(engine): L2-8a 真实 Agent 链路 Smoke`（320150d）
 - 契约 v1.2 + 调研笔记 + 本台账随附（docs/ 需 `git add -f`）

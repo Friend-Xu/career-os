@@ -50,6 +50,8 @@ import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engi
 import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../engine/ir/cover-letter.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
 import type { WorkflowState, AdvanceResult } from '../../engine/storage/workflow-registry.ts'
+import type { StageArtifact } from '../../engine/ir/schema.ts'
+import type { ResolveStageArtifactResult } from '../../engine/storage/stage-artifact-registry.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskType, ContextReference, OutputTarget, AgentContextBundle } from '../../engine/ir/agent-task.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
@@ -814,6 +816,18 @@ export class EngineClient {
     path: 'A' | 'B'
   }> {
     return this.rpc(METHODS.workflowStart, params)
+  }
+
+  /** 方向池投影（v0.2：person/directions/list——只返回已登记 artifact，暂存提案无身份不出现；
+   *  workflowId 可选过滤（缺省 = 该人全 workflow 累积池） */
+  listDirections(personId: string, workflowId?: string): Promise<StageArtifact[]> {
+    return this.rpc(METHODS.directionsList, { personId, ...(workflowId ? { workflowId } : {}) })
+  }
+
+  /** 方向裁决（v0.2：person/directions/resolve——同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆；
+   *  UI 只表达 Human Action，状态机判定归引擎） */
+  resolveDirection(personId: string, directionId: string, action: 'confirm' | 'reject'): Promise<ResolveStageArtifactResult> {
+    return this.rpc(METHODS.directionsResolve, { personId, directionId, action })
   }
 
   getWorkflow(workflowId: string): Promise<WorkflowState> {
