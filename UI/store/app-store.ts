@@ -45,6 +45,7 @@ import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
 import type { ArtifactTimelineEvent } from '../../engine/ir/artifact-timeline.ts'
 import type { TraceabilityContext } from '../../engine/ir/traceability.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
+import type { WorkflowState } from '../../engine/storage/workflow-registry.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
@@ -200,6 +201,8 @@ interface AppState {
   workingCopies: WorkingCopy[];
   /** 当前编辑对象（P2.3：编辑空间读写的工作副本 id） */
   activeWorkingCopyId: string | null;
+  /** 工作流（Career Workflow Contract v0.1）：workflows/ 引擎单方写，UI 只投影 + Human Action */
+  workflows: WorkflowState[];
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
   claimCoverage: Record<string, ClaimCoverageRow[]>;
   /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
@@ -295,6 +298,12 @@ interface AppState {
   completeInitialization: (personId: number) => Promise<void>;
   /** 物理删除 Person（dev/测试清理）：引擎 persons/{id}/ 整目录移除 + 本地状态清理；引擎离线拒绝（避免本地删了被 persons/list 复活） */
   deletePerson: (personId: number) => Promise<void>;
+  /** 发起工作流（Career Workflow Contract v0.1）：workflow/start（Goal + Stage 1；Path A/B 由引擎判定） */
+  startWorkflow: (statement: string) => Promise<void>;
+  /** 用户确认 Gate 推进（workflow/advance：四步校验，失败拒绝 + toast 缺件） */
+  advanceWorkflow: (workflowId: string, gateId?: string) => Promise<void>;
+  /** 用户终止工作流（workflow/abort） */
+  abortWorkflow: (workflowId: string) => Promise<void>;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setJdAddOpen: (open: boolean) => void;
@@ -553,6 +562,8 @@ export const useAppStore = create<AppState>()(
       /** 工作副本（P2.2）：用户创作对象（working-copies/） */
       workingCopies: [],
       activeWorkingCopyId: null,
+      /** 工作流（Career Workflow Contract v0.1）：Engine 单方写，UI 投影 */
+      workflows: [],
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
       claimCoverage: {},
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
@@ -773,6 +784,80 @@ export const useAppStore = create<AppState>()(
       useToastStore.getState().push('success', `已删除「${target.name}」及其全部资产`)
     } catch (err) {
       useToastStore.getState().push('warning', `删除失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 发起工作流（Career Workflow Contract v0.1）：workflow/start——Goal + Stage 1；
+   *  Path A（无候选）启动 fact_collection task；Path B（有 pending candidates）直接 waiting_gate（不重新收集） */
+  startWorkflow: async (statement) => {
+    const person = get().currentPerson()
+    if (!person.personId) {
+      useToastStore.getState().push('warning', '该档案未落盘引擎，无法发起工作流')
+      return
+    }
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：发起工作流需连接引擎')
+      return
+    }
+    try {
+      const res = await engine.startWorkflow({ type: 'career_direction', personId: person.personId, statement })
+      const wf = res.workflow
+      useToastStore.getState().push(
+        'success',
+        res.path === 'B'
+          ? `工作流已开始（已有候选待确认——阶段 1/4 等待你的确认）`
+          : `工作流已开始（阶段 1/4 事实收集——Agent 正在收集）`,
+      )
+      // Path A：当前 Stage running，UI 按 Stage taskTemplate 发起 agent/start（resumeSessionId 续接）
+      if (res.path === 'A' && wf.currentStage) {
+        get().sendAgentMessage(`【工作流阶段任务】${wf.currentStage}：${statement}`, { silent: true })
+      }
+    } catch (err) {
+      useToastStore.getState().push('warning', `发起工作流失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 用户确认 Gate 推进（workflow/advance）：四步校验由引擎裁决——用户只能表达"我要继续"，
+   *  不能决定"系统已完成"；失败 → toast 缺件清单，不假装推进 */
+  advanceWorkflow: async (workflowId, gateId) => {
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：推进工作流需连接引擎')
+      return
+    }
+    try {
+      const res = await engine.advanceWorkflow(workflowId, gateId)
+      if (!res.ok) {
+        useToastStore.getState().push('warning', `无法推进：${res.code}${res.missing.length > 0 ? `——${res.missing.join('；')}` : ''}`)
+        return
+      }
+      useToastStore.getState().push(
+        'success',
+        res.workflow.status === 'completed'
+          ? '工作流已完成'
+          : `已进入阶段 ${res.nextStage ?? ''}（${res.nextStage ? stageLabel(res.nextStage) : ''}）`,
+      )
+      // 新 Stage running：UI 按 Stage taskTemplate 发起 agent/start（resumeSessionId 续接）
+      if (res.nextStage && res.workflow.status === 'active') {
+        get().sendAgentMessage(`【工作流阶段任务】${res.nextStage}：${res.workflow.statement}`, { silent: true })
+      }
+      void pullWorkflows()
+    } catch (err) {
+      useToastStore.getState().push('warning', `推进失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 用户终止工作流（workflow/abort：append-only 审计） */
+  abortWorkflow: async (workflowId) => {
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：终止工作流需连接引擎')
+      return
+    }
+    try {
+      await engine.abortWorkflow(workflowId)
+      useToastStore.getState().push('info', '工作流已终止（历史保留可审计）')
+      void pullWorkflows()
+    } catch (err) {
+      useToastStore.getState().push('warning', `终止失败：${err instanceof Error ? err.message : String(err)}`)
     }
   },
 
@@ -2554,6 +2639,34 @@ async function pullResumes(): Promise<void> {
   }
 }
 
+/** 工作流（Career Workflow Contract v0.1）：workflow/list 按当前人拉取；workflowChanged 事件驱动重拉 */
+async function pullWorkflows(): Promise<void> {
+  if (!engine) return
+  try {
+    const personId = useAppStore.getState().currentPerson().personId
+    const list = await engine.listWorkflows(personId ?? undefined)
+    useAppStore.setState({ workflows: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** Stage 展示标签（UI 投影；契约 §2.3 阶段名） */
+export function stageLabel(stageId: string): string {
+  switch (stageId) {
+    case 'fact_collection':
+      return '事实收集'
+    case 'direction_exploration':
+      return '方向探索'
+    case 'direction_evaluation':
+      return '方向评估'
+    case 'recommendation':
+      return '形成推荐'
+    default:
+      return stageId
+  }
+}
+
 /** 提案（M3.5.6）：proposals/list 全量拉取；proposalsChanged 事件驱动重拉 */
 async function pullProposals(): Promise<void> {
   if (!engine) return
@@ -2790,6 +2903,7 @@ export function connectEngine(): void {
       void pullCandidates()
       void pullJobLeads()
       void pullSalaryBenchmarks()
+      void pullWorkflows()
       void pullEvidence()
       void pullClaims()
       void pullClaimProposals()
@@ -2891,6 +3005,9 @@ export function connectEngine(): void {
   engine.on(EVENTS.salaryBenchmarksChanged, () => {
     void pullSalaryBenchmarks()
     void pullValuationCard()
+  })
+  engine.on(EVENTS.workflowChanged, () => {
+    void pullWorkflows()
   })
   engine.on(EVENTS.personsChanged, () => {
     // P1 Person Aggregate：identity/career_profile/skill_inventory 变化 → 重拉 persons/list

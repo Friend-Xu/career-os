@@ -23,6 +23,7 @@ import { belongsToPerson } from '../utils/ownership'
 import { latestPersonDirection } from '../utils/direction-state'
 import { useNextActions } from '../utils/next-actions'
 import { ProfileView } from '../components/workbench/profile-view'
+import { WorkflowCard } from '../components/workbench/workflow-card'
 import { POOL_HEALTH } from '../data/mock-data'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { MainWidthMode, RiskLevel } from '../types'
@@ -554,6 +555,7 @@ export function WorkbenchPage() {
 
         <Box sx={{ mb: 3 }}>
           <InitializationBanner />
+          <WorkflowCard />
           <TodaySection />
         </Box>
 

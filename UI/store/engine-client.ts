@@ -49,6 +49,7 @@ import type { PortfolioProject, PortfolioProposal, PortfolioStatus } from '../..
 import type { InterviewQa, InterviewProposal, InterviewStatus } from '../../engine/ir/interview.ts'
 import type { CoverLetter, CoverLetterProposal, CoverLetterStatus } from '../../engine/ir/cover-letter.ts'
 import type { ResumeDiff } from '../../engine/storage/resume-watcher.ts'
+import type { WorkflowState, AdvanceResult } from '../../engine/storage/workflow-registry.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskType, ContextReference, OutputTarget, AgentContextBundle } from '../../engine/ir/agent-task.ts'
 import type { ArtifactSummary } from '../../engine/ir/artifact-summary.ts'
@@ -803,6 +804,31 @@ export class EngineClient {
     return this.rpc<{ taskId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
   }
 
+  // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写，UI 只投影 + Human Action）──
+
+  startWorkflow(params: { type: 'career_direction'; personId: string; statement: string }): Promise<{
+    workflow: WorkflowState
+    path: 'A' | 'B'
+  }> {
+    return this.rpc(METHODS.workflowStart, params)
+  }
+
+  getWorkflow(workflowId: string): Promise<WorkflowState> {
+    return this.rpc(METHODS.workflowGet, { workflowId })
+  }
+
+  listWorkflows(personId?: string): Promise<WorkflowState[]> {
+    return this.rpc(METHODS.workflowList, personId ? { personId } : {})
+  }
+
+  advanceWorkflow(workflowId: string, gateId?: string): Promise<AdvanceResult> {
+    return this.rpc(METHODS.workflowAdvance, { workflowId, ...(gateId ? { gateId } : {}) })
+  }
+
+  abortWorkflow(workflowId: string): Promise<WorkflowState> {
+    return this.rpc(METHODS.workflowAbort, { workflowId })
+  }
+
   /** Agent 设置（settings/get：来自 config.json） */
   getAgentSettings(): Promise<{
     model?: string
@@ -816,8 +842,7 @@ export class EngineClient {
     map?: MapSettings
     document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
   }> {
-    return this.rpc(METHODS.settingsGet)
-  }
+    return this.rpc(METHODS.settingsGet)  }
 
   /** 更新 Agent 设置（settings/update：写回 config.json + 引擎内存，下次任务生效；undefined 字段不修改） */
   updateAgentSettings(patch: {
