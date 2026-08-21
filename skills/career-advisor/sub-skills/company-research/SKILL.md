@@ -247,11 +247,11 @@ Read `references/company-file-contract.md`，将尽调结论落盘为 `workspace
 
 报告末尾，Read `assets/tier3-user-checklist.md`，输出用户需要自己去确认的事项清单。
 
-**岗位入库（Roles 生产契约）**：尽调确认公司在招岗位时（如公司官方在招、JD 可见），把岗位登记进
-`workspace/career-advisor/knowledge/roles.md`——格式与 Producer Boundary 见
-`../../references/roles-contract.md`（`## 岗位名（公司名）` + 技能需求，来源标 `公司档案-{公司}`）。
+**岗位入库（Roles 生产契约 v0.2）**：尽调确认公司在招岗位时（如公司官方在招、JD 可见），通过引擎 CLI 桥提交岗位提案（**禁止直写 `knowledge/roles.md`**——v0.2 起该文件由 Engine 投影单方维护）：
+`bash -lc "node main.ts --role-submit {json文件}"`，载荷格式与校验规则见
+`../../references/roles-contract.md`（company 必须已登记档案 / source 必填 `公司档案-{公司}` / skills 非空）。
 岗位清单是公司岗位实例库：技能需求必须能从尽调文档回溯，禁止写文档之外的泛化技能；
-同公司同名岗位已登记则更新不重复建。
+同公司同名岗位已登记则提交更新载荷（引擎覆盖更新不重复建）。
 
 然后问一句：
 > "还想深挖哪个方面？"

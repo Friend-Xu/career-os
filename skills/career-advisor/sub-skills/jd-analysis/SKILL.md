@@ -135,7 +135,8 @@ Read `references/jd-parsing-guide.md` 和 `references/euphemism-dictionary.md`�
 
 输出按 `output-template.md` 阶段2格式。结尾问"要继续评估匹配度吗？"
 
-**岗位入库（Roles 生产契约）**：JD 拆解完成后，把岗位登记进 `workspace/career-advisor/knowledge/roles.md`（岗位清单）——格式与 Producer Boundary 见 `../../references/roles-contract.md`（`## 岗位名（公司名）` + `essential:/nice-to-have:` 技能需求，**每项必带 `（来源: JD-{公司}-{日期}）`**；公司名用 canonical 档案名；同公司同名岗位已登记则更新不重复建）。岗位清单是公司岗位实例库，不是市场通识库——技能需求必须能从本 JD 回溯，禁止写 JD 之外的泛化技能。
+**岗位入库（Roles 生产契约 v0.2）**：JD 拆解完成后，通过引擎 CLI 桥提交岗位提案（**禁止直写 `knowledge/roles.md`**——v0.2 起该文件由 Engine 投影单方维护）：
+`bash -lc "node main.ts --role-submit {json文件}"`，载荷格式与校验规则见 `../../references/roles-contract.md`（company 必须已登记档案 / source 必填 `JD-{公司}-{日期}` / skills 非空；校验失败会 throw，错误信息即拦截原因，修正后重提）。岗位清单是公司岗位实例库，不是市场通识库——技能需求必须能从本 JD 回溯，禁止写 JD 之外的泛化技能；同公司同名岗位已登记则提交更新载荷（引擎覆盖更新不重复建）。
 
 **岗位分析提交（Agent Output Contract v0.1 冻结）**：用户从岗位工作区发起完整分析时，除对话输出与决策摘要表（写 `decisions/`）外，把分析结果以「岗位分析提交」JSON（JDAnalysisProposal 契约）输出在回复中——引擎校验后写入岗位文件三段式（岗位理解/岗位门槛/岗位智能）。**禁止直接修改 `workspace/career-advisor/jobs/{日期}-{公司}-{岗位}.md` 文件**（写入所有权归 Engine，Agent 无 Artifact 写权限）。格式见 `../../references/jd-analysis-agent-output-contract.md`；JSON 直接输出文本行（不要放入代码块）：
 
