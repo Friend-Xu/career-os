@@ -481,6 +481,23 @@ export function completePersonInit(ws: Workspace, personId: string): { personId:
   return { personId, initState: 'completed' }
 }
 
+/** 对账循环（Reconciliation——借鉴 K8s：期望状态 = 门禁判定，实际状态 = manifest 标记，启动/周期拉齐）：
+ *  manifest init_state=completed 但三件快照缺件（历史遗留空壳，如测试区 person_001）→ 回滚 in_progress。
+ *  返回被回滚的 personId 清单（调用方记日志；UI 读 scanPersons 即见真实状态）。
+ *  幂等：快照齐备的人不受影响；无快照缺件时零写入。 */
+export function reconcilePersonInitStates(ws: Workspace): string[] {
+  const rolledBack: string[] = []
+  for (const p of scanPersons(ws)) {
+    if (p.initState !== 'completed') continue
+    const missing = INIT_COMPLETION_REQUIRED_SNAPSHOTS.filter((f) => !ws.exists(`persons/${p.personId}/snapshot/current/${f}`))
+    if (missing.length > 0) {
+      setManifestInitState(ws, p.personId, 'in_progress')
+      rolledBack.push(`${p.personId}（缺 ${missing.join('、')}）`)
+    }
+  }
+  return rolledBack
+}
+
 /** snapshot/current/*.md 摘要表 → 字段映射（缺表 → 空对象；值域非法字段丢弃） */
 export function parseSnapshotTable(md: string): Record<string, string> {
   const fields = parseSummaryTable(md)

@@ -23,7 +23,7 @@ import { watchClaimProposals } from './storage/claim-proposal-registry.ts'
 import { watchOpportunityProposals } from './storage/opportunity-proposal-registry.ts'
 import { watchWorkingCopies } from './storage/working-copy-registry.ts'
 import { watchKnowledge } from './storage/knowledge-watcher.ts'
-import { watchPersons } from './storage/person-watcher.ts'
+import { reconcilePersonInitStates, watchPersons } from './storage/person-watcher.ts'
 import { watchTargets } from './storage/target-watcher.ts'
 import { watchCandidatePool } from './storage/candidate-pool.ts'
 import { watchJobLeads } from './storage/job-leads.ts'
@@ -282,6 +282,15 @@ async function main(args: string[]): Promise<void> {
     if (placeholders > 0) {
       logger.info(`占位公司补账：为 ${placeholders} 个存量 JD 创建待尽调占位档案`)
       broadcast({ event: EVENTS.companiesChanged })
+    }
+
+    // ─── 画像对账（Reconciliation）：manifest completed 但三件快照缺件（历史空壳）→ 回滚 in_progress。
+    //      期望状态 = completePersonInit 门禁（快照齐备），实际状态 = manifest 标记——启动即拉齐一次，
+    //      UI 读 scanPersons 即见真实状态（不再出现"徽章说完成、workflow 说未完成"的分裂）。
+    const rolledBack = reconcilePersonInitStates(ws)
+    if (rolledBack.length > 0) {
+      logger.info(`画像对账：回滚 ${rolledBack.length} 个空壳完成档案——${rolledBack.join('；')}`)
+      broadcast({ event: EVENTS.personsChanged })
     }
 
     // ─── decisions/ 文件监听（全量重扫 → 重新投影 → 广播变更信号）──────────

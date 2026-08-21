@@ -805,8 +805,8 @@ export const useAppStore = create<AppState>()(
       useToastStore.getState().push(
         'success',
         res.path === 'B'
-          ? `工作流已开始（已有候选待确认——阶段 1/4 等待你的确认）`
-          : `工作流已开始（阶段 1/4 事实收集——Agent 正在收集）`,
+          ? `工作流已开始（已有候选待确认——阶段 1/${wf.totalStages} 等待你的确认）`
+          : `工作流已开始（阶段 1/${wf.totalStages} 事实收集——Agent 正在收集）`,
       )
       // Path A：当前 Stage running，UI 按 Stage taskTemplate 发起 agent/start（resumeSessionId 续接）
       if (res.path === 'A' && wf.currentStage) {

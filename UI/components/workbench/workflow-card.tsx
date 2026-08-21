@@ -12,6 +12,7 @@ import { useToastStore } from '../../store/toast-store'
  */
 export function WorkflowCard() {
   const workflows = useAppStore((s) => s.workflows)
+  const initCandidates = useAppStore((s) => s.initCandidates)
   const startWorkflow = useAppStore((s) => s.startWorkflow)
   const advanceWorkflow = useAppStore((s) => s.advanceWorkflow)
   const abortWorkflow = useAppStore((s) => s.abortWorkflow)
@@ -51,9 +52,22 @@ export function WorkflowCard() {
   const stageIdx = active.stages.findIndex((s) => s.id === active.currentStage)
   const cur = stageIdx >= 0 ? active.stages[stageIdx] : undefined
   const progress = active.stages.filter((s) => s.status === 'completed').length
-  const total = active.stages.length
+  const total = active.totalStages ?? active.stages.length
   const waitingGate = cur?.status === 'waiting_gate'
   const running = cur?.status === 'running'
+
+  // BUG-003 修复：waiting_gate 文案按实际候选类别渲染（不写死"教育/经历/技能/偏好"）——
+  // 候选缺教育/经历类时（仅约束/兴趣，无法支撑 person-init）明示缺口，引导先补采集再确认
+  const pendingCats = new Set(initCandidates.filter((c) => c.status === 'pending').map((c) => c.category))
+  const hasEduExp = pendingCats.has('education') || pendingCats.has('experience')
+  const hasAnyPending = pendingCats.size > 0
+  const gateCopy = waitingGate
+    ? !hasAnyPending
+      ? '当前无待确认候选——需先在 AI 面板完成候选采集（教育/经历/技能/偏好），确认登记后才能推进本阶段。'
+      : hasEduExp
+        ? '系统已收集到候选事实（含教育/经历），确认后登记为个人事实并进入下一阶段；暂不登记则本阶段保持未完成（探索输入不会伪装成已登记事实）。'
+        : '候选目前只有约束/兴趣类（缺教育/经历）——仅确认现有候选不足以完成画像登记，请先在 AI 面板补充教育/经历/技能采集后再确认。'
+    : ''
 
   return (
     <Box
@@ -122,10 +136,7 @@ export function WorkflowCard() {
               暂不登记 = 受控探索分支，不发 advance（契约 §4.3） */}
           {waitingGate && (
             <Stack spacing={0.75}>
-              <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-                系统已收集到候选事实（{cur.gate?.id === 'confirm_person_facts' ? '教育/经历/技能/偏好' : '推荐结论'}）。
-                确认后登记为个人事实并进入下一阶段；暂不登记则本阶段保持未完成（探索输入不会伪装成已登记事实）。
-              </Typography>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>{gateCopy}</Typography>
               <Stack direction="row" spacing={1}>
                 <Button size="small" variant="contained" sx={{ fontSize: 11.5 }} onClick={() => void advanceWorkflow(active.id, cur.gate?.id)}>
                   确认并继续

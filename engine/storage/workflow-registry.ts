@@ -46,6 +46,8 @@ export interface WorkflowState {
   status: WorkflowStatus
   currentStage: StageId | null
   stages: WorkflowStageState[]
+  /** 全流程阶段总数（= Stage 定义表长度；UI 投影阶段进度用——stages 数组只含已创建阶段，非总数） */
+  totalStages: number
   createdAt: string
   updatedAt: string
   abortedAt?: string
@@ -161,6 +163,7 @@ function serialize(w: WorkflowState): string {
     `| person_id | ${w.personId} |`,
     `| status | ${w.status} |`,
     `| current_stage | ${w.currentStage ?? '-'} |`,
+    `| total_stages | ${w.totalStages} |`,
     `| created_at | ${w.createdAt} |`,
     `| updated_at | ${w.updatedAt} |`,
     '',
@@ -189,6 +192,8 @@ function parseWorkflowMarkdown(md: string): WorkflowState | null {
   // current_stage 在摘要表（frontmatter 不重复）——从表格行回读
   const currentStageRaw = md.match(/^\| current_stage \| ([^|]+) \|$/m)?.[1]?.trim()
   const currentStage = currentStageRaw && currentStageRaw !== '-' ? (currentStageRaw as StageId) : null
+  const totalStagesRaw = md.match(/^\| total_stages \| (\d+) \|$/m)?.[1]?.trim()
+  const totalStages = totalStagesRaw && /^\d+$/.test(totalStagesRaw) ? parseInt(totalStagesRaw, 10) : CAREER_DIRECTION_STAGES.length
   const stages: WorkflowStageState[] = []
   for (const line of md.split('\n')) {
     const m = line.match(/^\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/)
@@ -224,6 +229,7 @@ function parseWorkflowMarkdown(md: string): WorkflowState | null {
     status: meta.status === 'completed' || meta.status === 'aborted' ? meta.status : 'active',
     currentStage,
     stages,
+    totalStages,
     createdAt: meta.created_at ?? '',
     updatedAt: meta.updated_at ?? '',
     ...(meta.aborted_at ? { abortedAt: meta.aborted_at } : {}),
@@ -301,6 +307,43 @@ function hasPendingCandidates(ws: Workspace, personId: string): boolean {
   return ws.read(rel).split('\n').some((line) => /^\| c-\d+ \| pending \|/.test(line.trim()))
 }
 
+/** 候选类别（extraction/candidates.md 中文类目 → 英文键；与 person-watcher 的 CANDIDATE_CATEGORY_LABEL 反向一致） */
+const CANDIDATE_CATEGORY_KEY: Record<string, string> = { 教育: 'education', 经历: 'experience', 技能: 'skill', 约束: 'constraint', 兴趣: 'interest' }
+
+/** person-init 三件快照缺件 → 可由哪类候选补足（Path B guard：候选类别覆盖缺失快照才算"复用候选"成立）。
+ *   identity.md ← 教育/经历候选（Agent 依据已确认教育/经历写身份档案）；
+ *   skill_inventory.md ← 技能候选；
+ *   preference_constraints.md ← 约束/兴趣候选（薪资/城市/偏好）。 */
+const SNAPSHOT_CANDIDATE_COVERAGE: Record<string, string[]> = {
+  identity: ['education', 'experience'],
+  skill_inventory: ['skill'],
+  preference_constraints: ['constraint', 'interest'],
+}
+
+/** 候选能否满足 person-init（Path B guard；契约 §4.4 增强——"有候选"≠"候选足以完成画像"）：
+ *   - 快照已齐 → true（无需候选补足）；
+ *   - 否则每个缺失快照都必须有对应类别的 pending 候选（否则 waiting_gate 后 advance 必 STAGE_INCOMPLETE → 死锁）。 */
+export function candidatesCanSatisfyInit(ws: Workspace, personId: string): boolean {
+  const REQUIRED = ['identity.md', 'skill_inventory.md', 'preference_constraints.md'] as const
+  const missing = REQUIRED.filter((f) => !ws.exists(`persons/${personId}/snapshot/current/${f}`))
+  if (missing.length === 0) return true
+  const rel = `persons/${personId}/extraction/candidates.md`
+  const categories = new Set<string>()
+  if (ws.exists(rel)) {
+    for (const line of ws.read(rel).split('\n')) {
+      const m = line.match(/^\| c-\d+ \| pending \| (\S+) \|/)
+      const key = m ? CANDIDATE_CATEGORY_KEY[m[1]!.trim()] : undefined
+      if (key) categories.add(key)
+    }
+  }
+  return missing.every((f) => (SNAPSHOT_CANDIDATE_COVERAGE[f.replace(/\.md$/, '')] ?? []).some((c) => categories.has(c)))
+}
+
+/** Path B 判定（startWorkflow/onFactCollectionReady 共用）：有候选 且 候选足以支撑 person-init */
+function canUseExistingCandidates(ws: Workspace, personId: string): boolean {
+  return hasPendingCandidates(ws, personId) && candidatesCanSatisfyInit(ws, personId)
+}
+
 function nextWorkflowId(ws: Workspace, now: Date): string {
   const day = now.toISOString().slice(0, 10).replace(/-/g, '')
   const prefix = `workflow_${day}_`
@@ -331,12 +374,14 @@ export function startWorkflow(
 
   const id = nextWorkflowId(ws, now)
   const ts = now.toISOString()
-  const hasCandidates = hasPendingCandidates(ws, params.personId)
+  // Path B guard（契约 §4.4 增强）：有候选 且 候选类别足以支撑缺失快照（否则 waiting_gate 后 advance
+  // 必 STAGE_INCOMPLETE → 死锁——测试区 7 条约束/兴趣候选无教育/经历即此场景）。不足 → 走 Path A 补采。
+  const useExisting = canUseExistingCandidates(ws, params.personId)
   const stage1: WorkflowStageState = {
     id: 'fact_collection',
-    status: hasCandidates ? 'waiting_gate' : 'running',
+    status: useExisting ? 'waiting_gate' : 'running',
     startedAt: ts,
-    ...(hasCandidates
+    ...(useExisting
       ? { gate: { id: 'confirm_person_facts' as GateId, status: 'waiting' as const } }
       : {}),
   }
@@ -348,11 +393,12 @@ export function startWorkflow(
     status: 'active',
     currentStage: 'fact_collection',
     stages: [stage1],
+    totalStages: CAREER_DIRECTION_STAGES.length,
     createdAt: ts,
     updatedAt: ts,
   }
   writeWorkflow(ws, workflow, now)
-  return { workflow, path: hasCandidates ? 'B' : 'A' }
+  return { workflow, path: useExisting ? 'B' : 'A' }
 }
 
 // ─── workflow/advance（四步校验；契约 §四.2）───────────────────────────────
@@ -377,7 +423,22 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
   }
   // 2. 完成条件满足（确定性 Evaluator）
   if (!stageEvaluatorPassed(ws, spec, w.personId)) {
-    return { ok: false, code: 'STAGE_INCOMPLETE', missing: [`${cur.id} 完成条件未满足（evaluator=${spec.evaluator}）`] }
+    const REQUIRED = ['identity.md', 'skill_inventory.md', 'preference_constraints.md']
+    const missingSnapshots = REQUIRED.filter((f) => !ws.exists(`persons/${w.personId}/snapshot/current/${f}`))
+    const missingCandidates = missingSnapshots
+      .map((f) => {
+        const cover = SNAPSHOT_CANDIDATE_COVERAGE[f.replace(/\.md$/, '')] ?? []
+        return `${f}（需 ${cover.join('/')} 类候选）`
+      })
+    return {
+      ok: false,
+      code: 'STAGE_INCOMPLETE',
+      missing: [
+        `${cur.id} 完成条件未满足（evaluator=${spec.evaluator}）`,
+        `画像缺：${missingSnapshots.length > 0 ? missingSnapshots.join('、') : '（快照已齐但判定失败——需人工排查）'}`,
+        ...(missingCandidates.length > 0 ? [`候选缺：${missingCandidates.join('；')}——需先采集并确认对应候选（Agent 依据已确认候选写快照）`] : []),
+      ],
+    }
   }
   // 3. Gate 存在且未过
   if (spec.gate) {
@@ -426,7 +487,16 @@ export function abortWorkflow(ws: Workspace, workflowId: string, now: Date = new
   const w = getWorkflow(ws, workflowId)
   if (!w) throw new Error(`workflow 不存在：${workflowId}`)
   if (w.status !== 'active') throw new Error(`workflow 状态 ${w.status}，不可 abort`)
-  const next: WorkflowState = { ...w, status: 'aborted', abortedAt: now.toISOString(), updatedAt: now.toISOString() }
+  const ts = now.toISOString()
+  // 同步当前 Stage → failed（六态含 failed）：abort = 当前阶段未完成即中止，
+  // 阶段表不得滞留 waiting_gate/running（审计语义一致——BUG-004 修复）
+  const next: WorkflowState = {
+    ...w,
+    status: 'aborted',
+    abortedAt: ts,
+    updatedAt: ts,
+    stages: w.stages.map((s) => (s.id === w.currentStage && (s.status === 'waiting_gate' || s.status === 'running' || s.status === 'pending') ? { ...s, status: 'failed' as StageStatus } : s)),
+  }
   writeWorkflow(ws, next, now)
   return next
 }
@@ -444,15 +514,17 @@ export function onFactCollectionReady(ws: Workspace, workflowId: string, now: Da
   const stage = w.stages.find((s) => s.id === 'fact_collection')
   if (!stage || stage.status !== 'running') return null
   const ts = now.toISOString()
-  const hasCandidates = hasPendingCandidates(ws, w.personId)
+  // Path B guard 同判（契约 §4.4 增强）：Agent 产出候选须足以支撑 person-init——
+  // 只有约束/兴趣类（无教育/经历/技能）→ failed（缺件引导补采），不挂 waiting_gate（否则确认即死锁）
+  const useExisting = canUseExistingCandidates(ws, w.personId)
   const next: WorkflowState = {
     ...w,
     stages: w.stages.map((s) =>
       s.id === 'fact_collection'
         ? {
             ...s,
-            status: hasCandidates ? ('waiting_gate' as StageStatus) : ('failed' as StageStatus),
-            ...(hasCandidates ? { gate: { id: 'confirm_person_facts' as GateId, status: 'waiting' as const } } : {}),
+            status: useExisting ? ('waiting_gate' as StageStatus) : ('failed' as StageStatus),
+            ...(useExisting ? { gate: { id: 'confirm_person_facts' as GateId, status: 'waiting' as const } } : {}),
           }
         : s,
     ),

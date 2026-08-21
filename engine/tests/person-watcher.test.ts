@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths, watchPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, reconcilePersonInitStates, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths, watchPersons } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 
 const manifestMd = `---
@@ -488,6 +488,48 @@ test('completePersonInit 门禁：缺任一必需快照件 → 拒绝并列出�
       /画像未齐备，禁止标记完成：缺 identity\.md、preference_constraints\.md/,
     )
     assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('reconcilePersonInitStates：历史空壳 completed（manifest 标完成但快照缺件）→ 回滚 in_progress（对账循环）', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    // 模拟历史空壳：manifest 被旧流程直接标 completed（门禁前的产物），快照只写 1 件（测试区 person_001 镜像）
+    ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, '# 技能\n')
+    const manifest = ws.read(`persons/${personId}/manifest.md`)
+    ws.write(`persons/${personId}/manifest.md`, manifest.replace('| init_state | in_progress |', '| init_state | completed |'))
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
+    // 对账：completed 但缺件 → 回滚 in_progress，并返回缺件说明
+    const rolledBack = reconcilePersonInitStates(ws)
+    assert.equal(rolledBack.length, 1)
+    assert.ok(rolledBack[0]!.includes(personId))
+    assert.ok(rolledBack[0]!.includes('identity.md'))
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
+    assert.equal(scanPersons(ws)[0]!.initState, 'in_progress')
+    // 幂等：再次对账零写入零返回
+    assert.deepEqual(reconcilePersonInitStates(ws), [])
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('reconcilePersonInitStates：快照齐备的 completed 不受影响（对账不误伤）；无 manifest 目录安全', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    seedCompleteSnapshots(ws, personId)
+    completePersonInit(ws, personId)
+    assert.deepEqual(reconcilePersonInitStates(ws), [])
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
+    // 无 persons/ 目录 → 空（不抛错）
+    const empty = initWorkspace(`${dir}-empty`)
+    assert.deepEqual(reconcilePersonInitStates(empty), [])
+    cleanup(`${dir}-empty`)
   } finally {
     cleanup(dir)
   }

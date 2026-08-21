@@ -30,8 +30,25 @@ function seedCompleteSnapshots(ws: Workspace, personId: string): void {
   ws.write(`persons/${personId}/snapshot/current/preference_constraints.md`, '# 偏好\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| city | 苏州 |\n')
 }
 
-/** 写 pending candidates（Path B 判定输入；格式对齐 extraction/candidates.md） */
+/** 写 pending candidates（Path B 判定输入；格式对齐 extraction/candidates.md）。
+ *  默认含教育/经历/技能/约束/兴趣全类别（真实采集产物，足以支撑 person-init） */
 function seedPendingCandidates(ws: Workspace, personId: string): void {
+  ws.write(`persons/${personId}/extraction/candidates.md`, [
+    '# Extraction Candidates',
+    '',
+    '| id | status | category | content | source |',
+    '|----|--------|----------|---------|--------|',
+    '| c-001 | pending | 教育 | University-A 机械工程本科 2019-2023 | user_reported |',
+    '| c-002 | pending | 经历 | 2年 IVD 结构设计经验 | user_reported |',
+    '| c-003 | pending | 技能 | 机械结构设计 | user_reported |',
+    '| c-004 | pending | 约束 | 期望城市苏州 | user_reported |',
+    '| c-005 | pending | 兴趣 | 继续机械方向 | user_reported |',
+    '',
+  ].join('\n'))
+}
+
+/** 测试区镜像：只有约束/兴趣候选（无教育/经历/技能）——Path B guard 必须拒绝复用，走 Path A 补采 */
+function seedConstraintOnlyCandidates(ws: Workspace, personId: string): void {
   ws.write(`persons/${personId}/extraction/candidates.md`, [
     '# Extraction Candidates',
     '',
@@ -82,7 +99,7 @@ test('Path A：Agent 未产出候选（onFactCollectionReady 但无 pending）�
 
 // ─── Path B：已有 pending candidates ──────────────────────────────────────
 
-test('startWorkflow Path B：有 pending candidates → 直接 waiting_gate，不启动 Agent（不重新收集）', () => {
+test('startWorkflow Path B：有完整类别候选（含教育/经历）→ 直接 waiting_gate，不启动 Agent（不重新收集）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
   seedPendingCandidates(ws, pid)
@@ -90,11 +107,41 @@ test('startWorkflow Path B：有 pending candidates → 直接 waiting_gate，�
   assert.equal(path, 'B')
   assert.equal(workflow.stages[0]!.status, 'waiting_gate')
   assert.deepEqual(workflow.stages[0]!.gate, { id: 'confirm_person_facts', status: 'waiting' })
+  assert.equal(workflow.totalStages, 4) // 全流程阶段总数（UI 阶段进度投影）
+})
+
+test('startWorkflow Path B guard：候选只有约束/兴趣（缺教育/经历）→ 拒绝复用，走 Path A 补采（测试区死锁镜像）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedConstraintOnlyCandidates(ws, pid)
+  const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  assert.equal(path, 'A') // guard 生效：不进入 waiting_gate
+  assert.equal(workflow.stages[0]!.status, 'running')
+  assert.equal(workflow.stages[0]!.gate, undefined)
+})
+
+test('startWorkflow Path B guard：候选只有约束/兴趣但快照已齐 → 直接 waiting_gate（画像已满足，候选仅补充）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedConstraintOnlyCandidates(ws, pid)
+  seedCompleteSnapshots(ws, pid)
+  const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  assert.equal(path, 'B')
+  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
+})
+
+test('onFactCollectionReady guard：Agent 产出候选只有约束/兴趣（无教育/经历）→ failed（不挂 waiting_gate，防死锁）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  seedConstraintOnlyCandidates(ws, pid)
+  const next = onFactCollectionReady(ws, workflow.id)!
+  assert.equal(next.stages[0]!.status, 'failed')
 })
 
 // ─── advance 四步校验（契约 §四.2）────────────────────────────────────────
 
-test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPLETE 拒绝（缺件清单）', () => {
+test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPLETE 拒绝（可操作缺件清单）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
   seedPendingCandidates(ws, pid)
@@ -105,6 +152,9 @@ test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPL
   if (!res.ok) {
     assert.equal(res.code, 'STAGE_INCOMPLETE')
     assert.ok(res.missing.some((m) => m.includes('person-init')))
+    // BUG-001 修复：缺件清单可操作——列出缺的快照 + 缺哪类候选（用户知道该补什么）
+    assert.ok(res.missing.some((m) => m.includes('identity.md')))
+    assert.ok(res.missing.some((m) => m.includes('候选缺')))
   }
   // 状态未被推进（Stage 2 不存在——验收核心）
   const reloaded = getWorkflow(ws, workflow.id)!
@@ -174,14 +224,36 @@ test('探索分支语义：未登记 → Stage 1 不 completed，正常 advance 
 
 // ─── abort / list ─────────────────────────────────────────────────────────
 
-test('abort：active → aborted（append-only 审计）；已完成后 abort 拒绝', () => {
+test('abort：active → aborted（append-only 审计）；当前 stage 同步 failed；已完成后 abort 拒绝', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
   const aborted = abortWorkflow(ws, workflow.id)
   assert.equal(aborted.status, 'aborted')
   assert.ok(aborted.abortedAt)
+  // BUG-004 修复：当前 stage 不得滞留 waiting_gate/running → failed
+  assert.equal(aborted.stages[0]!.status, 'failed')
+  // 落盘回读一致（审计语义）
+  const reloaded = getWorkflow(ws, workflow.id)!
+  assert.equal(reloaded.status, 'aborted')
+  assert.equal(reloaded.stages[0]!.status, 'failed')
   assert.throws(() => abortWorkflow(ws, workflow.id), /不可 abort/)
+})
+
+test('totalStages：序列化落盘 + 回读；旧文件（无 total_stages 行）→ 默认 4', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  assert.equal(workflow.totalStages, 4)
+  const reloaded = getWorkflow(ws, workflow.id)!
+  assert.equal(reloaded.totalStages, 4)
+  assert.ok(ws.read(`workflows/${workflow.id}.md`).includes('| total_stages | 4 |'))
+  // 旧文件兼容：无 total_stages 行的 md → parse 回退 4
+  const legacy = ws
+    .read(`workflows/${workflow.id}.md`)
+    .replace('| total_stages | 4 |\n', '')
+  ws.write(`workflows/${workflow.id}.md`, legacy)
+  assert.equal(getWorkflow(ws, workflow.id)!.totalStages, 4)
 })
 
 test('scanWorkflows：按 personId 过滤；getWorkflow 非法 id → null', () => {
