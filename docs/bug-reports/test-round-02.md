@@ -131,8 +131,29 @@ UI/components/workbench/workflow-card.tsx   ← BUG-008 修复（本轮唯一产
 UI/components/workbench/workflow-card.tsx   ← BUG-009 修复
 ```
 
-## 第六轮验证重点（移植后）
+## 第六轮验证结果（2026-08-21，测试区实测）
 
-1. 页面刷新后 workflow 卡候选文案与引擎一致（有 6 条 pending 兴趣/约束 → 应显示对应分支或齐备分支）
+### BUG-009 修复验证 → 发现竞态缺陷（BUG-009b，已修复推送 ca58043）
+
+| 验证项 | 结果 |
+|--------|------|
+| 场景构造 | ✅ 00011 Path B waiting_gate + manifest in_progress（pending 状态 + 引擎侧 6 条 pending 候选） |
+| 初始化横幅 | ✅ 「初始化中 · 正在建立职业档案」正确出现（in_progress → initStatus pending 链路） |
+| 卡片候选文案 | ❌ 仍显示「当前无待确认候选」——引擎侧实际有 6 条 pending（BUG-009a 修复不完整） |
+| 排除缓存 | ✅ 重启 UI 后复现——非 vite 缓存 |
+
+**BUG-009b 根因**：连接时序竞态——WorkflowCard 首挂时引擎仍在 `connecting`，`loadInitCandidates` 早退（`engineStatus !== 'connected'` return）且 useEffect deps（personId/函数引用）不再变化 → 永不重试 → `initCandidates` 恒空 → 文案失真。
+
+修复（ca58043）：useEffect deps 增加 `engineStatus`——connected 后自动重跑拉取。
+
+## 移植清单（测试区，第七轮验证）
+
+```
+UI/components/workbench/workflow-card.tsx   ← BUG-009b（竞态修复）
+```
+
+## 第七轮验证重点（移植后）
+
+1. 页面刷新（引擎连接完成后）：pending 状态 + 6 条 pending 约束/兴趣候选 → 文案「候选目前只有约束/兴趣类（缺教育/经历）——…」（候选同步生效的直接证据）
 2. initStatus=active（画像齐备）时 waiting_gate 文案「画像已齐备——确认后直接进入下一阶段」
-3. 初始化中档案（initStatus=pending）回归：三分支文案按候选类别正确渲染
+3. 初始化中档案（pending）三分支文案回归
