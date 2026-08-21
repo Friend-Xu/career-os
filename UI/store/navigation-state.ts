@@ -1,4 +1,4 @@
-import type { Person, ResumeVersion } from '../types'
+import type { Person, ResumeDocument } from '../types'
 import type { DecisionView } from './engine-client'
 import { hasPersonDirection } from '../utils/direction-state'
 
@@ -23,7 +23,7 @@ export type NavigationState = Partial<Record<'workbench' | 'companies' | 'resume
 export function deriveNavigationState(
   person: Person,
   decisions: DecisionView[],
-  resumes: ResumeVersion[],
+  resumes: ResumeDocument[],
 ): NavigationState {
   const out: NavigationState = {}
   const hasDirection = hasPersonDirection(decisions, person)
@@ -37,7 +37,8 @@ export function deriveNavigationState(
     }
   }
 
-  const personResumes = resumes.filter((r) => r.personId === person.id)
+  // 引擎真实简历版本（resumes/documents/ 登记物，person = owner personId）；mock RESUMES 已退出导航统计
+  const personResumes = resumes.filter((r) => r.person === person.personId)
   if (personResumes.length > 0) {
     out.resumes = {
       kind: 'completed',

@@ -3,8 +3,32 @@
  * 行级 block——text = 行原样（含 - 前缀），round-trip 无损（序列化 `- {text}` 解析后还原）。
  * 条目化段（Resume Entry Contract v0.2）：工作经历/项目经验 = entries（条目头 + 描述 + 表述行）。
  */
-import type { WorkingSection } from '../../engine/ir/resume.ts'
+import type { ResumeDocument, WorkingSection } from '../../engine/ir/resume.ts'
 import type { Person, ResumeIdentityEntry, ResumeModule } from '../types'
+
+/** 引擎简历版本（ResumeDocument.sections，bullets/entries 结构）→ 编辑模块（草稿初始化 seed）。
+ *  版本内容是登记资产（claim 驱动），编辑 = 用户创作对象派生；无 claim 内容（空版本）→ 空模块。 */
+export function resumeDocumentToModules(doc: ResumeDocument): ResumeModule[] {
+  return doc.sections.map((s, i) => ({
+    id: `sec-${i}`,
+    title: s.title,
+    content: s.bullets.map((b) => b.sentence).join('\n'),
+    order: i,
+    ...(s.entries && s.entries.length > 0
+      ? {
+          entries: s.entries.map((e, ei) => ({
+            id: `ent-${i}-${ei}`,
+            title: e.title,
+            ...(e.role ? { role: e.role } : {}),
+            ...(e.period ? { period: e.period } : {}),
+            ...(e.description ? { description: e.description } : {}),
+            content: e.bullets.map((b) => b.sentence).join('\n'),
+          })),
+        }
+      : {}),
+    ...(s.identity && s.identity.length > 0 ? { identity: s.identity } : {}),
+  }))
+}
 
 export function sectionsToModules(sections: WorkingSection[]): ResumeModule[] {
   return sections.map((s, i) => ({

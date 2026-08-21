@@ -28,7 +28,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
   const person = useAppStore((s) => s.currentPerson())
   const decisions = useAppStore((s) => s.decisions)
   const candidates = useAppStore((s) => s.initCandidates)
-  const resumes = useAppStore((s) => s.resumes)
+  const resumes = useAppStore((s) => s.resumeVersions)
 
   const personDecisions = decisions.filter((d) => belongsToPerson(d, person))
   const hasDirection = hasPersonDirection(decisions, person)
@@ -93,7 +93,7 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
       rejected: candidates.filter((c) => c.status === 'rejected').length,
       skills: skills.length,
       decisions: personDecisions.length,
-      resumes: resumes.filter((r) => r.personId === person.id).length,
+      resumes: resumes.filter((r) => r.person === person.personId).length,
     },
   }
 }

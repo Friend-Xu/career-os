@@ -98,8 +98,8 @@ export function IconNav() {
   const setPage = useAppStore((s) => s.setPage)
   const person = useAppStore((s) => s.currentPerson())
   const decisions = useAppStore((s) => s.decisions)
-  const resumes = useAppStore((s) => s.resumes)
-  const nav = deriveNavigationState(person, decisions, resumes)
+  const resumeVersions = useAppStore((s) => s.resumeVersions)
+  const nav = deriveNavigationState(person, decisions, resumeVersions)
 
   return (
     <Box

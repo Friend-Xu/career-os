@@ -17,7 +17,7 @@ import { deriveNavigationState } from './store/navigation-state'
 function useNavRecommendationCard(): void {
   const person = useAppStore((s) => s.currentPerson())
   const decisions = useAppStore((s) => s.decisions)
-  const resumes = useAppStore((s) => s.resumes)
+  const resumes = useAppStore((s) => s.resumeVersions)
   const attentionId = useAttentionStore((s) => s.attention?.id)
   const shownRef = useRef(false)
 

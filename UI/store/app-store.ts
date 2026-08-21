@@ -534,7 +534,7 @@ export const useAppStore = create<AppState>()(
       availableModels: { source: 'cli', models: [] },
       applications: [],
       deletedAppJobIds: [],
-      resumes: RESUMES,
+      resumes: [], // mock RESUMES 已退出（导航/画像/简历页全部消费引擎 resumeVersions；保留字段兼容旧 persist）
       decisions: DECISIONS,
       contexts: [],
       knowledge: { skills: [], roles: [], status: 'idle' },
@@ -1914,10 +1914,8 @@ export const useAppStore = create<AppState>()(
         const p = persisted as Record<string, unknown>
         if (p && typeof p === 'object' && 'agentPanelOpen' in p) delete p.agentPanelOpen
         const merged = { ...current, ...(p as object) } as AppState
-        // 演示简历不持久化为历史：mock 条目以当前 RESUMES 刷新（含 isDemo/identity 结构升级）；
-        // 用户派生版本（id r-{ts}）不在 mock id 集合内，原样保留
-        const demoIds = new Set(RESUMES.map((r) => r.id))
-        merged.resumes = [...merged.resumes.filter((r) => !demoIds.has(r.id)), ...RESUMES]
+        // 旧 persist 的 mock 简历（ResumeVersion）不再注入——导航/画像/简历页全部消费引擎 resumeVersions
+        if (Array.isArray(merged.resumes) && merged.resumes.length > 0) merged.resumes = []
         // 断流收尾幂等：localStorage 未写回时重复标记结果一致
         return { ...merged, sessions: markInterruptedSessions(merged.sessions) }
       },

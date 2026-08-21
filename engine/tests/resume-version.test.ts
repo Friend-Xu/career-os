@@ -61,6 +61,19 @@ test('roundtrip：serialize → parse 还原全部字段（lineage + operations 
   assert.deepEqual(value.sections[1].assetRefs, ['SolidWorks', 'ANSYS'])
 })
 
+test('parseResumeMarkdown：person 字段归一（旧流程 `甲（person_003）` → personId；新流程 `person_003` 原样）', () => {
+  const legacy = parseResumeMarkdown(
+    `# 简历\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| status | draft |\n| person | 甲（person_003） |\n| template_id | mechanical |\n| template_version | 1.2 |\n| generated_at | 2026-08-05T10:00:00Z |\n`,
+    'resume_legacy.md',
+  )
+  assert.equal(legacy.value.person, 'person_003')
+  const modern = parseResumeMarkdown(
+    `# 简历\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| status | draft |\n| person | person_003 |\n| template_id | mechanical |\n| template_version | 1.2 |\n| generated_at | 2026-08-05T10:00:00Z |\n`,
+    'resume_modern.md',
+  )
+  assert.equal(modern.value.person, 'person_003')
+})
+
 test('transition：合法转移 + operations 审计（draft → review）', () => {
   const root = mkdtempSync(join(tmpdir(), 'cos-rv-'))
   const ws = initWorkspace(root)

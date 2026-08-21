@@ -194,6 +194,13 @@ ${sections}
 ${ops ? `\n## 操作记录\n\n${ops}\n` : ''}${validation ? `\n${validation}` : ''}`
 }
 
+/** person 字段归一：旧流程写 `甲（person_003）`（展示名+括号 id），新流程写 `person_003`——
+ *  消费端（UI 按人过滤/侧栏）用 personId 匹配；展示名另取（manifest）。统一提取 personId。 */
+function normalizePersonField(raw: string): string {
+  const m = raw.trim().match(/（(person_\d{3})）$/)
+  return m ? m[1]! : raw.trim()
+}
+
 /** 单个 resume md → IR（必填/枚举校验；lineage/operations 读回） */
 export function parseResumeMarkdown(md: string, sourceFile: string): Validated<ResumeDocument> {
   const { meta, body } = splitFrontmatter(md)
@@ -227,7 +234,7 @@ export function parseResumeMarkdown(md: string, sourceFile: string): Validated<R
   const record: ResumeDocument = {
     id: meta.id ?? sourceFile.replace(/\.md$/, ''),
     status: STATUSES.includes(status) ? status : 'draft',
-    person: fields.person ?? '',
+    person: normalizePersonField(fields.person ?? ''),
     ...(fields.name && fields.name.trim() ? { name: fields.name.trim() } : {}),
     ...(fields.target_id ? { targetId: fields.target_id } : {}),
     ...(fields.target_job_id ? { targetJobId: fields.target_job_id } : {}),

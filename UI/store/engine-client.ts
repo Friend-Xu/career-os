@@ -878,6 +878,6 @@ export class EngineClient {
 export { EVENTS }
 export { METHODS }
 
-export function createEngineClient(url = 'ws://127.0.0.1:5289'): EngineClient {
+export function createEngineClient(url = import.meta.env.VITE_COS_WS ?? 'ws://127.0.0.1:5289'): EngineClient {
   return new EngineClient(url)
 }

@@ -28,7 +28,7 @@ import type { Person, ResumeEntry, ResumeModule } from '../types'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { EvidenceItem } from '../../engine/ir/schema.ts'
 import type { ResponsibilityCandidates } from '../../engine/runtime/claim-selector.ts'
-import { modulesToSections, sectionsToModules, buildSkeletonModules } from '../utils/resume-working-copy'
+import { modulesToSections, sectionsToModules, buildSkeletonModules, resumeDocumentToModules } from '../utils/resume-working-copy'
 import { ResumeStudio } from '../components/resume-studio'
 import { ResumeAssets } from '../components/resume-assets'
 import { ResumeDashboard } from '../components/resume/ResumeDashboard'
@@ -196,7 +196,7 @@ export function ResumesPage() {
   const cancelRewrite = useAppStore((s) => s.cancelRewrite)
   const resetRewrite = useAppStore((s) => s.resetRewrite)
   const reportRewriteFeedback = useAppStore((s) => s.reportRewriteFeedback)
-  const resumes = useAppStore((s) => s.resumes)
+  const resumes = useAppStore((s) => s.resumeVersions)
   const workingCopies = useAppStore((s) => s.workingCopies)
   const activeWorkingCopyId = useAppStore((s) => s.activeWorkingCopyId)
   const setActiveWorkingCopy = useAppStore((s) => s.setActiveWorkingCopy)
@@ -205,7 +205,7 @@ export function ResumesPage() {
   const fetchClaimCandidates = useAppStore((s) => s.fetchClaimCandidates)
   const careerContext = useAppStore((s) => s.careerContext)
   const evidenceItems = useAppStore((s) => s.evidence)
-  const personResumes = useMemo(() => resumes.filter((r) => r.personId === person.id), [resumes, person.id])
+  const personResumes = useMemo(() => resumes.filter((r) => r.person === person.personId), [resumes, person.personId])
   /** P2.3：编辑对象 = 工作副本（引擎侧用户创作对象）——localStorage 草稿降为初始化来源 */
   const personWorkingCopies = useMemo(() => workingCopies.filter((w) => w.owner === person.personId), [workingCopies, person.personId])
   const workingCopy = personWorkingCopies.find((w) => w.id === activeWorkingCopyId) ?? personWorkingCopies[0]
@@ -301,9 +301,10 @@ export function ResumesPage() {
     )
   }
 
-  /** 改写目标岗位上下文（prompt 注入；契约允许"参考 JD 上下文"，非自动匹配） */
-  const jdContext = resume?.targetPosition
-    ? `目标职位：${resume.targetPosition}${resume.targetCompany ? `（${resume.targetCompany}）` : ''}`
+  /** 改写目标岗位上下文（prompt 注入；契约允许"参考 JD 上下文"，非自动匹配）——
+   *  引擎简历版本目标 = targetJobId（原始 JD 标识）；target_id 为 Target 实体引用，均非展示名 */
+  const jdContext = resume?.targetJobId
+    ? `目标 JD：${resume.targetJobId}`
     : ''
 
   const closeAll = () => {
@@ -920,19 +921,19 @@ export function ResumesPage() {
                   variant="contained"
                   onClick={async () => {
                     try {
-                      // 演示简历不携带人设内容：以档案身份字段 + 空模块骨架初始化（M5.2 G6 身份事实通道）
-                      const seed = resume.isDemo
-                        ? buildSkeletonModules(person)
-                        : resume.modules.map((m, i) => ({ ...m, order: i }))
+                      // 引擎真实简历版本 → 编辑模块 seed；无版本 → 档案身份骨架（M5.2 G6 身份事实通道）
+                      const seed = resume
+                        ? resumeDocumentToModules(resume)
+                        : buildSkeletonModules(person)
                       await upsertWorkingCopy({ owner: person.personId ?? '', sections: modulesToSections(seed), revision: 0 })
-                      push('success', resume.isDemo ? '已从档案初始化身份字段（演示内容未带入）' : '已创建工作副本（内容来自现有简历）')
+                      push('success', resume ? '已创建工作副本（内容来自现有简历版本）' : '已从档案初始化身份字段')
                     } catch (e) {
                       push('warning', e instanceof Error ? e.message : '创建工作副本失败')
                     }
                   }}
                   sx={{ fontSize: 12.5 }}
                 >
-                  {resume.isDemo ? '从档案初始化' : '从现有简历初始化'}
+                  {resume ? '从现有简历初始化' : '从档案初始化'}
                 </Button>
               )}
               <Button
@@ -952,9 +953,9 @@ export function ResumesPage() {
                 生成简历
               </Button>
             </Stack>
-            {resume?.isDemo && (
+            {resume && (
               <Typography sx={{ fontSize: 11.5, color: COLORS.textMuted }}>
-                现有简历为演示数据——初始化仅带入你的档案身份字段，演示内容不会写入
+                从引擎简历版本「{resume.name ?? resume.id}」初始化——登记资产内容（claim 驱动）带入创作副本
               </Typography>
             )}
           </Stack>

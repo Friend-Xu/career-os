@@ -56,7 +56,7 @@ export function CompaniesSidebar() {
   const applications = useAppStore((s) => s.applications)
   const jobs = useAppStore((s) => s.jobs)
   const decisions = useAppStore((s) => s.decisions)
-  const resumes = useAppStore((s) => s.resumes)
+  const resumes = useAppStore((s) => s.resumeVersions)
   const push = useToastStore((s) => s.push)
   const locateTarget = useAppStore((s) => s.locateTarget)
   const setLocateTarget = useAppStore((s) => s.setLocateTarget)
@@ -316,7 +316,11 @@ export function CompaniesSidebar() {
                           return jobCompany ? resolveCompanyReference(companies, jobCompany)?.id === c.id : false
                         }).length
                         const decN = decisions.filter((d) => d.title.includes(c.name)).length
-                        const resN = resumes.filter((r) => r.targetCompany === c.name).length
+                        const resN = resumes.filter((r) => {
+                          // ResumeDocument 无 targetCompany（引擎 IR）；经 targetJobId 关联 jobs/ 取公司
+                          const jobCompany = r.targetJobId ? jobs.find((j) => j.id === r.targetJobId)?.company : undefined
+                          return jobCompany ? resolveCompanyReference(companies, jobCompany)?.id === c.id : false
+                        }).length
                         const link = [appN && `投递 ${appN}`, decN && `决策 ${decN}`, resN && `简历版本 ${resN}`]
                           .filter(Boolean)
                           .join(' · ')
