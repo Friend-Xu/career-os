@@ -465,8 +465,18 @@ function setManifestInitState(ws: Workspace, personId: string, state: 'in_progre
   ws.write(path, next)
 }
 
-/** 完成初始化（用户声明基础信息达到可用状态，非封闭）：manifest init_state → completed */
+/** 初始化完成门禁（Person 生命周期 v0.2）：用户声明基础信息达到可用状态的判定。
+ *  必需快照件 = identity.md（身份/教育/经历）+ skill_inventory.md（技能）+ preference_constraints.md（偏好/城市/薪资）。
+ *  缺失 → throw（拒绝标记 completed，缺件清单给 UI/调用方展示）——防「空壳完成」：
+ *  画像 7 维中 education/experience/skills/city/preference 由这三件投影，缺件 = 画像大面积空白却标完成。 */
+const INIT_COMPLETION_REQUIRED_SNAPSHOTS = ['identity.md', 'skill_inventory.md', 'preference_constraints.md'] as const
+
 export function completePersonInit(ws: Workspace, personId: string): { personId: string; initState: 'completed' } {
+  if (!/^person_\d{3}$/.test(personId)) throw new Error(`非法 personId: ${personId}`)
+  const missing = INIT_COMPLETION_REQUIRED_SNAPSHOTS.filter((f) => !ws.exists(`persons/${personId}/snapshot/current/${f}`))
+  if (missing.length > 0) {
+    throw new Error(`画像未齐备，禁止标记完成：缺 ${missing.join('、')}（snapshot/current/）——补齐后重试`)
+  }
   setManifestInitState(ws, personId, 'completed')
   return { personId, initState: 'completed' }
 }

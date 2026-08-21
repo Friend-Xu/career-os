@@ -413,6 +413,13 @@ test('createResumeArtifact：编号递增落盘 pdf/meta/extraction + reset 清�
   }
 })
 
+/** 补齐初始化完成门禁必需快照件（identity/skill_inventory/preference_constraints）——门禁测试辅助 */
+function seedCompleteSnapshots(ws: ReturnType<typeof initWorkspace>, personId: string): void {
+  ws.write(`persons/${personId}/snapshot/current/identity.md`, '# 身份\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| years_experience | 3 年 |\n| location | 苏州 |\n')
+  ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, '# 技能\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| skill_count | 1 |\n\n## A. 技能清单\n\n| skill_id | 技能 | level | usage_context |\n|----------|------|-------|---------------|\n| skill_001 | 机械设计 | applied-professional | 结构设计 |\n')
+  ws.write(`persons/${personId}/snapshot/current/preference_constraints.md`, '# 偏好\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| city | 苏州 |\n| salary_range | 11-13K |\n')
+}
+
 test('init_state：创建写入 in_progress；completePersonInit 写 completed；scanPersons 回读', () => {
   const dir = makeWorkspace({})
   const ws = initWorkspace(dir)
@@ -425,7 +432,10 @@ test('init_state：创建写入 in_progress；completePersonInit 写 completed�
     assert.equal(parsed?.initState, 'in_progress')
     // scanPersons 投影
     assert.equal(scanPersons(ws)[0]!.initState, 'in_progress')
-    // 完成
+    // 门禁：缺快照件 → 拒绝
+    assert.throws(() => completePersonInit(ws, personId), /画像未齐备.*identity\.md/)
+    // 补齐后完成
+    seedCompleteSnapshots(ws, personId)
     assert.deepEqual(completePersonInit(ws, personId), { personId, initState: 'completed' })
     assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
     assert.equal(scanPersons(ws)[0]!.initState, 'completed')
@@ -440,6 +450,7 @@ test('resetPerson：init_state 重置回 in_progress', () => {
   const ws = initWorkspace(dir)
   try {
     const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'resume' })
+    seedCompleteSnapshots(ws, personId)
     completePersonInit(ws, personId)
     assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
     resetPerson(ws, personId)
@@ -454,11 +465,29 @@ test('init_state：旧档案（无字段）→ undefined；completePersonInit �
   const ws = initWorkspace(dir)
   try {
     assert.equal(parsePersonManifest(ws.read('persons/person_001/manifest.md'))?.initState, undefined)
+    seedCompleteSnapshots(ws, 'person_001')
     completePersonInit(ws, 'person_001')
     const md = ws.read('persons/person_001/manifest.md')
     assert.ok(md.includes('| init_state | completed |'))
     assert.equal(parsePersonManifest(md)?.initState, 'completed')
     assert.equal(scanPersons(ws)[0]!.initState, 'completed')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('completePersonInit 门禁：缺任一必需快照件 → 拒绝并列出缺件（防空壳完成）', () => {
+  const dir = makeWorkspace({})
+  const ws = initWorkspace(dir)
+  try {
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+    // 只写 skill_inventory（测试区 person_001 的真实状态）→ 缺 identity/preference → 拒绝
+    ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, '# 技能\n')
+    assert.throws(
+      () => completePersonInit(ws, personId),
+      /画像未齐备，禁止标记完成：缺 identity\.md、preference_constraints\.md/,
+    )
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
   } finally {
     cleanup(dir)
   }
