@@ -61,9 +61,16 @@ export interface StageSpec {
   outputs: string[]
   evaluator: 'person-init' | 'artifact-exists' | 'decision-registered'
   gate?: GateId
-  /** Stage task 指令模板（UI 收到 nextStage 后按此发起 agent/start；resumeSessionId 续接前一 Stage）。
-   *  career-path SKILL 阶段化（契约 §2.3 task 字段）：每 Stage 一个独立任务片段，不再一个长 task 跑完。 */
-  taskTemplate: string
+  /** 阶段执行任务（Execution Contract——Agent Execution Boundary Repair P0-B：
+   *  结构化声明而非自由 Prompt；compileStageTask 编译成单一 Stage Execution Envelope 注入 agent/start）。
+   *  declaredBoundaries.forbiddenStages = 声明边界（P0 注入 Envelope 文本；P1 接 PreToolUse 工具级强制）。 */
+  task: {
+    objective: string
+    instructions: string[]
+    expectedOutputs: string[]
+    stopCondition: string
+    declaredBoundaries: { forbiddenStages: StageId[] }
+  }
 }
 
 export const CAREER_DIRECTION_STAGES: StageSpec[] = [
@@ -73,32 +80,45 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     outputs: ['person_aggregate'],
     evaluator: 'person-init',
     gate: 'confirm_person_facts',
-    taskTemplate:
-      '阶段任务：个人事实收集（Career Workflow Stage 1/4）。\n' +
-      '从当前会话收集用户的教育/经历/技能/求职偏好口述信息，逐一整理为候选（不要自己登记为事实）：\n' +
-      '1. 将识别到的用户事实写入 persons/{person_id}/extraction/candidates.md（appendCandidates 通道，标注 source 与分类）\n' +
-      '2. 候选必须带来源（口述/简历），禁止编造\n' +
-      '3. 收集完成后报告候选清单，等待用户确认——不要继续做方向分析（下一阶段会另行开始）',
+    task: {
+      objective: '个人事实收集：从当前会话收集用户的教育/经历/技能/求职偏好，整理为候选（不登记事实）',
+      instructions: [
+        '将识别到的用户事实写入 persons/{person_id}/extraction/candidates.md（appendCandidates 通道，标注 source 与分类）',
+        '候选必须带来源（口述/简历），禁止编造',
+        '候选类别尽量覆盖教育/经历/技能/约束/兴趣——缺教育/经历类时本阶段无法通过完成判定',
+        '教育类候选须带结构化载荷（学校=…；专业=…；学历=…；起=…；止=…）；经历类须带（公司=…；岗位=…；起=…；止=…）；技能类须带（技能=…；级别=…；场景=…）；约束类可带（薪资=…；城市=…；现居=…）',
+        '用户确认候选后由引擎实时登记与投影快照——不要自行写 identity.md / skill_inventory.md / preference_constraints.md',
+      ],
+      expectedOutputs: ['教育候选', '经历候选', '技能候选', '约束/兴趣候选'],
+      stopCondition: '候选收集完成（四类中用户能提供的均已整理）——停止并等待用户确认，不继续方向分析',
+      declaredBoundaries: { forbiddenStages: ['direction_exploration', 'direction_evaluation', 'recommendation'] },
+    },
   },
   {
     id: 'direction_exploration',
     inputs: ['person_aggregate'],
     outputs: ['exploration_artifact'],
     evaluator: 'artifact-exists',
-    taskTemplate:
-      '阶段任务：方向探索（Career Workflow Stage 2/4）。\n' +
-      '基于已确认的个人事实，执行 career-path 的 Step 1-3（三问定框架 / 方向画像卡 / Cross Off 排除 + IKIGAI）——\n' +
-      '输出方向候选清单与画像卡对比（exploration_artifact），不要进入加权打分（下一阶段）',
+    task: {
+      objective: '方向探索：基于已确认的个人事实，执行 career-path 的 Step 1-3（三问定框架 / 方向画像卡 / Cross Off 排除 + IKIGAI）',
+      instructions: ['只消费已登记事实（facts/ 与快照投影）', '输出方向候选清单与画像卡对比（exploration_artifact）', '不要进入加权打分（下一阶段）'],
+      expectedOutputs: ['方向候选清单', '画像卡对比'],
+      stopCondition: 'exploration_artifact 产出完成——停止，不进入加权打分',
+      declaredBoundaries: { forbiddenStages: ['direction_evaluation', 'recommendation'] },
+    },
   },
   {
     id: 'direction_evaluation',
     inputs: ['exploration_artifact', 'person_aggregate'],
     outputs: ['evaluation_artifact'],
     evaluator: 'artifact-exists',
-    taskTemplate:
-      '阶段任务：方向评估（Career Workflow Stage 3/4）。\n' +
-      '基于方向候选清单，执行 career-path 的 Step 4-5（路径画像 / 加权打分）——\n' +
-      '输出方向加权评估明细（evaluation_artifact），不要输出最终推荐（下一阶段）',
+    task: {
+      objective: '方向评估：基于方向候选清单，执行 career-path 的 Step 4-5（路径画像 / 加权打分）',
+      instructions: ['基于上一阶段的方向候选清单加权打分', '输出方向加权评估明细（evaluation_artifact）', '不要输出最终推荐（下一阶段）'],
+      expectedOutputs: ['方向加权评估明细'],
+      stopCondition: 'evaluation_artifact 产出完成——停止，不输出最终推荐',
+      declaredBoundaries: { forbiddenStages: ['recommendation'] },
+    },
   },
   {
     id: 'recommendation',
@@ -106,18 +126,85 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     outputs: ['decision_artifact'],
     evaluator: 'decision-registered',
     gate: 'review_recommendation',
-    taskTemplate:
-      '阶段任务：形成推荐（Career Workflow Stage 4/4）。\n' +
-      '基于方向评估明细，执行 career-path 的 Step 6（输出报告）——\n' +
-      '产出决策报告（decisions/，Decision Record Contract），报告必须区分：confirmed fact（已登记事实）/ exploration input（未登记口述）/ inference（推理结论）',
+    task: {
+      objective: '形成推荐：基于方向评估明细，执行 career-path 的 Step 6（输出报告）',
+      instructions: [
+        '产出决策报告（decisions/，Decision Record Contract）',
+        '报告必须区分：confirmed fact（已登记事实）/ exploration input（未登记口述）/ inference（推理结论）',
+      ],
+      expectedOutputs: ['决策报告'],
+      stopCondition: '决策报告产出完成——停止，等待 review_recommendation Gate',
+      declaredBoundaries: { forbiddenStages: [] },
+    },
   },
 ]
 
 export const WORKFLOW_TYPES: WorkflowType[] = ['career_direction']
 
+/** 合法 StageId 枚举（RPC 边界校验用） */
+export const STAGE_IDS = CAREER_DIRECTION_STAGES.map((s) => s.id)
+
 /** Stage spec 查询（UI 按 currentStage 取 taskTemplate 发起 agent/start；契约 §2.3） */
 export function getStageSpec(stageId: StageId): StageSpec | undefined {
   return CAREER_DIRECTION_STAGES.find((s) => s.id === stageId)
+}
+
+/** Stage 序号（1-based；契约 §二 四阶段串行） */
+export function stageIndex(stageId: StageId): number {
+  return CAREER_DIRECTION_STAGES.findIndex((s) => s.id === stageId) + 1
+}
+
+/**
+ * Stage Task Compiler（Agent Execution Boundary Repair P0-B/C）：
+ * 引擎侧 Stage Boundary 三重校验 + 编译单一 Stage Execution Envelope。
+ * 校验（任一失败 throw——Agent 启动被拒，不进入对话）：
+ *   1. workflow 存在且 active；2. stageId == workflow.currentStage；3. 当前 Stage 状态 == running
+ * 编译产物 = 一段系统级 Envelope 文本（注入 agent/start context，与用户消息分离——
+ * 不是"又一条用户消息"，是控制平面下发的执行边界）。
+ */
+export function compileStageTask(ws: Workspace, workflowId: string, stageId: StageId): { workflow: WorkflowState; envelope: string } {
+  const w = getWorkflow(ws, workflowId)
+  if (!w) throw new Error(`Stage 启动被拒：workflow 不存在（${workflowId}）`)
+  if (w.status !== 'active') throw new Error(`Stage 启动被拒：workflow 状态 ${w.status}（非 active）`)
+  if (w.currentStage !== stageId) throw new Error(`Stage 启动被拒：当前阶段是 ${w.currentStage ?? '无'}，请求 ${stageId}（UI 越界）`)
+  const stage = w.stages.find((s) => s.id === stageId)
+  if (!stage || stage.status !== 'running') throw new Error(`Stage 启动被拒：${stageId} 状态 ${stage?.status ?? '未知'}（需 running）`)
+  const spec = getStageSpec(stageId)!
+  const idx = stageIndex(stageId)
+  const total = w.totalStages
+  const boundaryLine =
+    spec.task.declaredBoundaries.forbiddenStages.length > 0
+      ? `本阶段禁止进入：${spec.task.declaredBoundaries.forbiddenStages.join('、')}。用户若问到这些方向的问题，回答"该问题会在后续阶段处理"，然后继续当前阶段任务。`
+      : '无阶段禁令。'
+  const envelope = [
+    '【WORKFLOW_STAGE】',
+    `workflow_id: ${w.id}`,
+    `stage_id: ${stageId}`,
+    `stage_index: ${idx}`,
+    `stage_count: ${total}`,
+    '',
+    '【USER_GOAL】',
+    w.statement,
+    '',
+    '【STAGE_OBJECTIVE】',
+    spec.task.objective,
+    '',
+    '【STAGE_INSTRUCTIONS】',
+    ...spec.task.instructions.map((s, i) => `${i + 1}. ${s}`),
+    '',
+    '【EXPECTED_OUTPUTS】',
+    ...spec.task.expectedOutputs.map((s, i) => `${i + 1}. ${s}`),
+    '',
+    '【STOP_CONDITION】',
+    spec.task.stopCondition,
+    '',
+    '【STAGE_BOUNDARY】',
+    boundaryLine,
+    `Gate：${spec.gate ? `本阶段完成需通过 ${spec.gate}（由引擎裁决，用户确认）` : '本阶段无 Gate'}`,
+    '不得自行推进下一 Stage。',
+    '',
+  ].join('\n')
+  return { workflow: w, envelope }
 }
 
 // ─── 目录监听（workflows/ 变更 → 广播 workflowChanged；Engine 单方写，Agent/UI 只读）──

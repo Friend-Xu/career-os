@@ -794,6 +794,9 @@ export class EngineClient {
     resumeSessionId?: string
     /** 当前分析对象——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
     personId?: string
+    /** Workflow Stage Boundary Token：成对传递，引擎校验后编译 Stage Envelope 注入 */
+    workflowId?: string
+    stageId?: string
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     allowedTools?: string[]
     maxTurns?: number

@@ -30,12 +30,15 @@ import {
 import {
   abortWorkflow,
   advanceWorkflow,
+  compileStageTask,
   getWorkflow,
   scanWorkflows,
   startWorkflow,
   WORKFLOW_TYPES,
+  type StageId,
   type WorkflowType,
 } from '../storage/workflow-registry.ts'
+import { STAGE_IDS } from '../storage/workflow-registry.ts'
 import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
@@ -64,6 +67,7 @@ import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
 import { scanKnowledge } from '../storage/knowledge-watcher.ts'
 import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths } from '../storage/person-watcher.ts'
+import { projectPersonSnapshots } from '../storage/person-snapshot-projection.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 import { extractLocalText, extractVisionPages } from '../runtime/document/pdf-import.ts'
 import { ZhipuVisionProvider } from '../runtime/document/vision-provider.ts'
@@ -937,6 +941,20 @@ function agentStartParams(v: unknown): AgentStartParams {
     if (typeof p.context !== 'string') throw new Error('params.context 应为字符串')
     out.context = p.context
   }
+  // Workflow Stage Boundary Token（Agent Execution Boundary Repair P0-C）：
+  // workflowId + stageId 成对传递（引擎侧校验，UI 误发 stage 也会被拒）
+  if (p.workflowId !== undefined) {
+    if (typeof p.workflowId !== 'string' || !/^workflow_\d{8}_\d{5}$/.test(p.workflowId)) {
+      throw new Error('params.workflowId 非法（workflow_YYYYMMDD_NNNNN）')
+    }
+    out.workflowId = p.workflowId
+  }
+  if (p.stageId !== undefined) {
+    if (!STAGE_IDS.includes(p.stageId as StageId)) {
+      throw new Error(`params.stageId 非法（合法：${STAGE_IDS.join('/')}）`)
+    }
+    out.stageId = p.stageId as StageId
+  }
   if (p.resumeSessionId !== undefined) {
     if (typeof p.resumeSessionId !== 'string') throw new Error('params.resumeSessionId 应为字符串')
     out.resumeSessionId = p.resumeSessionId
@@ -1274,7 +1292,18 @@ export async function startServer(opts: {
     [METHODS.appendSessionTurn]: (params) => appendSessionTurn(workspace, appendSessionTurnParams(params)),
     [METHODS.appendCandidates]: (params) => appendCandidates(workspace, appendCandidatesParams(params)),
     [METHODS.listCandidates]: (params) => listCandidates(workspace, personIdParams(params)),
-    [METHODS.resolveCandidate]: (params) => resolveCandidate(workspace, resolveCandidateParams(params)),
+    // resolve 确认 → Registration（facts/）→ 立即投影三件快照（实时归位：确认一条归位一条，会话中断不丢）
+    [METHODS.resolveCandidate]: (params) => {
+      const p = resolveCandidateParams(params)
+      const result = resolveCandidate(workspace, p)
+      if (result && result.status === 'confirmed') {
+        const written = projectPersonSnapshots(workspace, p.personId)
+        if (written.length > 0) {
+          logger.info(`快照投影：${p.personId} 已归位 ${written.join('、')}（候选 ${p.candidateId} 确认触发）`)
+        }
+      }
+      return result
+    },
     [METHODS.resetPerson]: (params) => resetPerson(workspace, personIdParams(params)),
     [METHODS.completePersonInit]: (params) => completePersonInit(workspace, personIdParams(params)),
     [METHODS.deletePerson]: (params) => deletePerson(workspace, personIdParams(params)),
@@ -1385,9 +1414,16 @@ export async function startServer(opts: {
         person ? { name: person.name, personId: person.personId ?? p.personId! } : undefined,
       )
       const taskContext = bundle ? buildContextSystemPrompt(p.taskType!, bundle) : ''
+      // Workflow Stage Envelope（P0-C）：workflowId+stageId → 引擎 Stage Boundary 三重校验 →
+      // 编译 Envelope 注入（系统级边界，与用户消息分离；校验失败 throw = Agent 启动被拒）
+      let stageEnvelope = ''
+      if (p.workflowId !== undefined && p.stageId !== undefined) {
+        const compiled = compileStageTask(workspace, p.workflowId, p.stageId as StageId)
+        stageEnvelope = compiled.envelope
+      }
       return {
         taskId: agentRuntime.start(
-          { ...p, context: [identity, taskContext, p.context].filter(Boolean).join('\n\n') },
+          { ...p, context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n') },
           {
             permissionMode: config.agent.permissionMode,
             allowedTools: config.agent.allowedTools,

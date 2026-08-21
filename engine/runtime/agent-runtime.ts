@@ -35,6 +35,10 @@ export interface AgentStartParams {
   resumeSessionId?: string
   /** 当前分析对象——系统事实，注入任务上下文；决策产物继承此归属（ADR-014） */
   personId?: string
+  /** Workflow Stage Boundary Token（Agent Execution Boundary Repair P0-C）：与 stageId 成对，
+   *  引擎校验 workflow active + stage == current + status == running 后编译 Stage Envelope 注入 */
+  workflowId?: string
+  stageId?: string
   permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
   allowedTools?: string[]
   maxTurns?: number

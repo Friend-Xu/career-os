@@ -11,6 +11,7 @@ import {
   isPersonInitComplete,
 } from '../storage/workflow-registry.ts'
 import { createPersonSession } from '../storage/person-watcher.ts'
+import { compileStageTask } from '../storage/workflow-registry.ts'
 
 let wsSeq = 0
 function testWorkspace(): Workspace {
@@ -274,4 +275,61 @@ test('startWorkflow 边界：type/personId/statement/person 存在性 fail fast'
   assert.throws(() => startWorkflow(ws, { type: 'career_direction', personId: 'bad', statement: GOAL }), /personId 非法/)
   assert.throws(() => startWorkflow(ws, { type: 'career_direction', personId: pid, statement: '  ' }), /statement 必填/)
   assert.throws(() => startWorkflow(ws, { type: 'career_direction', personId: 'person_999', statement: GOAL }), /person 不存在/)
+})
+
+// ─── Stage Task Compiler（Agent Execution Boundary P0-C：Stage Boundary 三重校验 + Envelope）──
+
+test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停止条件，不自行推进）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const { envelope } = compileStageTask(ws, workflow.id, 'fact_collection')
+  assert.ok(envelope.includes('【WORKFLOW_STAGE】'))
+  assert.ok(envelope.includes(`workflow_id: ${workflow.id}`))
+  assert.ok(envelope.includes('stage_id: fact_collection'))
+  assert.ok(envelope.includes('stage_index: 1'))
+  assert.ok(envelope.includes('stage_count: 4'))
+  assert.ok(envelope.includes('【USER_GOAL】'))
+  assert.ok(envelope.includes(GOAL))
+  assert.ok(envelope.includes('【STOP_CONDITION】'))
+  assert.ok(envelope.includes('禁止进入：direction_exploration、direction_evaluation、recommendation'))
+  assert.ok(envelope.includes('不得自行推进下一 Stage'))
+})
+
+test('compileStageTask 校验：workflow 不存在 / 非 active / stage 不匹配 / 状态非 running → 拒绝', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  // workflow 不存在
+  assert.throws(() => compileStageTask(ws, 'workflow_20260821_99999', 'fact_collection'), /workflow 不存在/)
+  // stage 不匹配（UI 越界：请求 Stage 2 但当前 Stage 1）
+  assert.throws(() => compileStageTask(ws, workflow.id, 'direction_exploration'), /当前阶段是 fact_collection/)
+  // 状态非 running（Path B waiting_gate 不允许发任务）
+  const ws2 = testWorkspace()
+  const pid2 = makePerson(ws2)
+  seedPendingCandidates(ws2, pid2)
+  const wb = startWorkflow(ws2, { type: 'career_direction', personId: pid2, statement: GOAL })
+  assert.throws(() => compileStageTask(ws2, wb.workflow.id, 'fact_collection'), /需 running/)
+  // abort 后非 active
+  const ws3 = testWorkspace()
+  const pid3 = makePerson(ws3)
+  const w3 = startWorkflow(ws3, { type: 'career_direction', personId: pid3, statement: GOAL })
+  abortWorkflow(ws3, w3.workflow.id)
+  assert.throws(() => compileStageTask(ws3, w3.workflow.id, 'fact_collection'), /非 active/)
+})
+
+test('compileStageTask：advance 推进到 Stage 2 后可编译 Stage 2 Envelope（start/advance 同一编译器）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedPendingCandidates(ws, pid)
+  seedCompleteSnapshots(ws, pid)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const res = advanceWorkflow(ws, workflow.id)
+  assert.equal(res.ok, true)
+  if (res.ok) {
+    const { envelope } = compileStageTask(ws, res.workflow.id, res.nextStage!)
+    assert.ok(envelope.includes('stage_id: direction_exploration'))
+    assert.ok(envelope.includes('stage_index: 2'))
+    assert.ok(envelope.includes('禁止进入：direction_evaluation、recommendation'))
+  }
 })

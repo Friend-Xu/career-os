@@ -317,7 +317,7 @@ interface AppState {
   startAgentTask: (prompt: string, opts?: { type?: string; title?: string; taskRequest?: AgentTaskRequest }) => void;
   expandToFullAgent: () => void;
   /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示） */
-  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest }) => void;
+  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string } }) => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -808,9 +808,10 @@ export const useAppStore = create<AppState>()(
           ? `工作流已开始（已有候选待确认——阶段 1/${wf.totalStages} 等待你的确认）`
           : `工作流已开始（阶段 1/${wf.totalStages} 事实收集——Agent 正在收集）`,
       )
-      // Path A：当前 Stage running，UI 按 Stage taskTemplate 发起 agent/start（resumeSessionId 续接）
+      // Path A：当前 Stage running——发用户目标原文；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
+      // （Agent Execution Boundary：UI 不拼阶段指令，引擎是唯一 Stage 编译器）
       if (res.path === 'A' && wf.currentStage) {
-        get().sendAgentMessage(`【工作流阶段任务】${wf.currentStage}：${statement}`, { silent: true })
+        get().sendAgentMessage(statement, { silent: true, stageRef: { workflowId: wf.id, stageId: wf.currentStage } })
       }
     } catch (err) {
       useToastStore.getState().push('warning', `发起工作流失败：${err instanceof Error ? err.message : String(err)}`)
@@ -836,9 +837,9 @@ export const useAppStore = create<AppState>()(
           ? '工作流已完成'
           : `已进入阶段 ${res.nextStage ?? ''}（${res.nextStage ? stageLabel(res.nextStage) : ''}）`,
       )
-      // 新 Stage running：UI 按 Stage taskTemplate 发起 agent/start（resumeSessionId 续接）
+      // 新 Stage running：发简短提示；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
       if (res.nextStage && res.workflow.status === 'active') {
-        get().sendAgentMessage(`【工作流阶段任务】${res.nextStage}：${res.workflow.statement}`, { silent: true })
+        get().sendAgentMessage(`工作流已进入阶段 ${stageLabel(res.nextStage)}。`, { silent: true, stageRef: { workflowId: res.workflow.id, stageId: res.nextStage } })
       }
       void pullWorkflows()
     } catch (err) {
@@ -975,7 +976,7 @@ export const useAppStore = create<AppState>()(
           : '采集：先引导用户提供简历（粘贴文本），提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
         : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
       '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
-      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。教育类目必须附加第四段结构化载荷：候选标记：教育｜{内容}｜{来源}｜学校=…；专业=…；学历=…；起=…；止=…（学历取值只能是：高中、大专、本科、硕士、博士；年份为数字如 2019）。工作经历类目必须附加第四段结构化载荷：候选标记：经历｜{内容}｜{来源}｜公司=…；岗位=…；起=…；止=…（起止格式 YYYY.MM 如 2023.07；仍在职写止=至今；载荷与内容一致）。项目经历/Gap/比赛类经历候选不附加第四段；其余类目省略第四段。',
+      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。结构化载荷（引擎据此登记投影，缺载荷 = 该候选无法登记）：教育类目必须附加第四段：候选标记：教育｜{内容}｜{来源}｜学校=…；专业=…；学历=…；起=…；止=…（学历取值只能是：高中、大专、本科、硕士、博士；年份为数字如 2019）。工作经历类目必须附加第四段：候选标记：经历｜{内容}｜{来源}｜公司=…；岗位=…；起=…；止=…（起止格式 YYYY.MM 如 2023.07；仍在职写止=至今；载荷与内容一致）。技能类目必须附加第四段：候选标记：技能｜{内容}｜{来源}｜技能=…；级别=…；场景=…（级别取值只能是：熟练、胜任、掌握、入门；场景=该技能的使用场景简述）。约束类目可选附加第四段：候选标记：约束｜{内容}｜{来源}｜薪资=…；城市=…；现居=…（结构化键供引擎投影规范字段；无法结构化则省略第四段，原文仍会被登记）。项目经历/Gap/比赛类经历候选不附加第四段；其余类目省略第四段。',
       '示例回复格式：',
       '好的，机械设计本科——我把它整理为候选信息，稍后可在清单里确认。',
       '候选标记：教育｜机械设计制造及其自动化本科｜用户描述｜学校=某大学；专业=机械设计制造及其自动化；学历=本科；起=2015；止=2019',
@@ -983,26 +984,8 @@ export const useAppStore = create<AppState>()(
       '接下来聊聊工作经历：你目前的工作经历是怎样的？',
       '注意：缺少候选标记行 = 该条信息不会被系统收集。',
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
-      `收尾（用户确认完所有候选后执行）：将用户**已确认**的技能候选（category=技能）写入 persons/${personId}/snapshot/current/skill_inventory.md（快照资产，引擎据此派生 Person.skills；找不到该文件 = 画像技能空白）。文件格式严格如下：`,
-      '```markdown',
-      '---',
-      `id: ${personId}`,
-      'status: v1',
-      '---',
-      '',
-      '## 分析摘要',
-      '',
-      '| 字段 | 值 |',
-      '|------|-----|',
-      '| skill_count | N |',
-      '',
-      '## A. 技能清单',
-      '',
-      '| skill_id | 技能 | level | usage_context |',
-      '|----------|------|-------|---------------|',
-      '| skill_001 | 机械设计 | applied-professional | 结构设计 |',
-      '```',
-      '规则：只写用户确认的技能；skill_id 从 skill_001 递增；level 只许 applied-professional / applied-intermediate / applied / applied-basic（对应熟练/胜任/掌握/入门，引擎映射 4/3/3/2，其他词不识别）；语言能力等非专业技能不进技能清单；若该文件已有内容，按用户本次确认结果修订（status 递增 v2、v3…）。',
+      '实时归位（重要）：用户每确认一条候选，引擎会立即登记事实并投影画像快照（identity / skill_inventory / preference_constraints）——**不要自己写这些快照文件**，你只负责候选采集与确认引导。',
+      '收尾（用户确认完所有候选后执行）：核对候选清单——教育/经历/技能/约束/兴趣中用户能提供的都已整理并让用户确认；若某类用户明确表示没有，如实记录（如"无工作经历"），不要编造。然后告诉用户"基础档案已按你的确认建立"——初始化完成的标记由引擎门禁裁决（三件快照齐备才允许），不要自行声称完成。',
       ...(personId
         ? [`采集记录：本会话的对话会持续写入 persons/${personId}/intake/session-001.md（原始对话记录）。如果该文件已有内容，先阅读它了解已采集部分并继续；禁止修改该文件（引擎负责写入）。`]
         : []),
@@ -1072,7 +1055,7 @@ export const useAppStore = create<AppState>()(
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === sessionId)
-      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType, taskRequest)
+      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
@@ -2238,6 +2221,7 @@ async function runAgentTask(
   resumeSessionId?: string,
   taskType?: string,
   taskRequest?: AgentTaskRequest,
+  stageRef?: { workflowId: string; stageId: string },
 ): Promise<void> {
   if (!engine) return
   // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
@@ -2253,6 +2237,7 @@ async function runAgentTask(
         ? { personId: useAppStore.getState().currentPerson().personId }
         : {}),
       ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
+      ...(stageRef ? { workflowId: stageRef.workflowId, stageId: stageRef.stageId } : {}),
       ...(useAppStore.getState().agentSettings.model
         ? { model: useAppStore.getState().agentSettings.model }
         : {}),

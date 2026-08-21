@@ -245,12 +245,12 @@ export function listCandidates(ws: Workspace, personId: string): import('../ir/s
       status: m[2]! as never,
       sessionRef: 'session-001',
     }
+    // payload 通用挂载（skill/constraint 投影也消费结构化载荷；结构化解析仅 education/experience 内联）
+    if (payload) cand.payload = payload
     if (payload && category === 'education') {
-      cand.payload = payload
       cand.education = parseEducationPayload(payload)
     }
     if (payload && category === 'experience') {
-      cand.payload = payload
       cand.experience = parseExperiencePayload(payload)
     }
     out.push(cand)
@@ -704,7 +704,7 @@ function parseSkillInventory(md: string): { skills: PersonSkill[]; version: stri
 }
 
 /** facts/education.md → PersonEducation[]（教育事实登记表；无行 → 空数组） */
-function parseEducationFacts(md: string): import('../ir/schema.ts').PersonEducation[] {
+export function parseEducationFacts(md: string): import('../ir/schema.ts').PersonEducation[] {
   const out: import('../ir/schema.ts').PersonEducation[] = []
   for (const line of md.split('\n')) {
     const m = line.match(/^\|\s*(c-\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|$/)
@@ -725,7 +725,7 @@ function parseEducationFacts(md: string): import('../ir/schema.ts').PersonEducat
 }
 
 /** facts/experience.md → PersonWorkExperience[]（工作经历事实登记表；无行 → 空数组） */
-function parseExperienceFacts(md: string): import('../ir/schema.ts').PersonWorkExperience[] {
+export function parseExperienceFacts(md: string): import('../ir/schema.ts').PersonWorkExperience[] {
   const out: import('../ir/schema.ts').PersonWorkExperience[] = []
   for (const line of md.split('\n')) {
     const m = line.match(/^\|\s*(c-\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|$/)

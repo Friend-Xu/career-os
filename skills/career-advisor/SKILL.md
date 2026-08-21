@@ -18,6 +18,15 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, WebSearch, WebFetch]
 
 每次会话开始时，按顺序执行：
 
+### 0. Workflow Stage 路由（最高优先）
+
+Agent 任务若带 `【WORKFLOW_STAGE】` Envelope（引擎经 agent/start context 注入的系统级边界声明），**先于一切用户意图路由**：
+
+- 只执行 Envelope 声明的当前 Stage（objective/instructions/expectedOutputs）
+- 用户意图与本 Stage 冲突（如 Stage 1 事实收集中用户问"我该选什么方向"）→ 回答"该问题会在后续阶段处理"，继续当前 Stage，**不得切换子流程**
+- 满足 STOP_CONDITION 即停止，等待 Gate——**不得自行推进下一 Stage**（推进由引擎 advance 裁决，用户确认）
+- 声明边界（STAGE_BOUNDARY）与普通 Skill 路由冲突时，Stage 优先
+
 ### 1. 首次运行检查
 
 ```
@@ -111,12 +120,12 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 
 用户画像技能的唯一事实源 = `persons/{person_id}/snapshot/current/skill_inventory.md`（引擎据此派生 Person.skills；缺此文件 = 画像技能空白，不视为「用户没有技能」）。
 
-- **Content Producer**: 初始化采集流程（Agent 按用户确认的技能候选整理内容——技能名、语义级别、使用场景）
+- **Content Producer**: Engine 快照投影器（用户确认技能候选 → 引擎登记并投影生成；Agent **不写此文件**——Agent 只产出技能候选（候选标记协议带结构化载荷 `技能=…；级别=…；场景=…`），确认权在用户，写入权在引擎）
 - **Registration Owner**: 引擎 person snapshot parser（解析登记；Agent 不创建 person 归属字段）
-- **Artifact**: `persons/{person_id}/snapshot/current/skill_inventory.md`（frontmatter `id` 继承任务上下文 person_id；`status: v1` 起，修订递增）
+- **Artifact**: `persons/{person_id}/snapshot/current/skill_inventory.md`（frontmatter `id` 继承 person_id；`status: v1` 起）
 - **Required**: `| skill_id | 技能 | level | usage_context |` 表格行；level 只许 `applied-professional` / `applied-intermediate` / `applied` / `applied-basic`（引擎映射 4/3/3/2，其他词不识别，语言能力等非专业技能不进清单）
-- **Identity**: person_id 继承任务上下文；Agent 禁止创建身份字段
-- **Lifecycle**: 文件缺失由引擎 person snapshot 投影检测（缺件显式标记，不静默）
+- **Identity**: person_id 由引擎投影继承；Agent 禁止创建身份字段
+- **Lifecycle**: 文件由引擎投影生成（每确认一条技能候选重投影）；缺失 = 无已确认技能（门禁缺件显式标记，不静默）
 
 ### 摘要字段
 

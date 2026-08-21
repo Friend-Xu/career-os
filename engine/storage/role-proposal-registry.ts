@@ -137,7 +137,7 @@ export function upsertRoleToRolesMd(ws: Workspace, role: Role): void {
   ws.write(rel, serializeRolesMarkdown(merged))
 }
 
-export function parseRoleProposalMarkdown(md: string, sourceFile: string): RoleProposal | null {
+export function parseRoleProposalMarkdown(md: string): RoleProposal | null {
   const m = md.match(/^---\n([\s\S]*?)\n---\n?/)
   if (!m) return null
   const meta: Record<string, string> = {}
@@ -175,12 +175,12 @@ export function scanRoleProposals(ws: Workspace): RoleProposal[] {
   }
   return files
     .sort()
-    .map((f) => parseRoleProposalMarkdown(ws.read(`${ROLE_PROPOSAL_SPEC.dir}/${f}`), f))
+    .map((f) => parseRoleProposalMarkdown(ws.read(`${ROLE_PROPOSAL_SPEC.dir}/${f}`)))
     .filter((p): p is RoleProposal => p !== null)
 }
 
 /** 补登（引擎离线期间 Agent 手工写入的提案文件兜底）：registered 提案重新投影（幂等）；invalid 跳过 */
-export function registerPendingRoleProposals(ws: Workspace, now: Date = new Date()): { registered: number } {
+export function registerPendingRoleProposals(ws: Workspace): { registered: number } {
   let registered = 0
   for (const p of scanRoleProposals(ws)) {
     if (p.status !== 'registered') continue
