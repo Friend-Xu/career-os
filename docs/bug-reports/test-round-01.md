@@ -105,6 +105,24 @@ P1 待做（明确不做本轮）：declaredBoundaries 接 PreToolUse 工具级�
 3. workflow advance：三件齐备自动可过；Stage 2 Envelope 由引擎注入
 4. Stage Boundary：Stage 1 中问"我该选什么方向"→ Agent 答"后续阶段处理"
 
+## 第二轮验证结果（2026-08-21，测试区实测）
+
+### FIXED 确认 ✅
+| 验证项 | 结果 |
+|--------|------|
+| 画像对账回滚 | ✅ manifest completed→in_progress；UI 显示「初始化中」横幅 + 会话锁定 |
+| Path B guard | ✅ 重发工作流 → Path A running「Agent 正在工作」（7 条约束/兴趣候选不足 → 补采，死锁根除） |
+| totalStages | ✅ 卡片「阶段 1 / 4」 |
+| 候选类别文案 | ✅「当前无待确认候选——需先在 AI 面板完成候选采集」 |
+| Stage Boundary 引擎强制 | ✅ WS 实测：正确 stage 放行；越界 stage/不存在 workflow/非法格式全部拒绝 |
+| 实时归位（WS 路径） | ✅ 确认 c-001 → preference_constraints.md 立即投影（Engine 写，Agent 零参与） |
+| 实时归位（UI 路径） | ✅ UI 点确认 → RPC → 投影 → 快照新增原文；计数同步（待确认 6→5、已确认 1→2） |
+| advance 状态机 | ✅ running → ILLEGAL_STATE（控制平面硬切断） |
+
+### 新 BUG-006（本轮发现，已修复推送）
+**Path A 完成信号断链**：onFactCollectionReady 只有单测调用，生产链路无调用方——Agent 收集完候选后 Stage 1 永远卡在 running，用户无法 advance（第二死锁）。
+修复：引擎侧 Stage Task 完成钩子——agent/start 带 workflowId/stageId 的任务注册进 stageTasks Map；Agent done 事件 → fact_collection 调 onFactCollectionReady（确定性 guard：候选不足 → failed）→ 广播 workflowChanged。引擎闭环，不依赖 UI 事件处理。
+
 ## 建议修复方向（供开发区决策）
 
 1. **BUG-001（引擎侧，治本）**：Path B 判定增强——候选须含 education/experience 类 或 快照已齐备才直接 waiting_gate；否则走 Path A（启动 fact_collection task 补采集）或进入缺件引导态。advance 失败时返回可操作缺件清单。
