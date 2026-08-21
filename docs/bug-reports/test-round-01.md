@@ -78,17 +78,32 @@
 | BUG-004 | 低 | 引擎 workflow-registry | abort 只改 workflow.status，当前 stage 滞留 waiting_gate，审计语义不一致 | ✅ 已修复（abort 同步当前 stage → failed） |
 | BUG-005 | 高 | 引擎 person-watcher | 历史空壳 completed（manifest 标完成但三件快照缺件）无存量回溯——UI 徽章与 workflow 判定分裂 | ✅ 已修复（reconcilePersonInitStates 对账循环 + 启动钩子） |
 
-## 修复记录（第二轮：对账 + guard + 单一投影源）
+## 修复记录（第三轮：Agent Execution Boundary Repair——1b3a959）
 
-引擎：738/738 测试通过（+6：Path B guard ×3、onFactCollectionReady guard、totalStages 序列化、reconcile ×2）
-UI typecheck 0 错；sanitize CLEAN。
+用户拍板方向：受约束的 Agent + 实时归位（信息不浪费）。借鉴微软 Agent Framework（Workflow 控制流程/Gate，LLM 阶段内推理；工具级审批）、K8s Reconciliation、Event Sourcing 投影。
 
-- **对账循环**（K8s Reconciliation 借鉴）：`reconcilePersonInitStates`——启动时扫描 manifest completed 但快照缺件 → 回滚 in_progress + 广播 personsChanged。测试区 person_001 启动后自动从「初始化完成」变回「采集中」。
-- **start guard**（XState Guards 借鉴）：`candidatesCanSatisfyInit`——Path B 要求候选类别覆盖缺失快照（identity←教育/经历、skill_inventory←技能、preference_constraints←约束/兴趣）；不足 → Path A 补采。onFactCollectionReady 同判，产出不足 → failed。
-- **单一投影源**（Event Sourcing 借鉴）：WorkflowState.totalStages 引擎权威字段，UI 卡片/toast 统一读取；waiting_gate 文案按 initCandidates 真实类别渲染。
-- **abort 审计一致**：当前 stage 同步 failed。
+**P0-A 实时归位**（快照 = Engine 投影的 Materialized View，Agent 不写快照）：
+- 新模块 `person-snapshot-projection.ts`：facts/ + 已确认候选 → 三件快照全量投影（幂等；无事实不生成文件）
+- resolveCandidate RPC 确认 → Registration → 立即投影（确认一条归位一条，会话中断不丢）
+- 技能/约束候选补结构化载荷（技能=；级别=；场景= / 薪资=；城市=；现居=）；listCandidates 通用挂载 payload
+- 初始化 Agent 指令回退"收尾写三件"→"引擎实时归位"；SKILL.md Producer 归属 Agent→Engine（消除两契约打架）
 
-移植清单（测试区）：engine/storage/workflow-registry.ts、engine/storage/person-watcher.ts、engine/main.ts、UI/components/workbench/workflow-card.tsx、UI/store/app-store.ts（其余为测试文件）。
+**P0-B/C Stage Envelope**（控制平面约束不再降级为对话内容）：
+- StageSpec.taskTemplate string → 结构化 StageTaskSpec（objective/instructions/expectedOutputs/stopCondition/declaredBoundaries.forbiddenStages）
+- compileStageTask：三重校验（active + stage==current + running）+ 编译单一 Envelope；start/advance 同一编译器
+- agent/start 接 workflowId/stageId → 引擎校验后注入 context（UI 误发 stage 被拒）
+- SKILL.md Workflow Stage 路由最高优先（Stage ≠ 用户意图：用户问方向问题也留在当前 Stage）
+
+质量门：引擎 749/749（+11）、engine tsc 0 错、UI typecheck 0 错、sanitize CLEAN。
+P1 待做（明确不做本轮）：declaredBoundaries 接 PreToolUse 工具级强制。
+
+移植清单（测试区）：engine/storage/person-snapshot-projection.ts（新）、engine/storage/person-watcher.ts、engine/storage/workflow-registry.ts、engine/storage/role-proposal-registry.ts、engine/runtime/agent-runtime.ts、engine/transport/websocket.ts、UI/store/app-store.ts、UI/store/engine-client.ts、skills/career-advisor/SKILL.md（测试文件可不移植）。
+
+### 测试区回归验证项（移植后第二轮）
+1. 启动引擎 → 画像对账回滚 person_001 → 重新发起工作流 → Path A 补采（guard 生效）
+2. 初始化会话：Agent 收技能候选带载荷 → 用户确认 → 快照立即出现（实时归位）
+3. workflow advance：三件齐备自动可过；Stage 2 Envelope 由引擎注入
+4. Stage Boundary：Stage 1 中问"我该选什么方向"→ Agent 答"后续阶段处理"
 
 ## 建议修复方向（供开发区决策）
 
