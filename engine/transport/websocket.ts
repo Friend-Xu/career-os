@@ -32,13 +32,14 @@ import {
   advanceWorkflow,
   compileStageTask,
   getWorkflow,
+  onFactCollectionReady,
   scanWorkflows,
+  STAGE_IDS,
   startWorkflow,
   WORKFLOW_TYPES,
   type StageId,
   type WorkflowType,
 } from '../storage/workflow-registry.ts'
-import { STAGE_IDS } from '../storage/workflow-registry.ts'
 import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
@@ -1227,8 +1228,25 @@ export async function startServer(opts: {
     }
   }
   // Agent 事件推送：广播（个人工具单客户端；与 data.* 事件同语义）
+  // Stage Task 完成钩子（BUG-006 修复）：带 workflowId/stageId 的任务 done →
+  //   fact_collection 调 onFactCollectionReady（确定性 guard：候选不足 → failed，不信任 Agent 自报）
+  //   → 广播 workflowChanged（UI 重拉投影）。引擎侧闭环，不依赖 UI 事件处理。
+  const stageTasks = new Map<string, { workflowId: string; stageId: StageId }>()
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
+    if (ev.type === 'done') {
+      const ref = stageTasks.get(taskId)
+      if (ref) {
+        stageTasks.delete(taskId)
+        if (ref.stageId === 'fact_collection') {
+          const next = onFactCollectionReady(workspace, ref.workflowId)
+          if (next) {
+            logger.info(`Stage 完成钩子：${ref.workflowId} fact_collection → ${next.stages.find((s) => s.id === 'fact_collection')?.status}（Agent 任务 ${taskId} done）`)
+            broadcast({ event: EVENTS.workflowChanged })
+          }
+        }
+      }
+    }
   })
 
   const handlers: Record<string, (params?: unknown) => unknown> = {
@@ -1421,19 +1439,24 @@ export async function startServer(opts: {
         const compiled = compileStageTask(workspace, p.workflowId, p.stageId as StageId)
         stageEnvelope = compiled.envelope
       }
+      const taskId = agentRuntime.start(
+        { ...p, context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n') },
+        {
+          permissionMode: config.agent.permissionMode,
+          allowedTools: config.agent.allowedTools,
+          maxTurns: config.agent.maxTurns,
+          model: config.agent.enabled === false ? undefined : config.agent.model,
+          apiKey: config.agent.enabled === false ? undefined : config.agent.apiKey,
+          baseUrl: config.agent.enabled === false ? undefined : config.agent.baseUrl,
+        },
+        workspace.paths.root,
+      )
+      // 注册 Stage Task 完成钩子（BUG-006：Agent done → onFactCollectionReady → workflowChanged）
+      if (p.workflowId !== undefined && p.stageId !== undefined) {
+        stageTasks.set(taskId, { workflowId: p.workflowId, stageId: p.stageId as StageId })
+      }
       return {
-        taskId: agentRuntime.start(
-          { ...p, context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n') },
-          {
-            permissionMode: config.agent.permissionMode,
-            allowedTools: config.agent.allowedTools,
-            maxTurns: config.agent.maxTurns,
-            model: config.agent.enabled === false ? undefined : config.agent.model,
-            apiKey: config.agent.enabled === false ? undefined : config.agent.apiKey,
-            baseUrl: config.agent.enabled === false ? undefined : config.agent.baseUrl,
-          },
-          workspace.paths.root,
-        ),
+        taskId,
         ...(bundle ? { contextBundle: bundle } : {}),
       }
     },
