@@ -19,13 +19,15 @@ export function WorkflowCard() {
   const abortWorkflow = useAppStore((s) => s.abortWorkflow)
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
+  const engineStatus = useAppStore((s) => s.engineStatus)
   const loadInitCandidates = useAppStore((s) => s.loadInitCandidates)
 
   // BUG-009 修复：gateCopy 消费的候选源须与引擎同步——页面刷新后 initCandidates 是会话态缓存（空），
-  // 不拉取会导致「当前无待确认候选」失真（引擎侧实际有 pending 候选）
+  // 不拉取会导致「当前无待确认候选」失真（引擎侧实际有 pending 候选）。
+  // BUG-009b：deps 必须含 engineStatus——首挂时引擎仍在 connecting，loadInitCandidates 早退后永不重试
   useEffect(() => {
-    if (person.personId) void loadInitCandidates(person.personId)
-  }, [person.personId, loadInitCandidates])
+    if (person.personId && engineStatus === 'connected') void loadInitCandidates(person.personId)
+  }, [person.personId, engineStatus, loadInitCandidates])
 
   const active = workflows.find((w) => w.status === 'active')
 
