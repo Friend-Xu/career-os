@@ -51,10 +51,10 @@ export function WorkflowCard() {
 
   const stageIdx = active.stages.findIndex((s) => s.id === active.currentStage)
   const cur = stageIdx >= 0 ? active.stages[stageIdx] : undefined
-  const progress = active.stages.filter((s) => s.status === 'completed').length
   const total = active.totalStages ?? active.stages.length
   const waitingGate = cur?.status === 'waiting_gate'
   const running = cur?.status === 'running'
+  const failed = cur?.status === 'failed'
 
   // BUG-003 修复：waiting_gate 文案按实际候选类别渲染（不写死"教育/经历/技能/偏好"）——
   // 候选缺教育/经历类时（仅约束/兴趣，无法支撑 person-init）明示缺口，引导先补采集再确认
@@ -83,7 +83,7 @@ export function WorkflowCard() {
         <Typography sx={{ fontSize: 12, fontWeight: 600 }}>
           {active.statement}
           <Typography component="span" sx={{ fontSize: 11, color: COLORS.textMuted, ml: 1 }}>
-            阶段 {progress + (waitingGate || running ? 1 : 0)} / {total}
+            阶段 {stageIdx + 1} / {total}
           </Typography>
         </Typography>
         <Button size="small" color="inherit" sx={{ fontSize: 11, minWidth: 0, p: 0.25 }} onClick={() => void abortWorkflow(active.id)}>
@@ -126,14 +126,31 @@ export function WorkflowCard() {
             {cur.status === 'failed' && (
               <Chip
                 size="small"
-                label="阶段失败（可重试）"
+                label="阶段失败"
                 sx={{ height: 18, fontSize: 10.5, bgcolor: alpha(RISK_COLOR.high, 0.12), color: RISK_COLOR.high }}
               />
             )}
           </Stack>
 
-          {/* Human Gate：确认并继续（advance 由引擎四步裁决；失败 toast 缺件）——
-              暂不登记 = 受控探索分支，不发 advance（契约 §4.3） */}
+          {/* BUG-008 修复：failed 阶段给出出口——重新发起（终止后重开事实收集）；
+              advance 由引擎四步裁决，failed 状态不可 advance（硬切断，不假装可重试推进） */}
+          {failed && (
+            <Stack spacing={0.75}>
+              <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
+                本阶段未完成（候选不足以支撑画像登记或 Agent 未产出候选）。可重新发起工作流，重新收集事实。
+              </Typography>
+              <Button
+                size="small"
+                variant="contained"
+                sx={{ fontSize: 11.5, alignSelf: 'flex-start' }}
+                onClick={() => {
+                  void abortWorkflow(active.id).then(() => startWorkflow('帮我确定职业方向'))
+                }}
+              >
+                重新发起
+              </Button>
+            </Stack>
+          )}
           {waitingGate && (
             <Stack spacing={0.75}>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>{gateCopy}</Typography>

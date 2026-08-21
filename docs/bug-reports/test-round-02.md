@@ -48,8 +48,56 @@ engine/storage/workflow-registry.ts      ← BUG-007 修复（本轮唯一产品
 engine/tests/workflow-registry.test.ts   ← 可选（测试文件）
 ```
 
-## 第四轮验证重点（移植后）
+## 第四轮验证结果（2026-08-21，测试区实测）
 
-1. 完整 UI 链路：发起工作流 → 初始化会话收集教育/经历 → 确认候选 → identity 投影 → 卡片「确认并继续」→ Stage 2 + 「初始化中」横幅消失（init_state 联动生效）
-2. Stage 2（direction_exploration）Envelope 对 Agent 的实际约束：问方向问题应被路由到当前阶段处理
-3. 重启引擎 → reconcilePersonInitStates 对账：completed + 缺件 → 回滚（已有测试覆盖，测试区实测确认）
+### BUG-007 联动 ✅ FIXED 确认
+
+| 验证项 | 结果 |
+|--------|------|
+| advance 前 manifest init_state | ✅ `in_progress`（重启后对账未误伤） |
+| Path B → waiting_gate（三件快照齐备 + pending 约束/兴趣） | ✅ 00009 path=B |
+| advance 过 confirm_person_facts → **manifest 联动 completed** | ✅ 引擎登记权威时刻生效（data.persons.changed 广播 → UI 重拉） |
+| UI 侧「初始化中」横幅 | ✅ 消失（工作台无初始化横幅/锁定） |
+
+### Stage 2 Envelope 对 Agent 的实际约束 ✅（本轮核心实证）
+
+任务指令刻意跨阶段：「请直接给我最终的职业方向推荐，并列出每个方向的加权打分和排名」（要求 Stage 3/4 行为）。
+
+Agent 实际行为（Stage 2 direction_exploration Envelope 注入）：
+- ✅ 输出停留在探索边界：方向候选清单（三主二备）+ 画像卡对比（核心三项）
+- ✅ **明确拒绝跨阶段**：「加权打分与最终排名属于后续阶段（direction_evaluation / recommendation），本阶段不产出——你要求的『加权打分与排名』将在下一阶段执行」
+- ✅ 引用历史匹配度时标注「本阶段不重新打分」
+- ✅ 落盘 exploration 产物并 stop（stopCondition 生效）
+
+**结论：控制平面约束不降级为对话内容——结构化 Envelope 对真实 LLM 行为产生了可观测的边界约束。**
+
+### 对账回归 ✅
+
+| 验证项 | 结果 |
+|--------|------|
+| 构造谎报（completed + 移除 identity.md）→ 重启引擎 | ✅ 启动日志 `画像对账：回滚 1 个空壳完成档案——person_001（缺 identity.md）` |
+| 现场恢复 | ✅ identity 还原 + manifest 回 completed（node 脚本 UTF-8 安全） |
+
+### 新 BUG-008（本轮发现，已修复开发区）
+
+**failed stage 的 UI 投影缺陷**（测试区 00004 遗留 failed workflow 暴露）：
+1. 进度显示「阶段 0 / 4」——`progress + (waitingGate||running ? 1 : 0)` 在 failed 时归零
+2. Chip 文案「阶段失败（可重试）」但**无任何可点击出口**（advance 被引擎硬切断，「可重试」是空话）
+
+修复（UI/components/workbench/workflow-card.tsx）：
+- 进度改为 `阶段 {stageIdx + 1} / {total}`（直接按 currentStage 索引，running/waiting_gate/failed 全对）
+- failed 分支加「重新发起」按钮（abort → startWorkflow 事实收集重启）+ 文案说明失败原因
+
+观察记录（不改）：`workflows.find(w => w.status === 'active')` 只显示第一个 active workflow——多 active 并存时旧的 failed 会挡住健康的 running（测试区多 active 是连续测试造成，真实流 abort 后再发；引擎允许审计留存，UI 单卡投影暂维持）。
+
+## 移植清单（测试区，第五轮验证）
+
+```
+UI/components/workbench/workflow-card.tsx   ← BUG-008 修复（本轮唯一产品改动）
+```
+
+## 第五轮验证重点（移植后）
+
+1. UI 全链路回归：发起 → Path A Agent 收集 → 确认候选 → 确认并继续 → Stage 2 + 横幅消失（BUG-007 UI 侧已在第四轮确认，重跑只为确认 BUG-008 无回归）
+2. failed workflow 卡片：显示「阶段 1 / 4」+「重新发起」按钮 → 点击后 abort + 新 workflow Path A
+3. 观察记录复核：多 active 场景 UI 单卡行为是否符合预期
