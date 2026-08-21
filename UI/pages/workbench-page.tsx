@@ -380,7 +380,7 @@ function DecisionTimeline() {
                   : d.payload?.type === 'direction' && d.payload.directions.length > 0
                     ? ` · ${d.payload.directions.map((x) => `${x.name} ${x.match}%`).join(' / ')}`
                     : d.directionMatch > 0 && ` · 匹配 ${d.directionMatch}%`}
-                {` · 风险${RISK_LABEL[d.riskLevel]}`}
+                {d.riskLevel && ` · 风险${RISK_LABEL[d.riskLevel]}`}
               </Typography>
             </Box>
           </Stack>

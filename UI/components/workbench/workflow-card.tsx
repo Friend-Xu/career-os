@@ -4,6 +4,8 @@ import { alpha, COLORS, RISK_COLOR } from '../../data/constants'
 import { useAppStore, stageLabel } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
 import { DirectionPoolCard } from './direction-pool-card'
+import { EvaluationCard } from './evaluation-card'
+import { RecommendationCard } from './recommendation-card'
 
 /**
  * 工作流投影卡（Career Workflow Contract v0.1）——UI 只投影 + Human Action，不 orchestrate：
@@ -84,7 +86,9 @@ export function WorkflowCard() {
   const gateCopy = waitingGate
     ? cur.id === 'direction_exploration'
       ? '方向池已生成，请确认至少一个方向后继续（未确认时无法进入评估阶段）。'
-      : initDone
+      : cur.id === 'recommendation'
+        ? '推荐方案已生成——采纳后登记为决策并完成工作流；不满意可重新生成（已有方向保留）。'
+        : initDone
         ? '画像已齐备（个人事实已登记）——确认后直接进入下一阶段；暂不登记则本阶段保持未完成。'
         : !hasAnyPending
           ? '当前无待确认候选——需先在 AI 面板完成候选采集（教育/经历/技能/偏好），确认登记后才能推进本阶段。'
@@ -158,6 +162,9 @@ export function WorkflowCard() {
 
           {/* v0.2 方向池投影（UI-1：组件自判挂载条件——active + direction_exploration + 非空） */}
           <DirectionPoolCard />
+          {/* v0.3 Stage 3/4 投影（组件自判：active + 对应 stage + 非空；只读 + Human Action） */}
+          <EvaluationCard />
+          <RecommendationCard />
 
           {/* UI-4（v0.2 §4.2）：failed 出口 = restage（Engine 业务动作——统一重跑语义，
               不模拟 abort+start；Stage 1 candidates 链零改动，restage 恢复该 Stage 原有 agent/start） */}
@@ -180,23 +187,28 @@ export function WorkflowCard() {
             <Stack spacing={0.75}>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>{gateCopy}</Typography>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-                <Button size="small" variant="contained" sx={{ fontSize: 11.5 }} onClick={() => void advanceWorkflow(active.id, cur.gate?.id)}>
-                  确认并继续
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  sx={{ fontSize: 11.5 }}
-                  title="不登记、不推进 Stage——仅允许本轮探索使用口述信息（契约 §4.3 受控探索分支）"
-                  onClick={() =>
-                    push(
-                      'info',
-                      '暂不登记：本轮对话仍可继续探索，但口述信息不会升级为个人事实——确认登记后才会推进阶段',
-                    )
-                  }
-                >
-                  暂不登记，继续探索
-                </Button>
+                {/* Stage 4 的 Human Action 由推荐卡承接（采纳/重新生成）——此处不重复「确认并继续」双入口 */}
+                {cur.id !== 'recommendation' && (
+                  <>
+                    <Button size="small" variant="contained" sx={{ fontSize: 11.5 }} onClick={() => void advanceWorkflow(active.id, cur.gate?.id)}>
+                      确认并继续
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontSize: 11.5 }}
+                      title="不登记、不推进 Stage——仅允许本轮探索使用口述信息（契约 §4.3 受控探索分支）"
+                      onClick={() =>
+                        push(
+                          'info',
+                          '暂不登记：本轮对话仍可继续探索，但口述信息不会升级为个人事实——确认登记后才会推进阶段',
+                        )
+                      }
+                    >
+                      暂不登记，继续探索
+                    </Button>
+                  </>
+                )}
                 {/* UI-4：waiting_gate + 方向池无 confirmed → 重新探索入口（restage；引擎终判前置条件，
                     方向池 append-only 不重置——已排除方向不出现在新候选，DIRECTION_POOL_STATE 由引擎注入） */}
                 {cur.id === 'direction_exploration' && !hasConfirmedDirection && (

@@ -830,6 +830,17 @@ export class EngineClient {
     return this.rpc(METHODS.directionsResolve, { personId, directionId, action })
   }
 
+  /** 评估明细投影（v0.3：person/evaluations/list——只返回已登记 artifact，暂存提案无身份不出现；
+   *  workflowId 可选过滤（缺省 = 该人全 workflow 累积池）） */
+  listEvaluations(personId: string, workflowId?: string): Promise<StageArtifact[]> {
+    return this.rpc(METHODS.evaluationsList, { personId, ...(workflowId ? { workflowId } : {}) })
+  }
+
+  /** 单个评估明细全文（v0.3：person/evaluations/get——评估字段正文渲染用；内容 = 评估产物非推理链） */
+  getEvaluationDetail(personId: string, evaluationId: string): Promise<{ id: string; markdown: string }> {
+    return this.rpc(METHODS.evaluationsGet, { personId, evaluationId })
+  }
+
   getWorkflow(workflowId: string): Promise<WorkflowState> {
     return this.rpc(METHODS.workflowGet, { workflowId })
   }

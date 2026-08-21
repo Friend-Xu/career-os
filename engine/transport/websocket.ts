@@ -169,7 +169,7 @@ import {
 } from '../storage/application-registry.ts'
 import type { CreateApplicationRequest } from '../ir/schema.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
-import { listStageArtifacts, resolveStageArtifact, type StageArtifactRejection } from '../storage/stage-artifact-registry.ts'
+import { listStageArtifacts, readStageArtifact, resolveStageArtifact, type StageArtifactRejection } from '../storage/stage-artifact-registry.ts'
 import { DIRECTION_SPEC, EVALUATION_SPEC } from '../storage/artifact-type-registry.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 
@@ -364,6 +364,16 @@ function directionsResolveParams(params: unknown): { personId: string; direction
   if (!directionId) throw new Error('directionId 必填')
   if (action !== 'confirm' && action !== 'reject') throw new Error('action 必须为 confirm/reject')
   return { personId, directionId, action }
+}
+
+/** person/evaluations/get 入参校验（RPC 边界；evaluationId 在 person 命名空间内） */
+function evaluationsGetParams(params: unknown): { personId: string; evaluationId: string } {
+  const p = (params ?? {}) as Record<string, unknown>
+  const personId = typeof p.personId === 'string' ? p.personId.trim() : ''
+  const evaluationId = typeof p.evaluationId === 'string' ? p.evaluationId.trim() : ''
+  if (!personId) throw new Error('personId 必填')
+  if (!evaluationId) throw new Error('evaluationId 必填')
+  return { personId, evaluationId }
 }
 
 /** jd/analyze 入参校验（RPC 边界：用户输入校验，fail fast） */
@@ -1440,6 +1450,17 @@ export async function startServer(opts: {
         broadcast({ event: EVENTS.workflowChanged })
       }
       return result
+    },
+    // ─── v0.3 评估明细（Stage 3 投影：只读——评估由 Agent 产出 + Engine 登记，UI 不裁决）──
+    [METHODS.evaluationsList]: (params) => {
+      const p = directionsListParams(params)
+      return listStageArtifacts(workspace, EVALUATION_SPEC, p.personId, p.workflowId ? { workflowId: p.workflowId } : {})
+    },
+    [METHODS.evaluationsGet]: (params) => {
+      const p = evaluationsGetParams(params)
+      const artifact = readStageArtifact(workspace, EVALUATION_SPEC, p.personId, p.evaluationId)
+      if (!artifact) throw new Error(`评估明细不存在：${p.evaluationId}`)
+      return { id: p.evaluationId, markdown: workspace.read(`${EVALUATION_SPEC.dir(p.personId)}/${p.evaluationId}.md`) }
     },
     // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写 workflows/，UI 只投影）──
     [METHODS.workflowStart]: (params) => startWorkflow(workspace, workflowStartParams(params)),

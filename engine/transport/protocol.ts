@@ -76,6 +76,12 @@ export const METHODS = {
   /** 方向裁决（v0.2 §4.3：params { personId, directionId, action: 'confirm'|'reject' } → ResolveStageArtifactResult；
    *  同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆；directionId 在 person 命名空间内解析） */
   directionsResolve: 'person/directions/resolve',
+  /** 评估明细投影（v0.3：params { personId, workflowId? } → StageArtifact[]；只返回已登记 artifact，
+   *  暂存提案无身份不出现；claim = 评估结论摘要（marker 段后首个非空段落），evidence_refs 含 directions/ 引用） */
+  evaluationsList: 'person/evaluations/list',
+  /** 单个评估明细全文（v0.3：params { personId, evaluationId } → { id, markdown }；评估详情正文渲染用，
+   *  正文 = 评估字段（技能匹配/行业匹配/风险）与确定性依据，非 Agent 推理链原始日志） */
+  evaluationsGet: 'person/evaluations/get',
   /** 重置初始化（Person 生命周期 v0.1：params { personId } → { personId }；清 intake/extraction/events/snapshot，manifest 保留，init_state 重置 in_progress） */
   resetPerson: 'person/reset',
   /** 完成初始化（用户声明基础信息达到可用状态，非封闭：params { personId } → { personId, initState: 'completed' }；manifest init_state → completed） */

@@ -207,6 +207,8 @@ interface AppState {
   /** 方向池投影（v0.2：workflowId → StageArtifact[]，Store 层按 workflow scope 管理——Artifact 归属 workflow_id+stage_id，
    *  组件按 active workflow 取 key，不做跨 workflow 过滤；person/directions/list 引擎实时派生） */
   directionsByWorkflow: Record<string, StageArtifact[]>;
+  /** 评估明细投影（v0.3：workflowId → StageArtifact[]，同方向池 scope 管理；person/evaluations/list 引擎实时派生） */
+  evaluationsByWorkflow: Record<string, StageArtifact[]>;
   /** 岗位 Claim 表达候选缓存（M3-1：jobId → ClaimCoverageRow[]，按岗位拉取） */
   claimCoverage: Record<string, ClaimCoverageRow[]>;
   /** 简历版本（M3.5）：resumes/documents/ 引擎实时派生（版本系统 IR + lifecycle） */
@@ -577,6 +579,7 @@ export const useAppStore = create<AppState>()(
       /** 工作流（Career Workflow Contract v0.1）：Engine 单方写，UI 投影 */
       workflows: [],
       directionsByWorkflow: {},
+      evaluationsByWorkflow: {},
       /** 岗位 Claim 表达候选缓存（jobId → ClaimCoverageRow[]；M3-1 第三段） */
       claimCoverage: {},
       /** 简历版本（M3.5）：引擎实时派生（resumes/documents/） */
@@ -2703,7 +2706,11 @@ async function pullWorkflows(): Promise<void> {
     useAppStore.setState({ workflows: list })
     // v0.2 方向池联动：active workflow 的方向池随工作流状态同步（Store 层 scope，组件不拉取）
     const active = list.find((w) => w.status === 'active')
-    if (active) void pullDirections(active.id)
+    if (active) {
+      void pullDirections(active.id)
+      // v0.3 评估明细联动：Stage 3 完成后 workflowChanged → 重拉评估池（组件只取 key）
+      void pullEvaluations(active.id)
+    }
   } catch {
     // offline：保持现有数据
   }
@@ -2717,6 +2724,19 @@ async function pullDirections(workflowId: string): Promise<void> {
     if (!personId) return
     const list = await engine.listDirections(personId, workflowId)
     useAppStore.setState((s) => ({ directionsByWorkflow: { ...s.directionsByWorkflow, [workflowId]: list } }))
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** 评估明细投影（v0.3：person/evaluations/list 按 workflow 拉取；Store 层过滤，组件只取 key） */
+async function pullEvaluations(workflowId: string): Promise<void> {
+  if (!engine) return
+  try {
+    const personId = useAppStore.getState().currentPerson().personId
+    if (!personId) return
+    const list = await engine.listEvaluations(personId, workflowId)
+    useAppStore.setState((s) => ({ evaluationsByWorkflow: { ...s.evaluationsByWorkflow, [workflowId]: list } }))
   } catch {
     // offline：保持现有数据
   }

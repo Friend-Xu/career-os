@@ -20,7 +20,7 @@ import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { startServer } from '../transport/websocket.ts'
 import { METHODS } from '../transport/protocol.ts'
 import { registerStageArtifact } from '../storage/stage-artifact-registry.ts'
-import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+import { DIRECTION_SPEC, EVALUATION_SPEC } from '../storage/artifact-type-registry.ts'
 
 const PORT = 5299
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {}, trace() {} }
@@ -269,6 +269,57 @@ try {
   check('directions/list 缺 personId → RPC error', typeof missingParams.error === 'object', JSON.stringify(missingParams))
   const badAction = await rpc(client, METHODS.directionsResolve, { personId: dirPerson, directionId: reg.artifact?.artifact_id, action: 'approve' })
   check('directions/resolve action 白名单 → RPC error', typeof badAction.error === 'object', JSON.stringify(badAction))
+
+  // ─── v0.3 评估明细 RPC（person/evaluations/list + get）────────────────────
+  ws.write(`persons/${dirPerson}/evaluations/20260821-评估甲.md`, [
+    '---',
+    `person_id: ${dirPerson}`,
+    'workflow_id: workflow_20260821_00001',
+    'stage_id: direction_evaluation',
+    '---',
+    '',
+    '## 方向评估',
+    '',
+    '方向甲：技能匹配良好，行业进入门槛中等。',
+    '',
+    '## 评估字段',
+    '',
+    '- 技能匹配：匹配（结构设计与 CAE 分析均有对应技能）',
+    '- 行业匹配：中（需补充整车标准知识）',
+    '- 风险：无重大风险',
+    '',
+    '## 事实依据',
+    '',
+    `- directions/${reg.artifact?.artifact_id}.md：评估对象方向甲`,
+    '- facts/education.md：技能背景',
+    '',
+  ].join('\n'))
+
+  const emptyEvaluations = await rpc(client, METHODS.evaluationsList, { personId: dirPerson })
+  check('evaluations/list 空（暂存提案无身份不出现）', Array.isArray(emptyEvaluations.result) && emptyEvaluations.result.length === 0, JSON.stringify(emptyEvaluations))
+
+  const evalReg = registerStageArtifact(ws, EVALUATION_SPEC, {
+    personId: dirPerson,
+    workflowId: 'workflow_20260821_00001',
+    stageId: 'direction_evaluation',
+    proposalFile: '20260821-评估甲.md',
+  })
+  check('evaluations 登记 fixture', evalReg.ok === true, JSON.stringify(evalReg))
+
+  const evalList = await rpc(client, METHODS.evaluationsList, { personId: dirPerson })
+  check(
+    'evaluations/list 1 条 registered + directions 证据域',
+    evalList.result?.length === 1 && evalList.result?.[0]?.state === 'registered' && evalList.result?.[0]?.evidence_refs?.some((r) => r.startsWith('directions/')),
+    JSON.stringify(evalList),
+  )
+  const evalFiltered = await rpc(client, METHODS.evaluationsList, { personId: dirPerson, workflowId: 'workflow_20260821_99999' })
+  check('evaluations/list workflowId 过滤', evalFiltered.result?.length === 0, JSON.stringify(evalFiltered))
+  const evalGet = await rpc(client, METHODS.evaluationsGet, { personId: dirPerson, evaluationId: evalReg.artifact?.artifact_id })
+  check('evaluations/get 正文全文（评估字段）', typeof evalGet.result?.markdown === 'string' && evalGet.result.markdown.includes('技能匹配'), JSON.stringify(evalGet))
+  const evalGetMissing = await rpc(client, METHODS.evaluationsGet, { personId: dirPerson })
+  check('evaluations/get 缺 evaluationId → RPC error', typeof evalGetMissing.error === 'object', JSON.stringify(evalGetMissing))
+  const evalListMissing = await rpc(client, METHODS.evaluationsList)
+  check('evaluations/list 缺 personId → RPC error', typeof evalListMissing.error === 'object', JSON.stringify(evalListMissing))
 
   // ─── workflow/restage（v0.2 §4.2 前置条件：running 不可 restage）────────────
   const wf = await rpc(client, METHODS.workflowStart, { type: 'career_direction', personId: dirPerson, statement: '帮我确定职业方向' })
