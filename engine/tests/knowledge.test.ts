@@ -149,6 +149,30 @@ test('roles.md 缺公司名/缺需求项/无法识别项 → degraded；无 `## 
   assert.deepEqual(empty.value, [])
 })
 
+test('roles.md 英文冒号来源引用可解析（契约 roles-contract.md §四格式：`essential: 技能名（来源: 文档标识）`）', () => {
+  // 契约规定的英文冒号写法——与 roles-contract.md 第 49-50 行一致，必须解析出干净技能名 + 来源
+  const { value, validation } = parseRolesMarkdown(
+    `# 岗位清单
+
+## 机械工程师（Company-C 自动化）
+
+- essential: 机械结构设计（来源: JD-Company-C 自动化-2026-08-21）
+- nice-to-have: 制冷选型或制冷原理（来源: JD-Company-C 自动化-2026-08-21）
+`,
+    'roles.md',
+  )
+  assert.equal(validation, undefined)
+  assert.equal(value.length, 1)
+  const role = value[0]!
+  assert.equal(role.name, '机械工程师')
+  assert.equal(role.company, 'Company-C 自动化')
+  assert.equal(role.id, '机械工程师-Company-C 自动化')
+  assert.deepEqual(role.skills, [
+    { name: '机械结构设计', essential: true, source: 'JD-Company-C 自动化-2026-08-21' },
+    { name: '制冷选型或制冷原理', essential: false, source: 'JD-Company-C 自动化-2026-08-21' },
+  ])
+})
+
 // ─── 画像技能声明 ─────────────────────────────────────────────────────────
 
 test('extractPersonSkills：`## 技能` 段落 → PersonSkill[]；无段落 → 空数组；非法级别丢弃', () => {

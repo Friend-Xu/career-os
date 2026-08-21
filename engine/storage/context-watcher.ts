@@ -122,7 +122,7 @@ function parseFactors(md: string): ContextSections['factors'] {
 
 function parseEvidence(md: string): ContextSections['evidence'] {
   return listItems(sectionLines(md, '证据')).map((item) => {
-    const src = item.match(/（来源：(.+?)）$/)
+    const src = item.match(/（来源[：:](.+?)）$/)
     const rest = (src ? item.slice(0, src.index) : item).trim()
     const [type, content] = splitFirstColon(rest)
     const e: ContextSections['evidence'][number] = { type: type || 'note', content }

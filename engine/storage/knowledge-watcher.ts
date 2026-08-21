@@ -2,12 +2,15 @@
  * knowledge-watcher：V2 知识层——knowledge/skills.md（技能受控词表）+ knowledge/roles.md（岗位清单）。
  * - parseSkillsMarkdown：skills.md → Skill[]（`## 技能名` + 列表项：`别名：`逗号分隔 / `N级：`行为锚点）
  * - parseRolesMarkdown：roles.md → Role[]（`## 岗位名（公司名）` + 列表项：`essential/nice-to-have：技能（来源：xxx）`）
+ * - serializeRolesMarkdown：Role[] → roles.md（Engine Registration 投影格式——roles-contract v0.2：
+ *   roles.md 由 Engine 单方写，Agent 直写被禁止，全部登记走 role-proposals/ 提案通道）
  * - scanKnowledge：knowledge/ 目录扫描 → { skills, roles }（文件缺任一个 → 该列表为空；
  *   目录扫描式同 companies，每次调用重扫；目录变更经 watchKnowledge 广播 poolChanged）
  * - extractPersonSkills：profiles md 的 `## 技能` 段落 → PersonSkill[]（无段落 → 空数组）
  * - buildSkillIndex / canonicalSkillName：别名归一化（gap 计算与图谱连线共用）
  *
- * 真相源由 skill/用户维护，引擎只读解析不写。降级惯例同 parseCompanyMarkdown：
+ * skills.md 真相源由 skill/用户维护，引擎只读解析不写；roles.md 由引擎投影写（role-proposal-registry）。
+ * 降级惯例同 parseCompanyMarkdown：
  * 整文件无条目 → invalid（error）；单条目缺项/值域非法 → degraded（warn）保留。
  * 段落/列表项解析复用 context-watcher 的 sectionLines/listItems/splitFirstColon/splitList。
  */
@@ -36,7 +39,7 @@ export function watchKnowledge(ws: Workspace, onChanged: () => void): { close: (
 const H2_RE = /^##\s+(.+?)\s*$/gm
 const ALIAS_RE = /^别名[：:]\s*(.+)$/
 const ANCHOR_RE = /^(\d+)级[：:]\s*(.+)$/
-const SOURCE_RE = /（来源：(.+?)）$/
+const SOURCE_RE = /（来源[：:](.+?)）$/
 const COMPANY_RE = /^(.+?)[（(]([^（()]*?)[）)]$/
 
 /** 词表别名索引：词表名/别名 → 规范名（未入表的名原样返回自身） */
@@ -156,6 +159,30 @@ export function parseRolesMarkdown(md: string, sourceFile: string): Validated<Ro
 export interface KnowledgeScan {
   skills: Skill[]
   roles: Role[]
+}
+
+/**
+ * roles.md 投影序列化（Engine Registration 单方写——role-proposal-registry 登记后落盘）。
+ * 统一产出契约格式（roles-contract.md §四：英文冒号 `essential: 技能名（来源: 标识）`）；
+ * 解析器兼容中英文冒号（存量全角写法仍可读）。
+ */
+export function serializeRolesMarkdown(roles: Role[]): string {
+  const lines = [
+    '# 岗位清单（Roles）',
+    '',
+    '> 公司岗位实例库：每条目 = 一家公司在招/已分析的具体岗位。',
+    '> 技能需求必须能从来源文档回溯，禁止写 JD 之外的泛化技能。',
+    '> 本文件由引擎投影维护（role-proposals/ 提案登记），禁止手写。',
+    '',
+  ]
+  for (const r of roles) {
+    lines.push(`## ${r.name}（${r.company}）`, '')
+    for (const s of r.skills) {
+      lines.push(`- ${s.essential ? 'essential' : 'nice-to-have'}: ${s.name}（来源: ${s.source}）`)
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
 }
 
 /** knowledge/ 目录扫描（skills.md + roles.md；缺文件 → 空列表，不崩） */
