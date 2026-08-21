@@ -75,14 +75,18 @@ export function WorkflowCard() {
   // BUG-009 修复：画像已齐备（manifest completed → initStatus active/缺省）优先——
   // advance 的 evaluator 只看快照三件，候选确认不是必经步骤，文案不得误导「必须先补采集」
   const initDone = person.initStatus !== 'pending'
+  // UI-3（v0.2 Gate Projection）：Stage 2 confirm_directions 明确告知方向池语义——
+  // UI 不计算 confirmed、不 disabled 按钮，最终 Gate 由引擎终判（GATE_BLOCKED → advance 失败 toast 缺件）
   const gateCopy = waitingGate
-    ? initDone
-      ? '画像已齐备（个人事实已登记）——确认后直接进入下一阶段；暂不登记则本阶段保持未完成。'
-      : !hasAnyPending
-        ? '当前无待确认候选——需先在 AI 面板完成候选采集（教育/经历/技能/偏好），确认登记后才能推进本阶段。'
-        : hasEduExp
-          ? '系统已收集到候选事实（含教育/经历），确认后登记为个人事实并进入下一阶段；暂不登记则本阶段保持未完成（探索输入不会伪装成已登记事实）。'
-          : '候选目前只有约束/兴趣类（缺教育/经历）——仅确认现有候选不足以完成画像登记，请先在 AI 面板补充教育/经历/技能采集后再确认。'
+    ? cur.id === 'direction_exploration'
+      ? '方向池已生成，请确认至少一个方向后继续（未确认时无法进入评估阶段）。'
+      : initDone
+        ? '画像已齐备（个人事实已登记）——确认后直接进入下一阶段；暂不登记则本阶段保持未完成。'
+        : !hasAnyPending
+          ? '当前无待确认候选——需先在 AI 面板完成候选采集（教育/经历/技能/偏好），确认登记后才能推进本阶段。'
+          : hasEduExp
+            ? '系统已收集到候选事实（含教育/经历），确认后登记为个人事实并进入下一阶段；暂不登记则本阶段保持未完成（探索输入不会伪装成已登记事实）。'
+            : '候选目前只有约束/兴趣类（缺教育/经历）——仅确认现有候选不足以完成画像登记，请先在 AI 面板补充教育/经历/技能采集后再确认。'
     : ''
 
   return (
