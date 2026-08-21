@@ -842,6 +842,11 @@ export class EngineClient {
     return this.rpc(METHODS.workflowAdvance, { workflowId, ...(gateId ? { gateId } : {}) })
   }
 
+  /** 重新执行当前 Stage（v0.2 §4.2：仅 waiting_gate(gate≠passed)/failed 可 restage；方向池不重置） */
+  restageWorkflow(workflowId: string): Promise<WorkflowState> {
+    return this.rpc(METHODS.workflowRestage, { workflowId })
+  }
+
   abortWorkflow(workflowId: string): Promise<WorkflowState> {
     return this.rpc(METHODS.workflowAbort, { workflowId })
   }

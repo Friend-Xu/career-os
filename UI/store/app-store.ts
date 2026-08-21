@@ -311,6 +311,9 @@ interface AppState {
   /** 方向裁决（v0.2：person/directions/resolve——UI 只表达 Human Action，状态机判定归引擎；
    *  同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆；结果经 workflowChanged → pullDirections 重投影） */
   resolveDirection: (directionId: string, action: 'confirm' | 'reject') => Promise<void>;
+  /** 重新执行当前 Stage（v0.2 §4.2：waiting_gate(gate≠passed)/failed 出口——UI 不模拟 abort+start，
+   *  restage 是 Engine 业务动作；方向池 append-only 不重置，DIRECTION_POOL_STATE 由引擎注入 Stage 任务） */
+  restageWorkflow: (workflowId: string) => Promise<void>;
   toggleAgentPanel: () => void;
   setAgentPanelOpen: (open: boolean) => void;
   setJdAddOpen: (open: boolean) => void;
@@ -899,6 +902,30 @@ export const useAppStore = create<AppState>()(
       void pullDirections(active.id)
     } catch (err) {
       useToastStore.getState().push('warning', `裁决失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  },
+
+  /** 重新执行当前 Stage（v0.2 §4.2：restage 是 Engine 业务动作——前置条件引擎裁决；
+   *  restage 后立即触发 Stage 重跑（控制平面任务，executionContext workflow_stage——
+   *  与 start/advance 的 Stage 触发同语义）；方向池保留（append-only），新 intake 由引擎按新快照建立） */
+  restageWorkflow: async (workflowId) => {
+    if (!engine || get().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：重新探索需连接引擎')
+      return
+    }
+    try {
+      const wf = await engine.restageWorkflow(workflowId)
+      useToastStore.getState().push('info', '已重新进入当前阶段，Agent 将重新执行')
+      if (wf.status === 'active' && wf.currentStage) {
+        get().sendAgentMessage(`工作流已重新进入阶段 ${stageLabel(wf.currentStage)}。`, {
+          silent: true,
+          stageRef: { workflowId, stageId: wf.currentStage },
+          executionContext: 'workflow_stage',
+        })
+      }
+      void pullWorkflows()
+    } catch (err) {
+      useToastStore.getState().push('warning', `重新探索失败：${err instanceof Error ? err.message : String(err)}`)
     }
   },
 

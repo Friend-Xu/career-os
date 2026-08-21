@@ -15,9 +15,11 @@ import { DirectionPoolCard } from './direction-pool-card'
 export function WorkflowCard() {
   const workflows = useAppStore((s) => s.workflows)
   const initCandidates = useAppStore((s) => s.initCandidates)
+  const directionsByWorkflow = useAppStore((s) => s.directionsByWorkflow)
   const startWorkflow = useAppStore((s) => s.startWorkflow)
   const advanceWorkflow = useAppStore((s) => s.advanceWorkflow)
   const abortWorkflow = useAppStore((s) => s.abortWorkflow)
+  const restageWorkflow = useAppStore((s) => s.restageWorkflow)
   const push = useToastStore((s) => s.push)
   const person = useAppStore((s) => s.currentPerson())
   const engineStatus = useAppStore((s) => s.engineStatus)
@@ -32,8 +34,7 @@ export function WorkflowCard() {
 
   const active = workflows.find((w) => w.status === 'active')
 
-  if (!active) {
-    return (
+  if (!active) {    return (
       <Box
         sx={{
           p: 1.5,
@@ -66,6 +67,9 @@ export function WorkflowCard() {
   const waitingGate = cur?.status === 'waiting_gate'
   const running = cur?.status === 'running'
   const failed = cur?.status === 'failed'
+  // UI-4 入口条件：waiting_gate + 方向池无 confirmed → 显示「重新探索」（引擎终判前置条件；
+  // confirmed 计数仅用于展示/入口投影，不做 advance 按钮 enabled 判断）
+  const hasConfirmedDirection = (directionsByWorkflow[active.id] ?? []).some((a) => a.state === 'confirmed')
 
   // BUG-003 修复：waiting_gate 文案按实际候选类别渲染（不写死"教育/经历/技能/偏好"）——
   // 候选缺教育/经历类时（仅约束/兴趣，无法支撑 person-init）明示缺口，引导先补采集再确认
@@ -155,29 +159,27 @@ export function WorkflowCard() {
           {/* v0.2 方向池投影（UI-1：组件自判挂载条件——active + direction_exploration + 非空） */}
           <DirectionPoolCard />
 
-          {/* BUG-008 修复：failed 阶段给出出口——重新发起（终止后重开事实收集）；
-              advance 由引擎四步裁决，failed 状态不可 advance（硬切断，不假装可重试推进） */}
+          {/* UI-4（v0.2 §4.2）：failed 出口 = restage（Engine 业务动作——统一重跑语义，
+              不模拟 abort+start；Stage 1 candidates 链零改动，restage 恢复该 Stage 原有 agent/start） */}
           {failed && (
             <Stack spacing={0.75}>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-                本阶段未完成（候选不足以支撑画像登记或 Agent 未产出候选）。可重新发起工作流，重新收集事实。
+                本阶段未完成（候选不足以支撑登记或 Agent 未产出候选）。可重新探索——重新执行当前阶段，已有方向候选保留。
               </Typography>
               <Button
                 size="small"
                 variant="contained"
                 sx={{ fontSize: 11.5, alignSelf: 'flex-start' }}
-                onClick={() => {
-                  void abortWorkflow(active.id).then(() => startWorkflow('帮我确定职业方向'))
-                }}
+                onClick={() => void restageWorkflow(active.id)}
               >
-                重新发起
+                重新探索
               </Button>
             </Stack>
           )}
           {waitingGate && (
             <Stack spacing={0.75}>
               <Typography sx={{ fontSize: 11.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>{gateCopy}</Typography>
-              <Stack direction="row" spacing={1}>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
                 <Button size="small" variant="contained" sx={{ fontSize: 11.5 }} onClick={() => void advanceWorkflow(active.id, cur.gate?.id)}>
                   确认并继续
                 </Button>
@@ -195,6 +197,20 @@ export function WorkflowCard() {
                 >
                   暂不登记，继续探索
                 </Button>
+                {/* UI-4：waiting_gate + 方向池无 confirmed → 重新探索入口（restage；引擎终判前置条件，
+                    方向池 append-only 不重置——已排除方向不出现在新候选，DIRECTION_POOL_STATE 由引擎注入） */}
+                {cur.id === 'direction_exploration' && !hasConfirmedDirection && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="inherit"
+                    sx={{ fontSize: 11.5 }}
+                    title="当前方向池没有已确认方向，无法推进——重新探索生成新候选（已有方向候选保留）"
+                    onClick={() => void restageWorkflow(active.id)}
+                  >
+                    重新探索
+                  </Button>
+                )}
               </Stack>
             </Stack>
           )}

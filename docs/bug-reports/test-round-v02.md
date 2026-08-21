@@ -90,6 +90,16 @@
 | UI-2 确认 → 已保留 + toast + 按钮消失；排除 → 已排除；终态无动作按钮 | ✅ |
 | direction scope：仅 active workflow 已登记 artifact（暂存提案无身份不出现） | ✅ |
 
+### UI-3/UI-4 验收 + 完整 Golden Flow（Playwright）
+
+| 项 | 结果 |
+|----|------|
+| UI-3：方向探索 waiting_gate 文案；「确认并继续」无 disabled；GATE_BLOCKED → toast 缺件（引擎终判） | ✅ |
+| UI-4：waiting_gate+无 confirmed → 「重新探索」入口；restage → toast + 自动 agent/start；方向池 append-only（6 条累积 UI 可见）；failed → restage（abort+start 路径已删） | ✅ |
+| 完整闭环：发起 → Path B → advance → 3×Registration → GATE_BLOCKED → restage → 新 intake → append-only → confirm → Stage 3 running | ✅ |
+
+**环境备注（非 BUG）**：Playwright 工具轮次用 pwsh `Set-Content` 写 proposal 带 UTF-8 BOM → frontmatter 解析失败（OWNERSHIP_MISMATCH，3 条拒绝）——真实 Agent 的 Write 工具无 BOM，引擎不加歪输入兼容（系统边界）；测试写入一律无 BOM（Node writeFileSync / .NET UTF8Encoding(false)）。
+
 ## 六、提交链
 
 - 开发区 main：`feat: Career Workflow Control Plane v0.2（Stage Artifact Lifecycle + 方向池闭环）——L2-1~L2-8`
