@@ -141,6 +141,18 @@ export const METHODS = {
   salaryBenchmarksUpsert: 'salary-benchmarks/upsert',
   /** 个人估价卡投影（params: { personId } → SalaryValuationCard；Engine 确定性规则：分位聚合 + 档位映射 + 三态对照，§7.3/§7.5） */
   salaryValuation: 'salary-benchmarks/valuation',
+  /** 发起工作流（params: { type, personId, statement } → { workflow, path: 'A'|'B' }；Career Workflow Contract v0.1：
+   *  Path A 无候选启动 fact_collection task；Path B 有 pending candidates 直接 waiting_gate） */
+  workflowStart: 'workflow/start',
+  /** 工作流状态（params: { workflowId } → WorkflowState；UI 投影，Engine 单方写） */
+  workflowGet: 'workflow/get',
+  /** 工作流列表（params: { personId? } → WorkflowState[]） */
+  workflowList: 'workflow/list',
+  /** 用户确认 Gate 推进（params: { workflowId, gateId? } → AdvanceResult；四步校验——用户只能表达继续，
+   *  不能决定完成；失败拒绝 + 缺件清单，契约 §四.2） */
+  workflowAdvance: 'workflow/advance',
+  /** 用户终止工作流（params: { workflowId } → WorkflowState；append-only 审计） */
+  workflowAbort: 'workflow/abort',
   /** 岗位要求覆盖（params: { jobId, person } → GapResult：Job.requirements 当 Role 喂 computeGap，复用知识层差距计算，可解释匹配不做百分比） */
   matchJob: 'jobs/match',
   /** 岗位门槛匹配投影（params: { jobId, personId } → ConstraintMatchRow[]：学历四态 + 专业/经验待确认；UI 只投影不解释） */
@@ -344,6 +356,8 @@ export const EVENTS = {
   jobLeadsChanged: 'data.job-leads.changed',
   /** knowledge/薪资基准-* 变更后推送（不含数据，客户端用 salary-benchmarks/list 重拉；二期 §7.7） */
   salaryBenchmarksChanged: 'data.salary-benchmarks.changed',
+  /** workflows/ 状态变更后推送（不含数据，客户端用 workflow/list 重拉投影；Career Workflow Contract v0.1） */
+  workflowChanged: 'data.workflow.changed',
   poolChanged: 'data.pool.changed',
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */

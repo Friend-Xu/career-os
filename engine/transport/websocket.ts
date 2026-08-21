@@ -27,6 +27,15 @@ import {
   type ContextReference,
   type OutputTarget,
 } from '../ir/agent-task.ts'
+import {
+  abortWorkflow,
+  advanceWorkflow,
+  getWorkflow,
+  scanWorkflows,
+  startWorkflow,
+  WORKFLOW_TYPES,
+  type WorkflowType,
+} from '../storage/workflow-registry.ts'
 import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
@@ -450,6 +459,41 @@ function personIdParams(v: unknown): string {
     throw new Error('需要 params { personId }')
   }
   return (v as Record<string, unknown>).personId as string
+}
+
+/** workflow/start 入参校验（RPC 边界：type/personId/statement fail fast） */
+function workflowStartParams(v: unknown): { type: WorkflowType; personId: string; statement: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { type, personId, statement }')
+  const p = v as Record<string, unknown>
+  const type = p.type
+  const personId = p.personId
+  const statement = p.statement
+  if (typeof type !== 'string' || !WORKFLOW_TYPES.includes(type as WorkflowType)) {
+    throw new Error(`type 非法（合法：${WORKFLOW_TYPES.join('/')}）`)
+  }
+  if (typeof personId !== 'string' || !/^person_\d{3}$/.test(personId)) {
+    throw new Error('personId 应为 person_XXX')
+  }
+  if (typeof statement !== 'string' || statement.trim().length === 0) throw new Error('statement 必填（用户目标原文）')
+  return { type: type as WorkflowType, personId, statement: statement.trim() }
+}
+
+/** workflow/advance 入参校验（gateId 可选） */
+function workflowAdvanceParams(v: unknown): { workflowId: string; gateId?: string } {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).workflowId !== 'string') {
+    throw new Error('需要 params { workflowId }')
+  }
+  const gateId = (v as Record<string, unknown>).gateId
+  if (gateId !== undefined && typeof gateId !== 'string') throw new Error('gateId 应为字符串')
+  return { workflowId: (v as Record<string, unknown>).workflowId as string, ...(typeof gateId === 'string' ? { gateId } : {}) }
+}
+
+/** workflow/get|abort 的 workflowId 提取 */
+function workflowIdParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).workflowId !== 'string') {
+    throw new Error('需要 params { workflowId }')
+  }
+  return (v as Record<string, unknown>).workflowId as string
 }
 
 /** person/summary-strengths/upsert 入参校验（RPC 边界：personId + items 数组
@@ -1234,6 +1278,19 @@ export async function startServer(opts: {
     [METHODS.resetPerson]: (params) => resetPerson(workspace, personIdParams(params)),
     [METHODS.completePersonInit]: (params) => completePersonInit(workspace, personIdParams(params)),
     [METHODS.deletePerson]: (params) => deletePerson(workspace, personIdParams(params)),
+    // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写 workflows/，UI 只投影）──
+    [METHODS.workflowStart]: (params) => startWorkflow(workspace, workflowStartParams(params)),
+    [METHODS.workflowGet]: (params) => {
+      const wf = getWorkflow(workspace, workflowIdParams(params))
+      if (!wf) throw new Error(`workflow 不存在：${workflowIdParams(params)}`)
+      return wf
+    },
+    [METHODS.workflowList]: (params) => scanWorkflows(workspace, params ? personIdParams(params) : undefined),
+    [METHODS.workflowAdvance]: (params) => {
+      const p = workflowAdvanceParams(params)
+      return advanceWorkflow(workspace, p.workflowId, p.gateId)
+    },
+    [METHODS.workflowAbort]: (params) => abortWorkflow(workspace, workflowIdParams(params)),
     [METHODS.resumeExtract]: (params) => {
       const p = extractResumeParams(params)
       // 双通道：pdfBase64 → 本地文本层（免费离线）；pages → 逐页视觉（UI 已渲染多页图）

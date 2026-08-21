@@ -39,6 +39,7 @@ import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext,
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
 import { registerPendingRoleProposals, submitRoleProposal, watchRoleProposals, type RoleProposalInput } from './storage/role-proposal-registry.ts'
+import { scanWorkflows, type WorkflowState } from './storage/workflow-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
 
@@ -382,6 +383,11 @@ async function main(args: string[]): Promise<void> {
         broadcast({ event: EVENTS.poolChanged })
         logger.info(`role-proposals/ 变更：投影 ${parsed.length} 个提案并广播 poolChanged`)
       }))
+      // workflows/ 变更 → 广播 workflowChanged（Career Workflow Contract v0.1：UI 拉状态投影）
+      watchWorkflows(ws, guarded('workflows', (parsed) => {
+        broadcast({ event: EVENTS.workflowChanged })
+        logger.info(`workflows/ 变更：重扫 ${parsed.length} 条并广播`)
+      }))
       // resumes/ 变更只发信号（M3.5：版本系统——drafts/ 组装登记 + documents/ 变更都触发）
       watchResumes(ws, guarded('resumes', (parsed) => {
         broadcast({ event: EVENTS.resumesChanged })
@@ -434,6 +440,7 @@ async function main(args: string[]): Promise<void> {
       logger.info('strength-proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('derivation-proposals/ 监听已启用（watcher.enabled=true）')
       logger.info('role-proposals/ 监听已启用（watcher.enabled=true）')
+      logger.info('workflows/ 监听已启用（watcher.enabled=true）')
       logger.info('portfolio/ 监听已启用（watcher.enabled=true）')
       logger.info('interviews/ 监听已启用（watcher.enabled=true）')
       logger.info('cover-letters/ 监听已启用（watcher.enabled=true）')
