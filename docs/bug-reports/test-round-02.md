@@ -152,8 +152,25 @@ UI/components/workbench/workflow-card.tsx   ← BUG-009 修复
 UI/components/workbench/workflow-card.tsx   ← BUG-009b（竞态修复）
 ```
 
-## 第七轮验证重点（移植后）
+## 第七轮验证结果（2026-08-21，测试区实测）
 
-1. 页面刷新（引擎连接完成后）：pending 状态 + 6 条 pending 约束/兴趣候选 → 文案「候选目前只有约束/兴趣类（缺教育/经历）——…」（候选同步生效的直接证据）
-2. initStatus=active（画像齐备）时 waiting_gate 文案「画像已齐备——确认后直接进入下一阶段」
-3. 初始化中档案（pending）三分支文案回归
+### BUG-009b ✅ FIXED 确认（双场景全过）
+
+| 场景 | 前置 | 文案 | 结果 |
+|------|------|------|------|
+| 场景 1：初始化中 + 候选同步 | manifest in_progress + 引擎 6 条 pending（约束/兴趣） | 「候选目前只有约束/兴趣类（缺教育/经历）——仅确认现有候选不足以完成画像登记，请先在 AI 面板补充教育/经历/技能采集后再确认。」 | ✅ 候选同步生效（不再是「无待确认候选」失真） |
+| 场景 2：画像齐备 | manifest completed（initStatus active） | 「画像已齐备（个人事实已登记）——确认后直接进入下一阶段；暂不登记则本阶段保持未完成。」 | ✅ initDone 优先分支正确 + 初始化横幅消失 |
+
+**BUG-009 收口**：候选源同步（engineStatus 竞态修复）+ 齐备优先分支 + pending 三分支，文案与引擎裁决语义一致。
+
+## 阶段收口：Career Workflow Control Plane v0.1 测试循环总结
+
+七轮测试循环（BUG-001~009b）全部修复验证。核心链路现状：
+
+1. **workflow 双路径**：Path A（Agent 收集 → done 钩子 → guard 判 waiting_gate/failed）+ Path B（候选足以支撑 → 直接 waiting_gate）——死锁根除
+2. **Stage Boundary**：compileStageTask 引擎强制（越界/非法/不匹配全拒）+ Envelope 对真实 Agent 行为的可观测约束（第四轮实证）
+3. **实时归位**：确认候选 → 引擎登记 → 快照投影（Agent 零参与写快照）
+4. **init_state 单源联动**：advance 过 gate → 引擎登记（BUG-007）；对账回滚谎报（reconcilePersonInitStates）
+5. **UI 投影**：进度 stageIdx+1（BUG-008）、failed 出口（BUG-008）、候选文案与引擎一致（BUG-009/009b）
+
+未做（P1 已知）：declaredBoundaries.forbiddenStages 接 PreToolUse 工具级强制（当前靠 Envelope 系统指令约束，第四轮已验证对 LLM 行为有效——工具级强制是纵深防御第二层）。
