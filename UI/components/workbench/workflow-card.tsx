@@ -3,6 +3,7 @@ import { Box, Button, Chip, CircularProgress, Stack, Typography } from '@mui/mat
 import { alpha, COLORS, RISK_COLOR } from '../../data/constants'
 import { useAppStore, stageLabel } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
+import { DirectionPoolCard } from './direction-pool-card'
 
 /**
  * 工作流投影卡（Career Workflow Contract v0.1）——UI 只投影 + Human Action，不 orchestrate：
@@ -146,6 +147,9 @@ export function WorkflowCard() {
               />
             )}
           </Stack>
+
+          {/* v0.2 方向池投影（UI-1：组件自判挂载条件——active + direction_exploration + 非空） */}
+          <DirectionPoolCard />
 
           {/* BUG-008 修复：failed 阶段给出出口——重新发起（终止后重开事实收集）；
               advance 由引擎四步裁决，failed 状态不可 advance（硬切断，不假装可重试推进） */}
