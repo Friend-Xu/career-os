@@ -193,6 +193,14 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     model: opts.model,
     ...(opts.apiKey !== undefined && opts.apiKey !== '' ? { apiKey: opts.apiKey } : {}),
     ...(opts.baseUrl !== undefined && opts.baseUrl !== '' ? { baseURL: opts.baseUrl } : {}),
+    // 受控 Agent 注入点（L2-8a agent-golden-flow-smoke）：COS_FAKE_CLAUDE_EXECUTABLE 指向
+    // 假 CLI 脚本（fixtures/fake-claude.mjs）时，SDK 以 pathToClaudeCodeExecutable 模式
+    // spawn `process.execPath <脚本> ...`，不真调模型——测试确定性
+    // （agent/start → done 钩子 → intake → Registration 全链路受控）。
+    // 仅测试注入：未设置 = 默认内置 CLI（生产语义不变）。
+    ...(process.env.COS_FAKE_CLAUDE_EXECUTABLE
+      ? { pathToClaudeCodeExecutable: process.execPath, executableArgs: [process.env.COS_FAKE_CLAUDE_EXECUTABLE] }
+      : {}),
     // 管道模式实测 AskUserQuestion 会立即跳过（tool_use_result 已含 "did not answer"）：
     // 显式给 10 分钟等待窗口，回答（前端点击）才来得及送达
     // （SDK 类型：该字段属 Settings，经 Options.settings 传入）

@@ -1,7 +1,29 @@
-# v0.2 Control Plane 测试台账（L2-1 ~ L2-8）
+# v0.2 Control Plane 测试台账（L2-1 ~ L2-8 + L2-8a）
 
 > 2026-08-21 | 契约 `docs/contracts/Career-Workflow-Contract-v0.2.md` v1.2 | 实施依据：调研笔记 `docs/research/stage-artifact-registration-research.md`
 > 验收线：引擎测试全绿 / handlers-smoke 全绿 / 引擎+UI tsc 零错 / Stage 1 行为零变化。
+
+---
+
+## 〇、L2-8a：真实 Agent 链路 Smoke（测试区验证，2026-08-22）
+
+**目标**：`agent/start → Agent 产出 Proposal → done → Engine intake → Registration → waiting_gate → resolve → advance → Stage 3` 真实串链（单测为白盒直调，此处走真实 WS 端口 + 真实文件系统 + 真实 SDK 事件流：stageTasks 注册 / done 钩子分派 / error.engine 广播 / workflowChanged 广播）。
+
+**实现**：`engine/tests/agent-golden-flow-smoke.mjs` + `engine/tests/fixtures/fake-claude.mjs`（受控假 CLI）。
+- 第一跑暴露：SDK 0.3.220 的 spawn 目标是平台包内置 CLI `@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe`，不走 PATH / `CLAUDE_CODE_ENTRYPOINT`——假 CLI 注入失效，真实模型被调用（maxTurns=1 → error:timeout，引擎正确地未推进 Stage）。
+- 修复（开发区优化，非契约语义）：adapter 增加测试注入点 `COS_FAKE_CLAUDE_EXECUTABLE` → SDK `pathToClaudeCodeExecutable: process.execPath + executableArgs: [脚本]`（Windows spawn 需 .exe + args 组合）。未设置 = 生产语义不变。
+- 假 CLI 输出最小 stream-json 帧（system init → assistant → result success），延迟 2s 给 smoke 留出 agent/start 后写 proposal 的时间窗。
+
+**结果（测试区 24/24 断言）**：
+| 场景 | 断言 | 状态 |
+|------|------|------|
+| 1 成功路径（Path B → advance → agent/start → 3 proposal → done → 3×Registration → waiting_gate → confirm 2/reject 1 → advance → Stage 3 running） | 11 项（含 workflowChanged 广播 / artifacts 列累积 / 方向池 confirmed 2 rejected 1） | ✅ |
+| 2 无依据 proposal（→ 拒绝 → error.engine 广播 → registered=0 → failed → directions/list=0） | 4 项 | ✅ |
+| 3 全 reject（→ advance GATE_BLOCKED → restage → 二次 agent/start 新 intake boundary → 旧 rejected 不被二次消费（R8）→ 方向池 append-only 不重置 → confirm → Stage 3） | 9 项 | ✅ |
+
+**结论**：v0.2 Engine 侧集成信心成立，**未发现契约偏差**（契约 v1.2 语义与真实链路行为一致）。
+
+**注**：`CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 警告为 SDK 提示（bypassPermissions 下 canUseTool 回调不生效），非错误；SDK debug 日志已从 smoke 移除。
 
 ---
 
