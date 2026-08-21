@@ -1,6 +1,6 @@
 # Career Workflow 契约 v0.3（Stage 3/4 落地：评估闭环 + 推荐落盘）
 
-> 2026-08-21 草案 v0.1 | 增量契约（基于 v0.2 冻结语义，v0.2 全文仍有效）
+> 2026-08-22 **冻结**（v0.3 Freeze：引擎 `6f28773` + UI 增量 `ae7d6b2`；引擎单测 806/806、完整 UI Golden Flow PASS ×2、BUG-UI-01/02 FIXED）| 增量契约（基于 v0.2 冻结语义，v0.2 全文仍有效）
 > 一句话：**v0.3 把 v0.2 预留的 Stage 3/4 从「占位放行」落成机制——`evaluation_candidate` 评估闭环 + `decision-registered` 推荐落盘；证据域参数化（每 artifact_type 声明证据域）。**
 > 核心不变量延续 v0.1 §〇 / v0.2 §一：**Agent=Proposal / User=Confirmation Authority / Engine=Registration + Deterministic Evaluation / UI=Projection + Human Action。**
 
