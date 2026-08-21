@@ -25,6 +25,9 @@ export interface StageArtifactSpec {
   dir: (personId: string) => string
   idPrefix: string
   marker: RegExp
+  /** 证据域（契约 v0.3 §一）：evidence_refs 引用路径必须匹配（相对 person 根，含 .md）。
+   *  direction_candidate = facts/ + snapshot/current/；evaluation_candidate 增 directions/。 */
+  evidenceRefPattern: RegExp
 }
 
 export interface RegisterStageArtifactParams {
@@ -131,10 +134,11 @@ function extractClaim(body: string, marker: RegExp): string | undefined {
   return undefined
 }
 
-// ─── 证据校验（§1.4：注册硬约束；evaluator 不做第二套）────────────────────────
+// ─── 证据校验（§1.4 注册硬约束；v0.3 §一 证据域参数化；evaluator 不做第二套）────────
 
 function validateEvidenceRefs(
   ws: Workspace,
+  spec: StageArtifactSpec,
   personId: string,
   refs: string[],
 ): { ok: true } | { ok: false; code: 'EVIDENCE_UNRESOLVABLE' | 'EVIDENCE_OUT_OF_SCOPE'; reason: string } {
@@ -144,8 +148,8 @@ function validateEvidenceRefs(
     if (ref.startsWith('/') || ref.startsWith('\\') || /^[A-Za-z]:/.test(ref) || ref.includes('..')) {
       return { ok: false, code: 'EVIDENCE_OUT_OF_SCOPE', reason: `引用越界（绝对路径/上级目录）：${raw}` }
     }
-    if (!/^(facts|snapshot\/current)\/[^/\\]+\.md$/.test(ref)) {
-      return { ok: false, code: 'EVIDENCE_OUT_OF_SCOPE', reason: `引用不在 person 事实域（限 facts/ 与 snapshot/current/）：${raw}` }
+    if (!spec.evidenceRefPattern.test(ref)) {
+      return { ok: false, code: 'EVIDENCE_OUT_OF_SCOPE', reason: `引用不在 ${spec.artifactType} 证据域（${spec.evidenceRefPattern}）：${raw}` }
     }
     if (!ws.exists(`persons/${personId}/${ref}`)) {
       return { ok: false, code: 'EVIDENCE_UNRESOLVABLE', reason: `引用不存在：persons/${personId}/${ref}` }
@@ -175,7 +179,7 @@ export function registerStageArtifact(
   }
   const refs = extractEvidenceRefs(body)
   if (refs.length === 0) return { ok: false, code: 'EVIDENCE_EMPTY', reason: '缺少「事实依据」段或引用为空' }
-  const ev = validateEvidenceRefs(ws, params.personId, refs)
+  const ev = validateEvidenceRefs(ws, spec, params.personId, refs)
   if (!ev.ok) return { ok: false, code: ev.code, reason: ev.reason }
 
   const artifactId = nextArtifactId(

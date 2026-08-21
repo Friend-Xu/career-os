@@ -24,6 +24,17 @@ const DIRECTION_SPEC: StageArtifactSpec = {
   dir: (p) => `persons/${p}/directions`,
   idPrefix: 'direction_',
   marker: /##\s*方向主张/,
+  /** 证据域（v0.3 §一）：方向候选依据 = 个人事实 */
+  evidenceRefPattern: /^(facts|snapshot\/current)\/[^/\\]+\.md$/,
+}
+
+/** evaluation_candidate 证据域（v0.3 §一）：评估依据 = 已确认方向 + 个人事实 */
+const EVALUATION_SPEC: StageArtifactSpec = {
+  artifactType: 'evaluation_candidate',
+  dir: (p) => `persons/${p}/evaluations`,
+  idPrefix: 'evaluation_',
+  marker: /##\s*方向评估/,
+  evidenceRefPattern: /^(facts|snapshot\/current|directions)\/[^/\\]+\.md$/,
 }
 
 const NOW = new Date('2026-08-21T00:00:00Z')
@@ -457,4 +468,95 @@ test('formatRegistrationRejectionMessage：含 artifactType/文件名/码/原因
   assert.match(msg, /20260821-无依据\.md/)
   assert.match(msg, /EVIDENCE_EMPTY/)
   assert.match(msg, /事实依据/)
+})
+
+// ─── v0.3 §一：证据域参数化（evaluation_candidate 证据域 = facts + snapshot + directions）──
+
+/** 写一个已登记方向文件（evaluation 证据域引用对象；directions/ 下系统 ID 命名） */
+function seedDirectionFile(ws: Workspace, personId: string, directionId = 'direction_20260821_00001'): void {
+  ws.write(`persons/${personId}/directions/${directionId}.md`, [
+    '---',
+    `id: ${directionId}`,
+    'artifact_type: direction_candidate',
+    `person_id: ${personId}`,
+    'state: confirmed',
+    '---',
+    '',
+    '## 方向主张',
+    '',
+    '方向甲值得考虑。',
+    '',
+  ].join('\n'))
+}
+
+/** evaluation 提案（marker = 方向评估；evidenceRef 决定引用域） */
+function evaluationProposalMd(personId: string, evidenceRef: string): string {
+  return [
+    '---',
+    `person_id: ${personId}`,
+    `workflow_id: ${WORKFLOW_ID}`,
+    'stage_id: direction_evaluation',
+    '---',
+    '',
+    '## 方向评估',
+    '',
+    '方向甲评估：匹配度高。',
+    '',
+    '## 事实依据',
+    '',
+    `- ${evidenceRef}：评估依据`,
+    '',
+  ].join('\n')
+}
+
+test('证据域参数化：evaluation_candidate 允许引用 directions/（已确认方向）→ 登记成功', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedFacts(ws, pid)
+  seedDirectionFile(ws, pid)
+  ws.write(`persons/${pid}/evaluations/20260821-评估甲.md`, evaluationProposalMd(pid, 'directions/direction_20260821_00001.md'))
+
+  const res = registerStageArtifact(ws, EVALUATION_SPEC, { personId: pid, workflowId: WORKFLOW_ID, stageId: 'direction_evaluation', proposalFile: '20260821-评估甲.md' }, NOW)
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+  assert.deepEqual(res.artifact.evidence_refs, ['directions/direction_20260821_00001.md'])
+  assert.match(res.artifact.artifact_id, /^evaluation_\d{8}_\d{5}$/)
+})
+
+test('证据域参数化：evaluation_candidate 引用 decisions/ → EVIDENCE_OUT_OF_SCOPE（域外）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedFacts(ws, pid)
+  ws.write(`persons/${pid}/evaluations/20260821-坏评估.md`, evaluationProposalMd(pid, 'decisions/decision_20260821_00001.md'))
+
+  const res = registerStageArtifact(ws, EVALUATION_SPEC, { personId: pid, workflowId: WORKFLOW_ID, stageId: 'direction_evaluation', proposalFile: '20260821-坏评估.md' }, NOW)
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'EVIDENCE_OUT_OF_SCOPE')
+})
+
+test('证据域参数化：evaluation_candidate 引用 directions/ 不存在 → EVIDENCE_UNRESOLVABLE', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedFacts(ws, pid)
+  ws.write(`persons/${pid}/evaluations/20260821-悬空.md`, evaluationProposalMd(pid, 'directions/direction_99999999_99999.md'))
+
+  const res = registerStageArtifact(ws, EVALUATION_SPEC, { personId: pid, workflowId: WORKFLOW_ID, stageId: 'direction_evaluation', proposalFile: '20260821-悬空.md' }, NOW)
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'EVIDENCE_UNRESOLVABLE')
+})
+
+test('证据域参数化：direction_candidate 仍拒绝 directions/（证据域不变）→ EVIDENCE_OUT_OF_SCOPE', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  seedFacts(ws, pid)
+  seedDirectionFile(ws, pid)
+  const md = proposalMd(pid).replace('- facts/education.md：机械工程本科（支撑：专业对口）', '- directions/direction_20260821_00001.md：方向依据')
+  writeProposal(ws, pid, '20260821-方向越域.md', md)
+
+  const res = registerStageArtifact(ws, DIRECTION_SPEC, { personId: pid, workflowId: WORKFLOW_ID, stageId: STAGE_ID, proposalFile: '20260821-方向越域.md' }, NOW)
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'EVIDENCE_OUT_OF_SCOPE')
 })

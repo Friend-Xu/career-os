@@ -7,8 +7,10 @@ import {
   abortWorkflow,
   getWorkflow,
   scanWorkflows,
+  onEvaluationDone,
   onExplorationDone,
   onFactCollectionReady,
+  onRecommendationDone,
   restageWorkflow,
   isPersonInitComplete,
   evaluateStageCompletion,
@@ -16,6 +18,7 @@ import {
 } from '../storage/workflow-registry.ts'
 import { countStageArtifacts, registerStageArtifact, resolveStageArtifact } from '../storage/stage-artifact-registry.ts'
 import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { freshIntakeFiles } from '../transport/websocket.ts'
 import { createPersonSession, scanPersons } from '../storage/person-watcher.ts'
 import { compileStageTask } from '../storage/workflow-registry.ts'
@@ -796,4 +799,286 @@ test('Golden Flow：事实收集 → 方向探索 → 用户裁决 → confirm_d
   const md = ws.read(`workflows/${workflow.id}.md`)
   assert.ok(md.includes('confirm_directions/passed'))
   for (const id of ids) assert.ok(md.includes(id))
+})
+
+// ─── v0.3：Stage 3（direction_evaluation 评估闭环）────────────────────────
+
+/** advance 到 Stage 3 running（复用 Stage 2 确认链路：confirm 1 条方向 → advance） */
+function advanceToEvaluation(ws: Workspace, pid: string): { workflowId: string; directionId: string } {
+  const workflowId = advanceToExploration(ws, pid)
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflowId)
+  const done = onExplorationDone(ws, workflowId, ['20260821-方向甲.md'], NOW)
+  assert.ok(done.workflow)
+  const directionId = done.registered[0]!.artifact_id
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'confirm', NOW).ok, true)
+  const res = advanceWorkflow(ws, workflowId, 'confirm_directions')
+  assert.equal(res.ok, true)
+  if (!res.ok) throw new Error('fixture advance 失败')
+  return { workflowId, directionId }
+}
+
+/** 只写评估提案不登记（onEvaluationDone 的 intake 输入；evidenceRef 决定引用域） */
+function writeEvaluationProposal(ws: Workspace, pid: string, fileName: string, workflowId: string, evidenceRef: string): void {
+  ws.write(`persons/${pid}/evaluations/${fileName}`, [
+    '---',
+    `person_id: ${pid}`,
+    `workflow_id: ${workflowId}`,
+    'stage_id: direction_evaluation',
+    '---',
+    '',
+    '## 方向评估',
+    '',
+    '方向甲评估：匹配度高，建议推进。',
+    '',
+    '## 事实依据',
+    '',
+    `- ${evidenceRef}：评估依据`,
+    '',
+  ].join('\n'))
+}
+
+test('onEvaluationDone：合法评估提案（引用已确认方向）登记 → waiting_gate（无 gate）+ artifacts 列', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = advanceToEvaluation(ws, pid)
+  writeEvaluationProposal(ws, pid, '20260821-评估甲.md', workflowId, `directions/${directionId}.md`)
+
+  const result = onEvaluationDone(ws, workflowId, ['20260821-评估甲.md'], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.registered.length, 1)
+  assert.equal(result.rejected.length, 0)
+  const stage = result.workflow!.stages.find((s) => s.id === 'direction_evaluation')!
+  assert.equal(stage.status, 'waiting_gate')
+  assert.equal(stage.gate, undefined) // Stage 3 无 gate（评估非用户事实，不裁决）
+  assert.equal(stage.artifacts!.length, 1)
+  assert.match(stage.artifacts![0]!, /^evaluation_\d{8}_\d{5}$/)
+  // 落盘回读：evaluation 文件已登记（系统 ID 命名）
+  assert.equal(ws.exists(`persons/${pid}/evaluations/${stage.artifacts![0]}.md`), true)
+})
+
+test('onEvaluationDone：评估提案引用 decisions/（证据域外）→ 拒绝（EVIDENCE_OUT_OF_SCOPE）→ failed', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId } = advanceToEvaluation(ws, pid)
+  writeEvaluationProposal(ws, pid, '20260821-坏评估.md', workflowId, 'decisions/xxx.md')
+
+  const result = onEvaluationDone(ws, workflowId, ['20260821-坏评估.md'], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.registered.length, 0)
+  assert.equal(result.rejected.length, 1)
+  assert.equal(result.rejected[0]!.code, 'EVIDENCE_OUT_OF_SCOPE')
+  assert.equal(result.workflow!.stages.find((s) => s.id === 'direction_evaluation')!.status, 'failed')
+})
+
+test('onEvaluationDone：引用 directions/ 不存在文件 → 拒绝（EVIDENCE_UNRESOLVABLE）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId } = advanceToEvaluation(ws, pid)
+  writeEvaluationProposal(ws, pid, '20260821-坏评估.md', workflowId, 'directions/direction_99999999_99999.md')
+
+  const result = onEvaluationDone(ws, workflowId, ['20260821-坏评估.md'], NOW)
+  assert.equal(result.rejected[0]!.code, 'EVIDENCE_UNRESOLVABLE')
+})
+
+test('Stage 3 advance（无 gate）：evaluation 登记后 advance（不传 gateId）→ Stage 4 running', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId, directionId } = advanceToEvaluation(ws, pid)
+  writeEvaluationProposal(ws, pid, '20260821-评估甲.md', workflowId, `directions/${directionId}.md`)
+  const done = onEvaluationDone(ws, workflowId, ['20260821-评估甲.md'], NOW)
+  assert.ok(done.workflow)
+
+  const res = advanceWorkflow(ws, workflowId) // Stage 3 无 gate，不传 gateId
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+  assert.equal(res.nextStage, 'recommendation')
+  const reloaded = getWorkflow(ws, workflowId)!
+  assert.equal(reloaded.currentStage, 'recommendation')
+  assert.equal(reloaded.stages.find((s) => s.id === 'direction_evaluation')!.status, 'completed')
+  assert.equal(reloaded.stages[3]!.id, 'recommendation')
+  assert.equal(reloaded.stages[3]!.status, 'running')
+})
+
+test('Stage 3 未产出（running 状态）advance → ILLEGAL_STATE（评估 Agent 未完成不推进）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflowId } = advanceToEvaluation(ws, pid)
+  // 未调 onEvaluationDone → Stage 3 仍是 running
+  const res = advanceWorkflow(ws, workflowId)
+  assert.equal(res.ok, false)
+  if (res.ok) return
+  assert.equal(res.code, 'ILLEGAL_STATE')
+})
+
+// ─── v0.3：Stage 4（recommendation 推荐落盘）──────────────────────────────
+
+function writeDecisionReport(ws: Workspace, pid: string, fileName: string): void {
+  ws.write(`decisions/${fileName}`, [
+    '---',
+    `person_id: ${pid}`,
+    'type: direction',
+    '---',
+    '',
+    '# 决策报告',
+    '',
+    '## 分析摘要',
+    '',
+    '| 字段 | 值 |',
+    '|------|-----|',
+    '| status | exploring |',
+    '| direction | 方向甲 |',
+    '',
+    '推荐方向甲。',
+    '',
+  ].join('\n'))
+}
+
+/** 写 decision 报告 + registerDecisionIdentity（模拟 transport 层补登记）→ 返回系统 ID（diff 定位新文件） */
+function writeAndRegisterDecision(ws: Workspace, pid: string, fileName: string): string {
+  const before = new Set(ws.listMarkdown('decisions').filter((f) => /^decision_\d{8}_\d{5}\.md$/.test(f)))
+  writeDecisionReport(ws, pid, fileName)
+  registerDecisionIdentity(ws, NOW)
+  const fresh = ws.listMarkdown('decisions').filter((f) => /^decision_\d{8}_\d{5}\.md$/.test(f)).find((f) => !before.has(f))
+  assert.ok(fresh, 'fixture：decision 登记后应有新系统 ID 文件')
+  return fresh!.replace(/\.md$/, '')
+}
+
+/** advance 到 Stage 4 running（Stage 3 评估 → advance） */
+function advanceToRecommendation(ws: Workspace, pid: string): string {
+  const { workflowId, directionId } = advanceToEvaluation(ws, pid)
+  writeEvaluationProposal(ws, pid, '20260821-评估甲.md', workflowId, `directions/${directionId}.md`)
+  const done = onEvaluationDone(ws, workflowId, ['20260821-评估甲.md'], NOW)
+  assert.ok(done.workflow)
+  const res = advanceWorkflow(ws, workflowId)
+  assert.equal(res.ok, true)
+  if (!res.ok) throw new Error('fixture advance 失败')
+  return workflowId
+}
+
+test('onRecommendationDone：决策 person_id 匹配 → waiting_gate + review_recommendation + artifacts 列', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const decisionId = writeAndRegisterDecision(ws, pid, '20260821-推荐.md')
+
+  const result = onRecommendationDone(ws, workflowId, [`${decisionId}.md`], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.decisions.length, 1)
+  assert.equal(result.decisions[0], decisionId)
+  const stage = result.workflow!.stages.find((s) => s.id === 'recommendation')!
+  assert.equal(stage.status, 'waiting_gate')
+  assert.deepEqual(stage.gate, { id: 'review_recommendation', status: 'waiting' })
+  assert.deepEqual(stage.artifacts, [decisionId])
+})
+
+test('onRecommendationDone：决策 person_id 不匹配 → failed（不记录 artifacts 列）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const decisionId = writeAndRegisterDecision(ws, 'person_999', '20260821-别人推荐.md')
+
+  const result = onRecommendationDone(ws, workflowId, [`${decisionId}.md`], NOW)
+  assert.ok(result.workflow)
+  assert.equal(result.decisions.length, 0)
+  const stage = result.workflow!.stages.find((s) => s.id === 'recommendation')!
+  assert.equal(stage.status, 'failed')
+  assert.equal(stage.gate, undefined)
+  assert.deepEqual(stage.artifacts ?? [], [])
+})
+
+test('evaluateStageCompletion decision-registered：artifacts 列空 → 未过；登记后 → 过', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const spec = CAREER_DIRECTION_STAGES.find((s) => s.id === 'recommendation')!
+  // 未登记 → artifacts 列空 → 未过
+  assert.equal(evaluateStageCompletion(ws, spec, pid, workflowId).passed, false)
+  // 登记 → onRecommendationDone → artifacts 列非空 → 过
+  const decisionId = writeAndRegisterDecision(ws, pid, '20260821-推荐.md')
+  onRecommendationDone(ws, workflowId, [`${decisionId}.md`], NOW)
+  const after = evaluateStageCompletion(ws, spec, pid, workflowId)
+  assert.equal(after.passed, true)
+  assert.deepEqual(after.missing, [])
+})
+
+test('Stage 4 advance（review_recommendation）：decision status→accepted + workflow completed（Goal 完成）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const decisionId = writeAndRegisterDecision(ws, pid, '20260821-推荐.md')
+  const done = onRecommendationDone(ws, workflowId, [`${decisionId}.md`], NOW)
+  assert.ok(done.workflow)
+
+  const res = advanceWorkflow(ws, workflowId, 'review_recommendation')
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+  assert.equal(res.nextStage, null)
+  assert.equal(res.status, 'completed')
+  // decision status 联动 → accepted（Engine Registration 拥有 Canonical State）
+  assert.ok(ws.read(`decisions/${decisionId}.md`).includes('| status | accepted |'))
+  // workflow completed + gate passed
+  const reloaded = getWorkflow(ws, workflowId)!
+  assert.equal(reloaded.status, 'completed')
+  assert.equal(reloaded.currentStage, null)
+  assert.equal(reloaded.stages.find((s) => s.id === 'recommendation')!.gate!.status, 'passed')
+})
+
+test('Stage 4 restage：reject 出口 → running + decision append-only（artifacts 列累积）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const decisionId1 = writeAndRegisterDecision(ws, pid, '20260821-推荐一.md')
+  const done1 = onRecommendationDone(ws, workflowId, [`${decisionId1}.md`], NOW)
+  assert.ok(done1.workflow)
+  // 用户不满意 → restage（waiting_gate 且 gate 未过）
+  const restaged = restageWorkflow(ws, workflowId, NOW)
+  assert.equal(restaged.stages.find((s) => s.id === 'recommendation')!.status, 'running')
+  assert.equal(restaged.stages.find((s) => s.id === 'recommendation')!.gate, undefined)
+  // 第二次产出 → artifacts 列累积
+  const decisionId2 = writeAndRegisterDecision(ws, pid, '20260821-推荐二.md')
+  const done2 = onRecommendationDone(ws, workflowId, [`${decisionId2}.md`], NOW)
+  assert.ok(done2.workflow)
+  const stage = done2.workflow!.stages.find((s) => s.id === 'recommendation')!
+  assert.equal(stage.artifacts!.length, 2)
+  // decision 文件 append-only（两份都在，不覆盖）
+  assert.equal(ws.exists(`decisions/${decisionId1}.md`), true)
+  assert.equal(ws.exists(`decisions/${decisionId2}.md`), true)
+})
+
+// ─── v0.3：Golden Flow 完整（Stage 1→4）───────────────────────────────────
+
+test('Golden Flow 完整：事实 → 方向 → 评估 → 推荐 → Goal completed（四阶段全链）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  // Stage 1（Path B）
+  seedPendingCandidates(ws, pid)
+  seedCompleteSnapshots(ws, pid)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  assert.equal(advanceWorkflow(ws, workflow.id).ok, true)
+  // Stage 2
+  writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflow.id)
+  const done2 = onExplorationDone(ws, workflow.id, ['20260821-方向甲.md'], NOW)
+  assert.ok(done2.workflow)
+  const directionId = done2.registered[0]!.artifact_id
+  assert.equal(resolveStageArtifact(ws, DIRECTION_SPEC, pid, directionId, 'confirm', NOW).ok, true)
+  assert.equal(advanceWorkflow(ws, workflow.id, 'confirm_directions').ok, true)
+  // Stage 3
+  writeEvaluationProposal(ws, pid, '20260821-评估甲.md', workflow.id, `directions/${directionId}.md`)
+  const done3 = onEvaluationDone(ws, workflow.id, ['20260821-评估甲.md'], NOW)
+  assert.ok(done3.workflow)
+  assert.equal(advanceWorkflow(ws, workflow.id).ok, true)
+  // Stage 4
+  const decisionId = writeAndRegisterDecision(ws, pid, '20260821-推荐.md')
+  const done4 = onRecommendationDone(ws, workflow.id, [`${decisionId}.md`], NOW)
+  assert.ok(done4.workflow)
+  const adv4 = advanceWorkflow(ws, workflow.id, 'review_recommendation')
+  assert.equal(adv4.ok, true)
+  if (!adv4.ok) return
+  assert.equal(adv4.status, 'completed')
+  // 全阶段 completed + 全部 gate passed + 全部 artifact 存在
+  const final = getWorkflow(ws, workflow.id)!
+  assert.equal(final.status, 'completed')
+  assert.equal(final.stages.length, 4)
+  for (const s of final.stages) assert.equal(s.status, 'completed')
+  assert.ok(ws.read(`decisions/${decisionId}.md`).includes('| status | accepted |'))
 })

@@ -15,7 +15,9 @@ import type { Workspace } from './workspace.ts'
 import type { StageArtifact } from '../ir/schema.ts'
 import { completePersonInit, scanPersons } from './person-watcher.ts'
 import { countStageArtifacts, listStageArtifacts, registerStageArtifactBatch, type StageArtifactRejection } from './stage-artifact-registry.ts'
-import { DIRECTION_SPEC, getArtifactSpec } from './artifact-type-registry.ts'
+import { DIRECTION_SPEC, EVALUATION_SPEC, getArtifactSpec } from './artifact-type-registry.ts'
+import { splitFrontmatter } from './decision-registry.ts'
+import { updateDecisionFile } from './decision-editor.ts'
 import { watch } from 'chokidar'
 
 // ─── 类型（契约 §一/§二）──────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     inputs: ['exploration_artifact', 'person_aggregate'],
     outputs: ['evaluation_artifact'],
     evaluator: 'artifact-exists',
+    evaluatorParams: { artifactType: 'evaluation_candidate', min: 1 },
     task: {
       objective: '方向评估：基于方向候选清单，执行 career-path 的 Step 4-5（路径画像 / 加权打分）',
       instructions: ['基于上一阶段的方向候选清单加权打分', '输出方向加权评估明细（evaluation_artifact）', '不要输出最终推荐（下一阶段）'],
@@ -138,7 +141,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     task: {
       objective: '形成推荐：基于方向评估明细，执行 career-path 的 Step 6（输出报告）',
       instructions: [
-        '产出决策报告（decisions/，Decision Record Contract）',
+        '产出决策报告（decisions/，Decision Record Contract；frontmatter 声明 person_id: {当前人} 与 type: direction）',
         '报告必须区分：confirmed fact（已登记事实）/ exploration input（未登记口述）/ inference（推理结论）',
       ],
       expectedOutputs: ['决策报告'],
@@ -387,8 +390,8 @@ export function isPersonInitComplete(ws: Workspace, personId: string): boolean {
 }
 
 function stageMissingInputs(ws: Workspace, spec: StageSpec, personId: string, workflowId: string): string[] {
-  // v0.2：person_aggregate（三件快照）+ exploration_artifact（方向池 confirmed ≥ 1）；
-  // evaluation_artifact/decision 的 input 判定随 Stage 3/4 下一切片落地
+  // v0.2/v0.3：person_aggregate（三件快照）+ exploration_artifact（方向池 confirmed ≥ 1）+
+  // evaluation_artifact（评估候选已登记 ≥ 1，Stage 4 输入判定）
   const missing: string[] = []
   for (const input of spec.inputs) {
     if (input === 'person_aggregate' && !isPersonInitComplete(ws, personId)) {
@@ -396,6 +399,12 @@ function stageMissingInputs(ws: Workspace, spec: StageSpec, personId: string, wo
     }
     if (input === 'exploration_artifact' && confirmedDirectionCount(ws, workflowId, personId) < 1) {
       missing.push('exploration_artifact（方向池 confirmed = 0——无用户批准的方向）')
+    }
+    if (
+      input === 'evaluation_artifact' &&
+      countStageArtifacts(ws, EVALUATION_SPEC, personId, { workflowId, stageId: 'direction_evaluation' }) < 1
+    ) {
+      missing.push('evaluation_artifact（已登记评估候选 = 0——Stage 3 未产出评估明细）')
     }
   }
   return missing
@@ -447,8 +456,15 @@ export function evaluateStageCompletion(
         ],
       }
     }
-    case 'decision-registered':
-      return { passed: true, missing: [] }
+    case 'decision-registered': {
+      // 契约 v0.3 §3.2：完成判定 = recommendation stage artifacts 列非空（onRecommendationDone 写入）。
+      // evaluator 只读列——单一真相源（decision 合法性校验在登记时完成），不做第二套校验。
+      const w = getWorkflow(ws, workflowId)
+      const stage = w?.stages.find((s) => s.id === spec.id)
+      const artifacts = stage?.artifacts ?? []
+      if (artifacts.length >= 1) return { passed: true, missing: [] }
+      return { passed: false, missing: [`已登记决策 0/1（decisions/ 关联本 workflow 的合法决策）`] }
+    }
   }
 }
 
@@ -589,6 +605,17 @@ function gateConditionPassed(ws: Workspace, gateId: GateId, w: WorkflowState): {
   return { passed: true, missing: '' }
 }
 
+/** v0.3 §3.4：review_recommendation gate passed → 联动 decision status → accepted。
+ *  读 recommendation stage artifacts 列的 decision 系统 ID，复用 decision-editor 白名单更新。
+ *  decision 文件在 advance 时点必存在（onRecommendationDone 已校验 person 匹配 + 记录 artifacts 列），
+ *  缺失 = 系统异常 fail fast（updateDecisionFile 抛错）。 */
+function acceptRecommendationDecisions(ws: Workspace, w: WorkflowState): void {
+  const stage = w.stages.find((s) => s.id === 'recommendation')
+  for (const id of stage?.artifacts ?? []) {
+    updateDecisionFile(ws, id, { status: 'accepted' })
+  }
+}
+
 export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: string, now: Date = new Date()): AdvanceResult {
   const w = getWorkflow(ws, workflowId)
   if (!w) throw new Error(`workflow 不存在：${workflowId}`)
@@ -635,6 +662,12 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
   //   复用 completePersonInit 单一门禁——advance 第 2 步已判三件齐备，此处重校验同源不会抛）
   if (cur.id === 'fact_collection' && spec.gate === 'confirm_person_facts') {
     completePersonInit(ws, w.personId)
+  }
+  // v0.3 §3.4：review_recommendation gate passed = 用户采纳推荐的权威时刻 →
+  //   联动 decision status → accepted（Engine Registration 拥有 Canonical State；
+  //   复用 decision-editor 白名单——decision 文件在 advance 时点必存在，onRecommendationDone 已校验）
+  if (cur.id === 'recommendation' && spec.gate === 'review_recommendation') {
+    acceptRecommendationDecisions(ws, w)
   }
   const stages = w.stages.map((s, i) =>
     i === curIdx
@@ -757,6 +790,107 @@ export function onExplorationDone(
   }
   writeWorkflow(ws, next, now)
   return { workflow: next, registered: batch.registered, rejected: batch.rejected }
+}
+
+/**
+ * direction_evaluation 输出就绪回调（契约 v0.3 §2.3 done 钩子）：Agent 完成方向评估后调用。
+ * - intake 清单（本次执行新产生的评估提案）逐个登记：合法 → registered；非法 → 拒绝明细（调用方广播）
+ * - guard：registered ≥ 1 → waiting_gate（无 gate——评估非用户事实，不裁决）；0 → failed
+ * - 幂等：非 running 的 direction_evaluation 不处理。
+ */
+export function onEvaluationDone(
+  ws: Workspace,
+  workflowId: string,
+  proposalFiles: string[],
+  now: Date = new Date(),
+): { workflow: WorkflowState | null; registered: StageArtifact[]; rejected: StageArtifactRejection[] } {
+  const w = getWorkflow(ws, workflowId)
+  if (!w || w.status !== 'active') return { workflow: null, registered: [], rejected: [] }
+  const stage = w.stages.find((s) => s.id === 'direction_evaluation')
+  if (!stage || stage.status !== 'running') return { workflow: null, registered: [], rejected: [] }
+
+  const batch = registerStageArtifactBatch(
+    ws,
+    EVALUATION_SPEC,
+    { personId: w.personId, workflowId: w.id, stageId: 'direction_evaluation', proposalFiles },
+    now,
+  )
+  const ts = now.toISOString()
+  const passed = batch.registered.length > 0
+  const next: WorkflowState = {
+    ...w,
+    stages: w.stages.map((s) =>
+      s.id === 'direction_evaluation'
+        ? {
+            ...s,
+            status: passed ? ('waiting_gate' as StageStatus) : ('failed' as StageStatus),
+            ...(passed
+              ? {
+                  // 累积（§4.2 语义延续）：restage 后二次执行追加到既有 artifacts 列，不覆盖
+                  artifacts: [...(stage.artifacts ?? []), ...batch.registered.map((a) => a.artifact_id)],
+                }
+              : {}),
+          }
+        : s,
+    ),
+    updatedAt: ts,
+  }
+  writeWorkflow(ws, next, now)
+  return { workflow: next, registered: batch.registered, rejected: batch.rejected }
+}
+
+/**
+ * recommendation 输出就绪回调（契约 v0.3 §3.3 done 钩子）：Agent 完成推荐报告后调用。
+ * 前置：调用方（transport 层）已 registerDecisionIdentity 幂等补登记——本函数只校验归属 + 记录，
+ * 不做登记（登记权在 decision-registry，非本层）。
+ * - 逐个校验新决策文件 frontmatter person_id == workflow.personId（归属正确）
+ * - 合法 → 记录 decision 系统 ID 到 stage 4 artifacts 列（累积追加）
+ * - guard：合法 ≥ 1 → waiting_gate（挂 review_recommendation）；0 → failed
+ * - 幂等：非 running 的 recommendation 不处理。
+ */
+export function onRecommendationDone(
+  ws: Workspace,
+  workflowId: string,
+  newDecisionFiles: string[],
+  now: Date = new Date(),
+): { workflow: WorkflowState | null; decisions: string[] } {
+  const w = getWorkflow(ws, workflowId)
+  if (!w || w.status !== 'active') return { workflow: null, decisions: [] }
+  const stage = w.stages.find((s) => s.id === 'recommendation')
+  if (!stage || stage.status !== 'running') return { workflow: null, decisions: [] }
+
+  const decisions: string[] = []
+  for (const f of newDecisionFiles) {
+    const rel = `decisions/${f}`
+    if (!ws.exists(rel)) continue
+    const { meta } = splitFrontmatter(ws.read(rel))
+    if (meta.person_id !== w.personId) continue
+    decisions.push(meta.id ?? f.replace(/\.md$/, ''))
+  }
+
+  const passed = decisions.length > 0
+  const ts = now.toISOString()
+  const next: WorkflowState = {
+    ...w,
+    stages: w.stages.map((s) =>
+      s.id === 'recommendation'
+        ? {
+            ...s,
+            status: passed ? ('waiting_gate' as StageStatus) : ('failed' as StageStatus),
+            ...(passed
+              ? {
+                  // 累积：restage 后二次执行追加到既有 artifacts 列，不覆盖（decision append-only）
+                  artifacts: [...(stage.artifacts ?? []), ...decisions],
+                  gate: { id: 'review_recommendation' as GateId, status: 'waiting' as const },
+                }
+              : {}),
+          }
+        : s,
+    ),
+    updatedAt: ts,
+  }
+  writeWorkflow(ws, next, now)
+  return { workflow: next, decisions }
 }
 
 // ─── 状态变更钩子（Agent 完成 Stage 输出时由调用方触发；v0.2：fact_collection + direction_exploration）──

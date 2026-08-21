@@ -32,8 +32,10 @@ import {
   advanceWorkflow,
   compileStageTask,
   getWorkflow,
+  onEvaluationDone,
   onExplorationDone,
   onFactCollectionReady,
+  onRecommendationDone,
   restageWorkflow,
   scanWorkflows,
   STAGE_IDS,
@@ -168,7 +170,8 @@ import {
 import type { CreateApplicationRequest } from '../ir/schema.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
 import { listStageArtifacts, resolveStageArtifact, type StageArtifactRejection } from '../storage/stage-artifact-registry.ts'
-import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+import { DIRECTION_SPEC, EVALUATION_SPEC } from '../storage/artifact-type-registry.ts'
+import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 
 /** intake 边界判定（契约 v0.2 §1.6）：本次执行新产生的提案文件 = 当前目录 - 启动时快照（纯函数，可单测） */
 export function freshIntakeFiles(current: string[], intake: string[]): string[] {
@@ -1280,6 +1283,22 @@ export async function startServer(opts: {
       return []
     }
   }
+  /** 本次执行新产生的评估提案文件（§1.6 intake boundary 模式延伸到 evaluations/） */
+  const currentEvaluationFiles = (personId: string): string[] => {
+    try {
+      return workspace.listMarkdown(`persons/${personId}/evaluations`)
+    } catch {
+      return []
+    }
+  }
+  /** 本次执行新产生的决策文件（§3.3 intake boundary 模式延伸到 decisions/；decisions/ 全局目录不按 person 分） */
+  const currentDecisionFiles = (): string[] => {
+    try {
+      return workspace.listMarkdown('decisions')
+    } catch {
+      return []
+    }
+  }
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
@@ -1303,6 +1322,27 @@ export async function startServer(opts: {
             }
             const status = result.workflow.stages.find((s) => s.id === 'direction_exploration')?.status
             logger.info(`Stage 完成钩子：${ref.workflowId} direction_exploration → ${status}（登记 ${result.registered.length} 条，拒绝 ${result.rejected.length} 条；Agent 任务 ${taskId} done）`)
+            broadcast({ event: EVENTS.workflowChanged })
+          }
+        } else if (ref.stageId === 'direction_evaluation') {
+          const result = onEvaluationDone(workspace, ref.workflowId, freshIntakeFiles(currentEvaluationFiles(ref.personId), ref.intake))
+          if (result.workflow) {
+            if (result.rejected.length > 0) {
+              const message = formatRegistrationRejectionMessage(EVALUATION_SPEC.artifactType, result.rejected)
+              logger.error(message)
+              broadcast({ event: EVENTS.engineError, data: { message } })
+            }
+            const status = result.workflow.stages.find((s) => s.id === 'direction_evaluation')?.status
+            logger.info(`Stage 完成钩子：${ref.workflowId} direction_evaluation → ${status}（登记 ${result.registered.length} 条，拒绝 ${result.rejected.length} 条；Agent 任务 ${taskId} done）`)
+            broadcast({ event: EVENTS.workflowChanged })
+          }
+        } else if (ref.stageId === 'recommendation') {
+          // v0.3 §3.3：先幂等补登记（watcher 可能已登记）→ 再扫 intake 内新决策（已是系统 ID）→ onRecommendationDone 校验归属
+          registerDecisionIdentity(workspace)
+          const result = onRecommendationDone(workspace, ref.workflowId, freshIntakeFiles(currentDecisionFiles(), ref.intake))
+          if (result.workflow) {
+            const status = result.workflow.stages.find((s) => s.id === 'recommendation')?.status
+            logger.info(`Stage 完成钩子：${ref.workflowId} recommendation → ${status}（关联决策 ${result.decisions.length} 条；Agent 任务 ${taskId} done）`)
             broadcast({ event: EVENTS.workflowChanged })
           }
         }
@@ -1536,11 +1576,23 @@ export async function startServer(opts: {
       // 注册 Stage Task 完成钩子（BUG-006：Agent done → 按 stage 分派状态钩子 → workflowChanged）
       if (p.workflowId !== undefined && p.stageId !== undefined) {
         const wf = getWorkflow(workspace, p.workflowId)
-        // intake（§1.6）：仅 direction_exploration 需要提案消费边界（start 时快照既有文件名）
+        // intake（§1.6 模式延伸到 v0.3）：start 时快照各 Stage 产出目录既有文件名，done 只消费快照外新文件
         let intake: string[] = []
         if (p.stageId === 'direction_exploration') {
           try {
             intake = workspace.listMarkdown(`persons/${wf?.personId ?? p.personId ?? ''}/directions`)
+          } catch {
+            intake = []
+          }
+        } else if (p.stageId === 'direction_evaluation') {
+          try {
+            intake = workspace.listMarkdown(`persons/${wf?.personId ?? p.personId ?? ''}/evaluations`)
+          } catch {
+            intake = []
+          }
+        } else if (p.stageId === 'recommendation') {
+          try {
+            intake = workspace.listMarkdown('decisions')
           } catch {
             intake = []
           }
