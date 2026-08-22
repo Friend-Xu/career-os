@@ -37,7 +37,7 @@ export function TopBar() {
     const mine = decisions.filter((d) => belongsToPerson(d, currentPerson))
     const counts = new Map<string, number>()
     for (const d of mine) {
-      const type = SKILL_VIEW_LABEL[d.skill] ?? d.skill
+      const type = (SKILL_VIEW_LABEL[d.skill] ?? d.skill) || '未标注'
       counts.set(type, (counts.get(type) ?? 0) + 1)
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1])

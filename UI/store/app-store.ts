@@ -2303,6 +2303,78 @@ function patchStreamingMessage(
   }))
 }
 
+/**
+ * text_delta 批量汇聚（rAF 每帧 flush 一次）——2026-08-22 真机定位：
+ * Agent 长输出（城市评估）高频 text_delta → 每帧多次 setState → React
+ * `Maximum update depth exceeded`（控制台 7 errors）。语义不变（内容按序累积），
+ * 只降 setState 频率；done/error 前必须 flush 保证最终内容完整。
+ */
+interface DeltaBuffer {
+  sessionId: string
+  messageId: string
+  text: string
+  raf: number | null
+  pending: boolean
+}
+let deltaBuf: DeltaBuffer | null = null
+let thinkingBuf: DeltaBuffer | null = null
+
+function flushDeltaBuffer(): void {
+  if (!deltaBuf?.pending) return
+  const { sessionId, messageId, text } = deltaBuf
+  // 清空缓冲后再 patch（rAF 回调与下一个 schedule 可能交错：text 已消费，不得再次 append）
+  deltaBuf.text = ''
+  deltaBuf.pending = false
+  patchStreamingMessage(sessionId, messageId, (m) => ({
+    ...m,
+    isThinking: false,
+    content: m.content + text,
+  }))
+}
+
+function flushThinkingBuffer(): void {
+  if (!thinkingBuf?.pending) return
+  const { sessionId, messageId, text } = thinkingBuf
+  thinkingBuf.text = ''
+  thinkingBuf.pending = false
+  patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, thinking: (m.thinking ?? '') + text }))
+}
+
+/** 通用 rAF 批量调度（delta/thinking 共用同一缓冲语义） */
+function scheduleDelta(buf: DeltaBuffer | null, sessionId: string, messageId: string, text: string): DeltaBuffer {
+  if (buf && (buf.sessionId !== sessionId || buf.messageId !== messageId)) {
+    if (buf === deltaBuf) flushDeltaBuffer()
+    else flushThinkingBuffer()
+  }
+  if (!buf || buf.sessionId !== sessionId || buf.messageId !== messageId) {
+    buf = { sessionId, messageId, text, raf: null, pending: false }
+  }
+  buf.text += text
+  buf.pending = true
+  if (buf.raf === null) {
+    buf.raf = requestAnimationFrame(() => {
+      buf!.raf = null
+      if (buf === deltaBuf) flushDeltaBuffer()
+      else flushThinkingBuffer()
+    })
+  }
+  return buf
+}
+
+function scheduleTextDelta(sessionId: string, messageId: string, text: string): void {
+  deltaBuf = scheduleDelta(deltaBuf, sessionId, messageId, text)
+}
+
+function scheduleThinkingDelta(sessionId: string, messageId: string, text: string): void {
+  thinkingBuf = scheduleDelta(thinkingBuf, sessionId, messageId, text)
+}
+
+/** 任务收尾前 flush 全部缓冲（保证最终内容完整不乱序） */
+function flushStreamBuffers(): void {
+  flushDeltaBuffer()
+  flushThinkingBuffer()
+}
+
 /** 初始化会话落盘（切片 2.1）：当前人初始化中 + 引擎在线 → 追加对话轮次到 intake/session-001.md */
 async function appendSessionTurnToEngine(personId: string, role: 'user' | 'assistant', content: string): Promise<void> {
   if (!engine || useAppStore.getState().engineStatus !== 'connected') return
@@ -2523,18 +2595,14 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
   const { sessionId, messageId } = task
   switch (ev.type) {
     case 'text_delta':
-      // 无思考直达的轮次：首个文本即熄灭指示器
-      patchStreamingMessage(sessionId, messageId, (m) => ({
-        ...m,
-        isThinking: false,
-        content: m.content + ev.text,
-      }))
+      // rAF 批量汇聚（高频 delta 每帧一次 setState——防止 Maximum update depth exceeded）
+      scheduleTextDelta(sessionId, messageId, ev.text)
       break
     case 'thinking_start':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: true }))
       break
     case 'thinking_delta':
-      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, thinking: (m.thinking ?? '') + ev.text }))
+      scheduleThinkingDelta(sessionId, messageId, ev.text)
       break
     case 'thinking_stop':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false }))
@@ -2614,6 +2682,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         }
       }
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
+      flushStreamBuffers()
       agentTasks.delete(taskId)
       useAppStore.setState((s) => {
         const next = { ...s.sessionTasks }
@@ -2626,6 +2695,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
     }
     case 'error':
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
+      flushStreamBuffers()
       appendToSession(sessionId, {
         id: `msg-${Date.now()}`,
         role: 'assistant',
