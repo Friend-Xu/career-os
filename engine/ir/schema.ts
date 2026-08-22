@@ -1062,3 +1062,22 @@ export interface PersonHealth {
   checks: PersonHealthCheck[]
   summary: string
 }
+
+/** WebSearch 指标投影（P3 指标板：logs/traces/web_search-*.jsonl 聚合，纯读派生不落盘。
+ *  只输出计数与时间戳——trace 文件含任务原文，RPC 永不回传查询内容（隐私红线）。 */
+export interface SearchStats {
+  /** search_start 次数（实际发起检索） */
+  searches: number
+  /** cache_hit 次数（引擎级共享缓存命中，不耗预算） */
+  cacheHits: number
+  /** fallback 次数（官方路径失败 → 守卫降级薄封装） */
+  fallbacks: number
+  /** search_error 次数 */
+  errors: number
+  /** budget_exhausted 次数（任务搜索预算用尽） */
+  budgetExhausted: number
+  /** 最早 trace 时间（ISO）；无 trace → null */
+  since: string | null
+  /** 最晚 trace 时间（ISO）；无 trace → null */
+  lastAt: string | null
+}

@@ -70,6 +70,7 @@ import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { createCityPromotion, revokePromotion, scanPromotions } from '../storage/promotion-registry.ts'
 import { generateHealthReport } from '../health/checker.ts'
+import { computeSearchStats } from '../health/search-stats.ts'
 import { personHealth } from '../health/person-health.ts'
 import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
@@ -1631,6 +1632,7 @@ export async function startServer(opts: {
     [METHODS.knowledgeGap]: (params) => computeKnowledgeGap(workspace, gapParams(params)),
     [METHODS.jdAnalyze]: (params) => computeJdAnalysis(workspace, jdAnalyzeParams(params)),
     [METHODS.health]: () => generateHealthReport(workspace, store as ProjectionStore),
+    [METHODS.searchStats]: () => computeSearchStats(join(config.paths.logs, 'traces')),
     [METHODS.resumeExport]: (params) => exportPdf(resumeHtmlParams(params)),
     [METHODS.agentStart]: (params) => {
       const p = agentStartParams(params)

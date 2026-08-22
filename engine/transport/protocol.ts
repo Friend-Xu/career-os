@@ -128,6 +128,8 @@ export const METHODS = {
   poolGraph: 'pool/graph',
   /** 健康投影（HealthReport，契约 v1；CLI --doctor 与 UI 共用同一计算源） */
   health: 'system/health',
+  /** WebSearch 指标投影（P3 指标板：logs/traces/web_search-*.jsonl 聚合；纯读派生，只返回计数与时间戳——查询内容永不外传） */
+  searchStats: 'system/search-stats',
   /** 简历导出 PDF（params: { html } → { pdf: base64, fileName }；spawn 系统 Edge headless --print-to-pdf） */
   resumeExport: 'resume/export',
   /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送。

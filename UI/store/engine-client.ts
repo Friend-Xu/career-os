@@ -26,6 +26,7 @@ import type {
   PoolNode,
   ResumeRewriteContext,
   Role,
+  SearchStats,
   Skill,
   Validation,
 } from '../../engine/ir/schema.ts'
@@ -814,6 +815,11 @@ export class EngineClient {
   /** 健康投影（契约 v1；与 CLI --doctor 同一计算源） */
   health(): Promise<HealthReport> {
     return this.rpc<HealthReport>(METHODS.health)
+  }
+
+  /** WebSearch 指标投影（P3 指标板：引擎聚合 logs/traces/web_search-*.jsonl；只返回计数与时间戳） */
+  searchStats(): Promise<SearchStats> {
+    return this.rpc<SearchStats>(METHODS.searchStats)
   }
 
   /** 简历导出 PDF（引擎 spawn Edge headless --print-to-pdf） */
