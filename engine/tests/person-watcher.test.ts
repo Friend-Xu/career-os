@@ -420,18 +420,18 @@ function seedCompleteSnapshots(ws: ReturnType<typeof initWorkspace>, personId: s
   ws.write(`persons/${personId}/snapshot/current/preference_constraints.md`, '# 偏好\n\n## 分析摘要\n\n| 字段 | 值 |\n|------|-----|\n| city | 苏州 |\n| salary_range | 11-13K |\n')
 }
 
-test('init_state：创建写入 in_progress；completePersonInit 写 completed；scanPersons 回读', () => {
+test('init_state：创建写入 uploading；completePersonInit 写 completed；scanPersons 回读', () => {
   const dir = makeWorkspace({})
   const ws = initWorkspace(dir)
   try {
     const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
     const manifest = ws.read(`persons/${personId}/manifest.md`)
-    assert.ok(manifest.includes('| init_state | in_progress |'))
+    assert.ok(manifest.includes('| init_state | uploading |'))
     // parsePersonManifest 回读
     const parsed = parsePersonManifest(manifest)
-    assert.equal(parsed?.initState, 'in_progress')
+    assert.equal(parsed?.initState, 'uploading')
     // scanPersons 投影
-    assert.equal(scanPersons(ws)[0]!.initState, 'in_progress')
+    assert.equal(scanPersons(ws)[0]!.initState, 'uploading')
     // 门禁：缺快照件 → 拒绝
     assert.throws(() => completePersonInit(ws, personId), /画像未齐备.*identity\.md/)
     // 补齐后完成
@@ -454,7 +454,7 @@ test('resetPerson：init_state 重置回 in_progress', () => {
     completePersonInit(ws, personId)
     assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
     resetPerson(ws, personId)
-    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'uploading')
   } finally {
     cleanup(dir)
   }
@@ -487,13 +487,13 @@ test('completePersonInit 门禁：缺任一必需快照件 → 拒绝并列出�
       () => completePersonInit(ws, personId),
       /画像未齐备，禁止标记完成：缺 identity\.md、preference_constraints\.md/,
     )
-    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'uploading')
   } finally {
     cleanup(dir)
   }
 })
 
-test('reconcilePersonInitStates：历史空壳 completed（manifest 标完成但快照缺件）→ 回滚 in_progress（对账循环）', () => {
+test('reconcilePersonInitStates：历史空壳 completed（manifest 标完成但快照缺件）→ 回滚 candidate_review（对账循环）', () => {
   const dir = makeWorkspace({})
   const ws = initWorkspace(dir)
   try {
@@ -501,15 +501,15 @@ test('reconcilePersonInitStates：历史空壳 completed（manifest 标完成但
     // 模拟历史空壳：manifest 被旧流程直接标 completed（门禁前的产物），快照只写 1 件（测试区 person_001 镜像）
     ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, '# 技能\n')
     const manifest = ws.read(`persons/${personId}/manifest.md`)
-    ws.write(`persons/${personId}/manifest.md`, manifest.replace('| init_state | in_progress |', '| init_state | completed |'))
+    ws.write(`persons/${personId}/manifest.md`, manifest.replace('| init_state | uploading |', '| init_state | completed |'))
     assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'completed')
-    // 对账：completed 但缺件 → 回滚 in_progress，并返回缺件说明
+    // 对账：completed 但缺件 → 回滚 candidate_review（候选清单仍在，可重新确认），并返回缺件说明
     const rolledBack = reconcilePersonInitStates(ws)
     assert.equal(rolledBack.length, 1)
     assert.ok(rolledBack[0]!.includes(personId))
     assert.ok(rolledBack[0]!.includes('identity.md'))
-    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'in_progress')
-    assert.equal(scanPersons(ws)[0]!.initState, 'in_progress')
+    assert.equal(parsePersonManifest(ws.read(`persons/${personId}/manifest.md`))?.initState, 'candidate_review')
+    assert.equal(scanPersons(ws)[0]!.initState, 'candidate_review')
     // 幂等：再次对账零写入零返回
     assert.deepEqual(reconcilePersonInitStates(ws), [])
   } finally {

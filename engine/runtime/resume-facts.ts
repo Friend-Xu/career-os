@@ -20,7 +20,7 @@ import type { LanguageModel } from 'ai'
 import { z } from 'zod'
 import { createStructuredExtractor } from '../agent/capability/structured-extractor.ts'
 import type { Logger } from '../logger.ts'
-import { appendCandidates, listCandidates } from '../storage/person-watcher.ts'
+import { appendCandidates, listCandidates, readManifestInitState, setManifestInitState } from '../storage/person-watcher.ts'
 import type { Workspace } from '../storage/workspace.ts'
 
 // ─── Resume Facts 契约（generateObject 的 schema = 类型 = 校验规则，三者同源）──────────
@@ -349,6 +349,11 @@ export async function generateResumeCandidates(
     reused && already > 0
       ? []
       : appendCandidatesSafe(ws, personId, candidates)
+  // 状态机（PR-2）：候选已入 Inbox → candidate_review（仅推进未完成档案；completed 不降级）
+  const cur = readManifestInitState(ws, personId)
+  if (cur === 'uploading' || cur === 'extracting' || cur === 'in_progress') {
+    setManifestInitState(ws, personId, 'candidate_review')
+  }
   return { artifactId, facts, added, reused }
 }
 

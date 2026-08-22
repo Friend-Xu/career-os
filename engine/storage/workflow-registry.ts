@@ -13,7 +13,7 @@
  */
 import type { Workspace } from './workspace.ts'
 import type { StageArtifact } from '../ir/schema.ts'
-import { completePersonInit, scanPersons } from './person-watcher.ts'
+import { completePersonInit, readManifestInitState, scanPersons } from './person-watcher.ts'
 import { countStageArtifacts, listStageArtifacts, registerStageArtifactBatch, type StageArtifactRejection } from './stage-artifact-registry.ts'
 import { DIRECTION_SPEC, EVALUATION_SPEC, getArtifactSpec } from './artifact-type-registry.ts'
 import { splitFrontmatter } from './decision-registry.ts'
@@ -435,7 +435,7 @@ export function getWorkflow(ws: Workspace, workflowId: string): WorkflowState | 
   return parseWorkflowMarkdown(ws.read(rel))
 }
 
-function writeWorkflow(ws: Workspace, w: WorkflowState, now: Date): void {
+export function writeWorkflow(ws: Workspace, w: WorkflowState, now: Date): void {
   const next: WorkflowState = { ...w, updatedAt: now.toISOString() }
   ws.write(`workflows/${w.id}.md`, serialize(next))
 }
@@ -604,16 +604,26 @@ export function startWorkflow(
 
   const id = nextWorkflowId(ws, now)
   const ts = now.toISOString()
-  // Path B guard（契约 §4.4 增强）：有候选 且 候选类别足以支撑缺失快照（否则 waiting_gate 后 advance
-  // 必 STAGE_INCOMPLETE → 死锁——测试区 7 条约束/兴趣候选无教育/经历即此场景）。不足 → 走 Path A 补采。
-  const useExisting = canUseExistingCandidates(ws, params.personId)
+  // P1 门禁（2026-08-22，用户旅程顺序）：初始化未完成 → 禁止发起工作流（UI/引擎双门禁）。
+  // 初始化闭环（P0-1 确定性候选）负责事实；工作流不再承担事实收集——阶段 1 由此前置完成态跳过。
+  const initState = readManifestInitState(ws, params.personId)
+  if (initState !== 'completed') {
+    throw new Error(
+      `INIT_REQUIRED：请先完成职业档案初始化（当前 init_state=${initState ?? '缺失'}）——基础档案建立后才能发起职业方向工作流`,
+    )
+  }
+  // 初始化已完成：事实收集（阶段 1）由初始化闭环（确定性候选 → 确认 → 快照）完成 →
+  // 阶段 1 直接 completed + gate passed，工作流从阶段 2 方向探索开始（无会话 Agent 再收集）。
   const stage1: WorkflowStageState = {
     id: 'fact_collection',
-    status: useExisting ? 'waiting_gate' : 'running',
+    status: 'completed',
+    completedAt: ts,
+    gate: { id: 'confirm_person_facts' as GateId, status: 'passed', confirmedAt: ts },
+  }
+  const stage2: WorkflowStageState = {
+    id: 'direction_exploration',
+    status: 'running',
     startedAt: ts,
-    ...(useExisting
-      ? { gate: { id: 'confirm_person_facts' as GateId, status: 'waiting' as const } }
-      : {}),
   }
   const workflow: WorkflowState = {
     id,
@@ -621,14 +631,14 @@ export function startWorkflow(
     personId: params.personId,
     statement: params.statement.trim(),
     status: 'active',
-    currentStage: 'fact_collection',
-    stages: [stage1],
+    currentStage: 'direction_exploration',
+    stages: [stage1, stage2],
     totalStages: CAREER_DIRECTION_STAGES.length,
     createdAt: ts,
     updatedAt: ts,
   }
   writeWorkflow(ws, workflow, now)
-  return { workflow, path: useExisting ? 'B' : 'A' }
+  return { workflow, path: 'B' }
 }
 
 // ─── workflow/advance（四步校验；契约 §四.2）───────────────────────────────

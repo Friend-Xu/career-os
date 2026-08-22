@@ -496,7 +496,7 @@ export function createProjection(opts: { dbPath: string; workspace: Workspace; l
           ...(s.preference ? { preference: s.preference } : {}),
           ...(s.experiences ? { experiences: s.experiences } : {}),
           ...(s.summaryStrengths ? { summaryStrengths: s.summaryStrengths } : {}),
-          ...(s.initState ? { initStatus: s.initState === 'in_progress' ? 'pending' : 'active' as const } : {}),
+          ...(s.initState ? { initStatus: s.initState === 'completed' ? 'active' : 'pending' as const } : {}),
           ...(s.sourceMode ? { sourceMode: s.sourceMode } : {}),
         }))
       }

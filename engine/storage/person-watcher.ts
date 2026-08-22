@@ -13,7 +13,7 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { watch } from 'chokidar'
-import type { PersonSkill, PersonSnapshot, SummaryStrength } from '../ir/schema.ts'
+import type { PersonInitState, PersonSkill, PersonSnapshot, SummaryStrength } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { splitFrontmatter } from './artifact-registry.ts'
 import { parseSummaryTable } from '../ir/summary-table.ts'
@@ -27,13 +27,17 @@ export interface PersonManifest {
   name: string
   status: string
   createdAt?: string
-  /** 初始化状态（生命周期摘要：in_progress=首次采集未完成；completed=已进入正常使用；缺失=旧档案） */
-  initState?: 'in_progress' | 'completed'
+  /** 初始化状态机（PersonInitState：uploading/extracting/candidate_review/confirmed/completed；
+   *  in_progress 仅旧档案兼容；缺失=旧档案） */
+  initState?: PersonInitState
   /** 初始化通道（manifest source_mode；刷新后恢复通道语义） */
   sourceMode?: 'resume' | 'interview'
 }
 
 const STATUSES = ['active', 'archived'] as const
+
+/** 初始化状态机合法值（manifest init_state；in_progress 仅兼容旧档案） */
+const INIT_STATES = ['uploading', 'extracting', 'candidate_review', 'confirmed', 'completed', 'in_progress'] as const
 
 /** persons/ 子目录名 → person_id 列表（无目录 → 空） */
 function scanPersonIds(ws: Workspace): string[] {
@@ -70,7 +74,7 @@ export function createPersonSession(ws: Workspace, params: { name: string; sourc
     `| name | ${name} |`,
     '| status | active |',
     `| source_mode | ${sourceMode} |`,
-    '| init_state | in_progress |',
+    '| init_state | uploading |',
     '| init_session | session-001 |',
     `| created_at | ${today} |`,
     '',
@@ -88,7 +92,7 @@ export function resetPerson(ws: Workspace, personId: string): { personId: string
   }
   const manifest = ws.exists(`persons/${personId}/manifest.md`) ? ws.read(`persons/${personId}/manifest.md`) : ''
   const sourceMode: 'resume' | 'interview' = /^\| source_mode \| resume \|/m.test(manifest) ? 'resume' : 'interview'
-  setManifestInitState(ws, personId, 'in_progress')
+  setManifestInitState(ws, personId, 'uploading')
   ws.write(`persons/${personId}/intake/session-001.md`, sessionTemplate(personId, sourceMode))
   return { personId }
 }
@@ -426,6 +430,13 @@ export function resolveCandidate(
     '',
   ].join('\n')
   ws.write(`persons/${personId}/events/event_${date}_${seqStr}_resolution.md`, evt)
+
+  // 状态机（PR-2）：候选全部裁决（无 pending）→ confirmed（仅未完成档案推进；completed 不降级）
+  const curState = readManifestInitState(ws, personId)
+  if (curState !== undefined && curState !== 'completed' && curState !== 'confirmed') {
+    const anyPending = listCandidates(ws, personId).some((c) => c.status === 'pending')
+    if (!anyPending) setManifestInitState(ws, personId, 'confirmed')
+  }
   return { candidateId, action, status: action === 'rejected' ? 'rejected' : 'confirmed' }
 }
 
@@ -439,7 +450,7 @@ export function parsePersonManifest(md: string): PersonManifest | undefined {
   if (!id || !name) return undefined
   if (!(STATUSES as readonly string[]).includes(status)) return undefined
   const rawInit = meta.init_state?.trim() || fields?.init_state?.trim()
-  const initState = rawInit === 'in_progress' || rawInit === 'completed' ? rawInit : undefined
+  const initState = (INIT_STATES as readonly string[]).includes(rawInit ?? '') ? (rawInit as PersonInitState) : undefined
   const rawMode = meta.source_mode?.trim() || fields?.source_mode?.trim()
   const sourceMode = rawMode === 'resume' || rawMode === 'interview' ? rawMode : undefined
   return {
@@ -452,9 +463,10 @@ export function parsePersonManifest(md: string): PersonManifest | undefined {
   }
 }
 
-/** manifest 摘要表 init_state 行更新（缺失行插入——旧档案无该字段）；非法 personId 抛错 */
-function setManifestInitState(ws: Workspace, personId: string, state: 'in_progress' | 'completed'): void {
+/** manifest 摘要表 init_state 行更新（缺失行插入——旧档案无该字段）；非法 personId/状态抛错 */
+export function setManifestInitState(ws: Workspace, personId: string, state: PersonInitState): void {
   if (!/^person_\d{3}$/.test(personId)) throw new Error(`非法 personId: ${personId}`)
+  if (!INIT_STATES.includes(state)) throw new Error(`非法 init_state: ${state}`)
   const path = `persons/${personId}/manifest.md`
   if (!ws.exists(path)) throw new Error(`manifest 不存在：${personId}`)
   const md = ws.read(path)
@@ -463,6 +475,13 @@ function setManifestInitState(ws: Workspace, personId: string, state: 'in_progre
     ? md.replace(/^\| init_state \| .+ \|$/m, line)
     : md.replace(/^(\|------\|-----(\|------)*\|)$/m, `$1\n${line}`)
   ws.write(path, next)
+}
+
+/** 当前 manifest init_state（manifest 缺失/无法解析 → undefined） */
+export function readManifestInitState(ws: Workspace, personId: string): PersonInitState | undefined {
+  const rel = `persons/${personId}/manifest.md`
+  if (!ws.exists(rel)) return undefined
+  return parsePersonManifest(ws.read(rel))?.initState
 }
 
 /** 初始化完成门禁（Person 生命周期 v0.2）：用户声明基础信息达到可用状态的判定。
@@ -482,7 +501,8 @@ export function completePersonInit(ws: Workspace, personId: string): { personId:
 }
 
 /** 对账循环（Reconciliation——借鉴 K8s：期望状态 = 门禁判定，实际状态 = manifest 标记，启动/周期拉齐）：
- *  manifest init_state=completed 但三件快照缺件（历史遗留空壳，如测试区 person_001）→ 回滚 in_progress。
+ *  manifest init_state=completed 但三件快照缺件（历史遗留空壳，如测试区 person_001）→ 回滚 candidate_review
+ *  （候选清单仍在，可重新确认补齐；不回到 in_progress——状态机不允许回退到阶段前）。
  *  返回被回滚的 personId 清单（调用方记日志；UI 读 scanPersons 即见真实状态）。
  *  幂等：快照齐备的人不受影响；无快照缺件时零写入。 */
 export function reconcilePersonInitStates(ws: Workspace): string[] {
@@ -491,7 +511,7 @@ export function reconcilePersonInitStates(ws: Workspace): string[] {
     if (p.initState !== 'completed') continue
     const missing = INIT_COMPLETION_REQUIRED_SNAPSHOTS.filter((f) => !ws.exists(`persons/${p.personId}/snapshot/current/${f}`))
     if (missing.length > 0) {
-      setManifestInitState(ws, p.personId, 'in_progress')
+      setManifestInitState(ws, p.personId, 'candidate_review')
       rolledBack.push(`${p.personId}（缺 ${missing.join('、')}）`)
     }
   }

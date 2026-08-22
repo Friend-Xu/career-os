@@ -9,6 +9,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Workspace } from './workspace.ts'
+import { readManifestInitState, setManifestInitState } from './person-watcher.ts'
 
 export interface ResumeArtifactParams {
   personId: string
@@ -68,6 +69,11 @@ export function createResumeArtifact(ws: Workspace, params: ResumeArtifactParams
   ws.write(`${base}.meta.md`, meta)
   if (params.text?.trim()) {
     ws.write(`persons/${personId}/documents/resumes/extraction/${artifactId}.md`, params.text.trim() + '\n')
+  }
+  // 状态机（PR-2）：提取文本落盘 → extracting（仅未完成档案；completed 不降级）
+  const cur = readManifestInitState(ws, personId)
+  if (cur === 'uploading' || cur === 'in_progress') {
+    setManifestInitState(ws, personId, 'extracting')
   }
   return { artifactId, format: params.pdfBase64 ? 'pdf' : 'text' }
 }

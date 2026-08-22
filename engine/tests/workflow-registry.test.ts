@@ -14,13 +14,16 @@ import {
   restageWorkflow,
   isPersonInitComplete,
   evaluateStageCompletion,
+  writeWorkflow,
+  type WorkflowState,
+  type WorkflowStageState,
   CAREER_DIRECTION_STAGES,
 } from '../storage/workflow-registry.ts'
 import { countStageArtifacts, registerStageArtifact, resolveStageArtifact } from '../storage/stage-artifact-registry.ts'
 import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { freshIntakeFiles } from '../transport/websocket.ts'
-import { createPersonSession, scanPersons } from '../storage/person-watcher.ts'
+import { createPersonSession, scanPersons, setManifestInitState } from '../storage/person-watcher.ts'
 import { compileStageTask, getStageSpec } from '../storage/workflow-registry.ts'
 
 let wsSeq = 0
@@ -31,7 +34,41 @@ function testWorkspace(): Workspace {
 
 function makePerson(ws: Workspace): string {
   const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+  seedCompleteSnapshots(ws, personId)
+  setManifestInitState(ws, personId, 'completed')
   return personId
+}
+
+/** 旧语义工作流种子（legacy 兼容路径）：2026-08-22 后 startWorkflow 对已完成初始化档案直接跳过
+ *  事实收集（阶段 1 completed）——running/waiting_gate 阶段 1 仅遗留工作流（restage）可达；
+ *  onFactCollectionReady / stage-1 advance 守卫函数仍保留并在此覆盖。 */
+let legacySeq = 0
+function legacyStage1Workflow(ws: Workspace, personId: string, stageStatus: 'running' | 'waiting_gate'): WorkflowState {
+  legacySeq++
+  const id = `workflow_20260820_${String(10000 + legacySeq)}`
+  const ts = '2026-08-20T00:00:00Z'
+  const stages: WorkflowStageState[] = [
+    {
+      id: 'fact_collection',
+      status: stageStatus,
+      startedAt: ts,
+      ...(stageStatus === 'waiting_gate' ? { gate: { id: 'confirm_person_facts' as const, status: 'waiting' as const } } : {}),
+    },
+  ]
+  const w: WorkflowState = {
+    id,
+    type: 'career_direction',
+    personId,
+    statement: GOAL,
+    status: 'active',
+    currentStage: 'fact_collection',
+    stages,
+    totalStages: CAREER_DIRECTION_STAGES.length,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+  writeWorkflow(ws, w, new Date(ts))
+  return w
 }
 
 /** 补齐 person-init 三件快照（复用 completePersonInit 门禁判定） */
@@ -74,91 +111,80 @@ function seedConstraintOnlyCandidates(ws: Workspace, personId: string): void {
 const GOAL = '帮我确定职业方向'
 const NOW = new Date('2026-08-21T00:00:00Z')
 
-// ─── Path A：全新 Person（无 pending candidates）──────────────────────────
+// ─── 发起门禁 + 初始化完成后的工作流结构（P1/P0-1 修正语义）────────────────────
 
-test('startWorkflow Path A：无 pending candidates → Stage 1 running（等待 Agent 收集）', () => {
+test('startWorkflow 门禁（P1）：init_state 未完成 → INIT_REQUIRED（uploading/候选确认/旧 in_progress）', () => {
+  for (const [label, prep] of [
+    ['uploading（新创建）', (_ws: Workspace, _pid: string) => {}],
+    ['candidate_review（已生成候选）', (ws: Workspace, pid: string) => seedPendingCandidates(ws, pid)],
+    ['legacy in_progress', (ws: Workspace, pid: string) => setManifestInitState(ws, pid, 'in_progress')],
+  ] as const) {
+    const ws = testWorkspace()
+    const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'resume' })
+    prep(ws, personId)
+    assert.throws(
+      () => startWorkflow(ws, { type: 'career_direction', personId, statement: GOAL }),
+      /INIT_REQUIRED：请先完成职业档案初始化/,
+      label,
+    )
+  }
+})
+
+test('startWorkflow：初始化完成 → 阶段 1 事实收集 completed + gate passed + 阶段 2 方向探索 running', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
   const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL }, new Date('2026-08-21T00:00:00Z'))
-  assert.equal(path, 'A')
+  // 事实收集已并入初始化闭环（P0-1 确定性候选）——工作流不再承担收集
+  assert.equal(path, 'B')
   assert.equal(workflow.status, 'active')
-  assert.equal(workflow.currentStage, 'fact_collection')
-  assert.equal(workflow.stages[0]!.status, 'running')
-  assert.equal(workflow.stages[0]!.gate, undefined) // Path A：gate 在收集产出后挂
+  assert.equal(workflow.totalStages, 4)
+  assert.equal(workflow.currentStage, 'direction_exploration')
+  assert.equal(workflow.stages[0]!.status, 'completed')
+  assert.deepEqual(workflow.stages[0]!.gate, { id: 'confirm_person_facts', status: 'passed', confirmedAt: workflow.stages[0]!.gate!.confirmedAt })
+  assert.equal(workflow.stages[1]!.id, 'direction_exploration')
+  assert.equal(workflow.stages[1]!.status, 'running')
   // 落盘可回读
   const reloaded = getWorkflow(ws, workflow.id)!
   assert.equal(reloaded.id, workflow.id)
-  assert.equal(reloaded.stages[0]!.status, 'running')
+  assert.equal(reloaded.currentStage, 'direction_exploration')
 })
 
-test('Path A：Agent 产出候选（onFactCollectionReady）→ waiting_gate + gate 挂载', () => {
+// ─── legacy 守卫（2026-08-22 后阶段 1 仅遗留工作流可达；守卫逻辑保留）────────────
+
+test('onFactCollectionReady（legacy）：阶段 1 running + 候选齐备 → waiting_gate + gate 挂载', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const workflow = legacyStage1Workflow(ws, pid, 'running')
   seedPendingCandidates(ws, pid)
   const next = onFactCollectionReady(ws, workflow.id)!
   assert.equal(next.stages[0]!.status, 'waiting_gate')
   assert.deepEqual(next.stages[0]!.gate, { id: 'confirm_person_facts', status: 'waiting' })
 })
 
-test('Path A：Agent 未产出候选（onFactCollectionReady 但无 pending）→ failed（不信任自报）', () => {
+test('onFactCollectionReady（legacy）：无候选 → failed（不信任自报）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const workflow = legacyStage1Workflow(ws, pid, 'running')
   const next = onFactCollectionReady(ws, workflow.id)!
   assert.equal(next.stages[0]!.status, 'failed')
 })
 
-// ─── Path B：已有 pending candidates ──────────────────────────────────────
-
-test('startWorkflow Path B：有完整类别候选（含教育/经历）→ 直接 waiting_gate，不启动 Agent（不重新收集）', () => {
+test('onFactCollectionReady guard（legacy）：候选只有约束/兴趣（无教育/经历）→ failed（不挂 waiting_gate，防死锁）', () => {
   const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(path, 'B')
-  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
-  assert.deepEqual(workflow.stages[0]!.gate, { id: 'confirm_person_facts', status: 'waiting' })
-  assert.equal(workflow.totalStages, 4) // 全流程阶段总数（UI 阶段进度投影）
-})
-
-test('startWorkflow Path B guard：候选只有约束/兴趣（缺教育/经历）→ 拒绝复用，走 Path A 补采（测试区死锁镜像）', () => {
-  const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedConstraintOnlyCandidates(ws, pid)
-  const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(path, 'A') // guard 生效：不进入 waiting_gate
-  assert.equal(workflow.stages[0]!.status, 'running')
-  assert.equal(workflow.stages[0]!.gate, undefined)
-})
-
-test('startWorkflow Path B guard：候选只有约束/兴趣但快照已齐 → 直接 waiting_gate（画像已满足，候选仅补充）', () => {
-  const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedConstraintOnlyCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
-  const { workflow, path } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(path, 'B')
-  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
-})
-
-test('onFactCollectionReady guard：Agent 产出候选只有约束/兴趣（无教育/经历）→ failed（不挂 waiting_gate，防死锁）', () => {
-  const ws = testWorkspace()
-  const pid = makePerson(ws)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  seedConstraintOnlyCandidates(ws, pid)
+  const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+  const workflow = legacyStage1Workflow(ws, personId, 'running')
+  seedConstraintOnlyCandidates(ws, personId)
   const next = onFactCollectionReady(ws, workflow.id)!
   assert.equal(next.stages[0]!.status, 'failed')
 })
 
-// ─── advance 四步校验（契约 §四.2）────────────────────────────────────────
+// ─── advance 四步校验（契约 §四.2；阶段 1 场景 = legacy 兼容）─────────────────
 
-test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPLETE 拒绝（可操作缺件清单）', () => {
+test('advance（legacy）：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPLETE 拒绝（可操作缺件清单）', () => {
   const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
+  const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+  seedPendingCandidates(ws, personId)
+  const workflow = legacyStage1Workflow(ws, personId, 'waiting_gate')
   const res = advanceWorkflow(ws, workflow.id)
   assert.equal(res.ok, false)
   if (!res.ok) {
@@ -172,17 +198,15 @@ test('advance：Stage 1 waiting_gate 但 person-init 未完成 → STAGE_INCOMPL
   const reloaded = getWorkflow(ws, workflow.id)!
   assert.equal(reloaded.currentStage, 'fact_collection')
   assert.equal(reloaded.stages.length, 1)
-  // BUG-007 负向：advance 被拒不联动 init_state（仍 in_progress）
-  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'in_progress')
+  // BUG-007 负向：advance 被拒不联动 init_state（仍 uploading）
+  assert.equal(scanPersons(ws).find((p) => p.personId === personId)!.initState, 'uploading')
 })
 
 test('advance：person-init 完成 → 推进 Stage 2 running（Golden Flow 确认路径）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
   seedPendingCandidates(ws, pid)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  // 用户确认候选 → 登记 → 三件快照齐备（模拟真实链路：resolveCandidate 后由 Agent 写快照）
-  seedCompleteSnapshots(ws, pid)
+  const workflow = legacyStage1Workflow(ws, pid, 'waiting_gate')
   assert.equal(isPersonInitComplete(ws, pid), true)
   const res = advanceWorkflow(ws, workflow.id)
   assert.equal(res.ok, true)
@@ -197,57 +221,54 @@ test('advance：person-init 完成 → 推进 Stage 2 running（Golden Flow 确�
   }
 })
 
-test('BUG-007：advance 过 confirm_person_facts → manifest init_state 联动 completed（引擎登记权威时刻）', () => {
+test('BUG-007（legacy）：advance 过 confirm_person_facts → manifest init_state 联动 completed（引擎登记权威时刻）', () => {
   const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  // advance 前：init_state = in_progress（createPersonSession 默认）
-  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'in_progress')
-  seedCompleteSnapshots(ws, pid)
+  const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+  seedPendingCandidates(ws, personId)
+  const workflow = legacyStage1Workflow(ws, personId, 'waiting_gate')
+  // advance 前：init_state = uploading（未标完成）
+  assert.equal(scanPersons(ws).find((p) => p.personId === personId)!.initState, 'uploading')
+  seedCompleteSnapshots(ws, personId)
   const res = advanceWorkflow(ws, workflow.id)
   assert.equal(res.ok, true)
   if (!res.ok) return
   // gate passed → 引擎联动 manifest（用户确认事实的权威时刻；UI 的「完成初始化」按钮为另一正向路径）
-  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'completed')
-  // 联动幂等：再次 advance 同 gate → GATE_PASSED，init_state 不退化
+  assert.equal(scanPersons(ws).find((p) => p.personId === personId)!.initState, 'completed')
+  // 联动幂等：再次 advance 同 gate → ILLEGAL_STATE，init_state 不退化
   const res2 = advanceWorkflow(ws, workflow.id, 'confirm_person_facts')
   assert.equal(res2.ok, false)
   if (res2.ok) return
   assert.equal(res2.code, 'ILLEGAL_STATE') // Stage 2 已 running
-  assert.equal(scanPersons(ws).find((p) => p.personId === pid)!.initState, 'completed')
+  assert.equal(scanPersons(ws).find((p) => p.personId === personId)!.initState, 'completed')
 })
 
-test('advance：running 状态推进 → ILLEGAL_STATE 拒绝（用户不能决定完成）', () => {
+test('advance（legacy）：running 状态推进 → ILLEGAL_STATE 拒绝（用户不能决定完成）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(workflow.stages[0]!.status, 'running')
+  const workflow = legacyStage1Workflow(ws, pid, 'running')
   const res = advanceWorkflow(ws, workflow.id)
   assert.equal(res.ok, false)
   if (!res.ok) assert.equal(res.code, 'ILLEGAL_STATE')
 })
 
-test('advance：gateId 不匹配 → ILLEGAL_STATE 拒绝', () => {
+test('advance（legacy）：gateId 不匹配 → ILLEGAL_STATE 拒绝', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const workflow = legacyStage1Workflow(ws, pid, 'waiting_gate')
   const res = advanceWorkflow(ws, workflow.id, 'review_recommendation')
   assert.equal(res.ok, false)
   if (!res.ok) assert.equal(res.code, 'ILLEGAL_STATE')
 })
 
-// ─── 探索分支（契约 §4.3）─────────────────────────────────────────────────
+// ─── 探索分支（契约 §4.3；阶段 1 场景 = legacy 兼容）────────────────────────
 
-test('探索分支语义：未登记 → Stage 1 不 completed，正常 advance 被拒（不得伪装成 Person Aggregate）', () => {
+test('探索分支语义（legacy）：未登记 → Stage 1 不 completed，正常 advance 被拒（不得伪装成 Person Aggregate）', () => {
   const ws = testWorkspace()
-  const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
+  seedPendingCandidates(ws, personId)
+  const workflow = legacyStage1Workflow(ws, personId, 'waiting_gate')
   // 用户点「暂不登记，继续探索」：不 resolve、不写快照——person-init 不满足
-  assert.equal(isPersonInitComplete(ws, pid), false)
+  assert.equal(isPersonInitComplete(ws, personId), false)
   const res = advanceWorkflow(ws, workflow.id)
   assert.equal(res.ok, false)
   if (!res.ok) assert.equal(res.code, 'STAGE_INCOMPLETE')
@@ -263,15 +284,17 @@ test('abort：active → aborted（append-only 审计）；当前 stage 同步 f
   const ws = testWorkspace()
   const pid = makePerson(ws)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  // 新语义：阶段 1 已完成（初始化闭环），当前阶段 = 方向探索
+  assert.equal(workflow.stages[0]!.status, 'completed')
   const aborted = abortWorkflow(ws, workflow.id)
   assert.equal(aborted.status, 'aborted')
   assert.ok(aborted.abortedAt)
   // BUG-004 修复：当前 stage 不得滞留 waiting_gate/running → failed
-  assert.equal(aborted.stages[0]!.status, 'failed')
+  assert.equal(aborted.stages[1]!.status, 'failed')
   // 落盘回读一致（审计语义）
   const reloaded = getWorkflow(ws, workflow.id)!
   assert.equal(reloaded.status, 'aborted')
-  assert.equal(reloaded.stages[0]!.status, 'failed')
+  assert.equal(reloaded.stages[1]!.status, 'failed')
   assert.throws(() => abortWorkflow(ws, workflow.id), /不可 abort/)
 })
 
@@ -331,16 +354,17 @@ test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停�
   const ws = testWorkspace()
   const pid = makePerson(ws)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  const { envelope } = compileStageTask(ws, workflow.id, 'fact_collection')
+  // 新语义：当前阶段 = 方向探索（阶段 1 已完成）
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
   assert.ok(envelope.includes('【WORKFLOW_STAGE】'))
   assert.ok(envelope.includes(`workflow_id: ${workflow.id}`))
-  assert.ok(envelope.includes('stage_id: fact_collection'))
-  assert.ok(envelope.includes('stage_index: 1'))
+  assert.ok(envelope.includes('stage_id: direction_exploration'))
+  assert.ok(envelope.includes('stage_index: 2'))
   assert.ok(envelope.includes('stage_count: 4'))
   assert.ok(envelope.includes('【USER_GOAL】'))
   assert.ok(envelope.includes(GOAL))
   assert.ok(envelope.includes('【STOP_CONDITION】'))
-  assert.ok(envelope.includes('禁止进入：direction_exploration、direction_evaluation、recommendation'))
+  assert.ok(envelope.includes('禁止进入：direction_evaluation、recommendation'))
   assert.ok(envelope.includes('不得自行推进下一 Stage'))
 })
 
@@ -349,37 +373,30 @@ test('compileStageTask 校验：workflow 不存在 / 非 active / stage 不匹�
   const pid = makePerson(ws)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
   // workflow 不存在
-  assert.throws(() => compileStageTask(ws, 'workflow_20260821_99999', 'fact_collection'), /workflow 不存在/)
-  // stage 不匹配（UI 越界：请求 Stage 2 但当前 Stage 1）
-  assert.throws(() => compileStageTask(ws, workflow.id, 'direction_exploration'), /当前阶段是 fact_collection/)
-  // 状态非 running（Path B waiting_gate 不允许发任务）
+  assert.throws(() => compileStageTask(ws, 'workflow_20260821_99999', 'direction_exploration'), /workflow 不存在/)
+  // stage 不匹配（UI 越界：请求已完成的事实收集；当前阶段 = 方向探索）
+  assert.throws(() => compileStageTask(ws, workflow.id, 'fact_collection'), /当前阶段是 direction_exploration/)
+  // 状态非 running（legacy waiting_gate 不允许发任务）
   const ws2 = testWorkspace()
   const pid2 = makePerson(ws2)
-  seedPendingCandidates(ws2, pid2)
-  const wb = startWorkflow(ws2, { type: 'career_direction', personId: pid2, statement: GOAL })
-  assert.throws(() => compileStageTask(ws2, wb.workflow.id, 'fact_collection'), /需 running/)
+  const wb = legacyStage1Workflow(ws2, pid2, 'waiting_gate')
+  assert.throws(() => compileStageTask(ws2, wb.id, 'fact_collection'), /需 running/)
   // abort 后非 active
   const ws3 = testWorkspace()
   const pid3 = makePerson(ws3)
   const w3 = startWorkflow(ws3, { type: 'career_direction', personId: pid3, statement: GOAL })
   abortWorkflow(ws3, w3.workflow.id)
-  assert.throws(() => compileStageTask(ws3, w3.workflow.id, 'fact_collection'), /非 active/)
+  assert.throws(() => compileStageTask(ws3, w3.workflow.id, 'direction_exploration'), /非 active/)
 })
 
-test('compileStageTask：advance 推进到 Stage 2 后可编译 Stage 2 Envelope（start/advance 同一编译器）', () => {
+test('compileStageTask：start 后即可编译当前阶段（方向探索）Envelope（start/compile 同一编译器）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  seedPendingCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  const res = advanceWorkflow(ws, workflow.id)
-  assert.equal(res.ok, true)
-  if (res.ok) {
-    const { envelope } = compileStageTask(ws, res.workflow.id, res.nextStage!)
-    assert.ok(envelope.includes('stage_id: direction_exploration'))
-    assert.ok(envelope.includes('stage_index: 2'))
-    assert.ok(envelope.includes('禁止进入：direction_evaluation、recommendation'))
-  }
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
+  assert.ok(envelope.includes('stage_id: direction_exploration'))
+  assert.ok(envelope.includes('stage_index: 2'))
+  assert.ok(envelope.includes('禁止进入：direction_evaluation、recommendation'))
 })
 
 // ─── v0.2 L2-3：artifact-exists evaluator（evaluator 自报缺件，只 count）────
@@ -455,9 +472,9 @@ test('evaluateStageCompletion（artifact-exists）：state 不限——confirmed
 
 test('evaluateStageCompletion（person-init）：缺件自报（快照缺 + 候选缺），与 advance 缺件清单同源', () => {
   const ws = testWorkspace()
-  const pid = makePerson(ws)
+  const { personId } = createPersonSession(ws, { name: '甲', sourceMode: 'interview' })
   const spec = CAREER_DIRECTION_STAGES.find((s) => s.id === 'fact_collection')!
-  const res = evaluateStageCompletion(ws, spec, pid, 'workflow_20260821_00001')
+  const res = evaluateStageCompletion(ws, spec, personId, 'workflow_20260821_00001')
   assert.equal(res.passed, false)
   assert.ok(res.missing.some((m) => m.includes('画像缺：identity.md')))
   assert.ok(res.missing.some((m) => m.includes('候选缺')))
@@ -473,14 +490,9 @@ test('evaluateStageCompletion（artifact-exists）：挂参但类型注册表缺
 
 // ─── v0.2 L2-4：onExplorationDone（done 钩子 → 登记 → guard → waiting_gate/failed）──
 
-/** advance 到 Stage 2 running 的 fixture（复用 person-init 确认链路） */
+/** start 到 Stage 2（方向探索）running 的 fixture（初始化完成 → 工作流从阶段 2 开始） */
 function advanceToExploration(ws: Workspace, pid: string) {
-  seedPendingCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  const res = advanceWorkflow(ws, workflow.id)
-  assert.equal(res.ok, true)
-  if (!res.ok) throw new Error('fixture advance 失败')
   return workflow.id
 }
 
@@ -765,19 +777,15 @@ test('compileStageTask（Stage 2）：注入 DIRECTION_POOL_STATE（已保留/�
 
 // ─── v0.2 L2-8：Golden Flow 端到端（契约 §八正例：Stage 1 → 2 → 3 全链串行）──
 
-test('Golden Flow：事实收集 → 方向探索 → 用户裁决 → confirm_directions Gate → Stage 3', () => {
+test('Golden Flow：初始化完成 → 方向探索 → 用户裁决 → confirm_directions Gate → Stage 3', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
 
-  // Stage 1（Path B）：候选齐备 → waiting_gate → 用户确认 → advance → Stage 2 running
-  seedPendingCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
+  // Stage 1（事实收集）已由初始化闭环完成（P0-1 确定性候选 → 确认 → 快照；gate passed）
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(workflow.stages[0]!.status, 'waiting_gate')
-  const adv1 = advanceWorkflow(ws, workflow.id)
-  assert.equal(adv1.ok, true)
-  if (!adv1.ok) return
-  assert.equal(adv1.nextStage, 'direction_exploration')
+  assert.equal(workflow.stages[0]!.status, 'completed')
+  assert.equal(workflow.stages[0]!.gate!.status, 'passed')
+  assert.equal(workflow.currentStage, 'direction_exploration')
 
   // Stage 2：Agent 产出 3 条方向提案 → done 钩子 → 登记 → waiting_gate
   for (const [name, ref] of [['20260821-方向甲.md', 'facts/education.md'], ['20260821-方向乙.md', 'snapshot/current/skill_inventory.md'], ['20260821-方向丙.md', 'facts/education.md']] as const) {
@@ -1061,15 +1069,14 @@ test('Stage 4 restage：reject 出口 → running + decision append-only（artif
 
 // ─── v0.3：Golden Flow 完整（Stage 1→4）───────────────────────────────────
 
-test('Golden Flow 完整：事实 → 方向 → 评估 → 推荐 → Goal completed（四阶段全链）', () => {
+test('Golden Flow 完整：初始化完成 → 方向 → 评估 → 推荐 → Goal completed（四阶段全链）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
-  // Stage 1（Path B）
-  seedPendingCandidates(ws, pid)
-  seedCompleteSnapshots(ws, pid)
+  // 阶段 1（事实收集）已由初始化闭环完成
   const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
-  assert.equal(advanceWorkflow(ws, workflow.id).ok, true)
-  // Stage 2
+  assert.equal(workflow.stages[0]!.status, 'completed')
+  assert.equal(workflow.stages[0]!.gate!.status, 'passed')
+  // Stage 2（方向探索，工作流起点）
   writeDirectionProposal(ws, pid, '20260821-方向甲.md', 'facts/education.md', workflow.id)
   const done2 = onExplorationDone(ws, workflow.id, ['20260821-方向甲.md'], NOW)
   assert.ok(done2.workflow)

@@ -205,6 +205,20 @@ export interface PersonWorkExperience {
 }
 
 /**
+ * Person 初始化生命周期状态（PR-2/P0-1 状态机，manifest init_state）：
+ * uploading=创建/资料上传 → extracting=提取文本就绪/事实提取 → candidate_review=候选确认中 →
+ * confirmed=候选已全部裁决 → completed=快照齐备可进入正常使用；
+ * in_progress 仅兼容旧档案（历史单态），新档案不再写入。
+ */
+export type PersonInitState =
+  | 'uploading'
+  | 'extracting'
+  | 'candidate_review'
+  | 'confirmed'
+  | 'completed'
+  | 'in_progress'
+
+/**
  * Person 快照（persons/{person_id}/ 投影）：manifest + snapshot/*.md + events/ 计数。
  * 当前状态投影（非可编辑真相源）——来源可包括 Change Events、用户确认输入、
  * 迁移后的历史资产。Snapshot 是事实层；UI 展示 Person 由引擎从快照映射。
@@ -213,8 +227,8 @@ export interface PersonSnapshot {
   personId: string // person_001（manifest id）
   name: string // 展示名（manifest name）
   status: string // active / archived（manifest status）
-  /** 初始化状态：in_progress=首次采集未完成；completed=已进入正常使用；缺失=旧档案 */
-  initState?: 'in_progress' | 'completed'
+  /** 初始化状态机（见 PersonInitState；缺失=旧档案） */
+  initState?: PersonInitState
   /** 初始化通道（manifest source_mode；刷新后恢复通道语义） */
   sourceMode?: 'resume' | 'interview'
   manifestPath: string // persons/{person_id}/manifest.md
