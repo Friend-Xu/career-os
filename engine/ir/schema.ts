@@ -475,6 +475,30 @@ export type DecisionPayload =
   | { type: 'city'; direction?: string; cities: CityEvaluationRow[] }
   | { type: 'direction'; directions: DirectionEvaluationRow[] }
 
+// ─── Promotion Event（ADR-032 Decision Promotion Flow——Accepted 冻结，v0.4.2 补充）───
+
+/**
+ * Promotion = 「用户从 Decision Artifact 选定候选」的领域事件。
+ * - 唯一触发者 user（actor 引擎硬编码；Agent Tool Call 禁止创建——Promotion RPC 不在 Agent 协议白名单）
+ * - candidateId Authority：候选 id 由引擎从 Decision 派生（city:{城市名}），客户端不可输入（防伪造）
+ * - revoke = 状态翻转（active→revoked），不删除历史（History immutable；投影只消费 active）
+ * - 投影取值见 Authority Resolution Order：active Promotion（用户确认事实）> Candidate Payload（候选事实）
+ *   > Decision/AI 建议（永不自动成为事实）
+ */
+export type PromotionType = 'city_choice'
+export type PromotionStatus = 'active' | 'revoked'
+export interface PromotionEvent {
+  id: string // promo_001（引擎登记，系统身份）
+  decisionId: string // 决策 id（DecisionRecord.id）
+  candidateId: string // 决策内候选稳定 id（city:{城市名}——引擎派生）
+  type: PromotionType
+  actor: 'user'
+  target: { personId: string; domain: 'preference.city' }
+  status: PromotionStatus
+  provenance: { confirmedAt: string }
+  revokedAt?: string
+}
+
 // ─── V2.1：Evidence Pattern Registry v0（工程族岗位证据词表；引擎单方定义，扩展走 Registry 条目）──
 
 /** 证据维度：岗位需要什么证明方式（Job Intelligence 的 evidenceExpectations 引用） */
@@ -1010,6 +1034,8 @@ export interface PersonHealthCheck {
   type: 'H1' | 'H2' | 'H3' | 'H4'
   severity: 'error' | 'warn'
   message: string
+  /** 检查引用的资产侧（ADR-031：H2 联合信息——如 ["promotion:promo_001", "projection:preference.city"]） */
+  refs?: string[]
 }
 export interface PersonHealth {
   personId: string

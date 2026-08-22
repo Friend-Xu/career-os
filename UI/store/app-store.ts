@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation, PersonHealth } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation, PersonHealth, PromotionEvent } from '../../engine/ir/schema.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
@@ -245,6 +245,8 @@ interface AppState {
   persons: Person[];
   /** Person Health（ADR-031：key = personId；单一计算源——UI 只投影 verdict，不发明健康判定） */
   personHealths: Record<string, PersonHealth>;
+  /** Promotion 列表（ADR-032：key = personId；用户选定事实——Decision → User Choice → Domain Fact） */
+  promotionsByPerson: Record<string, PromotionEvent[]>;
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
   pendingPrompt: string | null;
@@ -351,6 +353,12 @@ interface AppState {
   loadInitCandidates: (personId: string) => Promise<void>;
   /** Person Health（ADR-031）：单一计算源拉取当前人健康（UI 只投影 verdict） */
   pullPersonHealth: (personId: string) => Promise<void>;
+  /** Promotion（ADR-032）：拉取当前人选定事实列表（UI 只投影，不判定） */
+  pullPromotions: (personId: string) => Promise<void>;
+  /** 设为求职目标城市（用户动作 → 引擎校验候选命中决策） */
+  promoteCity: (personId: string, decisionId: string, city: string) => Promise<boolean>;
+  /** 撤回目标城市（revoke，历史保留） */
+  revokePromotion: (personId: string, promotionId: string) => Promise<boolean>;
   /** 候选裁决（切片 2.3）：确认/拒绝/修改 → candidates.md + resolution 事件 + 本地投影更新 */
   resolveInitCandidate: (
     candidateId: string,
@@ -607,6 +615,7 @@ export const useAppStore = create<AppState>()(
       valuationCard: null,
       persons: PERSONS,
       personHealths: {},
+      promotionsByPerson: {},
       personStages: buildInitialPersonStages(),
       agentDraft: '',
       pendingPrompt: null,
@@ -1006,6 +1015,45 @@ export const useAppStore = create<AppState>()(
       useAppStore.setState((s) => ({ personHealths: { ...s.personHealths, [personId]: h } }))
     } catch {
       // offline/旧引擎：保持现状（无角标 = 不假装健康判定）
+    }
+  },
+
+  pullPromotions: async (personId) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+    try {
+      const list = await engine.listPromotions(personId)
+      useAppStore.setState((s) => ({ promotionsByPerson: { ...s.promotionsByPerson, [personId]: list } }))
+    } catch {
+      // offline/旧引擎：保持现状
+    }
+  },
+
+  promoteCity: async (personId, decisionId, city) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') return false
+    try {
+      await engine.createCityPromotion(personId, decisionId, city)
+      // 选定 → 引擎重投影（personsChanged）→ 画像/健康跟随刷新
+      void useAppStore.getState().pullPromotions(personId)
+      void pullPersons().then(() => void useAppStore.getState().pullPersonHealth(personId))
+      useToastStore.getState().push('success', `已将「${city}」设为求职目标城市`)
+      return true
+    } catch (e) {
+      useToastStore.getState().push('warning', `设置失败：${e instanceof Error ? e.message : String(e)}`)
+      return false
+    }
+  },
+
+  revokePromotion: async (personId, promotionId) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') return false
+    try {
+      await engine.revokePromotion(personId, promotionId)
+      void useAppStore.getState().pullPromotions(personId)
+      void pullPersons().then(() => void useAppStore.getState().pullPersonHealth(personId))
+      useToastStore.getState().push('info', '已撤回目标城市（画像回退）')
+      return true
+    } catch (e) {
+      useToastStore.getState().push('warning', `撤回失败：${e instanceof Error ? e.message : String(e)}`)
+      return false
     }
   },
 

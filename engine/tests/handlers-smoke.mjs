@@ -228,6 +228,43 @@ try {
   const health = await rpc(client, METHODS.personHealth, { personId: dirPerson })
   check('person/health verdict（空资产 → healthy）', health.result?.verdict === 'healthy', JSON.stringify(health.result))
   check('person/health checks 结构', Array.isArray(health.result?.checks), JSON.stringify(health.result))
+  // ADR-032：promotion RPC（用户动作专用——非城市评估决策 → candidateId Authority 拒绝）
+  const promoBad = await rpc(client, METHODS.personPromotionsCreate, { personId: dirPerson, decisionId: '2026-08-03-方向探索', city: 'City-X' })
+  check('promotions/create 非城市决策 → 拒绝', !!promoBad.error, JSON.stringify(promoBad))
+  // 城市评估决策 fixture → promote 成功
+  file(
+    'decisions/2026-08-22-城市评估.md',
+    `# 我 — 城市评估：City-X/City-Y
+
+## 分析摘要
+
+| 字段 | 值 |
+|------|-----|
+| skill | city-advisor |
+| direction | 机器人 |
+| direction_match | 85% |
+| direction_confidence | 高 |
+| city | City-X |
+| city_score | 8.2/10 |
+| salary_feasible | true |
+| risk_level | 低 |
+| key_risk | 数据有限 |
+| status | complete |
+| protocol_version | 2.8 |
+| profile | 我 |
+
+## 城市评估明细
+
+| 城市 | 得分 | 置信度 | 优势 | 风险 |
+|------|------|--------|------|------|
+| City-X | 8.5/10 | 高 | 政策/薪资 | 通勤 |
+| City-Y | 7.8/10 | 中 | 机会多 | 竞争 |
+`,
+  )
+  const promoOk = await rpc(client, METHODS.personPromotionsCreate, { personId: dirPerson, decisionId: '2026-08-22-城市评估', city: 'City-X' })
+  check('promotions/create 城市决策 → active + city:City-X', promoOk.result?.status === 'active' && promoOk.result?.candidateId === 'city:City-X', JSON.stringify(promoOk))
+  const promoList = await rpc(client, METHODS.personPromotionsList, { personId: dirPerson })
+  check('promotions/list 1 条', Array.isArray(promoList.result) && promoList.result.length === 1, JSON.stringify(promoList))
   ws.write(`persons/${dirPerson}/facts/education.md`, '# 教育\n\n| 学校 |\n|------|\n| University-A |\n')
   ws.write(`persons/${dirPerson}/directions/20260821-方向甲.md`, [
     '---',

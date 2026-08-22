@@ -60,6 +60,13 @@ export const METHODS = {
   listPersons: 'persons/list',
   /** Person Health（ADR-031：params { personId } → PersonHealth；单一计算源——UI/Agent/CI 禁止自发明健康判定） */
   personHealth: 'person/health',
+  /** Promotion 创建（ADR-032：params { personId, decisionId, city } → PromotionEvent；用户动作专用——
+   *  引擎从 Decision 校验候选命中（不信任客户端）；Promotion RPC 不在 Agent 协议白名单） */
+  personPromotionsCreate: 'person/promotions/create',
+  /** Promotion 撤销（ADR-032：params { personId, promotionId } → PromotionEvent；active→revoked 状态翻转，不删除历史） */
+  personPromotionsRevoke: 'person/promotions/revoke',
+  /** Promotion 列表（params { personId } → PromotionEvent[]） */
+  personPromotionsList: 'person/promotions/list',
   /** 优势亮点 upsert（Summary Strength Contract v0.2：params { personId, items: [{text, claimIds, evidenceIds}] } →
    *  SummaryStrength[]；Engine Registration Owner——引用存在 + 可消费校验，写 snapshot/summary_strengths.md） */
   upsertSummaryStrengths: 'person/summary-strengths/upsert',

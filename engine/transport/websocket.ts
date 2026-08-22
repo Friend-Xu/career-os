@@ -66,6 +66,7 @@ import { computeJDMatchScore } from '../runtime/jd-match-score.ts'
 import { composeAutoSummaryTable, writeDecisionRecord, type DecisionNarrativeDraft } from '../storage/decision-writer.ts'
 import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
+import { createCityPromotion, revokePromotion, scanPromotions } from '../storage/promotion-registry.ts'
 import { generateHealthReport } from '../health/checker.ts'
 import { personHealth } from '../health/person-health.ts'
 import { exportPdf } from '../export/pdf.ts'
@@ -515,6 +516,30 @@ function personIdParams(v: unknown): string {
     throw new Error('需要 params { personId }')
   }
   return (v as Record<string, unknown>).personId as string
+}
+
+/** promotion/create 入参（RPC 边界：personId/decisionId/city fail fast；city 非可信值——引擎侧校验命中决策候选） */
+function promotionCreateParams(v: unknown): { personId: string; decisionId: string; city: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { personId, decisionId, city }')
+  const p = v as Record<string, unknown>
+  const personId = p.personId
+  const decisionId = p.decisionId
+  const city = p.city
+  if (typeof personId !== 'string' || !/^person_\d{3}$/.test(personId)) throw new Error('personId 应为 person_XXX')
+  if (typeof decisionId !== 'string' || !decisionId.trim()) throw new Error('decisionId 必填')
+  if (typeof city !== 'string' || !city.trim()) throw new Error('city 必填')
+  return { personId, decisionId: decisionId.trim(), city: city.trim() }
+}
+
+/** promotion/revoke 入参（RPC 边界：personId/promotionId fail fast） */
+function promotionRevokeParams(v: unknown): { personId: string; promotionId: string } {
+  if (typeof v !== 'object' || v === null) throw new Error('需要 params { personId, promotionId }')
+  const p = v as Record<string, unknown>
+  const personId = p.personId
+  const promotionId = p.promotionId
+  if (typeof personId !== 'string' || !/^person_\d{3}$/.test(personId)) throw new Error('personId 应为 person_XXX')
+  if (typeof promotionId !== 'string' || !promotionId.trim()) throw new Error('promotionId 必填')
+  return { personId, promotionId: promotionId.trim() }
 }
 
 /** workflow/start 入参校验（RPC 边界：type/personId/statement fail fast） */
@@ -1420,6 +1445,28 @@ export async function startServer(opts: {
       if (!h) throw new Error(`人员不存在或非 Person Aggregate 实体（persons/ 真相源）：${personId}`)
       return h
     },
+    // Promotion（ADR-032）：用户动作专用——创建/撤销后重投影 + [health] 审计（非健康显式告警）
+    [METHODS.personPromotionsCreate]: (params) => {
+      const p = promotionCreateParams(params)
+      const event = createCityPromotion(workspace, p)
+      if (!event) throw new Error('Promotion 创建被拒：决策不存在/非城市决策/城市不在候选集合/人员不匹配（candidateId Authority）')
+      const written = projectPersonSnapshots(workspace, p.personId)
+      if (written.length > 0) logger.info(`快照投影：${p.personId} 已归位 ${written.join('、')}（Promotion ${event.id} 创建触发）`)
+      const h = personHealth(workspace, p.personId)
+      if (h && h.verdict !== 'healthy') {
+        logger.warn(`[health] ${h.personId}（${h.name}）: ${h.verdict} — ${h.checks.map((c) => `${c.id} ${c.message}`).join('；')}`)
+      }
+      return event
+    },
+    [METHODS.personPromotionsRevoke]: (params) => {
+      const p = promotionRevokeParams(params)
+      const event = revokePromotion(workspace, p)
+      if (!event) throw new Error(`Promotion 不存在：${p.promotionId}`)
+      const written = projectPersonSnapshots(workspace, p.personId)
+      if (written.length > 0) logger.info(`快照投影：${p.personId} 已归位 ${written.join('、')}（Promotion ${event.id} 撤销触发）`)
+      return event
+    },
+    [METHODS.personPromotionsList]: (params) => scanPromotions(workspace, personIdParams(params)),
     [METHODS.upsertSummaryStrengths]: (params) => {
       const p = summaryStrengthsParams(params)
       return upsertSummaryStrengths(workspace, p.personId, p.items)

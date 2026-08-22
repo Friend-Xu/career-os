@@ -5,12 +5,13 @@
  * 数据 = 城市评估决策（city 字段非空的决策记录）按城市聚合派生。
  */
 import { Box, Button, Chip, Stack, Typography } from '@mui/material'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { alpha, COLORS, EASE, RISK_COLOR, RISK_LABEL } from '../../data/constants'
 import { belongsToPerson } from '../../utils/ownership'
 import { hasPersonDirection } from '../../utils/direction-state'
 import type { DecisionView } from '../../store/engine-client'
+import type { PromotionEvent } from '../../../engine/ir/schema'
 import type { RiskLevel } from '../../types'
 import { DecisionDetailDrawer } from '../decision-detail-drawer'
 import { DetailButton } from './detail-button'
@@ -40,6 +41,9 @@ const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
 }
 
 const CONF_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' }
+
+/** 稳定空数组（zustand v5 getSnapshot 缓存要求：selector 不得返回新引用，否则无限循环） */
+const PROMO_EMPTY: PromotionEvent[] = []
 
 interface CityAgg {
   city: string
@@ -77,7 +81,17 @@ export function CitiesView() {
   const decisions = useAppStore((s) => s.decisions)
   const person = useAppStore((s) => s.currentPerson())
   const setWorkbenchView = useAppStore((s) => s.setWorkbenchView)
+  const promotionsRaw = useAppStore((s) => (person.personId ? s.promotionsByPerson[person.personId] : undefined))
+  const promotions = promotionsRaw ?? PROMO_EMPTY
+  const pullPromotions = useAppStore((s) => s.pullPromotions)
+  const promoteCity = useAppStore((s) => s.promoteCity)
+  const revokePromotion = useAppStore((s) => s.revokePromotion)
   const [detail, setDetail] = useState<DecisionView | null>(null)
+
+  // ADR-032：Promotion（用户选定事实）随视图挂载拉取
+  useEffect(() => {
+    if (person.personId) void pullPromotions(person.personId)
+  }, [person.personId, pullPromotions])
 
   /** 城市聚合：仅城市评估决策（skill=city-advisor；方向探索的自报意向 city 不是评估结果）按城市展开，各城市最新评估得分 */
   const cities = useMemo(() => {
@@ -290,7 +304,34 @@ export function CitiesView() {
               )}
 
               <Box sx={{ mt: 'auto', pt: 0.75 }}>
-                <DetailButton onClick={() => setDetail(c.source)} />
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <DetailButton onClick={() => setDetail(c.source)} />
+                  <Box sx={{ ml: 'auto' }}>
+                    {person.personId &&
+                      (() => {
+                        const active = promotions.find((p) => p.status === 'active' && p.candidateId === `city:${c.city}`)
+                        return active ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => void revokePromotion(person.personId!, active.id)}
+                            sx={{ fontSize: 11.5, minWidth: 0, px: 1, color: COLORS.riskHigh, borderColor: RISK_COLOR.high }}
+                          >
+                            已设为目标城市 · 撤回
+                          </Button>
+                        ) : (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => void promoteCity(person.personId!, c.source.id, c.city)}
+                            sx={{ fontSize: 11.5, minWidth: 0, px: 1 }}
+                          >
+                            设为求职目标城市
+                          </Button>
+                        )
+                      })()}
+                  </Box>
+                </Stack>
               </Box>
             </Box>
           ))}

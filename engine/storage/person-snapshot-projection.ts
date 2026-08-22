@@ -23,6 +23,7 @@
  */
 import type { Workspace } from './workspace.ts'
 import { listCandidates, parseEducationFacts, parseExperienceFacts } from './person-watcher.ts'
+import { parseCityCandidateId, scanPromotions } from './promotion-registry.ts'
 
 // ─── 技能候选结构化载荷（与 education/experience 键值段同形态）──────────────
 
@@ -102,7 +103,9 @@ function projectIdentity(ws: Workspace, personId: string): string | null {
   return rows.join('\n')
 }
 
-/** preference_constraints.md：规范键（来自结构化 payload）+ 原文列表（不拆解） */
+/** preference_constraints.md：规范键（来自结构化 payload）+ 原文列表（不拆解）。
+ *  city 键取值 Authority Resolution Order（ADR-032）：active City Promotion（用户确认事实）
+ *  > 候选载荷（候选事实）；revoked/无 promotion → 回退候选载荷。 */
 function projectPreference(ws: Workspace, personId: string): string | null {
   const confirmed = listCandidates(ws, personId).filter((c) => c.status === 'confirmed' && (c.category === 'constraint' || c.category === 'interest'))
   if (confirmed.length === 0) return null
@@ -117,9 +120,15 @@ function projectPreference(ws: Workspace, personId: string): string | null {
     if (p.location) locationParts.push(p.location)
     rawLines.push(`- ${c.content.replace(/\|/g, '\\|')}（${c.category === 'constraint' ? '约束' : '兴趣'}）`)
   }
+  // Authority Resolution Order：active Promotion（用户确认事实）> Candidate Payload（候选事实）
+  const promoCities = scanPromotions(ws, personId)
+    .filter((p) => p.status === 'active' && p.type === 'city_choice')
+    .map((p) => parseCityCandidateId(p.candidateId))
+    .filter((c): c is string => c !== undefined)
+  const cityValues = promoCities.length > 0 ? promoCities : cityParts
   const rows: string[] = ['# 偏好约束（Engine 投影）', '', '## 分析摘要', '', '| 字段 | 值 |', '|------|-----|']
   if (salaryParts.length > 0) rows.push(`| salary_range | ${cell(salaryParts.join('；'))} |`)
-  if (cityParts.length > 0) rows.push(`| city | ${cell(cityParts.join('；'))} |`)
+  if (cityValues.length > 0) rows.push(`| city | ${cell(cityValues.join('；'))} |`)
   if (locationParts.length > 0) rows.push(`| location | ${cell(locationParts.join('；'))} |`)
   rows.push('', '## 偏好约束', '', ...rawLines, '')
   return rows.join('\n')

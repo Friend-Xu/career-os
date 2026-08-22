@@ -19,6 +19,7 @@ import type { PersonHealth, PersonHealthCheck } from './types.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import { listCandidates, scanPersons } from '../storage/person-watcher.ts'
 import { computePersonSnapshots, parseConstraintPayload } from '../storage/person-snapshot-projection.ts'
+import { parseCityCandidateId, scanPromotions } from '../storage/promotion-registry.ts'
 
 /** 快照四件（投影器可生成的全部文件；缺件语义：有确认事实才生成） */
 const SNAPSHOT_FILES = ['identity.md', 'preference_constraints.md', 'skill_inventory.md', 'career_profile.md'] as const
@@ -66,16 +67,20 @@ export function personHealth(ws: Workspace, personId: string): PersonHealth | un
     }
   }
 
-  // H2：confirmed 偏好/约束候选存在，但 preference_constraints.md 无规范键（无结构化载荷）
+  // H2：confirmed 偏好/约束候选存在，但规范键缺失——按维度独立检查（salary_range/city；
+  // location 为可选维度（现居非必达事实），缺失不报警；promotion 可能补上 city 键，
+  // 但不掩盖 salary 缺失（维度粒度，不是任一有值即健康））
   const prefConfirmed = confirmed.filter((c) => c.category === 'constraint' || c.category === 'interest')
   if (prefConfirmed.length > 0) {
-    const hasNormKeys = /^\|\s*(salary_range|city|location)\s*\|/m.test(current('preference_constraints.md'))
-    if (!hasNormKeys) {
+    const pref = current('preference_constraints.md')
+    const hasKey = (k: string): boolean => new RegExp(`^\\|\\s*${k}\\s*\\|`, 'm').test(pref)
+    const missingKeys = ['salary_range', 'city'].filter((k) => !hasKey(k))
+    if (missingKeys.length > 0) {
       checks.push({
         id: 'H2-pref-nokeys',
         type: 'H2',
         severity: 'warn',
-        message: `confirmed 偏好/约束候选 ${prefConfirmed.length} 条但 preference_constraints.md 无规范键（salary_range/city）——候选缺少结构化载荷，画像「偏好/城市」机器不可消费`,
+        message: `confirmed 偏好/约束候选 ${prefConfirmed.length} 条但 preference_constraints.md 缺规范键（${missingKeys.join('/')}）——对应数据无结构化载荷或 promotion 未选定（原文兜底，机器不可消费），画像「偏好/城市」相应维度不可读`,
       })
     }
   }
@@ -95,6 +100,38 @@ export function personHealth(ws: Workspace, personId: string): PersonHealth | un
           type: 'H4',
           severity: 'error',
           message: `career_profile source=user 目标「${r}」无 confirmed 候选事实源（幽灵事实——需人工裁决：补事实或撤销投影）`,
+        })
+      }
+    }
+  }
+
+  // Promotion 联动（ADR-032 + ADR-031）：active promotion 存在但投影链断裂 → H2（联合信息）；
+  // candidateId 非法（非引擎派生形态）→ H4
+  const activePromos = scanPromotions(ws, personId).filter((p) => p.status === 'active')
+  if (activePromos.length > 0) {
+    const cityValues = new Set<string>()
+    const prefDesired = desired.get('preference_constraints.md') ?? ''
+    for (const line of prefDesired.split('\n')) {
+      const m = line.match(/^\|\s*city\s*\|\s*([^|]*?)\s*\|$/)
+      if (m) for (const c of m[1]!.trim().split('；')) cityValues.add(c)
+    }
+    for (const promo of activePromos) {
+      const city = parseCityCandidateId(promo.candidateId)
+      if (!city) {
+        checks.push({
+          id: `H4-promo-${promo.id}`,
+          type: 'H4',
+          severity: 'error',
+          message: `Promotion ${promo.id} candidateId 非法（应为引擎派生形态 city:{城市名}）`,
+          refs: [`promotion:${promo.id}`],
+        })
+      } else if (!cityValues.has(city)) {
+        checks.push({
+          id: `H2-promo-${promo.id}`,
+          type: 'H2',
+          severity: 'warn',
+          message: `active promotion ${promo.id}（${city}）存在但投影 preference.city 缺失（投影链断裂）`,
+          refs: [`promotion:${promo.id}`, 'projection:preference.city'],
         })
       }
     }
