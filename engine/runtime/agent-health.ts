@@ -32,7 +32,8 @@ export async function checkAgentHealth(config: EngineConfig, logger: Logger): Pr
   }
   const { model } = resolveLanguageModel(conn)
   const base: AgentHealth = {
-    provider: conn.validModels.length === 0 ? '-' : conn.model ?? '-',
+    // provider = 服务商 id（providers[].id；修复：此前误填 conn.model——provider 与 model 语义分离）
+    provider: conn.providerId ?? '-',
     model: conn.model ?? '-',
     ...(conn.baseUrl !== undefined ? { baseUrl: conn.baseUrl } : {}),
     credentialSource: conn.credentialSource,

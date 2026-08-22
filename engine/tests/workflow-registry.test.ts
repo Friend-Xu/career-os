@@ -319,11 +319,12 @@ test('Stage Policy：每阶段声明输出预算（正整数）；getStageSpec �
     assert.ok(Number.isInteger(s.task.outputBudget) && s.task.outputBudget > 0, `${s.id} outputBudget 应为正整数`)
     assert.equal(getStageSpec(s.id)?.task.outputBudget, s.task.outputBudget, `${s.id} getStageSpec 与定义表不一致`)
   }
-  // 档位锚点：真机实测档（探索/评估 8K；采集/推荐 4K）——调档须连带真机复测，此断言防无意识改动
+  // 档位锚点：真机实测档（探索/评估/采集 8K；推荐 4K）——调档须连带真机复测，此断言防无意识改动
+  // fact_collection 2026-08-22 真机复测：候选列表 + 候选标记行一轮输出，4096 截断 → 升至 8K
   assert.equal(getStageSpec('direction_exploration')?.task.outputBudget, 8192)
   assert.equal(getStageSpec('direction_evaluation')?.task.outputBudget, 8192)
   assert.equal(getStageSpec('recommendation')?.task.outputBudget, 4096)
-  assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 4096)
+  assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 8192)
 })
 
 test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停止条件，不自行推进）', () => {

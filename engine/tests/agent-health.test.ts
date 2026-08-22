@@ -18,11 +18,12 @@ test('agent/health：无服务商 → not_configured（状态可见，非错误�
   assert.match(h.error ?? '', /未配置/)
 })
 
-test('agent/health：假端点可调用 → ready + latencyMs', async () => {
+test('agent/health：假端点可调用 → ready + latencyMs + provider=服务商 id', async () => {
   const server = await startFakeAnthropicServer([textTurn('ok')])
   const h = await checkAgentHealth(configWith(server.url), silentLogger)
   await server.close()
   assert.equal(h.status, 'ready')
+  assert.equal(h.provider, 'deepseek')
   assert.equal(h.model, 'deepseek-v4-flash')
   assert.ok(h.latencyMs !== undefined && h.latencyMs >= 0)
 })
