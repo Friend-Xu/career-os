@@ -34,6 +34,8 @@ export interface AgentProvider {
  * credentialSource 随连接上报（health-check/设置页可见：凭据到底来自哪一层）。
  */
 export interface AgentConnection {
+  /** 服务商 id（providers[].id；health 上报 provider 身份用） */
+  providerId?: string
   apiKey: string
   baseUrl?: string
   model?: string
@@ -62,6 +64,7 @@ export function resolveAgentConnection(config: EngineConfig): AgentConnection | 
   const model = envModel ?? (validModels.includes(config.agent.model ?? '') ? config.agent.model : validModels[0])
   const baseUrl = (envBase ?? provider.baseUrl) ?? ''
   return {
+    providerId: provider.id,
     apiKey: envKey ?? provider.apiKey,
     ...(baseUrl !== '' ? { baseUrl } : {}),
     ...(model !== undefined ? { model } : {}),
@@ -427,7 +430,13 @@ function applyEnv(config: EngineConfig): void {
   const port = process.env.COS_PORT
   if (port !== undefined) config.server.port = assertPort(port, 'env')
   const workspace = process.env.COS_WORKSPACE
-  if (workspace !== undefined) config.paths.workspace = resolvePath(workspace, 'env')
+  if (workspace !== undefined) {
+    config.paths.workspace = resolvePath(workspace, 'env')
+    // 隔离联动（2026-08-22 修复，真机前端验收发现）：workspace 覆盖后 db 必须跟随——
+    // config.json 的 paths.db 指向原 workspace 的投影库，不联动会导致 COS_WORKSPACE 隔离实例
+    // 仍读写真实 DB（前端从投影读到真实画像数据，误判为"非空白测试"）
+    config.paths.db = resolve(config.paths.workspace, '.career-os.db')
+  }
   const model = process.env.COS_MODEL
   if (model !== undefined) config.agent.model = assertModel(model, 'env')
 }

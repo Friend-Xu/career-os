@@ -61,6 +61,18 @@ test('env 覆盖：COS_PORT / COS_WORKSPACE / COS_MODEL', () => {
   rmSync(join(path, '..'), { recursive: true, force: true })
 })
 
+test('隔离联动：COS_WORKSPACE 覆盖后 db 跟随 workspace（防隔离实例读写真实 DB）', () => {
+  const path = tempConfigFile({
+    paths: { workspace: 'workspace/career-advisor', skills: 'skills/career-advisor', logs: 'logs', db: 'workspace/career-advisor/.career-os.db' },
+  })
+  process.env.COS_WORKSPACE = 'D:/tmp-accept-ws'
+  const { config } = loadConfig(['--config', path])
+  assert.equal(config.paths.workspace, 'D:/tmp-accept-ws')
+  assert.equal(config.paths.db, resolve('D:/tmp-accept-ws', '.career-os.db'))
+  clearEnv()
+  rmSync(join(path, '..'), { recursive: true, force: true })
+})
+
 test('config.json 相对 paths → 解析为相对 REPO_ROOT（项目迁移不失效）', () => {
   const path = tempConfigFile({
     paths: { workspace: 'workspace/career-advisor', skills: 'skills/career-advisor', logs: 'logs', db: 'workspace/career-advisor/.career-os.db' },
