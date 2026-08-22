@@ -127,6 +127,22 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 - **Identity**: person_id 由引擎投影继承；Agent 禁止创建身份字段
 - **Lifecycle**: 文件由引擎投影生成（每确认一条技能候选重投影）；缺失 = 无已确认技能（门禁缺件显式标记，不静默）
 
+### Preference & Career Intent Output Contract
+
+用户偏好与目标岗位的唯一事实源 = 引擎投影的两件快照（`preference_constraints.md` 偏好约束 / `career_profile.md` 目标岗位）；缺文件 = 未采集，**不视为「用户没有偏好/目标」**。
+
+- **Content Producer**: Engine 快照投影器（用户确认约束/兴趣候选 → 引擎登记并投影生成；Agent **不写此文件**——Agent 只产出候选，确认权在用户，写入权在引擎）
+- **候选标记协议（约束/兴趣类目，Agent 提案时必须带结构化载荷）**：
+  `意向岗位=…；优先级=high|medium|low（可选）；薪资=…；城市=…；现居=…`
+  - 载荷按 `；` 分隔的 `键=值` 段；无载荷的约束/兴趣候选**只能进原文列表**（人有读、引擎无机器值）——画像「偏好/城市/目标岗位」不显示，这是确认候选时**要避免**的形态
+  - `意向岗位=`（或 `目标岗位=`）→ `career_profile.md` User Career Intent 表（source=user，画像「目标岗位」维度数据源）
+  - `薪资=/城市=/现居=` → `preference_constraints.md` 分析摘要规范键（画像「偏好/城市」维度数据源）
+  - `优先级=` 仅 high/medium/low 被识别；未识别 → 投影按 medium 中性档（引擎不猜高/低语义）
+- **Registration Owner**: 引擎 person snapshot parser（解析登记；Agent 不创建 person 归属字段）
+- **Artifact**: `persons/{person_id}/snapshot/current/preference_constraints.md`（`## 分析摘要` 表 salary_range/city/location + `## 偏好约束` 原文列表）与 `persons/{person_id}/snapshot/current/career_profile.md`（`## User Career Intent` 表 `target_role | priority | source`，source=user 行才是 targetRoles；契约 references/career-profile-contract.md）
+- **红线**: career_profile.md 只承载**用户明确意向**——推荐/决策结论禁止写入（归 decisions/）；「推荐」≠「目标」
+- **Lifecycle**: 文件由引擎投影生成（每确认一条候选重投影）；缺失 = 未采集/未确认（缺件标记显式，不静默）
+
 ### 摘要字段
 
 | 字段 | 必需？ | 说明 |

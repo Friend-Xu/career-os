@@ -14,6 +14,9 @@
  * - preference_constraints.md ← confirmed 约束/兴趣候选：结构化 payload（薪资=/城市=）→ 规范键；
  *                        content 原文 → 「偏好约束」原文列表（不拆解——Derived Data Separation）
  * - skill_inventory.md ← confirmed 技能候选（结构化 payload 技能=/级别=/场景=）
+ * - career_profile.md ← confirmed 约束/兴趣候选：结构化 payload（意向岗位=/优先级=）→
+ *                        User Career Intent 表（只承载用户意向——契约
+ *                        references/career-profile-contract.md；推荐/决策结论禁止写入）
  *
  * 幂等：全量重投影（从事实源聚合重写，不增量 patch）；无事实 → 不生成对应文件
  * （"没有证据的字段就不存在"——缺值不生成字段，不用 `-` 占位）。
@@ -36,15 +39,19 @@ export function parseSkillPayload(payload: string | undefined): { skill: string;
   return { skill, level: fields['级别'] ?? fields['level'], context: fields['场景'] ?? fields['context'] }
 }
 
-/** 约束候选 payload → 结构化（`薪资=…；城市=…；现居=…`；可选载荷，无则原文列表兜底） */
-export function parseConstraintPayload(payload: string | undefined): { salary?: string; city?: string; location?: string } {
+/** 约束候选 payload → 结构化（`意向岗位=…；优先级=…；薪资=…；城市=…；现居=…`；
+ *  可选载荷，无则原文列表兜底。优先级仅 high/medium/low 落入结构化，其余未识别 → undefined（投影用中性档 medium，不发明语义） */
+export function parseConstraintPayload(payload: string | undefined): { jobRole?: string; priority?: 'high' | 'medium' | 'low'; salary?: string; city?: string; location?: string } {
   if (!payload?.trim()) return {}
   const fields: Record<string, string> = {}
   for (const seg of payload.split(/[；;]/)) {
     const m = seg.trim().match(/^([^=：]+?)[=：](.+)$/)
     if (m && m[2]!.trim()) fields[m[1]!.trim()] = m[2]!.trim()
   }
+  const p = fields['优先级'] ?? fields['priority']
   return {
+    jobRole: fields['意向岗位'] ?? fields['目标岗位'] ?? fields['target'],
+    priority: p === 'high' || p === 'medium' || p === 'low' ? p : undefined,
     salary: fields['薪资'] ?? fields['salary'],
     city: fields['城市'] ?? fields['city'],
     location: fields['现居'] ?? fields['location'],
@@ -118,6 +125,38 @@ function projectPreference(ws: Workspace, personId: string): string | null {
   return rows.join('\n')
 }
 
+/** career_profile.md：confirmed 约束/兴趣候选（载荷 `意向岗位=…`，可带 `优先级=high/medium/low`）
+ *  → User Career Intent 表（source=user 行才是 Person.targetRoles 消费行；priority 未采集 →
+ *  medium 中性档，注释说明不发明语义）。契约：references/career-profile-contract.md——
+ *  只承载用户意向（推荐/决策结论禁止写入，权威源在 decisions/）。无载荷 → null（不生成文件，
+ *  "意向岗位未确认" = 缺件语义，不假装）。 */
+function projectCareerProfile(ws: Workspace, personId: string): string | null {
+  const confirmed = listCandidates(ws, personId).filter((c) => c.status === 'confirmed' && (c.category === 'constraint' || c.category === 'interest'))
+  const seen = new Set<string>()
+  const roles: { target: string; priority: string }[] = []
+  for (const c of confirmed) {
+    const p = parseConstraintPayload(c.payload)
+    if (p.jobRole && !seen.has(p.jobRole)) {
+      seen.add(p.jobRole)
+      roles.push({ target: p.jobRole, priority: p.priority ?? 'medium' })
+    }
+  }
+  if (roles.length === 0) return null
+  const rows: string[] = [
+    '# 职业目标（Engine 投影）',
+    '',
+    '> 用户明确目标岗位（User Career Intent，source=user）。priority 未采集时恒为 medium——高/低语义需用户显式确认，引擎不猜。',
+    '',
+    '## User Career Intent',
+    '',
+    '| target_role | priority | source |',
+    '|-------------|----------|--------|',
+    ...roles.map((r) => `| ${cell(r.target)} | ${r.priority} | user |`),
+    '',
+  ]
+  return rows.join('\n')
+}
+
 /** 技能语义级别 → skill_inventory level 词表（映射非打分；未识别 → applied） */
 const SKILL_LEVEL_ALIAS: Record<string, string> = {
   熟练: 'applied-professional',
@@ -181,6 +220,11 @@ export function projectPersonSnapshots(ws: Workspace, personId: string): string[
   if (skill) {
     ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, skill)
     written.push('skill_inventory.md')
+  }
+  const career = projectCareerProfile(ws, personId)
+  if (career) {
+    ws.write(`persons/${personId}/snapshot/current/career_profile.md`, career)
+    written.push('career_profile.md')
   }
   return written
 }

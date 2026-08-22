@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { initWorkspace, type Workspace } from '../storage/workspace.ts'
-import { createPersonSession, resolveCandidate } from '../storage/person-watcher.ts'
+import { createPersonSession, resolveCandidate, scanPersons } from '../storage/person-watcher.ts'
 import { projectPersonSnapshots, parseSkillPayload, parseConstraintPayload } from '../storage/person-snapshot-projection.ts'
 
 let wsSeq = 0
@@ -130,10 +130,55 @@ test('parseSkillPayload：键值段解析 + 缺技能 → undefined', () => {
   assert.equal(parseSkillPayload(undefined), undefined)
 })
 
-test('parseConstraintPayload：可选键 + 空载荷 → 无键', () => {
-  assert.deepEqual(parseConstraintPayload('薪资=10-12K；城市=苏州、上海'), { salary: '10-12K', city: '苏州、上海', location: undefined })
+test('parseConstraintPayload：可选键（意向岗位/优先级）+ 空载荷 → 无键', () => {
+  assert.deepEqual(parseConstraintPayload('意向岗位=机器人设计；优先级=high；薪资=10-12K；城市=苏州、上海'), {
+    jobRole: '机器人设计',
+    priority: 'high',
+    salary: '10-12K',
+    city: '苏州、上海',
+    location: undefined,
+  })
+  // 优先级非法值（`高`）不落入结构化——投影用中性档 medium，不发明语义
+  assert.equal(parseConstraintPayload('意向岗位=x；优先级=高').priority, undefined)
   const empty = parseConstraintPayload(undefined)
+  assert.equal(empty.jobRole, undefined)
+  assert.equal(empty.priority, undefined)
   assert.equal(empty.salary, undefined)
   assert.equal(empty.city, undefined)
   assert.equal(empty.location, undefined)
+})
+
+// ─── 投影：career_profile.md ← confirmed 约束/兴趣候选（意向岗位载荷）──────────────
+
+test('投影 career_profile.md：意向岗位载荷 → User Career Intent 表 + scanPersons 读端闭环', () => {
+  const { ws, pid } = PERSON()
+  seedCandidates(ws, pid, [
+    '| c-101 | pending | 约束 | 求职意向机械结构工程师 | user_reported | 意向岗位=机械结构工程师；优先级=high；薪资=11-13K；城市=苏州、成都、上海 |',
+    '| c-102 | pending | 兴趣 | 继续机械方向 | user_reported | 意向岗位=机械结构工程师 |',
+  ])
+  resolveCandidate(ws, { personId: pid, candidateId: 'c-101', action: 'confirmed' })
+  resolveCandidate(ws, { personId: pid, candidateId: 'c-102', action: 'confirmed' })
+  const written = projectPersonSnapshots(ws, pid)
+  assert.ok(written.includes('career_profile.md'))
+  assert.ok(written.includes('preference_constraints.md'))
+  const career = ws.read(`persons/${pid}/snapshot/current/career_profile.md`)
+  assert.ok(career.includes('| target_role | priority | source |'))
+  assert.ok(career.includes('| 机械结构工程师 | high | user |'))
+  // 读端闭环：scanPersons → PersonSnapshot.careerProfile.targetRoles（只取 source=user 行）
+  const snap = scanPersons(ws).find((s) => s.personId === pid)!
+  assert.deepEqual(snap.careerProfile?.targetRoles, ['机械结构工程师'])
+  // 同一确认候选：偏好规范键表同步有值（salary/city）
+  const pref = ws.read(`persons/${pid}/snapshot/current/preference_constraints.md`)
+  assert.ok(pref.includes('| salary_range | 11-13K |'))
+  assert.ok(pref.includes('| city | 苏州、成都、上海 |'))
+})
+
+test('投影 career_profile.md：仅薪资/城市载荷（无意向岗位）→ 不生成（缺件语义，不假装）', () => {
+  const { ws, pid } = PERSON()
+  seedCandidates(ws, pid, ['| c-103 | pending | 约束 | 期望 10-12K | user_reported | 薪资=10-12K；城市=苏州 |'])
+  resolveCandidate(ws, { personId: pid, candidateId: 'c-103', action: 'confirmed' })
+  const written = projectPersonSnapshots(ws, pid)
+  assert.ok(written.includes('preference_constraints.md'))
+  assert.ok(!written.includes('career_profile.md'))
+  assert.ok(!ws.exists(`persons/${pid}/snapshot/current/career_profile.md`))
 })
