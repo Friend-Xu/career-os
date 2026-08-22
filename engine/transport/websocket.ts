@@ -1280,7 +1280,7 @@ function permissionParams(v: unknown): { taskId: string; requestId: string; allo
  * 引擎 spawn 的 CLI 进程未设置该变量 → Agent 会把已初始化工作区误判为"首次使用"，
  * 此处用真实文件状态直接覆盖该检查。
  */
-function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: { name: string; personId: string }): string {
+export function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: { name: string; personId: string }): string {
   const indexExists = existsSync(join(workspaceRoot, 'INDEX.md'))
   const initState = indexExists
     ? `当前工作区已初始化（${join(workspaceRoot, 'INDEX.md')} 存在），直接跳过 SKILL.md 中的"首次运行检查"步骤。`
@@ -1291,6 +1291,10 @@ function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: {
     : ''
   try {
     const skill = readFileSync(join(skillsDir, 'SKILL.md'), 'utf8')
+    // 2026-08-22 真机定位：仅截前 1500 字符 → 城市评估 Agent 拿不到「输出标准/摘要字段」协议，
+    // 自创字段（city-selection/salary_expect/score…）→ 引擎判 invalid → 驾驶舱「待人工处理」。
+    // 修复：注入「输出标准」段（摘要字段表 + 评估明细协议 + 命名约定）——决策写入必需协议面。
+    const outputStandard = skill.match(/## 输出标准[\s\S]*?(?=\n## 决策汇总协议)/)?.[0] ?? skill.slice(0, 1500)
     return [
       '你是 Career OS 的职业决策助手（技能：career-advisor）。',
       personState,
@@ -1298,6 +1302,9 @@ function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: {
       initState,
       '技能概述（节选）：',
       skill.slice(0, 1500),
+      '',
+      '## 决策文件输出标准（摘要字段协议——写入 decisions/*.md 必须遵守）',
+      outputStandard,
     ].filter(Boolean).join('\n')
   } catch {
     return `你是 Career OS 的职业决策助手，请依据工作区中的 profiles/、decisions/ 等数据为用户提供职业决策建议。${initState}`
