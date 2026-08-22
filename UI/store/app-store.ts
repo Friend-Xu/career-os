@@ -1192,11 +1192,13 @@ export const useAppStore = create<AppState>()(
     }
 
     // 真实 Agent 流（引擎在线）：task 直接发 prompt，Agent 在 workspace 根自读信息池；
-    // 有 SDK 会话凭据则 resume 续接（会话连续性）
+    // conversation 平面有 SDK 会话凭据则 resume 续接（会话连续性）；
+    // workflow_stage 控制平面任务不续接（Artifact=Memory：阶段上下文 = Stage Envelope + 工作区，
+    // 续接旧对话会把历史阶段长文灌入上下文 → 输出截断/行为漂移——2026-08-22 方向探索 3/3 失败定位）
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === sessionId)
-      void runAgentTask(sessionId, content, session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef)
+      void runAgentTask(sessionId, content, isWorkflowStage ? undefined : session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
