@@ -160,7 +160,7 @@ import type { CoverLetterStatus } from '../ir/cover-letter.ts'
 import { buildArtifactSummaries } from '../artifact-summary/index.ts'
 import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
 import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
-import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
+import { deleteCompanyFile, readCompanyFile, setCompanyContacted, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFieldsDirect } from '../runtime/jd-extract.ts'
 import { generateInterviewCandidates, generateResumeCandidates } from '../runtime/resume-facts.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
@@ -2318,6 +2318,15 @@ export async function startServer(opts: {
     },
     [METHODS.deleteCompany]: (params) => {
       deleteCompanyFile(workspace, jobIdParams(params))
+      broadcast({ event: EVENTS.companiesChanged })
+      return {}
+    },
+    [METHODS.setCompanyContacted]: (params) => {
+      const p = params as Record<string, unknown> | undefined
+      const id = typeof p?.id === 'string' ? p.id : ''
+      if (!id) throw new Error('params.id 缺失')
+      if (typeof p?.contacted !== 'boolean') throw new Error('params.contacted 应为 boolean')
+      setCompanyContacted(workspace, id, p.contacted)
       broadcast({ event: EVENTS.companiesChanged })
       return {}
     },

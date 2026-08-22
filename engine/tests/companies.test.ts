@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProjection, parseCompanyMarkdown, resolveCompany } from '../storage/projection.ts'
+import { createProjection, parseCompanyMarkdown, resolveCompany, setCompanyContacted } from '../storage/projection.ts'
 import { initWorkspace } from '../storage/workspace.ts'
 import { buildGraph } from '../storage/graph-builder.ts'
 import type { Logger } from '../logger.ts'
@@ -303,5 +303,48 @@ test('listCompanies：完整 CompanyRecord + validation 标记；graph 跳过 in
   assert.ok(graph.nodes.some((n) => n.id === 'company:Company-C 自动化' && n.matchScore === 85 && n.riskLevel === 'low'))
   assert.ok(!graph.nodes.some((n) => n.id === 'company:无摘要公司'), 'invalid 公司不应出现在图谱')
   projection.close() // 释放 SQLite 文件锁（Windows 下 rmSync 需要）
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('setCompanyContacted：替换既有行（否→是，幂等可逆）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-cnt-'))
+  const ws = initWorkspace(root)
+  ws.write('companies/Company-C 自动化.md', companyMd)
+
+  setCompanyContacted(ws, 'Company-C 自动化', true)
+  assert.match(ws.read('companies/Company-C 自动化.md'), /\| contacted \| 是 \|/)
+  assert.equal(parseCompanyMarkdown(ws.read('companies/Company-C 自动化.md'), 'x').value.contacted, true)
+
+  setCompanyContacted(ws, 'Company-C 自动化', false)
+  assert.match(ws.read('companies/Company-C 自动化.md'), /\| contacted \| 否 \|/)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('setCompanyContacted：contacted 行缺失 → 插到 tags 行后（契约字段序）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-cnt2-'))
+  const ws = initWorkspace(root)
+  const noContact = companyMd.replace(/\| contacted \| 否 \|\n/, '')
+  assert.ok(!noContact.includes('| contacted |'), '前置：contacted 行已移除')
+  ws.write('companies/Company-C 自动化.md', noContact)
+
+  setCompanyContacted(ws, 'Company-C 自动化', true)
+  const md = ws.read('companies/Company-C 自动化.md')
+  assert.match(md, /\| tags \| .+ \|\n\| contacted \| 是 \|/, 'contacted 行应紧跟在 tags 行后')
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('setCompanyContacted：无摘要表 tags 行 → 抛错（诚实失败，不静默改坏档案）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-cnt3-'))
+  const ws = initWorkspace(root)
+  ws.write('companies/无摘要公司.md', '# 无摘要公司\n\n没有摘要表')
+
+  assert.throws(() => setCompanyContacted(ws, '无摘要公司', true), /tags 行/)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('setCompanyContacted：公司不存在 → 抛错', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cos-cnt4-'))
+  const ws = initWorkspace(root)
+  assert.throws(() => setCompanyContacted(ws, '不存在公司', true), /不存在/)
   rmSync(root, { recursive: true, force: true })
 })

@@ -623,6 +623,11 @@ export class EngineClient {
     return this.rpc(METHODS.deleteCompany, { id })
   }
 
+  /** 标记公司联系状态（用户事实 → 引擎登记写回文件；Contacted ≠ 投递沟通 ADR-019） */
+  setCompanyContacted(id: string, contacted: boolean): Promise<unknown> {
+    return this.rpc(METHODS.setCompanyContacted, { id, contacted })
+  }
+
   /** 单个公司档案全文（尽调详情正文渲染） */
   getCompanyDetail(id: string): Promise<CompanyDetail> {
     return this.rpc<CompanyDetail>(METHODS.companyGet, { id })

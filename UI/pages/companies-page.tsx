@@ -617,10 +617,9 @@ function ProfileView({ selected }: { selected: CompanyWithValidation | null }) {
             variant="outlined"
             fullWidth
             onClick={() => {
-              markCompanyContacted(selected.id)
+              void markCompanyContacted(selected.id)
               // ADR-019 Decision 5：公司关系（contacted）≠ 投递沟通（COMMUNICATING）——
               // 不同步；投递记录的沟通状态在投递管理推进
-              push('success', `已标记「${selected.name}」为已联系（公司关系）`)
             }}
           >
             标记已联系

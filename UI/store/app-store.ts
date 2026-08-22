@@ -545,7 +545,7 @@ interface AppState {
   /** 草稿模块内容写回（R0 修复：编辑内容切页不丢——modules 本地 state 与 store 同步） */
   updateResumeModules: (id: string, modules: ResumeModule[]) => void;
   addDecision: (record: DecisionRecord) => void;
-  markCompanyContacted: (id: string) => void;
+  markCompanyContacted: (id: string) => Promise<void>;
   setInfopoolFilter: (filter: string) => void;
   setCompaniesFilter: (filter: string) => void;
   setApplicationsFilter: (filter: string) => void;
@@ -1956,12 +1956,22 @@ export const useAppStore = create<AppState>()(
     }))
   },
 
-  markCompanyContacted: (id) => {
-    set((state) => ({
-      companies: state.companies.map((c) =>
-        c.id === id ? { ...c, contacted: true } : c,
-      ),
-    }))
+  markCompanyContacted: async (id) => {
+    // 用户事实（CLAUDE.md §8）：用户动作 → 引擎登记写回 companies/{id}.md（contacted 行），
+    // 不再纯 UI 内存态（刷新丢失/引擎档案永远「否」）。Contacted ≠ 投递沟通（ADR-019）。
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：联系状态无法写入档案')
+      return
+    }
+    try {
+      await engine.setCompanyContacted(id, true)
+      useAppStore.setState((s) => ({
+        companies: s.companies.map((c) => (c.id === id ? { ...c, contacted: true } : c)),
+      }))
+      useToastStore.getState().push('success', '已标记为已联系（公司关系，已写入档案）')
+    } catch (e) {
+      useToastStore.getState().push('warning', `标记失败：${e instanceof Error ? e.message : String(e)}`)
+    }
   },
 
   setInfopoolFilter: (filter) => set({ infopoolFilter: filter }),
@@ -3358,6 +3368,9 @@ export function connectEngine(): void {
       void pullValuationCard()
       syncCurrentPersonHealth()
     })
+    // 初始化候选被动刷新：候选确认（resolveCandidate accept 广播）等引擎侧变化 → 面板计数即时更新
+    const initPid = pendingInitPersonId()
+    if (initPid) void useAppStore.getState().loadInitCandidates(initPid)
     void pullGraph()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())

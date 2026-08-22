@@ -311,6 +311,9 @@ export const METHODS = {
   aiContext: 'ai/context',
   /** 删除公司档案（params: { id } → 删 companies/{id}.md；广播 data.companies.changed） */
   deleteCompany: 'companies/delete',
+  /** 标记公司联系状态（params: { id, contacted: boolean } → 写回 companies/{id}.md 摘要表 contacted 行；广播 data.companies.changed。
+   *  用户事实（CLAUDE.md §8）：用户动作 → 引擎登记写回；Contacted ≠ 投递沟通（ADR-019 Decision 5）） */
+  setCompanyContacted: 'companies/contacted/set',
   /** 读取 Agent 设置（params: 无 → { model, apiKey, permissionMode, allowedTools, maxTurns }，来自 config.json） */
   settingsGet: 'settings/get',
   /** 更新 Agent 设置（params: { model?, apiKey?, permissionMode?, allowedTools?, maxTurns? }，undefined 字段不修改 → 写回 config.json + 更新内存，下次任务生效） */

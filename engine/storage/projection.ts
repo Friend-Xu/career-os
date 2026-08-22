@@ -180,6 +180,28 @@ export function readCompanyFile(workspace: Workspace, id: string): { id: string;
   return { id, markdown: workspace.read(rel) }
 }
 
+/**
+ * 标记公司联系状态（用户事实：用户动作 → 引擎登记写回——CLAUDE.md §8，Contacted ≠ 投递沟通 ADR-019）。
+ * 替换摘要表 `| contacted | 是/否 |` 行；行缺失时插到 `| tags |` 行后（契约字段序）；
+ * 无摘要表/tags 行 → 抛错（诚实失败，不静默改坏档案）。
+ */
+export function setCompanyContacted(workspace: Workspace, id: string, contacted: boolean): void {
+  if (!/^[^\\/]+$/.test(id)) throw new Error(`非法公司 id：${JSON.stringify(id)}`)
+  const rel = `companies/${id}.md`
+  if (!workspace.exists(rel)) throw new Error(`公司不存在：${id}`)
+  const md = workspace.read(rel)
+  const line = `| contacted | ${contacted ? '是' : '否'} |`
+  if (/^\| contacted \| .+ \|$/m.test(md)) {
+    workspace.write(rel, md.replace(/^\| contacted \| .+ \|$/m, line))
+    return
+  }
+  const replaced = md.replace(/(^\| tags \| .+ \|$)/m, `$1\n${line}`)
+  if (replaced === md) {
+    throw new Error(`公司档案缺摘要表 tags 行，无法登记联系状态：${id}`)
+  }
+  workspace.write(rel, replaced)
+}
+
 export function parseCompanyMarkdown(md: string, sourceFile: string): Validated<CompanyRecord> {
   const id = sourceFile.replace(/\.md$/, '')
   const fields = parseSummaryTable(md)
