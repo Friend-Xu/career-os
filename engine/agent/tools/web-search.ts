@@ -1,17 +1,24 @@
 /**
- * WebSearch 工具（直连 AgentRunner 客户端工具）：薄封装 DeepSeek Responses API 托管搜索
- * （hosted web_search——搜索由 DeepSeek 服务端执行，返回带来源引用的整理文本）。
+ * WebSearch 能力（Search Capability Layer，P1）：任务级治理 + 双路径执行。
  *
- * 治理（CLAUDE.md §8 / Agent Safety Rules）：
- * - 搜索结果 = 外部事实输入，Agent 只消费写入决策正文，来源随文本返回（模型自动附「数据来源」段）；
- *   系统事实（person_id/company_id/状态字段）仍由 Engine Registration 产生。
- * - 隐私红线：query 含手机号/邮箱/身份证 → 拒绝执行（搜索词外发前校验）。
- * - 次数护栏：每次调用 = streamText 工具循环 1 步，受 MAX_STEPS(25) 上限约束，无单独计数器
- *   （与文件工具同一护栏面，不加第二套防御——CLAUDE.md §4 禁止兜底）。
+ * 架构（用户裁决：WebSearch 做 Runtime 不做裸 Tool）：
+ * - SearchSession = 每次 Agent 任务一个会话（AgentRuntime 创建，引擎单方决定预算/缓存——CLAUDE.md §8：
+ *   Engine 负责资源/预算/状态，Agent 只消费）。治理面：
+ *   ① 预算：任务级外部搜索调用次数上限（默认 8；缓存命中不消耗——预算治的是外部成本）；
+ *   ② 缓存：规范化 query → 内存 Map + TTL（默认 30 分钟；跨任务共享，引擎重启即失效——可接受）；
+ *   ③ 隐私红线：query 含手机号/邮箱/身份证 → 拒绝执行（搜索词外发前校验，不消耗预算）。
+ * - 执行双路径（DeepSeek Responses 是 Codex 兼容的事实兼容，非承诺——协议演进需守卫）：
+ *   主路径 = 官方 @ai-sdk/openai responses 适配器（协议解析/重试/错误类型由 SDK 维护）；
+ *   守卫降级 = 薄封装裸 fetch（协议异常/适配器解析失败 → 降级，成功后锁定本会话，防反复双请求）。
+ * - 来源引用：DeepSeek 托管搜索无结构化 url_citation，引用清单内嵌于模型输出文本（「## 数据来源」
+ *   段，由检索指令要求）。Source Normalizer = 输出文本 URL 提取（去重、去 ws_call_id 噪声），
+ *   文本缺失来源段且提取到 URL 时追加「## 数据来源」段（引用保障）。
  */
 import { z } from 'zod'
 import { tool } from 'ai'
-import type { Tool } from 'ai'
+import { generateText, type Tool } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
+import type { Logger } from '../../logger.ts'
 
 export interface WebSearchProvider {
   /** Responses API 根（如 https://api.deepseek.com；anthropic 通道 baseUrl 会剥 /anthropic 后缀） */
@@ -20,23 +27,93 @@ export interface WebSearchProvider {
   model: string
 }
 
+export interface SearchSource {
+  url: string
+}
+
+export interface SearchResult {
+  text: string
+  sources: SearchSource[]
+  /** 是否缓存命中（工具层据此附加时间戳提示） */
+  cached: boolean
+}
+
+export interface SearchSessionOptions {
+  provider: WebSearchProvider
+  /** 任务级搜索预算（正整数；引擎单方决定，客户端不可设） */
+  budget: number
+  /** 缓存 TTL（毫秒；0 = 不缓存） */
+  cacheTtlMs: number
+  /** 共享缓存（引擎级单例——跨任务复用检索结果；缺省 = 会话私有，测试友好） */
+  cache?: Map<string, CacheEntry>
+  logger?: Logger
+}
+
+/** 检索指令（主路径 system / 降级路径 instructions 同源）：只检索事实 + 要求来源段 + 标注不确定 */
+const SEARCH_INSTRUCTIONS =
+  '你是职业数据检索助手：只检索事实数据，输出简明结构化结论，并在末尾以「## 数据来源」列出引用平台与 URL；不确定的数据明确标注。'
+
 const PRIVACY_PATTERN =
   /(1[3-9]\d{9})|(\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]?)|([\w.+-]+@[\w-]+\.[\w.]+)/
 
-function responsesUrl(baseUrl: string): string {
-  const root = baseUrl.replace(/\/anthropic\/?$/, '').replace(/\/+$/, '')
-  return `${root}/responses`
+function responsesRoot(baseUrl: string): string {
+  return baseUrl.replace(/\/anthropic\/?$/, '').replace(/\/+$/, '')
 }
 
-/** 一次托管搜索（非流式）：query → DeepSeek 内部 web_search 循环 → 整理文本（含来源） */
-export async function hostedSearch(provider: WebSearchProvider, query: string): Promise<string> {
-  const res = await fetch(responsesUrl(provider.baseUrl), {
+/** 预算/隐私策略错误（工具层转为文本回给模型，不抛穿循环） */
+export class SearchPolicyError extends Error {
+  readonly code: 'privacy' | 'budget_exhausted'
+  constructor(code: 'privacy' | 'budget_exhausted', message: string) {
+    super(message)
+    this.name = 'SearchPolicyError'
+    this.code = code
+  }
+}
+
+// ─── Source Normalizer：输出文本 URL 提取 ───────────────────────────────────
+
+/** 提取文本内引用 URL：去尾部标点、去 #ws_call_id 噪声后缀、去重、保序、限 20 条 */
+export function extractSourceUrls(text: string): SearchSource[] {
+  const seen = new Set<string>()
+  const out: SearchSource[] = []
+  for (const m of text.matchAll(/https?:\/\/[^\s"'<>)\]）】,，。;；]+/g)) {
+    let url = m[0]
+    url = url.replace(/[.,;:!?）】]+$/, '')
+    url = url.replace(/#ws_call_id=[^&]*$/, '')
+    if (seen.has(url)) continue
+    seen.add(url)
+    out.push({ url })
+    if (out.length >= 20) break
+  }
+  return out
+}
+
+// ─── 执行路径：主路径（官方 responses 适配器）→ 守卫降级（薄封装）──────────
+
+/** 主路径：@ai-sdk/openai responses 适配器 + provider 侧 webSearch 工具（非流式，工具内一次性检索） */
+async function sdkSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+  const openai = createOpenAI({ apiKey: provider.apiKey, baseURL: responsesRoot(provider.baseUrl) })
+  const result = await generateText({
+    model: openai.responses(provider.model),
+    system: SEARCH_INSTRUCTIONS,
+    tools: { webSearch: openai.tools.webSearch({ searchContextSize: 'medium' }) },
+    prompt: query,
+    maxOutputTokens: 4000,
+  })
+  if (result.text.trim().length === 0) {
+    throw new Error('搜索完成但无文本产出（官方适配器解析为空）')
+  }
+  return { text: result.text, sources: extractSourceUrls(result.text), cached: false }
+}
+
+/** 守卫降级路径：裸 fetch 薄封装（协议演进护栏；DeepSeek 正常响应 error:null——非空才是真错误） */
+export async function hostedSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+  const res = await fetch(`${responsesRoot(provider.baseUrl)}/responses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
     body: JSON.stringify({
       model: provider.model,
-      instructions:
-        '你是职业数据检索助手：只检索事实数据，输出简明结构化结论，并在末尾以「## 数据来源」列出引用平台与 URL；不确定的数据明确标注。',
+      instructions: SEARCH_INSTRUCTIONS,
       input: query,
       tools: [{ type: 'web_search', search_context_size: 'medium' }],
       max_output_tokens: 4000,
@@ -47,35 +124,131 @@ export async function hostedSearch(provider: WebSearchProvider, query: string): 
     throw new Error(`搜索服务响应 ${res.status}${body.slice(0, 200) ? `：${body.slice(0, 200)}` : ''}`)
   }
   const j = (await res.json()) as { output?: unknown[]; error?: unknown }
-  // DeepSeek Responses 正常响应 error 字段恒存在（值为 null）——只有非空才是真错误
   if (j.error != null) throw new Error(`搜索服务错误：${JSON.stringify(j.error).slice(0, 200)}`)
   const texts: string[] = []
+  const urls = new Set<string>()
   for (const item of j.output ?? []) {
     const rec = (item ?? {}) as { type?: string; content?: Array<{ type?: string; text?: string }> }
-    if (rec.type !== 'message') continue
-    for (const part of rec.content ?? []) {
-      if (part.type === 'output_text' && part.text) texts.push(part.text)
+    if (rec.type === 'message') {
+      for (const part of rec.content ?? []) {
+        if (part.type === 'output_text' && part.text) texts.push(part.text)
+      }
+    } else if (rec.type === 'web_search_call') {
+      // open_page/find_in_page 中间动作的 URL 也是引用线索（去 #ws_call_id 噪声；search 动作无 URL）
+      const action = (rec as { action?: { url?: string } }).action
+      if (action?.url) urls.add(action.url.replace(/#ws_call_id=[^&]*$/, ''))
     }
   }
   if (texts.length === 0) throw new Error('搜索完成但无文本产出')
-  return texts.join('\n\n')
+  const text = texts.join('\n\n')
+  const sources = [...extractSourceUrls(text), ...[...urls].map((url) => ({ url }))].filter(
+    (s, i, arr) => arr.findIndex((x) => x.url === s.url) === i,
+  )
+  return { text, sources, cached: false }
 }
 
+// ─── SearchSession：预算 + 缓存 + 隐私（引擎治理面，任务级）──────────────────
+
+export interface CacheEntry {
+  result: SearchResult
+  at: number
+}
+
+export interface SearchSession {
+  /** 工具执行入口：隐私拒绝/预算用尽抛 SearchPolicyError；外部失败抛 Error（工具层转文本） */
+  execute(query: string): Promise<SearchResult>
+}
+
+export function createSearchSession(opts: SearchSessionOptions): SearchSession {
+  if (!Number.isInteger(opts.budget) || opts.budget <= 0) {
+    throw new Error(`search budget 应为正整数（当前 ${opts.budget}）`)
+  }
+  const cache = opts.cache ?? new Map<string, CacheEntry>()
+  let used = 0
+  let fallbackLocked = false
+  const trace = (event: string): void => {
+    opts.logger?.trace('web_search', { event, budgetUsed: used, budgetTotal: opts.budget })
+  }
+
+  return {
+    async execute(query) {
+      if (PRIVACY_PATTERN.test(query)) {
+        throw new SearchPolicyError(
+          'privacy',
+          'web_search 拒绝执行：查询含疑似个人信息（手机号/邮箱/身份证），隐私红线禁止外发。请改用不含个人标识的查询。',
+        )
+      }
+      const key = query.trim().replace(/\s+/g, ' ').toLowerCase()
+      if (opts.cacheTtlMs > 0) {
+        const hit = cache.get(key)
+        if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
+          trace('cache_hit')
+          // 缓存结果附首次搜索时间（模型知情可判断新鲜度，避免无意义重搜）
+          const at = new Date(hit.at).toISOString().slice(0, 16)
+          return {
+            ...hit.result,
+            cached: true,
+            text: `${hit.result.text}\n\n（本结果为检索缓存，首次搜索时间 ${at}——如需要最新数据请换查询角度）`,
+          }
+        }
+        if (hit !== undefined) cache.delete(key) // 过期即失效
+      }
+      if (used >= opts.budget) {
+        trace('budget_exhausted')
+        throw new SearchPolicyError(
+          'budget_exhausted',
+          `web_search 已停用：本任务搜索预算（${opts.budget} 次）用尽。请基于已获得的信息继续完成当前任务，不要再调用搜索。`,
+        )
+      }
+      used += 1 // 预算语义 = 外部调用次数上限：调用即消耗（失败亦然），一次 execute 一次
+      trace('search_start')
+      let result: SearchResult
+      try {
+        if (fallbackLocked) {
+          result = await hostedSearch(opts.provider, query)
+        } else {
+          try {
+            result = await sdkSearch(opts.provider, query)
+          } catch (err) {
+            // 协议守卫：主路径失败 → 降级薄封装；降级成功即锁定本会话（防每次双请求）
+            trace('fallback')
+            result = await hostedSearch(opts.provider, query)
+            fallbackLocked = true
+          }
+        }
+      } catch (err) {
+        trace('search_error')
+        throw err
+      }
+      // 引用保障：文本缺来源段但提取到 URL → 追加结构化来源段（不重复模型自带引用）
+      if (result.sources.length > 0 && !result.text.includes('数据来源')) {
+        result = {
+          ...result,
+          text: `${result.text}\n\n## 数据来源\n${result.sources.map((s) => `- ${s.url}`).join('\n')}`,
+        }
+      }
+      if (opts.cacheTtlMs > 0) cache.set(key, { result, at: Date.now() })
+      return result
+    },
+  }
+}
+
+// ─── 客户端工具（streamText 工具循环）───────────────────────────────────────
+
 /** streamText 客户端工具：Agent 按需调用（权限闸/步数护栏/事件归一全部复用现有循环） */
-export function buildWebSearchTool(provider: WebSearchProvider): Tool<any, any> {
+export function buildWebSearchTool(session: SearchSession): Tool<any, any> {
   return tool({
     description:
-      '联网搜索事实数据（薪资水平/公司信息/行业数据等）。输入自然语言查询，返回带来源引用的检索结论。隐私红线：不得包含手机号、邮箱、身份证号等个人信息。',
+      '联网搜索事实数据（薪资水平/公司信息/行业数据等）。输入自然语言查询，返回带来源引用的检索结论。注意：本工具每任务有调用次数预算，请聚焦关键事实一次查清，避免低效重复搜索。',
     inputSchema: z.object({
       query: z.string().min(1).max(200).describe('自然语言检索查询（如：苏州 医疗器械结构设计工程师 平均薪资）'),
     }),
     execute: async ({ query }) => {
-      if (PRIVACY_PATTERN.test(query)) {
-        return 'web_search 拒绝执行：查询含疑似个人信息（手机号/邮箱/身份证），隐私红线禁止外发。请改用不含个人标识的查询。'
-      }
       try {
-        return await hostedSearch(provider, query)
+        const result = await session.execute(query)
+        return result.text
       } catch (err) {
+        if (err instanceof SearchPolicyError) return err.message
         return `web_search 失败：${err instanceof Error ? err.message : String(err)}`
       }
     },

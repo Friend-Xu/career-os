@@ -12,6 +12,8 @@
  */
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
+import { createSearchSession, type CacheEntry } from '../agent/tools/web-search.ts'
+import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
@@ -66,6 +68,10 @@ export interface AgentDefaults {
   model?: string
   apiKey?: string
   baseUrl?: string
+  /** WebSearch 任务级预算（引擎单方决定；缺省 = DEFAULT_SEARCH_BUDGET） */
+  searchBudget?: number
+  /** WebSearch 缓存 TTL 分钟（引擎单方决定；缺省 = DEFAULT_SEARCH_CACHE_TTL_MINUTES） */
+  searchCacheTtlMinutes?: number
 }
 
 interface TaskState {
@@ -80,6 +86,8 @@ export class AgentRuntime {
   private permissionSeq = 0
   private logger: Logger
   private emit: (taskId: string, ev: AgentRuntimeEvent) => void
+  /** WebSearch 检索缓存（引擎级单例：跨任务共享，进程存续——引擎重启即失效，可接受） */
+  private searchCache = new Map<string, CacheEntry>()
 
   constructor(logger: Logger, emit: (taskId: string, ev: AgentRuntimeEvent) => void) {
     this.logger = logger
@@ -108,7 +116,17 @@ export class AgentRuntime {
       outputBudget: params.outputBudget,
       abortController: abort,
       logger: this.logger,
-      ...(baseUrl !== undefined ? { webSearch: { baseUrl, apiKey, model } } : {}),
+      ...(baseUrl !== undefined
+        ? {
+            webSearch: createSearchSession({
+              provider: { baseUrl, apiKey, model },
+              budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+              cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
+              cache: this.searchCache,
+              logger: this.logger,
+            }),
+          }
+        : {}),
       onPermissionRequest: (tool) =>
         new Promise<boolean>((resolve) => {
           const requestId = `p-${++this.permissionSeq}`

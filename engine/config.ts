@@ -117,6 +117,9 @@ export interface EngineConfig {
      *  resume_extract=简历事实提取（P0-1 确定性通道）；未绑定 → 服务商默认模型。
      *  配置文件字段（设置页不管理） */
     taskModels?: { jd_extract?: string; career_analysis?: string; resume_extract?: string }
+    /** WebSearch 治理旋钮（Search Capability Layer P1a）：任务级搜索预算（外部调用次数上限，
+     *  缓存命中不消耗）+ 检索结果缓存 TTL（分钟；引擎内存缓存，重启失效）。引擎单方决定，客户端不可设。 */
+    search?: { budgetPerTask?: number; cacheTtlMinutes?: number }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -176,6 +179,9 @@ export class ConfigError extends Error {
 const PERMISSION_MODES: PermissionMode[] = ['acceptEdits', 'ask', 'bypassPermissions']
 // WebSearch = DeepSeek Responses 托管搜索（引擎薄封装；无 provider 时不注册——白名单交集自然排除）
 const DEFAULT_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'WebSearch']
+// Search Capability Layer P1a 默认旋钮（config.json 可覆盖；runtime 无配置时也以此为缺省）
+export const DEFAULT_SEARCH_BUDGET = 8
+export const DEFAULT_SEARCH_CACHE_TTL_MINUTES = 30
 
 export function defaultConfig(): EngineConfig {
   const workspace = resolve(REPO_ROOT, 'workspace', 'career-advisor')
@@ -311,6 +317,24 @@ function assertMaxTurns(v: unknown, source: ConfigSource): number | undefined {
     throw new ConfigError('agent.maxTurns', v, '正整数', source)
   }
   return v
+}
+
+/** WebSearch 治理旋钮校验：两个字段均为正整数（缺失 = 引擎默认，不报错） */
+function assertSearch(v: unknown, source: ConfigSource): { budgetPerTask?: number; cacheTtlMinutes?: number } | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v !== 'object' || Array.isArray(v)) {
+    throw new ConfigError('agent.search', v, '{ budgetPerTask?, cacheTtlMinutes? }', source)
+  }
+  const s = v as Record<string, unknown>
+  const out: { budgetPerTask?: number; cacheTtlMinutes?: number } = {}
+  for (const key of ['budgetPerTask', 'cacheTtlMinutes'] as const) {
+    if (s[key] === undefined) continue
+    if (typeof s[key] !== 'number' || !Number.isInteger(s[key]) || (s[key] as number) <= 0) {
+      throw new ConfigError(`agent.search.${key}`, s[key], '正整数', source)
+    }
+    out[key] = s[key] as number
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function assertPath(v: unknown, source: ConfigSource): string {
@@ -466,6 +490,7 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.agent.enabled !== undefined) config.agent.enabled = assertAgentEnabled(file.agent.enabled, 'config.json')
       if (file.agent.providers !== undefined) config.agent.providers = assertProviders(file.agent.providers, 'config.json')
       if (file.agent.taskModels !== undefined) config.agent.taskModels = assertTaskModels(file.agent.taskModels, 'config.json')
+      if (file.agent.search !== undefined) config.agent.search = assertSearch(file.agent.search, 'config.json')
       if (file.agent.permissionMode !== undefined) config.agent.permissionMode = assertPermissionMode(file.agent.permissionMode, 'config.json')
       if (file.agent.allowedTools !== undefined) config.agent.allowedTools = assertTools(file.agent.allowedTools, 'config.json')
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')
@@ -541,6 +566,7 @@ export function describeConfig(config: EngineConfig): string[] {
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,
+    `agent.search = budgetPerTask ${config.agent.search?.budgetPerTask ?? DEFAULT_SEARCH_BUDGET} 次 / cacheTtl ${config.agent.search?.cacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES} 分钟（WebSearch 治理旋钮）`,
     `paths.workspace = ${config.paths.workspace}（信息池真相源）`,
     `paths.skills = ${config.paths.skills}（skill 加载目录）`,
     `paths.logs = ${config.paths.logs}（应用日志 + Agent 轨迹）`,

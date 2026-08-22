@@ -1692,6 +1692,8 @@ export async function startServer(opts: {
           model: taskModel,
           apiKey: conn.apiKey,
           baseUrl: conn.baseUrl,
+          searchBudget: config.agent.search?.budgetPerTask,
+          searchCacheTtlMinutes: config.agent.search?.cacheTtlMinutes,
         },
         workspace,
       )

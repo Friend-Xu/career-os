@@ -14,7 +14,7 @@ import type { Logger } from '../../logger.ts'
 import type { Workspace } from '../../storage/workspace.ts'
 import type { AgentEvent, AgentHandle } from '../adapter/claude.ts'
 import { buildFsTools } from '../tools/fs-tools.ts'
-import { buildWebSearchTool, type WebSearchProvider } from '../tools/web-search.ts'
+import { buildWebSearchTool, type SearchSession } from '../tools/web-search.ts'
 
 export interface AgentRunnerOptions {
   task: string
@@ -31,8 +31,8 @@ export interface AgentRunnerOptions {
   logger?: Logger
   /** 权限决策源（permissionMode='ask' 时文件工具执行前询问）；缺省 = 直接放行 */
   onPermissionRequest?: (toolName: string) => Promise<boolean>
-  /** WebSearch 工具所需 provider（缺省 = 不注册该工具——allowedTools 白名单交集自然排除） */
-  webSearch?: WebSearchProvider
+  /** WebSearch 检索会话（引擎创建，携带预算/缓存治理面；缺省 = 不注册该工具——白名单交集自然排除） */
+  webSearch?: SearchSession
 }
 
 interface PendingQuestion {
