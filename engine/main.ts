@@ -33,6 +33,7 @@ import { ensureCompanyPlaceholder, scanJobs, watchJobs } from './storage/job-wat
 import { createProjection } from './storage/projection.ts'
 import { DecisionRuntime } from './runtime/decision-runtime.ts'
 import { generateHealthReport } from './health/checker.ts'
+import { listPersonHealths } from './health/person-health.ts'
 import { ServerError, startServer, computeResumeRewriteContext } from './transport/websocket.ts'
 import { EVENTS, ProtocolVersion } from './transport/protocol.ts'
 import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext, submitClaimBridge, type OpportunityProposalInput } from './storage/opportunity-proposal-registry.ts'
@@ -240,6 +241,21 @@ async function main(args: string[]): Promise<void> {
         }
       }
       console.log(`总体健康度：${report.overallScore}%（version ${report.version}）`)
+      // Person Health（ADR-031）：按人一致性体检（与 person/health RPC 同一计算源）
+      const persons = listPersonHealths(ws)
+      if (persons.length > 0) {
+        console.log('Person Health')
+        console.log('━━━━━━━━━━━━━━━━')
+        for (const p of persons) {
+          const mark = p.verdict === 'healthy' ? '✓' : p.verdict === 'warning' ? '⚠' : '✗'
+          console.log(`${mark} ${p.personId}（${p.name}）: ${p.verdict}`)
+          for (const c of p.checks) {
+            console.log(`   ${c.severity === 'error' ? '✗' : '⚠'} [${c.id}] ${c.message}`)
+          }
+        }
+      } else {
+        console.log('Person Health：无已登记 person')
+      }
       return
     }
 
@@ -458,6 +474,19 @@ async function main(args: string[]): Promise<void> {
     }
 
     logger.info(`桥接服务就绪 ws://${config.server.host}:${port}`)
+
+    // Person Health audit（ADR-031）：启动即体检——非健康显式输出，不静默
+    try {
+      for (const h of listPersonHealths(ws)) {
+        if (h.verdict === 'healthy') {
+          logger.info(`[health] ${h.personId}（${h.name}）: healthy`)
+        } else {
+          logger.warn(`[health] ${h.personId}（${h.name}）: ${h.verdict} — ${h.checks.map((c) => `${c.id} ${c.message}`).join('；')}`)
+        }
+      }
+    } catch {
+      /* health 计算失败不阻塞引擎启动（降级为无体检；RPC 调用时再暴露） */
+    }
 
     // 优雅关闭：Ctrl+C / kill → 中止活跃 Agent 任务（SDK close 终止 CLI 子进程），
     // 短暂等待清理后退出（强杀场景由一键启动 taskkill /T 树杀兜底）

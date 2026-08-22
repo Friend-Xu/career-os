@@ -67,6 +67,7 @@ import { composeAutoSummaryTable, writeDecisionRecord, type DecisionNarrativeDra
 import { splitFrontmatter } from '../storage/artifact-registry.ts'
 import { analyzeJob } from '../runtime/jd-intelligence.ts'
 import { generateHealthReport } from '../health/checker.ts'
+import { personHealth } from '../health/person-health.ts'
 import { exportPdf } from '../export/pdf.ts'
 import { recordRewriteFeedback } from '../feedback/writer.ts'
 import { scanContexts } from '../storage/context-watcher.ts'
@@ -1413,6 +1414,12 @@ export async function startServer(opts: {
       return buildSalaryValuationCard(person, scanSalaryBenchmarks(workspace))
     },
     [METHODS.listPersons]: () => store.listPersons(),
+    [METHODS.personHealth]: (params) => {
+      const personId = personIdParams(params)
+      const h = personHealth(workspace, personId)
+      if (!h) throw new Error(`人员不存在或非 Person Aggregate 实体（persons/ 真相源）：${personId}`)
+      return h
+    },
     [METHODS.upsertSummaryStrengths]: (params) => {
       const p = summaryStrengthsParams(params)
       return upsertSummaryStrengths(workspace, p.personId, p.items)
@@ -1429,6 +1436,11 @@ export async function startServer(opts: {
         const written = projectPersonSnapshots(workspace, p.personId)
         if (written.length > 0) {
           logger.info(`快照投影：${p.personId} 已归位 ${written.join('、')}（候选 ${p.candidateId} 确认触发）`)
+        }
+        // Person Health audit（ADR-031）：确认后体检——非健康显式告警，不静默
+        const h = personHealth(workspace, p.personId)
+        if (h && h.verdict !== 'healthy') {
+          logger.warn(`[health] ${h.personId}（${h.name}）: ${h.verdict} — ${h.checks.map((c) => `${c.id} ${c.message}`).join('；')}`)
         }
       }
       return result

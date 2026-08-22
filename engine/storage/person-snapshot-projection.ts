@@ -201,30 +201,30 @@ function projectSkillInventory(ws: Workspace, personId: string): string | null {
 }
 
 /**
- * 全量重投影三件快照（幂等）：有事实源 → 写；无 → 不生成文件（缺件语义交给门禁判定）。
- * 返回本次写入的文件名清单（空数组 = 无事实源，零写入）。
+ * 纯计算：当前事实源 → 快照四件目标内容（零写入）。
+ * 消费方：projectPersonSnapshots（写入）与 Person Health H3 比对（ADR-031：同源重投影比对）。
+ * 幂等：全量重投影（从事实源聚合重写，不增量 patch）；无事实 → 对应文件不出现
+ * （"没有证据的字段就不存在"——缺值不生成字段，不用 `-` 占位）。
  */
-export function projectPersonSnapshots(ws: Workspace, personId: string): string[] {
-  const written: string[] = []
+export function computePersonSnapshots(ws: Workspace, personId: string): { file: string; content: string }[] {
+  const out: { file: string; content: string }[] = []
   const identity = projectIdentity(ws, personId)
-  if (identity) {
-    ws.write(`persons/${personId}/snapshot/current/identity.md`, identity)
-    written.push('identity.md')
-  }
+  if (identity) out.push({ file: 'identity.md', content: identity })
   const preference = projectPreference(ws, personId)
-  if (preference) {
-    ws.write(`persons/${personId}/snapshot/current/preference_constraints.md`, preference)
-    written.push('preference_constraints.md')
-  }
+  if (preference) out.push({ file: 'preference_constraints.md', content: preference })
   const skill = projectSkillInventory(ws, personId)
-  if (skill) {
-    ws.write(`persons/${personId}/snapshot/current/skill_inventory.md`, skill)
-    written.push('skill_inventory.md')
-  }
+  if (skill) out.push({ file: 'skill_inventory.md', content: skill })
   const career = projectCareerProfile(ws, personId)
-  if (career) {
-    ws.write(`persons/${personId}/snapshot/current/career_profile.md`, career)
-    written.push('career_profile.md')
+  if (career) out.push({ file: 'career_profile.md', content: career })
+  return out
+}
+
+/** 全量重投影（幂等）：有事实源 → 写；无 → 不生成文件（缺件语义交给门禁判定）。
+ *  返回本次写入的文件名清单（空数组 = 无事实源，零写入）。 */
+export function projectPersonSnapshots(ws: Workspace, personId: string): string[] {
+  const computed = computePersonSnapshots(ws, personId)
+  for (const c of computed) {
+    ws.write(`persons/${personId}/snapshot/current/${c.file}`, c.content)
   }
-  return written
+  return computed.map((c) => c.file)
 }

@@ -38,7 +38,7 @@ import type { JDMatchScore } from '../../engine/runtime/jd-match-score.ts'
 import type { OpportunityProposal } from '../../engine/storage/opportunity-proposal-registry.ts'
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
-import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead, SalaryBenchmarkEntry } from '../../engine/ir/schema.ts'
+import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead, SalaryBenchmarkEntry, PersonHealth } from '../../engine/ir/schema.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -676,6 +676,11 @@ export class EngineClient {
 
   listPersons(): Promise<Person[]> {
     return this.rpc<Person[]>(METHODS.listPersons)
+  }
+
+  /** Person Health（ADR-031：单一计算源——UI 不发明健康判定，只投影 verdict） */
+  personHealth(personId: string): Promise<PersonHealth> {
+    return this.rpc<PersonHealth>(METHODS.personHealth, { personId })
   }
 
   /** 优势亮点 upsert（Summary Strength Contract v0.2：引用型资产——Engine Registration Owner 校验 + 写文件） */

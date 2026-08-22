@@ -999,3 +999,22 @@ export interface HealthReport {
   generatedAt: string
   version: number
 }
+
+/** Person Health（ADR-031 Person Projection Health Boundary——Accepted 冻结，2026-08-22）。
+ *  单一计算源：UI/Agent/CI 一律经 personHealth()/`person/health` RPC 判定，
+ *  禁止消费端各自发明健康逻辑。纯读派生零写入（Health 永不自动修复）。
+ *  **verdict 不代表数据正确性，仅代表系统一致性**——healthy = 事实-投影-事件链路自洽，
+ *  不隐含「职业建议正确」（职业选择正确性属 Human Authority，不在 Health 判定域）。 */
+export interface PersonHealthCheck {
+  id: string // 稳定 id（H1-identity.md-missing / H2-pref-nokeys / H3-skill_inventory.md / H4-role-xxx）
+  type: 'H1' | 'H2' | 'H3' | 'H4'
+  severity: 'error' | 'warn'
+  message: string
+}
+export interface PersonHealth {
+  personId: string
+  name: string
+  verdict: 'healthy' | 'warning' | 'error'
+  checks: PersonHealthCheck[]
+  summary: string
+}

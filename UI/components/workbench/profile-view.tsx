@@ -101,8 +101,20 @@ function useProfileDims(): { dims: ProfileDim[]; stats: { confirmed: number; pen
 /** 身份区：头像（呼吸光晕 = 画像正在被维护）+ 渠道/初始化徽章 + AI 叙事摘要 */
 function IdentityCard() {
   const person = useAppStore((s) => s.currentPerson())
+  const health = useAppStore((s) => (person.personId ? s.personHealths[person.personId] : undefined))
   const { dims, stats } = useProfileDims()
   const direction = dims.find((d) => d.key === 'direction')!
+
+  const healthMeta =
+    health === undefined
+      ? null
+      : health.verdict === 'healthy'
+        ? { label: '健康一致', color: COLORS.riskLow, detail: health.summary }
+        : {
+            label: health.verdict === 'warning' ? `⚠ 一致性告警 ${health.checks.length}` : `✗ 一致性异常 ${health.checks.length}`,
+            color: health.verdict === 'warning' ? COLORS.riskMedium : COLORS.riskHigh,
+            detail: health.checks.map((c) => `[${c.id}] ${c.message}`).join('；'),
+          }
 
   const summary =
     person.initStatus === 'pending'
@@ -172,6 +184,15 @@ function IdentityCard() {
             }}
             variant="outlined"
           />
+          {healthMeta && (
+            <Chip
+              size="small"
+              label={healthMeta.label}
+              title={healthMeta.detail}
+              sx={{ height: 20, fontSize: 10.5, color: healthMeta.color, borderColor: healthMeta.color }}
+              variant="outlined"
+            />
+          )}
         </Stack>
         <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.65 }}>{summary}</Typography>
       </Box>
@@ -525,9 +546,13 @@ export function ProfileView() {
   // 经历/技能维度数据源 = 引擎初始化资产（candidates.md）——挂载即拉，不依赖 agent-page 先访问
   const personId = useAppStore((s) => s.currentPerson().personId)
   const loadInitCandidates = useAppStore((s) => s.loadInitCandidates)
+  const pullPersonHealth = useAppStore((s) => s.pullPersonHealth)
   useEffect(() => {
-    if (personId) void loadInitCandidates(personId)
-  }, [personId, loadInitCandidates])
+    if (personId) {
+      void loadInitCandidates(personId)
+      void pullPersonHealth(personId)
+    }
+  }, [personId, loadInitCandidates, pullPersonHealth])
 
   return (
     <Box sx={{ p: 2.5, maxWidth: 900, mx: 'auto', width: '100%' }}>

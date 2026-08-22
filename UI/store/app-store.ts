@@ -30,7 +30,7 @@ import {
   SESSIONS,
   STAGES,
 } from '../data/mock-data'
-import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation } from '../../engine/ir/schema.ts'
+import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation, PersonHealth } from '../../engine/ir/schema.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
@@ -243,6 +243,8 @@ interface AppState {
   /** 个人估价卡投影（二期 §7.5；引擎 salary-benchmarks/valuation——三态对照 + 缺数据状态） */
   valuationCard: SalaryValuationCard | null;
   persons: Person[];
+  /** Person Health（ADR-031：key = personId；单一计算源——UI 只投影 verdict，不发明健康判定） */
+  personHealths: Record<string, PersonHealth>;
   personStages: Record<number, DecisionStage[]>;
   agentDraft: string;
   pendingPrompt: string | null;
@@ -347,6 +349,8 @@ interface AppState {
   setInitCandidates: (candidates: InitCandidate[]) => void;
   /** 从引擎重拉候选（刷新/重进入初始化空间后恢复右侧） */
   loadInitCandidates: (personId: string) => Promise<void>;
+  /** Person Health（ADR-031）：单一计算源拉取当前人健康（UI 只投影 verdict） */
+  pullPersonHealth: (personId: string) => Promise<void>;
   /** 候选裁决（切片 2.3）：确认/拒绝/修改 → candidates.md + resolution 事件 + 本地投影更新 */
   resolveInitCandidate: (
     candidateId: string,
@@ -602,6 +606,7 @@ export const useAppStore = create<AppState>()(
       salaryBenchmarks: [],
       valuationCard: null,
       persons: PERSONS,
+      personHealths: {},
       personStages: buildInitialPersonStages(),
       agentDraft: '',
       pendingPrompt: null,
@@ -991,6 +996,16 @@ export const useAppStore = create<AppState>()(
       useAppStore.setState({ initCandidates: list })
     } catch {
       // offline/旧引擎：保持现有
+    }
+  },
+
+  pullPersonHealth: async (personId) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+    try {
+      const h = await engine.personHealth(personId)
+      useAppStore.setState((s) => ({ personHealths: { ...s.personHealths, [personId]: h } }))
+    } catch {
+      // offline/旧引擎：保持现状（无角标 = 不假装健康判定）
     }
   },
 

@@ -224,6 +224,10 @@ try {
   const createPerson = await rpc(client, METHODS.createPersonSession, { name: '甲', sourceMode: 'interview' })
   check('person/session/create', typeof createPerson.result?.personId === 'string', JSON.stringify(createPerson))
   const dirPerson = createPerson.result?.personId ?? ''
+  // ADR-031：person/health（单一计算源——新 person 空资产 = healthy（空链路自洽））
+  const health = await rpc(client, METHODS.personHealth, { personId: dirPerson })
+  check('person/health verdict（空资产 → healthy）', health.result?.verdict === 'healthy', JSON.stringify(health.result))
+  check('person/health checks 结构', Array.isArray(health.result?.checks), JSON.stringify(health.result))
   ws.write(`persons/${dirPerson}/facts/education.md`, '# 教育\n\n| 学校 |\n|------|\n| University-A |\n')
   ws.write(`persons/${dirPerson}/directions/20260821-方向甲.md`, [
     '---',

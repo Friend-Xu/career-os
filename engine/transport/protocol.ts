@@ -58,6 +58,8 @@ export const METHODS = {
   decisionGet: 'decisions/get',
   /** 人列表（投影） */
   listPersons: 'persons/list',
+  /** Person Health（ADR-031：params { personId } → PersonHealth；单一计算源——UI/Agent/CI 禁止自发明健康判定） */
+  personHealth: 'person/health',
   /** 优势亮点 upsert（Summary Strength Contract v0.2：params { personId, items: [{text, claimIds, evidenceIds}] } →
    *  SummaryStrength[]；Engine Registration Owner——引用存在 + 可消费校验，写 snapshot/summary_strengths.md） */
   upsertSummaryStrengths: 'person/summary-strengths/upsert',
