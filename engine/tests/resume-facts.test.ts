@@ -7,7 +7,8 @@ import type { LanguageModel } from 'ai'
 import { initWorkspace, type Workspace } from '../storage/workspace.ts'
 import { appendCandidates, createPersonSession, listCandidates, parseEducationPayload, parseExperiencePayload } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
-import { ResumeFactsSchema, resumeFactsToCandidates, writeResumeFactsArtifact, generateResumeCandidates, readResumeFactsArtifact, latestResumeArtifactId, type ResumeFacts } from '../runtime/resume-facts.ts'
+import { appendSessionTurn } from '../storage/person-watcher.ts'
+import { ResumeFactsSchema, resumeFactsToCandidates, writeResumeFactsArtifact, generateResumeCandidates, readResumeFactsArtifact, latestResumeArtifactId, interviewUserText, dedupeCandidates, type ResumeFacts } from '../runtime/resume-facts.ts'
 import type { Logger } from '../logger.ts'
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as unknown as Logger
@@ -149,5 +150,37 @@ test('appendCandidates 兼容：generator 输出可直接走既有候选通道�
   const listed = listCandidates(ws, personId)
   assert.equal(listed.length, 12)
   assert.ok(listed.every((c) => c.source === 'resume'))
+  rmSync(ws.paths.root, { recursive: true, force: true })
+})
+
+test('访谈通道：resumeFactsToCandidates(source=user_reported) 源传播', () => {
+  const cands = resumeFactsToCandidates(SAMPLE_FACTS, 'user_reported')
+  assert.equal(cands.length, 12)
+  assert.ok(cands.every((c) => c.source === 'user_reported'))
+})
+
+test('访谈通道：dedupeCandidates 按 category|content 去重（纯函数）', () => {
+  const existing = [
+    { category: 'education', content: 'University-A 机械工程 本科（2019-2023）' },
+    { category: 'skill', content: 'SolidWorks（精通）' },
+  ]
+  const fresh = resumeFactsToCandidates(SAMPLE_FACTS, 'user_reported')
+  const deduped = dedupeCandidates(existing, fresh)
+  assert.equal(deduped.length, 10) // 12 - 2（教育/技能各去重 1）
+  assert.ok(deduped.every((c) => !(c.category === 'education' && c.content.includes('University-A'))))
+})
+
+test('访谈通道：interviewUserText 只取 User 轮次；无记录/过短 → fail fast', () => {
+  const ws = testWorkspace()
+  const { personId } = createPersonSession(ws, { name: '某某', sourceMode: 'interview' })
+  // 空模板（无 User 轮次）→ 过短
+  assert.throws(() => interviewUserText(ws, personId), /过短/)
+  // 追加 User/Agent 轮次 → 只取 User
+  appendSessionTurn(ws, { personId, role: 'user', content: '我2019到2023年就读University-A机械工程本科，毕业后在Company-A做机械工程师，会SolidWorks，期望城市City-X薪资11-13K。', timestamp: '2026-08-22T01:00:00Z' })
+  appendSessionTurn(ws, { personId, role: 'assistant', content: '（Agent 提问：你做过哪些项目？）', timestamp: '2026-08-22T01:01:00Z' })
+  const text = interviewUserText(ws, personId)
+  assert.ok(text.includes('University-A'))
+  assert.ok(text.includes('City-X'))
+  assert.ok(!text.includes('你做过哪些项目'), 'Agent 轮次不应进入提取文本')
   rmSync(ws.paths.root, { recursive: true, force: true })
 })

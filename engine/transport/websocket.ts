@@ -162,7 +162,7 @@ import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
 import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
 import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFieldsDirect } from '../runtime/jd-extract.ts'
-import { generateResumeCandidates } from '../runtime/resume-facts.ts'
+import { generateInterviewCandidates, generateResumeCandidates } from '../runtime/resume-facts.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
 import { checkAgentHealth } from '../runtime/agent-health.ts'
 import {
@@ -835,16 +835,18 @@ function extractJdParams(v: unknown): { jdText: string } {
   return { jdText: text }
 }
 
-/** person/candidates/generate 入参校验（RPC 边界；artifactId 可选——缺省取最新） */
-function generateResumeCandidatesParams(v: unknown): { personId: string; artifactId?: string } {
+/** person/candidates/generate 入参校验（RPC 边界；artifactId 可选——缺省取最新；
+ *  source: resume（默认，简历通道）| interview（无简历访谈通道）） */
+function generateResumeCandidatesParams(v: unknown): { personId: string; artifactId?: string; source: 'resume' | 'interview' } {
   if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).personId !== 'string') {
-    throw new Error('person/candidates/generate 需要 params { personId, artifactId? }')
+    throw new Error('person/candidates/generate 需要 params { personId, artifactId?, source? }')
   }
-  const p = v as { personId: string; artifactId?: unknown }
+  const p = v as { personId: string; artifactId?: unknown; source?: unknown }
   if (!/^person_\d{3}$/.test(p.personId)) throw new Error(`personId 非法：${p.personId}`)
+  const source = p.source === 'interview' ? 'interview' : 'resume'
   const artifactId = p.artifactId === undefined || p.artifactId === '' ? undefined : String(p.artifactId)
   if (artifactId !== undefined && !/^resume-\d{3}$/.test(artifactId)) throw new Error(`artifactId 非法：${artifactId}`)
-  return { personId: p.personId, ...(artifactId !== undefined ? { artifactId } : {}) }
+  return { personId: p.personId, source, ...(artifactId !== undefined ? { artifactId } : {}) }
 }
 
 /** jobs/match：岗位技能来源 = 岗位智能段 capabilities（jd-analysis 产物，唯一匹配输入）→ computeGap → GapResult。
@@ -2420,13 +2422,16 @@ export async function startServer(opts: {
     [METHODS.generateResumeCandidates]: async (params) => {
       // P0-1 确定性通道：提取文本 → Resume Facts（generateObject）→ 确定性映射 → Candidate Inbox。
       // Agent 不参与候选生产；facts.json 存在则复用（幂等，不重复提取/追加）。
+      // source=interview：无简历通道——intake 访谈记录（User 轮次）→ Facts → Inbox（内容去重）。
       const p = generateResumeCandidatesParams(params)
       if (!scanPersons(workspace).some((x) => x.personId === p.personId)) throw new Error(`person 不存在：${p.personId}`)
       const conn = resolveAgentConnection(config)
       if (!conn) throw new Error('未配置已启用的服务商——请在设置页添加并启用服务商后再试')
       const taskModel = resolveTaskModel(conn, config, 'resume_extract')
       const { model } = resolveLanguageModel({ ...conn, model: taskModel })
-      return generateResumeCandidates(workspace, p, model, logger)
+      return p.source === 'interview'
+        ? generateInterviewCandidates(workspace, p.personId, model, logger)
+        : generateResumeCandidates(workspace, p, model, logger)
     },
     [METHODS.agentHealth]: () => checkAgentHealth(config, logger),
   }

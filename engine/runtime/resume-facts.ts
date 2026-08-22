@@ -147,7 +147,7 @@ export async function extractResumeFactsDirect(text: string, model: LanguageMode
 export interface CandidateInput {
   category: string
   content: string
-  source: 'resume'
+  source: 'resume' | 'user_reported'
   payload?: string
 }
 
@@ -174,7 +174,7 @@ function kv(...pairs: [string, string | undefined][]): string {
 }
 
 /** 教育 → 候选（content 原文可读；payload 供 Registration/投影结构化） */
-function educationCandidate(e: ResumeEducation): CandidateInput | null {
+function educationCandidate(e: ResumeEducation, source: CandidateInput['source'] = 'resume'): CandidateInput | null {
   if (!e.school?.trim()) return null
   const span = yearSpan(e.startYear, e.endYear)
   const head = [e.school.trim(), e.major?.trim(), e.degree].filter(Boolean).join(' ')
@@ -186,33 +186,33 @@ function educationCandidate(e: ResumeEducation): CandidateInput | null {
     ['起', e.startYear !== undefined ? String(e.startYear) : undefined],
     ['止', e.endYear !== undefined ? String(e.endYear) : undefined],
   )
-  return { category: 'education', content, source: 'resume', payload: payload || undefined }
+  return { category: 'education', content, source, payload: payload || undefined }
 }
 
 /** 经历 → 候选：job 带载荷；project/competition/gap 不附加第四段（与采集协议一致） */
-function experienceCandidate(x: ResumeExperience): CandidateInput | null {
+function experienceCandidate(x: ResumeExperience, source: CandidateInput['source'] = 'resume'): CandidateInput | null {
   const span = [x.start, x.end].filter(Boolean).join('-') || ''
   const range = span ? `（${span}）` : ''
   const head = [x.company?.trim(), x.role?.trim()].filter(Boolean).join(' ')
   if (x.type === 'job') {
     const content = `${head}${range}` || EXPERIENCE_TYPE_LABEL.job
     const payload = kv(['公司', x.company], ['岗位', x.role], ['起', x.start], ['止', x.end])
-    return { category: 'experience', content, source: 'resume', payload: payload || undefined }
+    return { category: 'experience', content, source, payload: payload || undefined }
   }
   const label = EXPERIENCE_TYPE_LABEL[x.type]
   const content = [`${[head, label].filter(Boolean).join(' ')}${range}`, x.summary?.trim()].filter(Boolean).join('：')
-  return { category: 'experience', content: content || label, source: 'resume' }
+  return { category: 'experience', content: content || label, source }
 }
 
-function skillCandidate(s: ResumeSkill): CandidateInput | null {
+function skillCandidate(s: ResumeSkill, source: CandidateInput['source'] = 'resume'): CandidateInput | null {
   if (!s.skill?.trim()) return null
   const content = `${s.skill.trim()}${s.level ? `（${s.level}）` : ''}`
   const payload = kv(['技能', s.skill], ['级别', s.level], ['场景', s.context])
-  return { category: 'skill', content, source: 'resume', payload: payload || undefined }
+  return { category: 'skill', content, source, payload: payload || undefined }
 }
 
 /** 约束 → 候选：一行候选可携带多键（意向岗位/优先级/薪资/城市/现居），与既有投影解析同源 */
-function constraintCandidate(c: ResumeConstraintItem): CandidateInput | null {
+function constraintCandidate(c: ResumeConstraintItem, source: CandidateInput['source'] = 'resume'): CandidateInput | null {
   const parts = [
     c.jobRole && `求职意向：${c.jobRole.trim()}`,
     c.salary && `期望薪资：${c.salary.trim()}`,
@@ -228,30 +228,31 @@ function constraintCandidate(c: ResumeConstraintItem): CandidateInput | null {
     ['城市', c.city],
     ['现居', c.location],
   )
-  return { category: 'constraint', content: parts.join('；'), source: 'resume', payload: payload || undefined }
+  return { category: 'constraint', content: parts.join('；'), source, payload: payload || undefined }
 }
 
-/** 确定性映射：ResumeFacts → Candidate 输入（source=resume；顺序：教育→经历→技能→约束→兴趣） */
-export function resumeFactsToCandidates(facts: ResumeFacts): CandidateInput[] {
+/** 确定性映射：ResumeFacts → Candidate 输入（顺序：教育→经历→技能→约束→兴趣；
+ *  source：resume（简历通道）/ user_reported（访谈通道）） */
+export function resumeFactsToCandidates(facts: ResumeFacts, source: CandidateInput['source'] = 'resume'): CandidateInput[] {
   const out: CandidateInput[] = []
   for (const e of facts.education) {
-    const c = educationCandidate(e)
+    const c = educationCandidate(e, source)
     if (c) out.push(c)
   }
   for (const x of facts.experience) {
-    const c = experienceCandidate(x)
+    const c = experienceCandidate(x, source)
     if (c) out.push(c)
   }
   for (const s of facts.skills) {
-    const c = skillCandidate(s)
+    const c = skillCandidate(s, source)
     if (c) out.push(c)
   }
   for (const c of facts.constraints) {
-    const cand = constraintCandidate(c)
+    const cand = constraintCandidate(c, source)
     if (cand) out.push(cand)
   }
   for (const i of facts.interests) {
-    if (i.trim()) out.push({ category: 'interest', content: `兴趣方向：${i.trim()}`, source: 'resume' })
+    if (i.trim()) out.push({ category: 'interest', content: `兴趣方向：${i.trim()}`, source })
   }
   return out
 }
@@ -369,9 +370,65 @@ function listCandidateCount(ws: Workspace, personId: string): number {
 function appendCandidatesSafe(
   ws: Workspace,
   personId: string,
-  candidates: { category: string; content: string; source: 'resume'; payload?: string }[],
+  candidates: { category: string; content: string; source: 'resume' | 'user_reported'; payload?: string }[],
 ): { id: string; category: string; content: string; status: string }[] {
   if (candidates.length === 0) return []
   const added = appendCandidates(ws, { personId, candidates })
   return added.map((c) => ({ id: c.id, category: c.category, content: c.content, status: c.status }))
+}
+
+// ─── 访谈通道（无简历）：User 轮次 → Facts → Candidate Inbox ────────────────────────
+// 用户回答经确定性通道入 Inbox（P0-1 修复方向：Agent 只提问/答疑，不打印候选协议；
+// intake/session-001.md 中 **User:** 轮次为原始认知输入——每次全量重提 + 内容去重（幂等）。 */
+
+/** intake/session-001.md → User 轮次文本（`### Turn` 块中 **User:** 段；无（非本轮角色）或过短 → 抛错） */
+export function interviewUserText(ws: Workspace, personId: string): string {
+  const rel = `persons/${personId}/intake/session-001.md`
+  if (!ws.exists(rel)) throw new Error('未找到访谈记录（persons/{personId}/intake/session-001.md）——请先创建 Person')
+  const md = ws.read(rel)
+  const turns: string[] = []
+  const re = /### Turn[\s\S]*?\*\*User:\*\*\s*\n\s*\n([\s\S]*?)(?=\n\n### Turn|\n\n## Status|$)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(md)) !== null) {
+    const t = m[1]!.trim()
+    if (t) turns.push(t)
+  }
+  const text = turns.join('\n')
+  if (text.trim().length < 20) throw new Error('访谈记录过短——请先在初始化对话中回答几个问题（可用内容不足 20 字）')
+  return text
+}
+
+/** 去重：现有清单中 category|content 已存在 → 跳过（再次生成不重复登记；纯函数） */
+export function dedupeCandidates(
+  existing: { category: string; content: string }[],
+  fresh: CandidateInput[],
+): CandidateInput[] {
+  const seen = new Set(existing.map((c) => `${c.category}|${c.content.trim()}`))
+  return fresh.filter((c) => !seen.has(`${c.category}|${c.content.trim()}`))
+}
+
+export interface GenerateInterviewCandidatesResult extends GenerateResumeCandidatesResult {
+  source: 'interview'
+}
+
+/** 访谈通道候选生成（P0-1）：无简历用户回答 → 确定性入 Inbox。
+ *  - 每次全量重提（访谈记录持续累积，不缓存 facts）
+ *  - 内容去重（category+content 已存在 → 跳过；再次生成不重复登记）
+ *  - 与简历通道同门禁：manifest → candidate_review */
+export async function generateInterviewCandidates(
+  ws: Workspace,
+  personId: string,
+  model: LanguageModel,
+  logger: Logger,
+): Promise<GenerateInterviewCandidatesResult> {
+  const text = interviewUserText(ws, personId)
+  const facts = await extractResumeFactsDirect(text, model, logger)
+  const candidates = resumeFactsToCandidates(facts, 'user_reported')
+  const fresh = dedupeCandidates(listCandidates(ws, personId), candidates)
+  const added = appendCandidatesSafe(ws, personId, fresh)
+  const cur = readManifestInitState(ws, personId)
+  if (cur === 'uploading' || cur === 'extracting' || cur === 'in_progress') {
+    setManifestInitState(ws, personId, 'candidate_review')
+  }
+  return { artifactId: 'interview-001', facts, added, reused: false, source: 'interview' }
 }
