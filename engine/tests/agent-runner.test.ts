@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
+import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { initWorkspace } from '../storage/workspace.ts'
 import type { AgentEvent } from '../agent/adapter/claude.ts'
 import { startFakeAnthropicServer, textTurn, toolUseTurn } from './agent/fake-anthropic-server.ts'
@@ -32,7 +33,8 @@ function runnerOpts(server: { url: string }, workspace: ReturnType<typeof initWo
   return {
     task: '测试任务',
     model: createAnthropic({ apiKey: 'fake-key', baseURL: `${server.url}/anthropic` })('fake-model'),
-    workspace,
+    // Tool Assembly Layer：builtin 文件工具源（治理元数据与工具同源）
+    sources: [{ tools: buildFsTools(workspace), meta: FS_TOOL_META }],
     allowedTools: ['Read', 'Write', 'Edit', 'Grep', 'Glob'],
     permissionMode: 'bypassPermissions' as const,
     ...extra,
@@ -63,6 +65,9 @@ test('工具循环：Write 落盘 + tool_start/tool_done 事件 + done', async (
   await server.close()
   assert.ok(events.some((e) => e.type === 'tool_start' && e.name === 'Write'), '应有 tool_start Write')
   assert.ok(events.some((e) => e.type === 'tool_done' && e.name === 'Write'), '应有 tool_done Write')
+  // Tool Source 透传（T1 审计面）：事件带 source，认知面（工具名）无供应商标识
+  assert.ok(events.some((e) => e.type === 'tool_start' && e.name === 'Write' && e.source === 'builtin'), 'tool_start 带 source=builtin')
+  assert.ok(events.some((e) => e.type === 'tool_done' && e.name === 'Write' && e.source === 'builtin'), 'tool_done 带 source=builtin')
   assert.equal(readFileSync(join(ws.paths.root, 'probe.md'), 'utf8'), '你好')
   const done = events.find((e) => e.type === 'done')
   assert.ok(done && done.type === 'done' && done.result === '已写入')

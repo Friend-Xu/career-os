@@ -2,8 +2,12 @@
  * AgentRunner 能力面（ADR-030 两条路径之二）：task → AsyncIterable<AgentEvent>（多轮工具工作流）。
  * - 底层 = Vercel AI SDK streamText（工具循环在进程内；无 CLI/无登录态/无代理）
  * - 事件归一化与 claude adapter 同形状（AgentHandle { events, answer }）——AgentRuntime/UI 零改动
- * - 工具集 = allowedTools ∩ 文件工具（Read/Write/Edit/Grep/Glob）+ ask_user_question（恒可用，
- *   对齐旧 CLI 对 AskUserQuestion 的特殊放行）
+ * - 工具装配 = Tool Assembly Layer（Tool Runtime 第二阶段）：三级交集
+ *   StageSpec.task.tools（缺省不收窄）∩ allowedTools（全局白名单）∩ 已注册工具；
+ *   ask_user_question 恒可用（对齐旧 CLI 特殊放行）。装配结果仍只传给 streamText({tools})——
+ *   AI SDK 用法零变化；ToolSource 是运行时治理概念，不进 prompt。
+ * - 工具级审计 trace：logger.trace('tool', { event, name, source, egress, durationMs })——
+ *   认知面（工具名/描述）无供应商标识，审计面（trace）有。
  * - resume 语义：直连模式不消费 resumeSessionId（ADR-030：上下文由引擎按 Artifact 全量重建）
  */
 import { APICallError, stepCountIs, streamText, tool } from 'ai'
@@ -11,17 +15,19 @@ import { z } from 'zod'
 import type { LanguageModel, Tool } from 'ai'
 import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
-import type { Workspace } from '../../storage/workspace.ts'
 import type { AgentEvent, AgentHandle } from '../adapter/claude.ts'
-import { buildFsTools } from '../tools/fs-tools.ts'
-import { buildWebSearchTool, type SearchSession } from '../tools/web-search.ts'
+import { assembleTools, type ToolRuntimeMeta, type ToolSourceDef } from '../tools/tool-assembly.ts'
 
 export interface AgentRunnerOptions {
   task: string
   context?: string
   model: LanguageModel
-  workspace: Workspace
+  /** 工具来源（AgentRuntime 组装：builtin 文件工具 / hosted WebSearch / 后续 mcp·data） */
+  sources: ToolSourceDef[]
+  /** 全局工具白名单（config.agent.allowedTools） */
   allowedTools: string[]
+  /** Stage 级工具声明（StageSpec.task.tools；缺省 = 不收窄；引擎单方决定，客户端不可设） */
+  stageTools?: string[]
   permissionMode: 'acceptEdits' | 'ask' | 'bypassPermissions'
   maxTurns?: number
   /** 单步输出预算（token；Control Plane 按 Stage Policy 下发——见 workflow-registry StageSpec.task.outputBudget）。
@@ -31,8 +37,6 @@ export interface AgentRunnerOptions {
   logger?: Logger
   /** 权限决策源（permissionMode='ask' 时文件工具执行前询问）；缺省 = 直接放行 */
   onPermissionRequest?: (toolName: string) => Promise<boolean>
-  /** WebSearch 检索会话（引擎创建，携带预算/缓存治理面；缺省 = 不注册该工具——白名单交集自然排除） */
-  webSearch?: SearchSession
 }
 
 interface PendingQuestion {
@@ -113,13 +117,14 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
     // 无待答提问的 answer 忽略（提问卡片流程决定调用时序）
   }
 
-  // ─── 工具集：allowedTools ∩ {文件工具 + WebSearch} + ask_user_question（恒可用）──────
-  const fsTools = buildFsTools(opts.workspace)
-  const tools: Record<string, Tool<any, any>> = {}
-  for (const name of opts.allowedTools) {
-    if (fsTools[name] !== undefined) tools[name] = fsTools[name]
-    else if (name === 'WebSearch' && opts.webSearch !== undefined) tools[name] = buildWebSearchTool(opts.webSearch)
-  }
+  // ─── 工具装配：Stage 声明 ∩ 全局白名单 ∩ 已注册（Tool Assembly Layer）──────
+  const assembled = assembleTools({
+    sources: opts.sources,
+    allowedTools: opts.allowedTools,
+    stageTools: opts.stageTools,
+  })
+  const tools: Record<string, Tool<any, any>> = assembled.tools
+  const meta: Record<string, ToolRuntimeMeta> = assembled.meta
   const askUserQuestion = tool({
     description: '向用户提问（多选项卡片；await 用户选择后返回答案文本）',
     inputSchema: z.object({
@@ -138,13 +143,36 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
     },
   })
   tools.ask_user_question = askUserQuestion
+  meta.ask_user_question = { source: 'builtin', egress: 'local', traceScope: 'ask' }
+
+  /** 工具级审计 trace（T4）：事件 + 来源 + 耗时——trace 面必带 source，认知面（描述）无供应商标识 */
+  const traceTool = (event: 'tool_start' | 'tool_done' | 'tool_denied' | 'tool_error', name: string, extra?: Record<string, unknown>): void => {
+    const m = meta[name]
+    if (opts.logger === undefined || m === undefined) return
+    opts.logger.trace('tool', { event, name, source: m.source, egress: m.egress, ...extra })
+  }
 
   const executeGuarded = async (name: string, exec: () => PromiseLike<string>): Promise<string> => {
+    const startedAt = Date.now()
+    traceTool('tool_start', name)
     if (opts.permissionMode === 'ask' && opts.onPermissionRequest !== undefined) {
       const ok = await opts.onPermissionRequest(name)
-      if (!ok) return '用户拒绝了工具调用'
+      if (!ok) {
+        traceTool('tool_denied', name, { durationMs: Date.now() - startedAt })
+        return '用户拒绝了工具调用'
+      }
     }
-    return exec()
+    try {
+      const out = await exec()
+      traceTool('tool_done', name, { durationMs: Date.now() - startedAt })
+      return out
+    } catch (err) {
+      traceTool('tool_error', name, {
+        durationMs: Date.now() - startedAt,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
   }
   const wrappedTools: Record<string, Tool<any, any>> = {}
   for (const [name, t] of Object.entries(tools)) {
@@ -191,13 +219,17 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
             // 只报告已注册工具（未注册调用由 SDK 自动回错误结果，不上报 tool_start——避免误导 UI）
             if (!toolStarted.has(chunk.toolCallId) && chunk.toolName in wrappedTools) {
               toolStarted.add(chunk.toolCallId)
-              push({ type: 'tool_start', name: chunk.toolName })
+              const m = meta[chunk.toolName]
+              push({ type: 'tool_start', name: chunk.toolName, ...(m !== undefined ? { source: m.source } : {}) })
             }
           }
         },
         onStepFinish: ({ toolCalls }) => {
           for (const call of toolCalls) {
-            if (call.toolName in wrappedTools) push({ type: 'tool_done', name: call.toolName })
+            if (call.toolName in wrappedTools) {
+              const m = meta[call.toolName]
+              push({ type: 'tool_done', name: call.toolName, ...(m !== undefined ? { source: m.source } : {}) })
+            }
           }
         },
       })
@@ -233,7 +265,6 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
           sessionId: null,
           task: opts.task,
           contextLength: opts.context?.length ?? 0,
-          cwd: opts.workspace.paths.root,
           permissionMode: opts.permissionMode,
           resume: null,
           maxTurns: opts.maxTurns ?? null,

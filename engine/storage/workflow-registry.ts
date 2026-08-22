@@ -86,6 +86,14 @@ export interface StageSpec {
      * 语义=单次 assistant 回合（每次工具调用回合独立计）。
      */
     outputBudget: number
+    /**
+     * Stage 级工具集声明（Tool Runtime 第二阶段 P1）：本阶段允许装配的工具名（收窄集）。
+     * 缺省 = 不声明 = 继承全局白名单 config.agent.allowedTools（存量阶段行为不变）。
+     * 声明后装配 = 本声明 ∩ 全局白名单 ∩ 已注册工具（交集语义，只收窄不扩大）；
+     * 声明引擎未知工具名 → 任务启动 fail fast（Tool Assembly Layer 校验）。
+     * ask_user_question 恒可用，不在此声明。
+     */
+    tools?: string[]
   }
 }
 

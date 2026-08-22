@@ -23,7 +23,7 @@ import type {
   SDKUserMessage,
   SettingSource,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
+import type { AgentError, AgentQuestion, ToolSource } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
 
 // ─── 归一化事件（编排层/前端只消费这些）──────────────────────────────────────
@@ -32,8 +32,8 @@ export type { AgentQuestion }
 
 export type AgentEvent =
   | { type: 'text_delta'; text: string }
-  | { type: 'tool_start'; name: string }
-  | { type: 'tool_done'; name: string }
+  | { type: 'tool_start'; name: string; source?: ToolSource }
+  | { type: 'tool_done'; name: string; source?: ToolSource }
   | { type: 'thinking_start' }
   | { type: 'thinking_delta'; text: string }
   | { type: 'thinking_stop' }

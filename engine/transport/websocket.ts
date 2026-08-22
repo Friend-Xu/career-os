@@ -1669,12 +1669,16 @@ export async function startServer(opts: {
       // 编译 Envelope 注入（系统级边界，与用户消息分离；校验失败 throw = Agent 启动被拒）
       let stageEnvelope = ''
       let stageBudget: number | undefined
+      let stageTools: string[] | undefined
       if (p.workflowId !== undefined && p.stageId !== undefined) {
         const compiled = compileStageTask(workspace, p.workflowId, p.stageId as StageId)
         stageEnvelope = compiled.envelope
         // Stage Policy（ADR-030 收尾）：输出预算 = StageSpec.task.outputBudget（引擎单方决定，
         // 客户端不可设——agentStartParams 不接收该字段）。非 Stage 通话 = undefined → runner 8K 默认。
         stageBudget = getStageSpec(p.stageId as StageId)?.task.outputBudget
+        // Stage 工具声明（Tool Runtime 第二阶段）：StageSpec.task.tools（缺省 = 不收窄，
+        // 继承全局白名单——装配层三级交集）。非 Stage 通话 = undefined。
+        stageTools = getStageSpec(p.stageId as StageId)?.task.tools
       }
       // ADR-030 Step 6：直连唯一路径——未配置服务商 → fail fast（不再走 CLI 登录态）
       const conn = resolveAgentConnection(config)
@@ -1686,6 +1690,7 @@ export async function startServer(opts: {
           ...p,
           model: resolveModel(taskConn, p.model),
           outputBudget: stageBudget,
+          stageTools,
           context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n'),
         },
         {

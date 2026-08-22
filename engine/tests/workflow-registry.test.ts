@@ -351,6 +351,15 @@ test('Stage Policy：每阶段声明输出预算（正整数）；getStageSpec �
   assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 8192)
 })
 
+test('Stage 工具声明（Tool Runtime 第二阶段）：存量 4 阶段不声明 = 继承全局白名单（机制先行、策略后调）', () => {
+  // 声明机制已落地（StageSpec.task.tools 可选），存量阶段行为不变——若未来收窄（如
+  // fact_collection 禁 WebSearch），此处改断言并连带真机验收。
+  for (const s of CAREER_DIRECTION_STAGES) {
+    assert.equal(s.task.tools, undefined, `${s.id} 不应声明 tools（策略后调）`)
+    assert.equal(getStageSpec(s.id)?.task.tools, undefined)
+  }
+})
+
 test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停止条件，不自行推进）', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)

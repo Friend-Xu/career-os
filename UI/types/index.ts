@@ -27,6 +27,7 @@ import type {
   CareerClaim,
   ClaimCoverageRow,
   SearchStats,
+  ToolSource,
 } from '../../engine/ir/schema.ts';
 import type { ResumeDocument, ResumeBullet, ResumeSection, ResumeIdentityEntry } from '../../engine/ir/resume.ts';
 import type { AgentContextBundle } from '../../engine/ir/agent-task.ts';
@@ -46,6 +47,7 @@ export type { ApplicationView };
 export type { GapResult };
 export type { HealthReport };
 export type { SearchStats };
+export type { ToolSource };
 export type { RiskLevel };
 export type { ApplicationStatus };
 export type { FollowUpState };

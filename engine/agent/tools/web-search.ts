@@ -21,6 +21,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import type { WebSearchMode } from '../providers/capabilities.ts'
 import type { Logger } from '../../logger.ts'
+import type { ToolRuntimeMeta } from './tool-assembly.ts'
 
 export interface WebSearchProvider {
   /** Responses API 根（如 https://api.deepseek.com；anthropic 通道 baseUrl 会剥 /anthropic 后缀） */
@@ -281,7 +282,16 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
   }
 }
 
-// ─── 客户端工具（streamText 工具循环）───────────────────────────────────────
+/** 客户端工具（streamText 工具循环）─────────────────────────────────────── */
+
+/** WebSearch 治理元数据（Tool Assembly Layer）：hosted 源 = provider 托管检索（数据出境 external）；
+ *  budget 由 AgentRuntime 组装时注入（config.agent.search.budgetPerTask）；trace 命名空间与
+ *  Session 内部 trace('web_search', …) 前缀一致（P3 指标板聚合源）。 */
+export const WEB_SEARCH_TOOL_META: ToolRuntimeMeta = {
+  source: 'hosted',
+  egress: 'external',
+  traceScope: 'web_search',
+}
 
 /** streamText 客户端工具：Agent 按需调用（权限闸/步数护栏/事件归一全部复用现有循环） */
 export function buildWebSearchTool(session: SearchSession): Tool<any, any> {

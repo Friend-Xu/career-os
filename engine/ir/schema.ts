@@ -1005,15 +1005,20 @@ export interface AgentQuestion {
   multiSelect: boolean
 }
 
+/** 工具来源（Tool Runtime 第二阶段）：运行时治理概念（trace/permission/budget/audit），
+ *  不进 prompt、不进工具描述——Agent 认知层只见能力动词；协议与供应商标识只存在于审计面。 */
+export type ToolSource = 'builtin' | 'hosted' | 'mcp' | 'data'
+
 /**
  * 引擎 → 前端 Agent 事件（WS agent.event 帧 data；权限事件已换为 requestId——canUseTool
  * promise 留在引擎挂起表；session_id 供前端会话存 resume 凭据；thinking_* 归一化自
  * SDK thinking_tokens 系统消息与 thinking 内容块——思考提示 + 折叠思考块展示）
+ * tool_start/tool_done 的 source = 工具来源（additive 可选，v2.9 存量事件无此字段仍合法）
  */
 export type AgentRuntimeEvent =
   | { type: 'text_delta'; text: string }
-  | { type: 'tool_start'; name: string }
-  | { type: 'tool_done'; name: string }
+  | { type: 'tool_start'; name: string; source?: ToolSource }
+  | { type: 'tool_done'; name: string; source?: ToolSource }
   | { type: 'thinking_start' }
   | { type: 'thinking_delta'; text: string }
   | { type: 'thinking_stop' }

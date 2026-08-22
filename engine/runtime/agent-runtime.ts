@@ -13,7 +13,9 @@
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
 import type { WebSearchMode } from '../agent/providers/capabilities.ts'
-import { createSearchSession, type CacheEntry } from '../agent/tools/web-search.ts'
+import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
+import { buildWebSearchTool, createSearchSession, WEB_SEARCH_TOOL_META, type CacheEntry } from '../agent/tools/web-search.ts'
+import type { ToolSourceDef } from '../agent/tools/tool-assembly.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
@@ -53,6 +55,8 @@ export interface AgentStartParams {
   /** 单步输出预算（token；Control Plane 注入——Stage 任务按 StageSpec.task.outputBudget，
    *  普通过话缺省 = runner 8K 默认；客户端不可设，引擎单方决定） */
   outputBudget?: number
+  /** Stage 级工具声明（StageSpec.task.tools；缺省 = 不收窄；客户端不可设，引擎单方决定） */
+  stageTools?: string[]
   /** 模型覆盖（聊天界面切换器；缺省用引擎 config.agent.model） */
   model?: string
   /** API 密钥覆盖（设置页配置；缺省用引擎 config.agent.apiKey） */
@@ -108,28 +112,43 @@ export class AgentRuntime {
     if (!apiKey) throw new Error('未配置已启用的服务商（apiKey）——请在设置页添加并启用服务商后再试')
     if (!model) throw new Error('服务商未登记模型——请在设置页勾选模型后再试')
 
+    // 工具来源组装（Tool Assembly Layer）：builtin 文件工具恒在；hosted WebSearch 按
+    // 现有条件注入（无 provider/off 模式 → 不注册——装配层交集自然排除）。
+    // mcp/data 源随 Tool Runtime 第二阶段 Phase 2/3 加入。
+    const sources: ToolSourceDef[] = [
+      { tools: buildFsTools(workspace), meta: FS_TOOL_META },
+      ...(baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
+        ? [
+            {
+              tools: { WebSearch: buildWebSearchTool(createSearchSession({
+                provider: { baseUrl, apiKey, model, mode: defaults.webSearchMode ?? 'responses' },
+                budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+                cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
+                cache: this.searchCache,
+                logger: this.logger,
+              })) },
+              meta: {
+                WebSearch: {
+                  ...WEB_SEARCH_TOOL_META,
+                  budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+                },
+              },
+            },
+          ]
+        : []),
+    ]
     const handle = createAgentRunner({
       task: params.task,
       context: params.context,
       model: resolveLanguageModel({ apiKey, baseUrl, model, validModels: [model], credentialSource: 'config' }).model,
-      workspace,
+      sources,
       allowedTools: params.allowedTools ?? defaults.allowedTools,
+      stageTools: params.stageTools,
       permissionMode: params.permissionMode ?? defaults.permissionMode,
       maxTurns: params.maxTurns ?? defaults.maxTurns,
       outputBudget: params.outputBudget,
       abortController: abort,
       logger: this.logger,
-      ...(baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
-        ? {
-            webSearch: createSearchSession({
-              provider: { baseUrl, apiKey, model, mode: defaults.webSearchMode ?? 'responses' },
-              budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
-              cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
-              cache: this.searchCache,
-              logger: this.logger,
-            }),
-          }
-        : {}),
       onPermissionRequest: (tool) =>
         new Promise<boolean>((resolve) => {
           const requestId = `p-${++this.permissionSeq}`

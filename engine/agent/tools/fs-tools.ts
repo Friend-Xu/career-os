@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { tool } from 'ai'
 import type { Tool } from 'ai'
 import type { Workspace } from '../../storage/workspace.ts'
+import type { ToolRuntimeMeta } from './tool-assembly.ts'
 
 /** 规范化并校验：Agent 给的路径必须解析在 workspace root 内；越界抛错（fail fast） */
 function safeRelPath(ws: Workspace, input: string): string {
@@ -135,3 +136,13 @@ export function buildFsTools(ws: Workspace): Record<string, Tool<any, any>> {
 
 /** 供测试与 runner 使用的路径校验导出 */
 export { safeRelPath }
+
+/** 文件工具治理元数据（Tool Assembly Layer）：builtin 源 = 数据不出本机（local）；
+ *  无外部调用预算（预算治外部成本）；trace 命名空间 fs。 */
+export const FS_TOOL_META: Record<string, ToolRuntimeMeta> = {
+  Read: { source: 'builtin', egress: 'local', traceScope: 'fs' },
+  Write: { source: 'builtin', egress: 'local', traceScope: 'fs' },
+  Edit: { source: 'builtin', egress: 'local', traceScope: 'fs' },
+  Grep: { source: 'builtin', egress: 'local', traceScope: 'fs' },
+  Glob: { source: 'builtin', egress: 'local', traceScope: 'fs' },
+}
