@@ -748,6 +748,16 @@ export class EngineClient {
     return this.rpc<InitCandidate[]>(METHODS.listCandidates, { personId })
   }
 
+  /** 候选生成（P0-1 确定性通道）：source=resume（简历通道，默认）| interview（无简历访谈通道）。
+   *  简历：提取文本 → Facts（generateObject）→ 确定性映射 → Inbox（facts 缓存幂等）；
+   *  访谈：intake User 轮次 → Facts → Inbox（内容去重幂等）。 */
+  generateCandidates(
+    personId: string,
+    source: 'resume' | 'interview' = 'resume',
+  ): Promise<{ artifactId: string; facts: unknown; added: { id: string; category: string; content: string; status: string }[]; reused: boolean; source?: 'interview' }> {
+    return this.rpc(METHODS.generateResumeCandidates, { personId, source })
+  }
+
   /** 候选裁决（切片 2.3：更新 candidates.md 状态 + 写 resolution 事件） */
   resolveCandidate(params: {
     personId: string

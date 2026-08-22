@@ -351,6 +351,11 @@ interface AppState {
   setInitCandidates: (candidates: InitCandidate[]) => void;
   /** 从引擎重拉候选（刷新/重进入初始化空间后恢复右侧） */
   loadInitCandidates: (personId: string) => Promise<void>;
+  /** 候选生成中（P0-1 确定性通道：简历/访谈 → Facts → Inbox；防重复触发） */
+  generatingCandidates: boolean;
+  /** 候选生成（P0-1 确定性通道）：source=resume（简历通道）| interview（无简历访谈通道）；
+   *  返回新增候选数（内容去重幂等） */
+  generateCandidatesFor: (personId: string, source: 'resume' | 'interview') => Promise<number>;
   /** Person Health（ADR-031）：单一计算源拉取当前人健康（UI 只投影 verdict） */
   pullPersonHealth: (personId: string) => Promise<void>;
   /** Promotion（ADR-032）：拉取当前人选定事实列表（UI 只投影，不判定） */
@@ -625,6 +630,7 @@ export const useAppStore = create<AppState>()(
       personCreateDialogOpen: false,
       initSessionState: 'welcome',
       initCandidates: [],
+      generatingCandidates: false,
       activeResumeId: 'r-dji',
       infopoolFilter: 'all',
       companiesFilter: 'all',
@@ -1013,6 +1019,31 @@ export const useAppStore = create<AppState>()(
     }
   },
 
+  generateCandidatesFor: async (personId, source) => {
+    if (!engine || useAppStore.getState().engineStatus !== 'connected') {
+      useToastStore.getState().push('warning', '引擎离线：候选生成需连接引擎')
+      return 0
+    }
+    useAppStore.setState({ generatingCandidates: true })
+    try {
+      const res = await engine.generateCandidates(personId, source)
+      await useAppStore.getState().loadInitCandidates(personId)
+      const n = res.added.length
+      useToastStore.getState().push(
+        n > 0 ? 'success' : 'info',
+        n > 0
+          ? `已生成 ${n} 条候选（${source === 'interview' ? '访谈' : '简历'}源），请在候选清单逐条确认`
+          : '候选已是最新（无新增）——确认清单后即可推进初始化',
+      )
+      return n
+    } catch (err) {
+      useToastStore.getState().push('warning', `候选生成失败：${err instanceof Error ? err.message : String(err)}`)
+      return 0
+    } finally {
+      useAppStore.setState({ generatingCandidates: false })
+    }
+  },
+
   pullPersonHealth: async (personId) => {
     if (!engine || useAppStore.getState().engineStatus !== 'connected') return
     try {
@@ -1104,26 +1135,20 @@ export const useAppStore = create<AppState>()(
         ? `上下文隔离（必须遵守）：当前初始化对象是「${personName}」，一个全新的 Person——没有历史档案。workspace 中已登记的其他档案：${registeredOthers}；禁止读取或引用它们的内容，也不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。`
         : `上下文隔离：当前初始化对象是「${personName}」，一个全新的 Person——没有历史档案。workspace 中没有其他已登记档案；不要使用全局画像索引作为当前人的数据。只从与用户的对话中采集信息，用户所述以本次对话为准。`
     const lines = [
-      `你是「${personName}」的初始化助手（${resumeChannel ? '简历通道' : '访谈通道'}）。`,
-      '任务：帮助用户建立第一份职业档案（认知基线）——整理"我做过什么 / 掌握什么能力 / 想探索什么方向"，不是替用户做职业决策。',
+      `你是「${personName}」的初始化助手（${resumeChannel ? '简历通道' : '访谈通道'}），角色定位：Interview / Clarify Agent。`,
+      '任务：帮助用户建立第一份职业档案（认知基线）——澄清与补缺，不是替用户做职业决策，也不负责整理候选。',
       '开场白（直接说出，不要分析）："你好，我会帮你建立一份职业档案。这里记录的不只是简历，而是你做过什么、积累了什么能力，以及未来想探索什么方向。这些信息以后会成为职业分析的基础。我们先从你的经历开始。"',
       isolationLine,
+      '候选事实不由本会话生产：简历/访谈候选由系统确定性生成并进入右侧候选清单（Candidate Inbox），用户确认后由引擎登记并投影画像。你只需要：① 引导用户查看并确认候选清单；② 澄清用户疑问；③ 补问简历/访谈中缺失的信息（项目细节、兴趣、偏好约束）。',
+      '禁止输出「候选标记：」等协议行（Agent 已退出候选生产）；禁止自行写候选文件、快照、档案（persons/*/extraction、snapshot、facts、manifest 均归引擎）。',
       resumeChannel
         ? personId
-          ? `采集：先读取 persons/${personId}/documents/resumes/extraction/ 目录中最新编号（resume-00X 中编号最大）的 resume-*.md 文件——这是用户上传简历的提取结果，从中提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；若该目录为空，先引导用户粘贴简历文本。再补问简历外的项目与非正式经历。`
-          : '采集：先引导用户提供简历（粘贴文本），提取候选事实（教育/经历/技能，标注来源：简历）并逐条向用户展示；再补问简历外的项目与非正式经历。'
-        : '采集：渐进式提问，一轮一个问题：教育 → 工作经历 → 项目经历 → 技能 → 约束。',
-      '规则：只能提取候选事实（每轮回答后简短说明"我把它整理为候选信息，稍后可在清单里确认"），不能直接写入档案；不要使用"阶段/进度"表述。',
-      '候选输出（必须遵守）：每次把信息整理为候选时，回复中必须包含一行标记（直接输出文本行，不要放入代码块或加粗）：候选标记：{类别}｜{内容}｜{来源}。类别只能是：教育、经历、技能、约束、兴趣；来源只能是：用户描述、简历。结构化载荷（引擎据此登记投影，缺载荷 = 该候选无法登记）：教育类目必须附加第四段：候选标记：教育｜{内容}｜{来源}｜学校=…；专业=…；学历=…；起=…；止=…（学历取值只能是：高中、大专、本科、硕士、博士；年份为数字如 2019）。工作经历类目必须附加第四段：候选标记：经历｜{内容}｜{来源}｜公司=…；岗位=…；起=…；止=…（起止格式 YYYY.MM 如 2023.07；仍在职写止=至今；载荷与内容一致）。技能类目必须附加第四段：候选标记：技能｜{内容}｜{来源}｜技能=…；级别=…；场景=…（级别取值只能是：熟练、胜任、掌握、入门；场景=该技能的使用场景简述）。约束类目可选附加第四段：候选标记：约束｜{内容}｜{来源}｜薪资=…；城市=…；现居=…（结构化键供引擎投影规范字段；无法结构化则省略第四段，原文仍会被登记）。项目经历/Gap/比赛类经历候选不附加第四段；其余类目省略第四段。',
-      '示例回复格式：',
-      '好的，机械设计本科——我把它整理为候选信息，稍后可在清单里确认。',
-      '候选标记：教育｜机械设计制造及其自动化本科｜用户描述｜学校=某大学；专业=机械设计制造及其自动化；学历=本科；起=2015；止=2019',
-      '候选标记：经历｜某机械公司 机械工程师（2023.07-2025.03）｜用户描述｜公司=某机械公司；岗位=机械工程师；起=2023.07；止=2025.03',
-      '接下来聊聊工作经历：你目前的工作经历是怎样的？',
-      '注意：缺少候选标记行 = 该条信息不会被系统收集。',
+          ? `资料：简历已由系统提取并生成候选——请用户查看右侧清单逐条确认；再补问简历外的项目/非正式经历、兴趣与偏好约束（用户的补充回答会写入访谈记录，系统可从记录再次生成候选）。`
+          : '资料：引导用户粘贴简历文本（创建时为文本通道）；系统提取后生成候选清单，你负责引导确认与补问。'
+        : '资料：通过一轮一个问题的方式对话（教育 → 工作经历 → 项目经历 → 技能 → 约束）；用户的回答会写入访谈记录，系统从记录生成候选入清单——你负责提问与答疑，回答被记录即完成本环节。',
+      '规则：不要使用"阶段/进度"表述；不要自行声称完成——初始化完成由系统门禁裁决（快照三件齐备，引擎投影）；状态展示以右侧候选清单与系统提示为准。',
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
-      '实时归位（重要）：用户每确认一条候选，引擎会立即登记事实并投影画像快照（identity / skill_inventory / preference_constraints）——**不要自己写这些快照文件**，你只负责候选采集与确认引导。',
-      '收尾（用户确认完所有候选后执行）：核对候选清单——教育/经历/技能/约束/兴趣中用户能提供的都已整理并让用户确认；若某类用户明确表示没有，如实记录（如"无工作经历"），不要编造。然后告诉用户"基础档案已按你的确认建立"——初始化完成的标记由引擎门禁裁决（三件快照齐备才允许），不要自行声称完成。',
+      '收尾（用户确认完所有候选后执行）：核对候选清单——教育/经历/技能/约束/兴趣中用户能提供的都已确认；若某类用户明确表示没有，如实记录（如"无工作经历"），不要编造。然后告诉用户"基础档案已按你的确认建立"——init 完成标记由引擎门禁裁决，不要自行声称完成。',
       ...(personId
         ? [`采集记录：本会话的对话会持续写入 persons/${personId}/intake/session-001.md（原始对话记录）。如果该文件已有内容，先阅读它了解已采集部分并继续；禁止修改该文件（引擎负责写入）。`]
         : []),
@@ -1201,7 +1226,19 @@ export const useAppStore = create<AppState>()(
       void runAgentTask(sessionId, content, isWorkflowStage ? undefined : session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
-      if (pid && !opts?.silent) void appendSessionTurnToEngine(pid, 'user', content)
+      if (pid && !opts?.silent) {
+        void appendSessionTurnToEngine(pid, 'user', content)
+        // I-2 无简历通道（P0-1 确定性通道）：访谈首轮回答后自动生成候选；
+        // 已有候选则不再自动触发（补充性回答走面板「从访谈记录生成候选」手动重生成）
+        const person = get().persons.find((p) => p.personId === pid)
+        if (
+          person?.sourceMode === 'interview' &&
+          get().initCandidates.length === 0 &&
+          !get().generatingCandidates
+        ) {
+          void get().generateCandidatesFor(pid, 'interview')
+        }
+      }
       return
     }
 

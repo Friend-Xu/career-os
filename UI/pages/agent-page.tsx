@@ -472,6 +472,9 @@ function MessageBubble({
 function UnderstandingDraft() {
   const candidates = useAppStore((s) => s.initCandidates)
   const resolve = useAppStore((s) => s.resolveInitCandidate)
+  const person = useAppStore((s) => s.currentPerson())
+  const generating = useAppStore((s) => s.generatingCandidates)
+  const generateCandidates = useAppStore((s) => s.generateCandidatesFor)
   const [editingId, setEditingId] = useState<string | null>(null)
   const pending = candidates.filter((c) => c.status === 'pending')
   const confirmed = candidates.filter((c) => c.status === 'confirmed')
@@ -511,7 +514,9 @@ function UnderstandingDraft() {
             textAlign: 'center',
           }}
         >
-          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>还没有候选信息</Typography>
+          <Typography sx={{ fontSize: 12, color: COLORS.textMuted }}>
+            {person?.sourceMode === 'interview' ? '回答几个问题后即可生成候选' : '还没有候选信息'}
+          </Typography>
         </Box>
       ) : (
         groups.map((g) => {
@@ -619,6 +624,29 @@ function UnderstandingDraft() {
             </Box>
           )
         })
+      )}
+      {person?.sourceMode === 'interview' && (
+        <Button
+          size="small"
+          variant="outlined"
+          fullWidth
+          disabled={generating || !person.personId}
+          onClick={() => {
+            if (person.personId) void generateCandidates(person.personId, 'interview')
+          }}
+          sx={{
+            mt: 1,
+            fontSize: 11.5,
+            color: COLORS.textSecondary,
+            border: `1px solid ${COLORS.border}`,
+          }}
+        >
+          {generating
+            ? '正在从访谈记录生成候选…'
+            : pending.length === 0 && confirmed.length === 0
+              ? '从访谈记录生成候选'
+              : '从访谈记录补充生成候选'}
+        </Button>
       )}
     </Box>
   )

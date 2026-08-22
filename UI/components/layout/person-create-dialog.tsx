@@ -207,6 +207,11 @@ export function PersonCreateDialog() {
     }
     // 初始化会话：Agent 主动开场（内部指令不外显），输入框保持干净
     startInitializationSession({ personName, sourceMode, interests, personId })
+    // P0-1 确定性通道（I-1 闭环触发）：简历落盘后由引擎生成候选（Agent 不产候选）；
+    // 生成中弹出 toast + 右侧「正在收集的信息」重拉
+    if (personId && artifactId) {
+      void useAppStore.getState().generateCandidatesFor(personId, 'resume')
+    }
     push(
       'success',
       `已建立「${personName}」职业档案 · 初始化空间已开启${artifactId ? ` · 简历已保存为源资料（${artifactId}）` : ''}${
