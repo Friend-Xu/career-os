@@ -2991,6 +2991,42 @@ async function pullPersons(): Promise<void> {
   }
 }
 
+/**
+ * Person Health → Attention 投影（v0.4.2.1：ADR-031 最后一公里——系统主动告知自身健康状态）。
+ * 边界（评审锁死）：只投影，不保存健康结果/不重复数据；明细由画像页 badge（person/health 实时）展示。
+ * - attention id 固定 `person-health:{personId}`（单槽覆盖天然去重，多次刷新不堆积）
+ * - healthy → 自动消失（若当前 attention 属本 person 健康投影——Attention Projection 随状态变化，
+ *   不是 Health 自动修复）
+ */
+async function syncHealthAttention(personId: string): Promise<void> {
+  if (!engine || useAppStore.getState().engineStatus !== 'connected') return
+  try {
+    const h = await engine.personHealth(personId)
+    useAppStore.setState((s) => ({ personHealths: { ...s.personHealths, [personId]: h } }))
+    const { attention, dismissAttention, addAttention } = useAttentionStore.getState()
+    if (h.verdict === 'healthy') {
+      if (attention?.id === `person-health:${personId}`) dismissAttention()
+      return
+    }
+    addAttention({
+      id: `person-health:${personId}`,
+      level: 'warning',
+      title: '画像一致性告警',
+      description: `「${h.name}」有 ${h.checks.length} 项需要关注——查看画像详情`,
+      target: { page: 'workbench', view: 'profile' },
+      source: 'person_health',
+    })
+  } catch {
+    // offline/旧引擎：保持现状
+  }
+}
+
+/** 当前人的健康 → Attention（连接恢复/数据变化后调用） */
+function syncCurrentPersonHealth(): void {
+  const pid = useAppStore.getState().currentPerson().personId
+  if (pid) void syncHealthAttention(pid)
+}
+
 async function pullGraph(): Promise<void> {
   if (!engine) return
   try {
@@ -3045,7 +3081,10 @@ export function connectEngine(): void {
     }
     if (s === 'connected') {
       void pullDecisions()
-      void pullPersons().then(() => void pullValuationCard())
+      void pullPersons().then(() => {
+        void pullValuationCard()
+        syncCurrentPersonHealth()
+      })
       void pullHistories()
       void pullCompanies()
       void pullGraph()
@@ -3165,8 +3204,12 @@ export function connectEngine(): void {
   })
   engine.on(EVENTS.personsChanged, () => {
     // P1 Person Aggregate：identity/career_profile/skill_inventory 变化 → 重拉 persons/list
-    //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）；估价卡档位/期望依赖画像 → 重拉后重算
-    void pullPersons().then(() => void pullValuationCard())
+    //（pullPersons 保护初始化中的本地 Person，不覆盖丢失）；估价卡档位/期望依赖画像 → 重拉后重算；
+    // Health → Attention 投影（v0.4.2.1：数据变化后同步提醒）
+    void pullPersons().then(() => {
+      void pullValuationCard()
+      syncCurrentPersonHealth()
+    })
     void pullGraph()
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())

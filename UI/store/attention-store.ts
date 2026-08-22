@@ -4,12 +4,14 @@ import type { NavPageId } from '../types'
 export type AttentionLevel = 'success' | 'warning' | 'info'
 export type WorkbenchView = 'dashboard' | 'directions' | 'cities' | 'decisions' | 'profile'
 /**
- * 来源分层：Attention 是「行动入口层」，生产方分两类——
+ * 来源分层：Attention 是「行动入口层」，生产方分三类——
  * - system：系统状态事件（规则驱动，本轮实现）
  * - agent：Agent 洞察（未来经 Recommendation Engine 过滤/去重/生命周期判断后接入，
  *   不直接控制提示——Agent 输出不一定是任务）
+ * - person_health：Person Health 投影（v0.4.2.1——不保存健康结果/不重复数据；
+ *   点击跳画像页，明细由 person/health 实时展示；id 固定 person-health:{personId}，healthy 自动消失）
  */
-export type AttentionSource = 'system' | 'agent'
+export type AttentionSource = 'system' | 'agent' | 'person_health'
 
 /** 需要用户注意的系统事件 + 行动入口（Attention Layer 基础模块，非业务组件）。
  *  与 toast 的区别：toast 瞬时反馈自动消失；attention 持久等待用户处理（跳转/关闭）。
