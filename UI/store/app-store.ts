@@ -2986,6 +2986,14 @@ async function pullPersons(): Promise<void> {
       .getState()
       .persons.filter((p) => p.initStatus === 'pending' && !p.personId && !list.some((e) => e.id === p.id))
     useAppStore.setState({ persons: [...list, ...localPending] })
+    // 对账：currentPersonId 不在当前人员集合（持久化残留 / 引擎删除——如跨工作区数据库变化）→
+    // 归位到集合首个（Engine state 唯一权威；本地进行中 Person 仍受保护）。
+    // 失配时初始化候选确认等依赖 currentPersonId 的入口会静默失效（发现于 2026-08-22 I-1 重跑）。
+    const all = [...list, ...localPending]
+    const cur = useAppStore.getState().currentPersonId
+    if (!all.some((p) => p.id === cur)) {
+      useAppStore.setState({ currentPersonId: all[0]!.id })
+    }
   } catch {
     // offline：保持现有数据
   }
