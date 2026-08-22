@@ -1,0 +1,12 @@
+{
+  "id": "jd-002",
+  "jdText": "Company-B 招聘\n电气工程师 10-15K\n工作地点：City-Y\n岗位职责\n1. 负责设备电气原理图设计、元器件选型与BOM编制\n2. PLC（西门子/三菱）程序编写与调试\n3. 触摸屏人机界面设计，伺服/变频器调试\n任职资格\n大专及以上，电气自动化相关专业\n2年以上设备电气设计经验，熟悉EPLAN或CAD电气绘图\n有非标设备行业经验者优先",
+  "expected": {
+    "company": "Company-B",
+    "title": "电气工程师",
+    "location": "City-Y",
+    "salary": "10-15K",
+    "requirements": ["电气原理图设计", "PLC（西门子/三菱）编程调试", "伺服/变频器调试", "EPLAN或CAD电气绘图"],
+    "critical": ["PLC（西门子/三菱）编程调试"]
+  }
+}

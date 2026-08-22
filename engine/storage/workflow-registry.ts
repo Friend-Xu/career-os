@@ -79,6 +79,13 @@ export interface StageSpec {
     expectedOutputs: string[]
     stopCondition: string
     declaredBoundaries: { forbiddenStages: StageId[] }
+    /**
+     * 单步输出预算（token）——Stage Policy（ADR-030 收尾）：输出上限是 Control Plane 旋钮，
+     * 按阶段声明（成本/防截断同一尺）：@ai-sdk/anthropic 兼容模式默认 4096 曾实测截断工具调用
+     * （2026-08-22 真机事故），显式预算必须 ≥ 阶段真实产出需要；数值以真机测量为准可调档。
+     * 语义=单次 assistant 回合（每次工具调用回合独立计）。
+     */
+    outputBudget: number
   }
 }
 
@@ -101,6 +108,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['教育候选', '经历候选', '技能候选', '约束/兴趣候选'],
       stopCondition: '候选收集完成（四类中用户能提供的均已整理）——停止并等待用户确认，不继续方向分析',
       declaredBoundaries: { forbiddenStages: ['direction_exploration', 'direction_evaluation', 'recommendation'] },
+      outputBudget: 4096, // 候选表 + 提问卡片，输出小；对话回合为主
     },
   },
   {
@@ -116,6 +124,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['方向候选清单', '画像卡对比'],
       stopCondition: 'exploration_artifact 产出完成——停止，不进入加权打分',
       declaredBoundaries: { forbiddenStages: ['direction_evaluation', 'recommendation'] },
+      outputBudget: 8192, // 方向画像卡 × N + 引用依据（多文件写入），真机实测档位
     },
   },
   {
@@ -130,6 +139,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['方向加权评估明细'],
       stopCondition: 'evaluation_artifact 产出完成——停止，不输出最终推荐',
       declaredBoundaries: { forbiddenStages: ['recommendation'] },
+      outputBudget: 8192, // 加权打分明细 × N（表格为主），与探索同档
     },
   },
   {
@@ -147,6 +157,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['决策报告'],
       stopCondition: '决策报告产出完成——停止，等待 review_recommendation Gate',
       declaredBoundaries: { forbiddenStages: [] },
+      outputBudget: 4096, // 决策报告（14 字段表 + 推荐理由），单文件产出
     },
   },
 ]
@@ -204,6 +215,7 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
       ].join('\n')
     }
   }
+  const artifactContract = buildArtifactContract(w.id, w.personId, stageId)
   const envelope = [
     '【WORKFLOW_STAGE】',
     `workflow_id: ${w.id}`,
@@ -231,9 +243,55 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     boundaryLine,
     `Gate：${spec.gate ? `本阶段完成需通过 ${spec.gate}（由引擎裁决，用户确认）` : '本阶段无 Gate'}`,
     '不得自行推进下一 Stage。',
-    '',
+    ...(artifactContract ? ['', '【ARTIFACT_CONTRACT】', artifactContract, ''] : []),
   ].join('\n')
   return { workflow: w, envelope }
+}
+
+/** Artifact 契约（ADR-030 直连运行时标准修复）：产出格式由引擎声明注入 Envelope——
+ *  不依赖模型读取工作区外的技能文件（直连工具 root 绑定 workspace，绝对路径不可读）。
+ *  契约依据：storage/artifact-type-registry.ts 的 StageArtifactSpec（marker/证据域）+ 决策记录契约。 */
+function buildArtifactContract(workflowId: string, personId: string, stageId: StageId): string | undefined {
+  if (stageId === 'direction_exploration') {
+    return [
+      `- 产出文件：persons/${personId}/directions/{文件名}.md（每个方向一个文件）`,
+      `- frontmatter（文件开头，必须，值照抄）：`,
+      `  ---`,
+      `  person_id: ${personId}`,
+      `  workflow_id: ${workflowId}`,
+      `  stage_id: direction_exploration`,
+      `  ---`,
+      `- 正文必须含段：## 方向主张（列表项 "- {方向名称}：{一句主张}"）与 ## 事实依据（每项 "- {引用来源}：依据说明"）`,
+      `- 引用来源只允许 facts/ 或 snapshot/current/ 下的已有文件路径；无素材支撑的断言禁止写入；素材不足时标注"信息不足"`,
+    ].join('\n')
+  }
+  if (stageId === 'direction_evaluation') {
+    return [
+      `- 产出文件：persons/${personId}/evaluations/{文件名}.md（每个方向一个文件）`,
+      `- frontmatter（文件开头，必须，值照抄）：`,
+      `  ---`,
+      `  person_id: ${personId}`,
+      `  workflow_id: ${workflowId}`,
+      `  stage_id: direction_evaluation`,
+      `  ---`,
+      `- 正文必须含段：## 方向评估（列表项 "- {方向名称}：{匹配度评估一句话}"）与 ## 事实依据（每项 "- {引用来源}：依据说明"）`,
+      `- 引用来源只允许 facts/、snapshot/current/ 或 persons/${personId}/directions/ 下的已有文件路径；无素材支撑的断言禁止写入`,
+    ].join('\n')
+  }
+  if (stageId === 'recommendation') {
+    return [
+      `- 产出文件：decisions/{YYYY-MM-DD}-{主题}.md`,
+      `- frontmatter（文件开头，必须，值照抄）：`,
+      `  ---`,
+      `  person_id: ${personId}`,
+      `  workflow_id: ${workflowId}`,
+      `  stage_id: recommendation`,
+      `  ---`,
+      `- 正文必须含段：## 分析摘要（14 字段表，至少含 direction/direction_match/direction_confidence/risk_level/key_risk/status）与 ## 推荐理由`,
+      `- 推荐方向必须来自方向评估产物之一；每条推荐理由标注依据来源；无据断言禁止写入`,
+    ].join('\n')
+  }
+  return undefined
 }
 
 // ─── 目录监听（workflows/ 变更 → 广播 workflowChanged；Engine 单方写，Agent/UI 只读）──

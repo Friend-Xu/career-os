@@ -1,16 +1,21 @@
 /**
  * Agent 运行时（第 4 步收尾）：任务注册表 + 事件循环 + 权限/提问/取消往返。
- * - 职责：Agent 是能力提供者——start() 创建任务（config 默认值合并），消费 createAgent
- *   事件流并转成可过 WS 的 AgentRuntimeEvent（permission_request 换为 requestId，canUseTool
- *   promise 留在挂起表）；answer/cancel/permission 三个 RPC 入口驱动任务。
+ * - 职责：Agent 是能力提供者——start() 创建任务（config 默认值合并），消费 AgentRunner
+ *   事件流（直连 streamText，ADR-030）并转成可过 WS 的 AgentRuntimeEvent（permission_request
+ *   换为 requestId，canUseTool promise 留在挂起表）；answer/cancel/permission 三个 RPC 入口驱动任务。
  * - 生命周期：done/error → 清理任务；cancel → AbortController.abort()。
  * - 权限：onPermissionRequest 返回挂起 promise，permission() 决策后 resolve（前端弹窗往返）。
- * - AskUserQuestion：adapter 侧直接 allow（卡片不是危险操作），question_request 事件带结构化问题。
+ * - AskUserQuestion：runner 的 ask_user_question 工具直接放行（卡片不是危险操作），
+ *   question_request 事件带结构化问题，answer() 回填提问 promise。
+ * - resume：直连模式无会话恢复（上下文由引擎按 Artifact 全量重建，ADR-030）。
  * - 事件推送：构造时注入 emit(taskId, ev) 回调（websocket 广播 agent.event）。
  */
-import { createAgent, type AgentHandle, type AgentEvent } from '../agent/adapter/claude.ts'
+import { createAgentRunner } from '../agent/capability/agent-runner.ts'
+import { resolveLanguageModel } from '../agent/providers/model.ts'
+import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
+import type { Workspace } from '../storage/workspace.ts'
 /** Agent Task & Context（ADR-020，ir 共享契约）——taskType/contextRefs/outputTarget/trigger */
 import type {
   AgentTaskType,
@@ -42,6 +47,9 @@ export interface AgentStartParams {
   permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
   allowedTools?: string[]
   maxTurns?: number
+  /** 单步输出预算（token；Control Plane 注入——Stage 任务按 StageSpec.task.outputBudget，
+   *  普通过话缺省 = runner 8K 默认；客户端不可设，引擎单方决定） */
+  outputBudget?: number
   /** 模型覆盖（聊天界面切换器；缺省用引擎 config.agent.model） */
   model?: string
   /** API 密钥覆盖（设置页配置；缺省用引擎 config.agent.apiKey） */
@@ -78,37 +86,35 @@ export class AgentRuntime {
     this.emit = emit
   }
 
-  start(params: AgentStartParams, defaults: AgentDefaults, cwd: string): string {
+  start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): string {
     const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const abort = new AbortController()
     const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map() }
+    const apiKey = params.apiKey ?? defaults.apiKey
+    const baseUrl = params.baseUrl ?? defaults.baseUrl
+    const model = params.model ?? defaults.model
+    // 系统边界 fail fast（ADR-030 Step 6）：直连是唯一路径——无凭证/无模型直接拒绝启动
+    if (!apiKey) throw new Error('未配置已启用的服务商（apiKey）——请在设置页添加并启用服务商后再试')
+    if (!model) throw new Error('服务商未登记模型——请在设置页勾选模型后再试')
 
-    const handle = createAgent(
-      {
-        task: params.task,
-        context: params.context,
-        cwd,
-        resumeSessionId: params.resumeSessionId,
-        permissionMode: params.permissionMode ?? defaults.permissionMode,
-        allowedTools: params.allowedTools ?? defaults.allowedTools,
-        maxTurns: params.maxTurns ?? defaults.maxTurns,
-        model: params.model ?? defaults.model,
-        apiKey: params.apiKey ?? defaults.apiKey,
-        baseUrl: params.baseUrl ?? defaults.baseUrl,
-        abortController: abort,
-        logger: this.logger,
-        onPermissionRequest: (tool) =>
-          new Promise<boolean>((resolve) => {
-            const requestId = `p-${++this.permissionSeq}`
-            task.pendingPermissions.set(requestId, resolve)
-            this.emit(taskId, { type: 'permission_request', tool, requestId })
-          }),
-      },
-      (sessionId) => {
-        task.sessionId = sessionId
-        this.emit(taskId, { type: 'session_id', sessionId })
-      },
-    )
+    const handle = createAgentRunner({
+      task: params.task,
+      context: params.context,
+      model: resolveLanguageModel({ apiKey, baseUrl, model, validModels: [model], credentialSource: 'config' }).model,
+      workspace,
+      allowedTools: params.allowedTools ?? defaults.allowedTools,
+      permissionMode: params.permissionMode ?? defaults.permissionMode,
+      maxTurns: params.maxTurns ?? defaults.maxTurns,
+      outputBudget: params.outputBudget,
+      abortController: abort,
+      logger: this.logger,
+      onPermissionRequest: (tool) =>
+        new Promise<boolean>((resolve) => {
+          const requestId = `p-${++this.permissionSeq}`
+          task.pendingPermissions.set(requestId, resolve)
+          this.emit(taskId, { type: 'permission_request', tool, requestId })
+        }),
+    })
     task.handle = handle
     this.tasks.set(taskId, task)
     void this.runLoop(taskId)

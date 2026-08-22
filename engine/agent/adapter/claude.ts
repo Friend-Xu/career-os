@@ -21,6 +21,7 @@ import type {
   SDKMessage,
   SDKResultError,
   SDKUserMessage,
+  SettingSource,
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
@@ -54,6 +55,9 @@ export interface QueryOptions {
   apiKey?: string
   /** API 端点根地址（SDK options.baseURL）；留空 = 官方 */
   baseUrl?: string
+  /** 文件系统 settings 加载范围（SDK isolation）：[] = 跳过 user/project/local settings——
+   *  API 直连模式必须隔离，否则本机 ~/.claude/settings.json 的 env（如代理 baseURL）会劫持连接 */
+  settingSources?: SettingSource[]
   abortController?: AbortController // 取消 → AgentError 'cancelled'
   /** 权限决策源：permission_request 事件抛出后，模块 await 此回调的决策（true=放行/false=拒绝）。缺省时权限请求交由 SDK 默认处理（不抛事件）。 */
   onPermissionRequest?: (tool: string) => Promise<boolean>
@@ -193,14 +197,7 @@ export function createAgent(opts: QueryOptions, onSessionId?: (id: string) => vo
     model: opts.model,
     ...(opts.apiKey !== undefined && opts.apiKey !== '' ? { apiKey: opts.apiKey } : {}),
     ...(opts.baseUrl !== undefined && opts.baseUrl !== '' ? { baseURL: opts.baseUrl } : {}),
-    // 受控 Agent 注入点（L2-8a agent-golden-flow-smoke）：COS_FAKE_CLAUDE_EXECUTABLE 指向
-    // 假 CLI 脚本（fixtures/fake-claude.mjs）时，SDK 以 pathToClaudeCodeExecutable 模式
-    // spawn `process.execPath <脚本> ...`，不真调模型——测试确定性
-    // （agent/start → done 钩子 → intake → Registration 全链路受控）。
-    // 仅测试注入：未设置 = 默认内置 CLI（生产语义不变）。
-    ...(process.env.COS_FAKE_CLAUDE_EXECUTABLE
-      ? { pathToClaudeCodeExecutable: process.execPath, executableArgs: [process.env.COS_FAKE_CLAUDE_EXECUTABLE] }
-      : {}),
+    ...(opts.settingSources !== undefined ? { settingSources: opts.settingSources } : {}),
     // 管道模式实测 AskUserQuestion 会立即跳过（tool_use_result 已含 "did not answer"）：
     // 显式给 10 分钟等待窗口，回答（前端点击）才来得及送达
     // （SDK 类型：该字段属 Settings，经 Options.settings 传入）

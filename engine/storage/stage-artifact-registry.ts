@@ -109,7 +109,9 @@ function serializeAuthoritative(meta: Record<string, string | string[]>, body: s
 
 // ─── 提案解析（§2.1：## 方向主张 marker 段 + ## 事实依据 段）──────────────────
 
-/** 从 body 提取「事实依据」段的引用路径（bullet 行 `- 路径：说明` 的路径部分） */
+/** 从 body 提取「事实依据」段的引用路径（bullet 行 `- 路径：说明` 的路径部分）；
+ *  只认"像引用"的行（以 .md 结尾）——模型可能在依据段写"信息不足：素材未提供…"等
+ *  非引用标注（契约明确允许），非引用行不参与证据校验（否则误判 EVIDENCE_OUT_OF_SCOPE）。 */
 function extractEvidenceRefs(body: string): string[] {
   const section = body.match(/##\s*事实依据\s*\n([\s\S]*?)(?=\n##\s|$)/)
   if (!section) return []
@@ -118,7 +120,7 @@ function extractEvidenceRefs(body: string): string[] {
     const bullet = line.match(/^\s*[-*]\s+(.+)$/)
     if (!bullet) continue
     const ref = bullet[1].split(/[:：]/)[0].trim()
-    if (ref) refs.push(ref)
+    if (ref && /(^|\/)[^/\\]+\.md$/.test(ref.split('#')[0].trim())) refs.push(ref)
   }
   return refs
 }
@@ -151,8 +153,10 @@ function validateEvidenceRefs(
     if (!spec.evidenceRefPattern.test(ref)) {
       return { ok: false, code: 'EVIDENCE_OUT_OF_SCOPE', reason: `引用不在 ${spec.artifactType} 证据域（${spec.evidenceRefPattern}）：${raw}` }
     }
-    if (!ws.exists(`persons/${personId}/${ref}`)) {
-      return { ok: false, code: 'EVIDENCE_UNRESOLVABLE', reason: `引用不存在：persons/${personId}/${ref}` }
+    // 引用可带 persons/{personId}/ 前缀（证据域白名单已含）；存在性校验统一剥前缀按 person 相对路径查
+    const rel = /^persons\/[^/]+\//.test(ref) ? ref.replace(/^persons\/[^/]+\//, '') : ref
+    if (!ws.exists(`persons/${personId}/${rel}`)) {
+      return { ok: false, code: 'EVIDENCE_UNRESOLVABLE', reason: `引用不存在：persons/${personId}/${rel}` }
     }
   }
   return { ok: true }

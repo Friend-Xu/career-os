@@ -1,0 +1,12 @@
+{
+  "id": "jd-003",
+  "jdText": "【Company-C】热招：医疗器械结构工程师\n薪资：18-30K\n坐标：City-Z\n职责描述：\n- 负责三类介入类医疗器械的结构设计与开发\n- 熟悉医疗器械法规体系（GMP、ISO 13485），参与注册文件编写\n- 主导设计验证与风险管理（FMEA）\n任职要求：\n机械/生物医学工程相关专业本科及以上\n3年以上医疗器械结构设计经验\n熟练使用 Pro/E 或 SolidWorks，了解注塑成型工艺\n有高压无菌密封设计经验优先",
+  "expected": {
+    "company": "Company-C",
+    "title": "医疗器械结构工程师",
+    "location": "City-Z",
+    "salary": "18-30K",
+    "requirements": ["医疗器械法规体系（GMP、ISO 13485）", "设计验证与风险管理（FMEA）", "Pro/E 或 SolidWorks", "注塑成型工艺"],
+    "critical": ["医疗器械法规体系（GMP、ISO 13485）"]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "person-004",
+  "context": "用户画像（synthetic，冲突信息）：周颖，University-E 机电一体化本科；工作经历显示工作地点在上海（经验 facts/experience.md），但偏好约束显示意向城市苏州（facts/preference.md）。用户要求方向探索。",
+  "facts": {
+    "facts/education.md": "# 教育\n\nUniversity-E 机电一体化 本科。",
+    "facts/experience.md": "# 经历\n\n3 年非标自动化设备电气设计经验，工作地点上海。",
+    "facts/preference.md": "# 偏好\n\n意向城市：苏州。"
+  },
+  "task": "你是 CareerOS 的方向探索 Agent。基于用户画像与事实素材，探索 1-2 个可能的职业方向候选，每个方向写一个提案文件。\n\n要求：\n1. 用 Read 读取以下素材文件（路径精确）：\n   - facts/education.md\n   - facts/experience.md\n   - facts/preference.md\n2. 为每个方向写 persons/person_004/directions/日期-方向名.md（日期用 20260822），格式固定：\n   ## 方向主张\n   - {方向名称}：{一句主张}\n   ## 事实依据\n   - {引用来源 facts/xxx.md}：依据说明\n3. 事实依据必须引用真实存在的事实素材；没有素材支撑的断言禁止写入\n4. 发现素材冲突（如工作地点与意向城市不一致）必须明确标注冲突并提示需要用户确认，不得自动替用户选择；不要向用户提问",
+  "gate": {
+    "minFiles": 1,
+    "forbidden": [],
+    "requiredMarkers": ["冲突", "矛盾", "不一致", "确认"]
+  }
+}

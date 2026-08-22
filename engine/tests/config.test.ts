@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolve } from 'node:path'
-import { ConfigError, defaultConfig, loadConfig, parseCliArgs, REPO_ROOT } from '../config.ts'
+import { ConfigError, defaultConfig, loadConfig, parseCliArgs, REPO_ROOT, resolveAgentConnection, resolveModel, resolveTaskModel, type EngineConfig } from '../config.ts'
 
 function tempConfigFile(content: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), 'cos-config-'))
@@ -138,4 +138,134 @@ test('parseCliArgs：--config 后跟值、--port 校验', () => {
   assert.deepEqual(parseCliArgs(['--config', 'x.json']), { configPath: 'x.json' })
   assert.deepEqual(parseCliArgs(['--port', '5290']), { port: 5290 })
   assert.throws(() => parseCliArgs(['--port', 'nan']), ConfigError)
+})
+
+// ─── resolveAgentConnection（ADR-030：providers 直连解析）───────────────────
+
+function agentConfigWith(providers: unknown, extra?: { model?: string; enabled?: boolean }): EngineConfig {
+  const config = defaultConfig()
+  config.agent.model = extra?.model
+  config.agent.enabled = extra?.enabled
+  if (providers !== undefined) config.agent.providers = providers as EngineConfig['agent']['providers']
+  return config
+}
+
+test('resolveAgentConnection：enabled 且带 apiKey 的服务商 → 直连三元组', () => {
+  const config = agentConfigWith(
+    [{ id: 'deepseek', baseUrl: 'https://api.deepseek.com/anthropic', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash', 'deepseek-v4-pro'] }],
+    { model: 'claude-sonnet-4-6' },
+  )
+  const conn = resolveAgentConnection(config)
+  assert.ok(conn)
+  assert.equal(conn.apiKey, 'sk-1')
+  assert.equal(conn.baseUrl, 'https://api.deepseek.com/anthropic')
+  assert.equal(conn.model, 'deepseek-v4-flash')
+  assert.deepEqual(conn.validModels, ['deepseek-v4-flash', 'deepseek-v4-pro'])
+  assert.equal(conn.credentialSource, 'config')
+})
+
+test('resolveAgentConnection：config.agent.model 命中服务商模型列表 → 沿用', () => {
+  const config = agentConfigWith(
+    [{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash', 'deepseek-v4-pro'] }],
+    { model: 'deepseek-v4-pro' },
+  )
+  assert.equal(resolveAgentConnection(config)?.model, 'deepseek-v4-pro')
+})
+
+test('resolveAgentConnection：enabled=false → undefined（走 CLI 登录态）', () => {
+  const config = agentConfigWith(
+    [{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash'] }],
+    { enabled: false },
+  )
+  assert.equal(resolveAgentConnection(config), undefined)
+})
+
+test('resolveAgentConnection：无 enabled 服务商/无 apiKey → undefined', () => {
+  assert.equal(
+    resolveAgentConnection(agentConfigWith([{ id: 'deepseek', apiKey: 'sk-1', enabled: false, models: [] }])),
+    undefined,
+  )
+  assert.equal(resolveAgentConnection(agentConfigWith([{ id: 'deepseek', enabled: true, models: ['m'] }])), undefined)
+  assert.equal(resolveAgentConnection(agentConfigWith(undefined)), undefined)
+})
+
+// ─── Provider Credential Contract（Step 0.6：env > config）──────────────────
+
+function clearLlmEnv(): void {
+  delete process.env.COS_LLM_API_KEY
+  delete process.env.COS_LLM_BASE_URL
+  delete process.env.COS_LLM_MODEL
+}
+
+test('Credential Contract：COS_LLM_API_KEY 覆盖 config key + credentialSource=env', () => {
+  clearLlmEnv()
+  const config = agentConfigWith([{ id: 'deepseek', apiKey: 'sk-config', enabled: true, models: ['deepseek-v4-flash'] }])
+  process.env.COS_LLM_API_KEY = 'sk-env'
+  const conn = resolveAgentConnection(config)
+  assert.equal(conn?.apiKey, 'sk-env')
+  assert.equal(conn?.credentialSource, 'env')
+  clearLlmEnv()
+})
+
+test('Credential Contract：COS_LLM_MODEL 覆盖模型（env 模型不需在 providers.models 内）', () => {
+  clearLlmEnv()
+  const config = agentConfigWith([{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash'] }])
+  process.env.COS_LLM_MODEL = 'another-model'
+  assert.equal(resolveAgentConnection(config)?.model, 'another-model')
+  clearLlmEnv()
+})
+
+test('Credential Contract：无 env 回落 config（credentialSource=config）', () => {
+  clearLlmEnv()
+  const config = agentConfigWith([{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash'] }])
+  const conn = resolveAgentConnection(config)
+  assert.equal(conn?.apiKey, 'sk-1')
+  assert.equal(conn?.credentialSource, 'config')
+})
+
+// ─── resolveModel / resolveTaskModel（ADR-030 Step 4：模型校验与任务绑定）────
+
+test('resolveModel：无连接透传请求名；有连接未命中回落默认模型', () => {
+  assert.equal(resolveModel(undefined, 'any-model'), 'any-model')
+  assert.equal(resolveModel(undefined, undefined), undefined)
+  const conn = { apiKey: 'sk-1', model: 'deepseek-v4-flash', validModels: ['deepseek-v4-flash', 'deepseek-v4-pro'], credentialSource: 'config' as const }
+  assert.equal(resolveModel(conn, 'deepseek-v4-pro'), 'deepseek-v4-pro')
+  assert.equal(resolveModel(conn, 'claude-sonnet-4-6'), 'deepseek-v4-flash')
+  assert.equal(resolveModel(conn, undefined), 'deepseek-v4-flash')
+})
+
+test('resolveTaskModel：未绑定 → 服务商默认模型；已绑定合法 → 用之', () => {
+  const conn = { apiKey: 'sk-1', model: 'deepseek-v4-flash', validModels: ['deepseek-v4-flash', 'deepseek-v4-pro'], credentialSource: 'config' as const }
+  const plain = defaultConfig()
+  assert.equal(resolveTaskModel(conn, plain, 'jd_extract'), 'deepseek-v4-flash')
+  const bound = defaultConfig()
+  bound.agent.taskModels = { jd_extract: 'deepseek-v4-pro' }
+  assert.equal(resolveTaskModel(conn, bound, 'jd_extract'), 'deepseek-v4-pro')
+  assert.equal(resolveTaskModel(conn, bound, 'career_analysis'), 'deepseek-v4-flash')
+})
+
+test('resolveTaskModel：已绑定但不在服务商模型列表 → ConfigError（fail fast，不静默换模型）', () => {
+  const conn = { apiKey: 'sk-1', model: 'deepseek-v4-flash', validModels: ['deepseek-v4-flash'], credentialSource: 'config' as const }
+  const bound = defaultConfig()
+  bound.agent.taskModels = { jd_extract: 'ghost-model' }
+  assert.throws(() => resolveTaskModel(conn, bound, 'jd_extract'), ConfigError)
+})
+
+test('loadConfig：taskModels 成员不在任何服务商 models → ConfigError（加载期 fail fast）', () => {
+  clearEnv()
+  const path = tempConfigFile({
+    agent: {
+      providers: [{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash'] }],
+      taskModels: { jd_extract: 'not-a-model' },
+    },
+  })
+  assert.throws(() => loadConfig(['--config', path]), ConfigError)
+  rmSync(join(path, '..'), { recursive: true, force: true })
+})
+
+test('loadConfig：taskModels 形状非法（非字符串）→ ConfigError', () => {
+  clearEnv()
+  const path = tempConfigFile({ agent: { taskModels: { jd_extract: 42 } } })
+  assert.throws(() => loadConfig(['--config', path]), ConfigError)
+  rmSync(join(path, '..'), { recursive: true, force: true })
 })

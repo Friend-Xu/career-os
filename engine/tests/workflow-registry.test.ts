@@ -21,7 +21,7 @@ import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { freshIntakeFiles } from '../transport/websocket.ts'
 import { createPersonSession, scanPersons } from '../storage/person-watcher.ts'
-import { compileStageTask } from '../storage/workflow-registry.ts'
+import { compileStageTask, getStageSpec } from '../storage/workflow-registry.ts'
 
 let wsSeq = 0
 function testWorkspace(): Workspace {
@@ -312,6 +312,19 @@ test('startWorkflow 边界：type/personId/statement/person 存在性 fail fast'
 })
 
 // ─── Stage Task Compiler（Agent Execution Boundary P0-C：Stage Boundary 三重校验 + Envelope）──
+
+test('Stage Policy：每阶段声明输出预算（正整数）；getStageSpec 查询与表一致（transport 用同一来源）', () => {
+  assert.equal(CAREER_DIRECTION_STAGES.length, 4)
+  for (const s of CAREER_DIRECTION_STAGES) {
+    assert.ok(Number.isInteger(s.task.outputBudget) && s.task.outputBudget > 0, `${s.id} outputBudget 应为正整数`)
+    assert.equal(getStageSpec(s.id)?.task.outputBudget, s.task.outputBudget, `${s.id} getStageSpec 与定义表不一致`)
+  }
+  // 档位锚点：真机实测档（探索/评估 8K；采集/推荐 4K）——调档须连带真机复测，此断言防无意识改动
+  assert.equal(getStageSpec('direction_exploration')?.task.outputBudget, 8192)
+  assert.equal(getStageSpec('direction_evaluation')?.task.outputBudget, 8192)
+  assert.equal(getStageSpec('recommendation')?.task.outputBudget, 4096)
+  assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 4096)
+})
 
 test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停止条件，不自行推进）', () => {
   const ws = testWorkspace()

@@ -15,8 +15,9 @@ export const DIRECTION_SPEC: StageArtifactSpec = {
   dir: (personId) => `persons/${personId}/directions`,
   idPrefix: 'direction_',
   marker: /##\s*方向主张/,
-  /** 证据域（v0.3 §一）：方向候选依据 = 个人事实（facts/ + snapshot/current/） */
-  evidenceRefPattern: /^(facts|snapshot\/current)\/[^/\\]+\.md$/,
+  /** 证据域（v0.3 §一）：方向候选依据 = 个人事实（facts/ + snapshot/current/）；
+   *  引用可带 persons/{personId}/ 前缀（模型按读取路径引用是同一证据，路径拼写不构成安全差异） */
+  evidenceRefPattern: /^(persons\/[^/]+\/)?(facts|snapshot\/current)\/[^/\\]+\.md$/,
 }
 
 export const EVALUATION_SPEC: StageArtifactSpec = {
@@ -24,8 +25,9 @@ export const EVALUATION_SPEC: StageArtifactSpec = {
   dir: (personId) => `persons/${personId}/evaluations`,
   idPrefix: 'evaluation_',
   marker: /##\s*方向评估/,
-  /** 证据域（v0.3 §一）：评估依据 = 已确认方向（directions/）+ 个人事实（facts/ + snapshot/current/） */
-  evidenceRefPattern: /^(facts|snapshot\/current|directions)\/[^/\\]+\.md$/,
+  /** 证据域（v0.3 §一）：评估依据 = 已确认方向（directions/）+ 个人事实（facts/ + snapshot/current/）；
+   *  引用可带 persons/{personId}/ 前缀 */
+  evidenceRefPattern: /^(persons\/[^/]+\/)?(facts|snapshot\/current|directions)\/[^/\\]+\.md$/,
 }
 
 const ARTIFACT_TYPE_SPECS: Record<string, StageArtifactSpec> = {

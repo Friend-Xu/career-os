@@ -76,6 +76,8 @@ export interface Workspace {
   listJson(subDir: string): string[]
   /** 列出子目录下的子目录名（无目录则抛 WorkspaceError） */
   listDirs(subDir: string): string[]
+  /** 递归列出子目录下全部文件（相对 root 路径；无目录则抛 WorkspaceError）——Agent 工具 Grep/Glob 用 */
+  listFiles(subDir: string): string[]
 }
 
 export function buildPaths(root: string): WorkspacePaths {
@@ -240,6 +242,20 @@ export function initWorkspace(root: string): Workspace {
       const dir = join(root, subDir)
       if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
       return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+    },
+    listFiles(subDir) {
+      const dir = join(root, subDir)
+      if (!existsSync(dir)) throw new WorkspaceError(subDir, '目录不存在')
+      const out: string[] = []
+      const walk = (d: string, prefix: string): void => {
+        for (const entry of readdirSync(d, { withFileTypes: true })) {
+          const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+          if (entry.isDirectory()) walk(join(d, entry.name), rel)
+          else if (entry.isFile()) out.push(rel)
+        }
+      }
+      walk(dir, '')
+      return out
     },
   }
 }

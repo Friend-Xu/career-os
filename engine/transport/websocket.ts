@@ -10,7 +10,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_CONFIG_PATH, defaultConfig, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
+import { DEFAULT_CONFIG_PATH, defaultConfig, resolveAgentConnection, resolveModel, resolveTaskModel, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
@@ -31,6 +31,7 @@ import {
   abortWorkflow,
   advanceWorkflow,
   compileStageTask,
+  getStageSpec,
   getWorkflow,
   onEvaluationDone,
   onExplorationDone,
@@ -160,7 +161,9 @@ import { buildArtifactSummaries } from '../artifact-summary/index.ts'
 import { buildArtifactTimeline } from '../artifact-timeline/index.ts'
 import { buildCoverLetterTraceability } from '../artifact-traceability/cover-letter-traceability.ts'
 import { deleteCompanyFile, readCompanyFile, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
-import { extractJdFields } from '../runtime/jd-extract.ts'
+import { extractJdFieldsDirect } from '../runtime/jd-extract.ts'
+import { resolveLanguageModel } from '../agent/providers/model.ts'
+import { checkAgentHealth } from '../runtime/agent-health.ts'
 import {
   applicationView,
   createApplication,
@@ -1276,7 +1279,7 @@ function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: {
     return [
       '你是 Career OS 的职业决策助手（技能：career-advisor）。',
       personState,
-      `你的完整协议与工作流程定义在技能文件 ${join(skillsDir, 'SKILL.md')}（本任务工作目录下可访问），开始处理任务前请先阅读它。`,
+      '你的完整协议摘要已注入上文（技能文件位于工作区外、工具不可读——执行标准以引擎注入的 STAGE 指令与 ARTIFACT_CONTRACT 为准）。',
       initState,
       '技能概述（节选）：',
       skill.slice(0, 1500),
@@ -1637,21 +1640,35 @@ export async function startServer(opts: {
       // Workflow Stage Envelope（P0-C）：workflowId+stageId → 引擎 Stage Boundary 三重校验 →
       // 编译 Envelope 注入（系统级边界，与用户消息分离；校验失败 throw = Agent 启动被拒）
       let stageEnvelope = ''
+      let stageBudget: number | undefined
       if (p.workflowId !== undefined && p.stageId !== undefined) {
         const compiled = compileStageTask(workspace, p.workflowId, p.stageId as StageId)
         stageEnvelope = compiled.envelope
+        // Stage Policy（ADR-030 收尾）：输出预算 = StageSpec.task.outputBudget（引擎单方决定，
+        // 客户端不可设——agentStartParams 不接收该字段）。非 Stage 通话 = undefined → runner 8K 默认。
+        stageBudget = getStageSpec(p.stageId as StageId)?.task.outputBudget
       }
+      // ADR-030 Step 6：直连唯一路径——未配置服务商 → fail fast（不再走 CLI 登录态）
+      const conn = resolveAgentConnection(config)
+      if (!conn) throw new Error('未配置已启用的服务商——请在设置页添加并启用服务商后再试')
+      const taskModel = resolveTaskModel(conn, config, 'career_analysis')
+      const taskConn = { ...conn, model: taskModel }
       const taskId = agentRuntime.start(
-        { ...p, context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n') },
+        {
+          ...p,
+          model: resolveModel(taskConn, p.model),
+          outputBudget: stageBudget,
+          context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n'),
+        },
         {
           permissionMode: config.agent.permissionMode,
           allowedTools: config.agent.allowedTools,
           maxTurns: config.agent.maxTurns,
-          model: config.agent.enabled === false ? undefined : config.agent.model,
-          apiKey: config.agent.enabled === false ? undefined : config.agent.apiKey,
-          baseUrl: config.agent.enabled === false ? undefined : config.agent.baseUrl,
+          model: taskModel,
+          apiKey: conn.apiKey,
+          baseUrl: conn.baseUrl,
         },
-        workspace.paths.root,
+        workspace,
       )
       // 注册 Stage Task 完成钩子（BUG-006：Agent done → 按 stage 分派状态钩子 → workflowChanged）
       if (p.workflowId !== undefined && p.stageId !== undefined) {
@@ -2373,13 +2390,16 @@ export async function startServer(opts: {
       const issues = validateJDAnalysisProposal(proposal)
       return writeJDAnalysis(workspace, proposal, issues)
     },
-    [METHODS.extractJd]: async (params) => ({
-      result: await extractJdFields(extractJdParams(params).jdText, {
-        cwd: workspace.paths.root,
-        model: config.agent.model,
-        logger,
-      }),
-    }),
+    [METHODS.extractJd]: async (params) => {
+      const jdText = extractJdParams(params).jdText
+      // ADR-030 Step 6：直连唯一路径——未配置服务商 → fail fast（不再走 CLI 登录态）
+      const conn = resolveAgentConnection(config)
+      if (!conn) throw new Error('未配置已启用的服务商——请在设置页添加并启用服务商后再试')
+      const taskModel = resolveTaskModel(conn, config, 'jd_extract')
+      const { model } = resolveLanguageModel({ ...conn, model: taskModel })
+      return { result: await extractJdFieldsDirect(jdText, model, logger) }
+    },
+    [METHODS.agentHealth]: () => checkAgentHealth(config, logger),
   }
 
   function respond(ws: WebSocket, resp: RpcResponse): void {

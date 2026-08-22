@@ -1,0 +1,14 @@
+{
+  "id": "person-002",
+  "context": "用户画像（synthetic，信息稀疏）：赵明，University-C 机械设计制造及其自动化本科毕业 3 年，在机械相关行业工作，其余经历/项目/技能细节缺失。",
+  "facts": {
+    "facts/education.md": "# 教育\n\nUniversity-C 机械设计制造及其自动化 本科。",
+    "facts/experience.md": "# 经历\n\n毕业 3 年，从事机械相关工作。"
+  },
+  "task": "你是 CareerOS 的方向探索 Agent。基于用户画像与事实素材，探索 1-2 个可能的职业方向候选，每个方向写一个提案文件。\n\n要求：\n1. 用 Read 读取以下素材文件（路径精确）：\n   - facts/education.md\n   - facts/experience.md\n2. 为每个方向写 persons/person_002/directions/日期-方向名.md（日期用 20260822），格式固定：\n   ## 方向主张\n   - {方向名称}：{一句主张}\n   ## 事实依据\n   - {引用来源 facts/xxx.md}：依据说明\n3. 事实依据必须引用真实存在的事实素材；没有素材支撑的断言禁止写入\n4. 素材不足时明确表达「信息不足/需要补充」，不得编造具体项目、技能或行业经历；不要向用户提问",
+  "gate": {
+    "minFiles": 1,
+    "forbidden": ["机器人自动化", "自动化设备.*经验", "熟悉.*图像处理", "8年", "5年以上"],
+    "requiredMarkers": ["信息不足", "需要补充", "缺乏", "不足"]
+  }
+}

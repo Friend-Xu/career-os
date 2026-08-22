@@ -3,13 +3,13 @@
  *
  * 验证目标：agent/start → Agent 产出 proposal → done → Engine intake（§1.6 快照边界）
  * → Registration → waiting_gate → resolve → advance → Stage 3 的**真实串链**。
- * 单测是白盒直调函数；本脚本走真实 WS 端口 + 真实文件系统 + 真实 SDK 事件流
+ * 单测是白盒直调函数；本脚本走真实 WS 端口 + 真实文件系统 + 直连 AgentRunner 事件流
  * （stageTasks 注册 / done 钩子分派 / error.engine 广播 / workflowChanged 广播）。
  *
- * 确定性：不真调模型——通过 CLAUDE_CODE_ENTRYPOINT 注入假 CLI（fixtures/fake-claude.mjs），
- * SDK 以 `node <entrypoint> <prompt> ...` spawn，固定输出 stream-json 帧 → adapter 归一化
- * → done 事件 → 引擎钩子。Agent 产出（proposal 文件）由脚本在 agent/start 之后、done 之前
- * 写入（intake 快照已记录，done 只消费快照外新文件）。
+ * 确定性：不真调模型——假 Anthropic 端点（fake-anthropic-server.ts）按脚本回 SSE 帧
+ * （文本补全，默认 2s 延迟窗口），agent/start 直连该端点 → text_delta/done 事件 → 引擎钩子。
+ * Agent 产出（proposal 文件）由脚本在 agent/start 之后、done 之前写入
+ * （intake 快照已记录，done 只消费快照外新文件）。
  *
  * 覆盖（用户定稿，不扩矩阵）：
  *   成功路径：Stage 1 completed(Path B) → advance → Stage 2 agent/start → 3 proposal
@@ -32,11 +32,9 @@ import { scanDecisions } from '../storage/report-watcher.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { startServer } from '../transport/websocket.ts'
 import { METHODS, EVENTS } from '../transport/protocol.ts'
+import { startFakeAnthropicServer, textTurn } from './agent/fake-anthropic-server.ts'
 
-// ─── 假 CLI 注入（引擎 adapter 读 COS_FAKE_CLAUDE_EXECUTABLE → SDK pathToClaudeCodeExecutable 模式；
-//  必须在 agent/start（SDK spawn）之前设置）────────────────────────────────
-process.env.COS_FAKE_CLAUDE_EXECUTABLE = fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url))
-process.env.FAKE_CLAUDE_DELAY_MS = '2000' // done 前给写 proposal 留时间窗
+const FAKE_DELAY_MS = 2000 // done 前给写 proposal 留时间窗
 
 const PORT = 5299
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {}, trace() {} }
@@ -44,10 +42,25 @@ const silentLogger = { debug() {}, info() {}, warn() {}, error() {}, trace() {} 
 const root = mkdtempSync(join(tmpdir(), 'cos-agent-golden-'))
 const ws = initWorkspace(root)
 
+// ─── 假直连端点（ADR-030 直连路径：每请求回文本补全，2s 延迟窗口）────────────
+const fakeLlm = await startFakeAnthropicServer(() => textTurn('方向探索完成', FAKE_DELAY_MS))
+
 const config = {
   ...defaultConfig(),
   server: { ...defaultConfig().server, host: '127.0.0.1', port: PORT },
   paths: { ...defaultConfig().paths, workspace: root, db: join(root, '.smoke.db') },
+  agent: {
+    ...defaultConfig().agent,
+    providers: [
+      {
+        id: 'fake',
+        apiKey: 'fake-key',
+        baseUrl: `http://127.0.0.1:${fakeLlm.port}/anthropic`,
+        enabled: true,
+        models: ['fake-model'],
+      },
+    ],
+  },
 }
 
 const projection = createProjection({ dbPath: config.paths.db, workspace: ws, logger: silentLogger })
@@ -276,6 +289,7 @@ try {
   server.broadcast({ event: 'smoke.done' })
   server.shutdown()
   projection.close()
+  await fakeLlm.close()
 }
 
 console.log(failed === 0 ? '\n结果：全部通过' : `\n结果：${failed} 项失败`)

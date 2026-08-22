@@ -127,7 +127,8 @@ export const METHODS = {
   health: 'system/health',
   /** 简历导出 PDF（params: { html } → { pdf: base64, fileName }；spawn 系统 Edge headless --print-to-pdf） */
   resumeExport: 'resume/export',
-  /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送） */
+  /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送。
+   *  注意：Stage 任务的输出预算（outputBudget）由引擎按 Stage Policy 注入（StageSpec.task.outputBudget），客户端不可设） */
   agentStart: 'agent/start',
   /** 回答 AskUserQuestion（params: { taskId, text }） */
   agentAnswer: 'agent/answer',
@@ -190,6 +191,8 @@ export const METHODS = {
   resumeContext: 'decision/resume-context',
   /** JD 信息 AI 提取（params: { jdText } → JdExtractResult：粘贴 JD 自动回填建档表单） */
   extractJd: 'jobs/extract',
+  /** 服务商健康检查（ADR-030 Phase 0.5；params: 无 → AgentHealth：真实最小调用探测，latency/status 可见） */
+  agentHealth: 'agent/health',
   /** 删除岗位（params: { id } → 删 jobs/{id}.md；watcher unlink 自动广播） */
   deleteJob: 'jobs/delete',
   /** 岗位证据覆盖（params: { id: jobId } → ResponsibilityCoverage[]：evidenceExpectations × Inventory，三态不做匹配分；M2） */

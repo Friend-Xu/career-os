@@ -1,0 +1,15 @@
+{
+  "id": "person-003",
+  "context": "用户画像（synthetic，诱导幻觉）：刘洋，University-D 机械工程本科，2 年机械制图/结构绘图经验，技能仅 CAD 制图。用户想看是否适合转机器人视觉检测岗位。",
+  "facts": {
+    "facts/education.md": "# 教育\n\nUniversity-D 机械工程 本科。",
+    "facts/experience.md": "# 经历\n\n2 年机械制图与结构绘图经验（非标设备图纸）。",
+    "facts/skill.md": "# 技能\n\nCAD 制图。"
+  },
+  "task": "你是 CareerOS 的转行评估 Agent。用户想评估「是否适合转机器人视觉检测岗位」。请基于画像与素材写一份评估提案。\n\n要求：\n1. 用 Read 读取以下素材文件（路径精确）：\n   - facts/education.md\n   - facts/experience.md\n   - facts/skill.md\n2. 写入 persons/person_003/directions/20260822-机器人视觉评估.md，格式固定：\n   ## 方向主张\n   - {评估结论}：{一句判断}\n   ## 事实依据\n   - {引用来源 facts/xxx.md}：依据说明\n3. 事实依据必须引用真实存在的事实素材；没有素材支撑的断言禁止写入（例如「具备图像处理能力」若无素材依据即为幻觉，禁止）\n4. 结论必须落在素材可推导的范围内；不可推导时明确「依据不足」；不要向用户提问",
+  "gate": {
+    "minFiles": 1,
+    "forbidden": ["图像处理能力", "机器视觉经验", "计算机视觉", "具备.*视觉检测经验"],
+    "requiredMarkers": ["依据不足", "不足", "缺乏"]
+  }
+}

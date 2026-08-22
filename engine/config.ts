@@ -26,6 +26,75 @@ export interface AgentProvider {
   models?: string[]
 }
 
+/**
+ * Provider Credential Contract（ADR-030 Step 0.6）：
+ * 凭据来源优先级 = 环境变量（COS_LLM_API_KEY / COS_LLM_BASE_URL / COS_LLM_MODEL）> config.json providers。
+ * **禁止本机 Claude CLI 运行时参与**（settings.json env / ANTHROPIC_BASE_URL / CLI 登录态）——
+ * 引擎拥有凭据控制权，CLI 时代继承的认证风险（PROXY_MANAGED 式隐藏授权）不得进入新链路。
+ * credentialSource 随连接上报（health-check/设置页可见：凭据到底来自哪一层）。
+ */
+export interface AgentConnection {
+  apiKey: string
+  baseUrl?: string
+  model?: string
+  /** 服务商登记的合法模型列表（外部模型名经 resolveModel 校验回落） */
+  validModels: string[]
+  /** 凭据来源（env = 运行环境覆盖；config = config.json providers 登记） */
+  credentialSource: 'env' | 'config'
+}
+
+/**
+ * 解析 API 直连连接：agent.providers 中第一个 enabled 且带 apiKey 的服务商。
+ * - agent.enabled === false → undefined（用户显式要求走本机 CLI 登录态）
+ * - 无匹配服务商 → undefined（沿用旧行为：CLI 登录态）
+ * - 环境变量覆盖 apiKey/baseUrl/model（Step 0.6：env > config，无 env 时回落 config）
+ * - 模型名只在服务商 models 列表内合法：config.agent.model 命中则沿用，否则回落 models[0]
+ *   （旧 config.agent.model 可能是代理映射名如 claude-sonnet-4-6，直连端点不识别）
+ */
+export function resolveAgentConnection(config: EngineConfig): AgentConnection | undefined {
+  if (config.agent.enabled === false) return undefined
+  const provider = (config.agent.providers ?? []).find((p) => p.enabled && p.apiKey)
+  if (!provider || !provider.apiKey) return undefined
+  const envKey = process.env.COS_LLM_API_KEY
+  const envBase = process.env.COS_LLM_BASE_URL
+  const envModel = process.env.COS_LLM_MODEL
+  const validModels = provider.models ?? []
+  const model = envModel ?? (validModels.includes(config.agent.model ?? '') ? config.agent.model : validModels[0])
+  const baseUrl = (envBase ?? provider.baseUrl) ?? ''
+  return {
+    apiKey: envKey ?? provider.apiKey,
+    ...(baseUrl !== '' ? { baseUrl } : {}),
+    ...(model !== undefined ? { model } : {}),
+    validModels,
+    credentialSource: envKey !== undefined && envKey !== '' ? 'env' : 'config',
+  }
+}
+
+/** 请求模型名校验：直连模式下只许服务商登记模型，未命中回落连接默认模型 */
+export function resolveModel(conn: AgentConnection | undefined, requested?: string): string | undefined {
+  if (!conn) return requested
+  if (requested && conn.validModels.includes(requested)) return requested
+  return conn.model
+}
+
+export type TaskModelKey = 'jd_extract' | 'career_analysis'
+
+/** 任务级模型解析：taskModels[task] 登记 → 用之；未登记 → 服务商默认模型。
+ *  已登记但不在当前服务商模型列表（设置页运行时改动导致）→ 抛 ConfigError（fail fast，不静默换模型） */
+export function resolveTaskModel(conn: AgentConnection, config: EngineConfig, task: TaskModelKey): string | undefined {
+  const requested = config.agent.taskModels?.[task]
+  if (requested === undefined) return conn.model
+  if (!conn.validModels.includes(requested)) {
+    throw new ConfigError(
+      `agent.taskModels.${task}`,
+      requested,
+      `当前服务商登记模型（${conn.validModels.join(' / ')}）`,
+      'config.json',
+    )
+  }
+  return requested
+}
+
 export interface EngineConfig {
   server: {
     host: string
@@ -41,6 +110,9 @@ export interface EngineConfig {
     enabled?: boolean
     /** 服务商连接数组（设置页卡片式管理的唯一事实源；旧 model/apiKey/baseUrl 字段仅迁移兼容） */
     providers?: AgentProvider[]
+    /** 任务级模型绑定（ADR-030 Step 4）：jd_extract=结构化提取 / career_analysis=工作流推理；
+     *  未绑定 → 服务商默认模型。配置文件字段（设置页不管理） */
+    taskModels?: { jd_extract?: string; career_analysis?: string }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -215,6 +287,19 @@ function assertProviders(v: unknown, source: ConfigSource): AgentProvider[] | un
   })
 }
 
+function assertTaskModels(v: unknown, source: ConfigSource): { jd_extract?: string; career_analysis?: string } | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v !== 'object' || Array.isArray(v)) throw new ConfigError('agent.taskModels', v, '{ jd_extract?, career_analysis? }', source)
+  const m = v as Record<string, unknown>
+  const out: { jd_extract?: string; career_analysis?: string } = {}
+  for (const key of ['jd_extract', 'career_analysis'] as const) {
+    if (m[key] === undefined || m[key] === '') continue
+    if (typeof m[key] !== 'string') throw new ConfigError(`agent.taskModels.${key}`, m[key], '字符串（服务商 models 之一）', source)
+    out[key] = m[key]
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function assertMaxTurns(v: unknown, source: ConfigSource): number | undefined {
   if (v === undefined || v === null) return undefined
   if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
@@ -369,6 +454,7 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.agent.baseUrl !== undefined) config.agent.baseUrl = assertBaseUrl(file.agent.baseUrl, 'config.json')
       if (file.agent.enabled !== undefined) config.agent.enabled = assertAgentEnabled(file.agent.enabled, 'config.json')
       if (file.agent.providers !== undefined) config.agent.providers = assertProviders(file.agent.providers, 'config.json')
+      if (file.agent.taskModels !== undefined) config.agent.taskModels = assertTaskModels(file.agent.taskModels, 'config.json')
       if (file.agent.permissionMode !== undefined) config.agent.permissionMode = assertPermissionMode(file.agent.permissionMode, 'config.json')
       if (file.agent.allowedTools !== undefined) config.agent.allowedTools = assertTools(file.agent.allowedTools, 'config.json')
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')
@@ -411,6 +497,22 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
         models: config.agent.model ? [config.agent.model] : [],
       },
     ]
+  }
+
+  // taskModels 成员校验（fail fast）：任务模型必须登记在某个服务商 models 列表内
+  if (config.agent.taskModels) {
+    const allModels = new Set((config.agent.providers ?? []).flatMap((p) => p.models ?? []))
+    for (const task of ['jd_extract', 'career_analysis'] as const) {
+      const m = config.agent.taskModels[task]
+      if (m !== undefined && !allModels.has(m)) {
+        throw new ConfigError(
+          `agent.taskModels.${task}`,
+          m,
+          `providers[].models 之一（${[...allModels].join(' / ') || '无已登记模型'}）`,
+          'config.json',
+        )
+      }
+    }
   }
 
   return { config, firstRun: !file, configPath }

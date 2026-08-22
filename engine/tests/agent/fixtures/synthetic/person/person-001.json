@@ -1,0 +1,10 @@
+{
+  "id": "person-001",
+  "context": "用户画像（synthetic）：University-A 机械设计制造及其自动化 本科 2019-2023；毕业后 2 年 IVD 医疗器械结构设计经验（非标设备方向）；熟练 SolidWorks、Creo；参与过 2 个真空密封设备项目；熟悉 GMP 法规流程；期望城市：苏州（本科在苏州，有同学网络）；技术兴趣：精密机械、谐波减速器、机器人结构。",
+  "facts": {
+    "facts/education.md": "# 教育\n\nUniversity-A 机械设计制造及其自动化 本科 2019-2023。",
+    "facts/experience.md": "# 经历\n\n毕业后 2 年在 IVD 医疗器械公司从事结构设计，负责真空密封设备结构设计，熟悉 GMP 法规流程。",
+    "facts/skill.md": "# 技能\n\n熟练 SolidWorks、Creo；熟悉非标设备设计流程；参与过 2 个真空密封设备项目；有谐波减速器选型学习经历（未在岗位使用过）。"
+  },
+  "task": "你是 CareerOS 的方向探索 Agent。基于用户画像与事实素材，探索 2-3 个可能的职业方向候选，每个方向写一个提案文件。\n\n要求：\n1. 用 Read 读取以下三个素材文件（路径精确）：\n   - facts/education.md\n   - facts/experience.md\n   - facts/skill.md\n2. 为每个方向写 persons/person_001/directions/日期-方向名.md（日期用 20260822），格式固定：\n   ## 方向主张\n   - {方向名称}：{一句主张}\n   ## 事实依据\n   - {引用来源 facts/xxx.md}：依据说明\n3. 事实依据必须引用真实存在的事实素材；没有素材支撑的断言禁止写入\n4. 每方向一个文件，至少 2 个方向；不要向用户提问"
+}
