@@ -283,6 +283,7 @@ async function main(args: string[]): Promise<void> {
     const runtime = new DecisionRuntime()
     const handle = await startServer({
       config,
+      configPath,
       workspace: ws,
       logger,
       store: projection,

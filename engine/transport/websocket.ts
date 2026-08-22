@@ -1291,12 +1291,15 @@ function buildSkillIdentity(skillsDir: string, workspaceRoot: string, person?: {
 
 export async function startServer(opts: {
   config: EngineConfig
+  /** 引擎实际加载的配置路径（--config/env 自定义实例时 settings/update 必须写回此处——
+   *  2026-08-22 真机发现：硬编码 DEFAULT_CONFIG_PATH 会让隔离实例把设置写进默认配置文件） */
+  configPath?: string
   workspace: Workspace
   logger: Logger
   store: BridgeStore
   runtime: DecisionRuntime
 }): Promise<ServerHandle> {
-  const { config, workspace, logger, store, runtime } = opts
+  const { config, configPath, workspace, logger, store, runtime } = opts
   const { wss, port } = await listenWithRetry({ host: config.server.host, port: config.server.port, logger })
 
   // 事件广播（先定义：Agent 事件推送与监听器共用）
@@ -1734,8 +1737,10 @@ export async function startServer(opts: {
         config.document = { vision: { provider: 'zhipu', ...config.document.vision, ...patch.document.vision } }
         if (!config.document.vision?.apiKey) delete config.document.vision?.apiKey
       }
-      // 写回 config.json（保持其他字段不动；空串 → 删除该字段）
-      const full = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, 'utf8')) as Record<string, unknown>
+      // 写回 config.json（保持其他字段不动；空串 → 删除该字段）——
+      // 目标 = 引擎实际加载的 configPath（--config/env 自定义实例写回自身；缺省回落默认路径）
+      const persistPath = configPath ?? DEFAULT_CONFIG_PATH
+      const full = JSON.parse(readFileSync(persistPath, 'utf8')) as Record<string, unknown>
       const agent = (full.agent ?? {}) as Record<string, unknown>
       const { map: mapPatch, document: documentPatch, ...agentPatch } = patch
       for (const [k, v] of Object.entries(agentPatch)) {
@@ -1763,7 +1768,7 @@ export async function startServer(opts: {
         doc.vision = vision
         full.document = doc
       }
-      writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(full, null, 2) + '\n', 'utf8')
+      writeFileSync(persistPath, JSON.stringify(full, null, 2) + '\n', 'utf8')
       return { ok: true }
     },
     [METHODS.settingsModels]: (params) => {
