@@ -614,7 +614,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-current',
     title: '公司筛选 · 目标企业列表',
-    personId: 1,
+    personId: 'ui:1',
     createdAt: '2026-08-01T09:00:00',
     updatedAt: '2026-08-01T09:00:12',
     archived: false,
@@ -623,7 +623,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-2',
     title: '深圳 vs 上海城市对比',
-    personId: 1,
+    personId: 'ui:1',
     createdAt: '2026-07-25T14:00:00',
     updatedAt: '2026-07-25T14:32:00',
     archived: false,
@@ -632,7 +632,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-3',
     title: '转机器人可行性评估',
-    personId: 1,
+    personId: 'ui:1',
     createdAt: '2026-07-22T16:00:00',
     updatedAt: '2026-07-22T16:45:00',
     archived: false,
@@ -641,7 +641,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-4',
     title: '方向探索会话',
-    personId: 1,
+    personId: 'ui:1',
     createdAt: '2026-07-20T11:00:00',
     updatedAt: '2026-07-20T11:20:00',
     archived: true,
@@ -650,7 +650,7 @@ export const SESSIONS: Session[] = [
   {
     id: 's-fa',
     title: '家人 A · 简历优化',
-    personId: 2,
+    personId: 'ui:2',
     createdAt: '2026-07-30T10:00:00',
     updatedAt: '2026-07-30T10:30:00',
     archived: false,

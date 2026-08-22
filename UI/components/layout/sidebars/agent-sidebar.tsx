@@ -5,7 +5,9 @@
 import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import LockIcon from '@mui/icons-material/Lock'
+import UnarchiveIcon from '@mui/icons-material/Unarchive'
 import dayjs from 'dayjs'
+import { useState } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../../store/agent-phase'
 import type { StreamPhase } from '../../../store/agent-phase'
@@ -20,7 +22,12 @@ export function AgentSidebar() {
   const now = useAppStore((s) => s.now)
   const initSessionId = useAppStore((s) => s.initSessionId)
   const person = useAppStore((s) => s.currentPerson())
-  const list = sessions.filter((s) => s.personId === person.id && !s.archived)
+  const [showUnassigned, setShowUnassigned] = useState(false)
+  // 归属 key = 引擎 personId 稳定标识（未落盘本地 Person 用 ui:{id} 占位——与 createSession 同源）
+  const ownerKey = person.personId ?? `ui:${person.id}`
+  const list = sessions.filter((s) => s.personId === ownerKey && !s.archived)
+  // 存量迁移产物：无法可靠考证归属的会话（显式未知，不混入任何人的列表）
+  const unassigned = sessions.filter((s) => s.personId === 'unassigned' && !s.archived)
 
   /** 会话行当前阶段：任务运行中由最后一条消息推导（提问挂起 → 等待你的回答） */
   const rowPhase = (s: (typeof list)[number]): StreamPhase | undefined => {
@@ -151,6 +158,53 @@ export function AgentSidebar() {
               </Stack>
             )
           })
+        )}
+
+        {/* 未归属会话（存量迁移产物）：折叠区——数据保留可查，不混入任何人的列表（禁止静默错挂） */}
+        {unassigned.length > 0 && (
+          <Box sx={{ mt: 1, pt: 1, borderTop: `1px dashed ${COLORS.border}` }}>
+            <Stack
+              direction="row"
+              spacing={0.5}
+              onClick={() => setShowUnassigned((v) => !v)}
+              sx={{
+                alignItems: 'center',
+                px: 1,
+                py: 0.5,
+                cursor: 'pointer',
+                color: COLORS.textMuted,
+                '&:hover': { color: COLORS.text },
+              }}
+            >
+              <UnarchiveIcon sx={{ fontSize: 13 }} />
+              <Typography sx={{ fontSize: 11.5, flex: 1 }}>未归属会话 · {unassigned.length}</Typography>
+              <Typography sx={{ fontSize: 11 }}>{showUnassigned ? '收起' : '展开'}</Typography>
+            </Stack>
+            {showUnassigned &&
+              unassigned.map((s) => (
+                <Stack
+                  key={s.id}
+                  onClick={() => setCurrentSession(s.id)}
+                  sx={{
+                    mt: 0.5,
+                    px: 1.25,
+                    py: 0.75,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    border: `1px dashed ${alpha(COLORS.border, 0.8)}`,
+                    bgcolor: COLORS.bg,
+                    '&:hover': { bgcolor: COLORS.bgHover },
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }} noWrap>
+                    {s.title}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                    {s.messages.length} 条 · {dayjs(s.updatedAt).format('MM-DD HH:mm')} · 归属待确认
+                  </Typography>
+                </Stack>
+              ))}
+          </Box>
         )}
       </Stack>
     </Stack>

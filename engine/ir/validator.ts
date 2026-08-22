@@ -246,7 +246,7 @@ export function validateSession(input: unknown): Validated<Session> {
   for (const field of ['id', 'title', 'createdAt', 'updatedAt']) {
     checkString(checks, field, value[field])
   }
-  if (typeof value.personId !== 'number') checks.push(missing('personId', value.personId))
+  if (typeof value.personId !== 'string') checks.push(missing('personId', value.personId))
   if (typeof value.archived !== 'boolean') checks.push(illegal('archived', value.archived, 'true/false'))
   if (!Array.isArray(value.messages)) checks.push(illegal('messages', value.messages, 'ChatMessage[]'))
   return finalize(value as unknown as Session, checks)

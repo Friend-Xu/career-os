@@ -943,11 +943,15 @@ export interface CreateApplicationRequest {
   personId: string
 }
 
-/** 会话（SDK resume 用；messages 只存于运行时，不持久化） */
+/** 会话（SDK resume 用；messages 只存于运行时，不持久化）
+ *  personId 语义（2026-08-23 修复：会话归属漂移）：
+ *  - 引擎 personId（person_001 稳定标识）——正常归属
+ *  - `ui:{id}` —— UI 本地 Person 尚未落盘引擎的占位归属（落盘后由 setPersonPersonId 迁移为真 personId）
+ *  - `unassigned` —— 存量迁移时无法可靠考证归属（显式未知，禁止静默错挂） */
 export interface Session {
   id: string
   title: string
-  personId: number
+  personId: string
   createdAt: string
   updatedAt: string
   archived: boolean

@@ -732,6 +732,10 @@ export const useAppStore = create<AppState>()(
   setPersonPersonId: (id, personId) => {
     set((state) => ({
       persons: state.persons.map((p) => (p.id === id ? { ...p, personId } : p)),
+      // 占位会话归位：该 Person 落盘引擎后，`ui:{id}` 占位归属迁移为真 personId（会话不丢）
+      sessions: state.sessions.map((s) =>
+        s.personId === `ui:${id}` ? { ...s, personId } : s,
+      ),
     }))
   },
 
@@ -1274,9 +1278,10 @@ export const useAppStore = create<AppState>()(
   createSession: (title = '新会话'): string => {
     const id = `s-${Date.now()}`
     const now = new Date().toISOString()
-    // 归属当前展示的人（currentPerson().id 而非 currentPersonId：引擎拉取后 id 重排，
-    // 裸 currentPersonId 可能漂移导致新会话不进侧栏列表）
-    const personId = get().currentPerson().id
+    // 归属当前展示的人：引擎 personId 稳定标识（persist 后不随 persons 数组重排漂移）；
+    // 未落盘引擎的本地 Person 用 `ui:{id}` 占位（setPersonPersonId 落盘时批量迁移为真 personId）
+    const person = get().currentPerson()
+    const personId = person.personId ?? `ui:${person.id}`
     const session: Session = {
       id,
       title,
@@ -2157,9 +2162,25 @@ export const useAppStore = create<AppState>()(
     // streaming 占位消息（流式中断）恢复时收尾为「连接中断」——重连后引擎任务可能已在后台完成并落盘产物。
     {
       name: 'career-os',
-      version: 2,
-      // 模型 B（角色 = 人）：旧 schema 是岗位角色，不兼容，直接重置
-      migrate: () => undefined,
+      version: 3,
+      // v2 → v3：Session.personId 语义从 UI 数字 id（随 pullPersons 数组重排漂移）改为引擎 personId（string）。
+      // 存量迁移：title「{name}」初始化采集 → 按 name 重归属；其余无法可靠考证 → 'unassigned'
+      // （数据不删，显式未知，禁止静默错挂）。
+      migrate: (persisted, version) => {
+        if (version !== 2) return persisted
+        const p = persisted as AppState
+        const byName = new Map<string, string>()
+        for (const person of p.persons ?? []) {
+          if (person.personId) byName.set(person.name, person.personId)
+        }
+        const sessions = (p.sessions ?? []).map((s) => {
+          if (typeof s.personId === 'string') return s
+          const m = /^「(.+)」初始化采集$/.exec(s.title)
+          const pid = m ? byName.get(m[1]!) : undefined
+          return { ...s, personId: pid ?? 'unassigned' }
+        })
+        return { ...p, sessions }
+      },
       // AgentPanel 是会话级 UI 状态，不持久化（丢弃旧 localStorage 值，避免默认展开）
       merge: (persisted, current) => {
         const p = persisted as Record<string, unknown>
