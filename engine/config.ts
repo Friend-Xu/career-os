@@ -80,7 +80,7 @@ export function resolveModel(conn: AgentConnection | undefined, requested?: stri
   return conn.model
 }
 
-export type TaskModelKey = 'jd_extract' | 'career_analysis'
+export type TaskModelKey = 'jd_extract' | 'career_analysis' | 'resume_extract'
 
 /** 任务级模型解析：taskModels[task] 登记 → 用之；未登记 → 服务商默认模型。
  *  已登记但不在当前服务商模型列表（设置页运行时改动导致）→ 抛 ConfigError（fail fast，不静默换模型） */
@@ -113,9 +113,10 @@ export interface EngineConfig {
     enabled?: boolean
     /** 服务商连接数组（设置页卡片式管理的唯一事实源；旧 model/apiKey/baseUrl 字段仅迁移兼容） */
     providers?: AgentProvider[]
-    /** 任务级模型绑定（ADR-030 Step 4）：jd_extract=结构化提取 / career_analysis=工作流推理；
-     *  未绑定 → 服务商默认模型。配置文件字段（设置页不管理） */
-    taskModels?: { jd_extract?: string; career_analysis?: string }
+    /** 任务级模型绑定（ADR-030 Step 4）：jd_extract=结构化提取 / career_analysis=工作流推理 /
+     *  resume_extract=简历事实提取（P0-1 确定性通道）；未绑定 → 服务商默认模型。
+     *  配置文件字段（设置页不管理） */
+    taskModels?: { jd_extract?: string; career_analysis?: string; resume_extract?: string }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -290,12 +291,12 @@ function assertProviders(v: unknown, source: ConfigSource): AgentProvider[] | un
   })
 }
 
-function assertTaskModels(v: unknown, source: ConfigSource): { jd_extract?: string; career_analysis?: string } | undefined {
+function assertTaskModels(v: unknown, source: ConfigSource): { jd_extract?: string; career_analysis?: string; resume_extract?: string } | undefined {
   if (v === undefined || v === null) return undefined
-  if (typeof v !== 'object' || Array.isArray(v)) throw new ConfigError('agent.taskModels', v, '{ jd_extract?, career_analysis? }', source)
+  if (typeof v !== 'object' || Array.isArray(v)) throw new ConfigError('agent.taskModels', v, '{ jd_extract?, career_analysis?, resume_extract? }', source)
   const m = v as Record<string, unknown>
-  const out: { jd_extract?: string; career_analysis?: string } = {}
-  for (const key of ['jd_extract', 'career_analysis'] as const) {
+  const out: { jd_extract?: string; career_analysis?: string; resume_extract?: string } = {}
+  for (const key of ['jd_extract', 'career_analysis', 'resume_extract'] as const) {
     if (m[key] === undefined || m[key] === '') continue
     if (typeof m[key] !== 'string') throw new ConfigError(`agent.taskModels.${key}`, m[key], '字符串（服务商 models 之一）', source)
     out[key] = m[key]
@@ -511,7 +512,7 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
   // taskModels 成员校验（fail fast）：任务模型必须登记在某个服务商 models 列表内
   if (config.agent.taskModels) {
     const allModels = new Set((config.agent.providers ?? []).flatMap((p) => p.models ?? []))
-    for (const task of ['jd_extract', 'career_analysis'] as const) {
+    for (const task of ['jd_extract', 'career_analysis', 'resume_extract'] as const) {
       const m = config.agent.taskModels[task]
       if (m !== undefined && !allModels.has(m)) {
         throw new ConfigError(

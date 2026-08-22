@@ -76,6 +76,9 @@ export const METHODS = {
   appendSessionTurn: 'person/session/append',
   /** 追加候选批次到 extraction/candidates.md（切片 2.2：params { personId, candidates[] } → InitCandidate[]；Candidate ≠ Fact） */
   appendCandidates: 'person/session/candidates',
+  /** 简历候选生成（P0-1 确定性通道：params { personId, artifactId? } → { artifactId, facts, added, reused }；
+   *  提取文本 → Resume Facts（generateObject）→ 确定性映射 → appendCandidates；facts.json 存在则复用不重提） */
+  generateResumeCandidates: 'person/candidates/generate',
   /** 候选列表（params { personId } → InitCandidate[]；extraction/ 缺失 → 空） */
   listCandidates: 'person/candidates/list',
   /** 候选裁决（切片 2.3：params { personId, candidateId, action, modifiedContent? } → { candidateId, action, status }；更新 candidates.md + 写 resolution 事件） */
