@@ -267,3 +267,20 @@ test('experienceYearsOf：区间并集——重叠行不重复计；pending/reje
   const pendingOnly = [expRow({ status: 'pending', start: '2023.07', end: '2025.03' })]
   assert.equal(experienceYearsOf(pendingOnly, now), null)
 })
+
+test('experienceYearsOf：同年区间合法（2025.01-2025.12）→ 11 月（回归：不误伤合法年月）', () => {
+  const now = new Date('2026-08-08')
+  assert.equal(experienceYearsOf([expRow({ start: '2025.01', end: '2025.12' })], now), 11)
+  assert.equal(experienceYearsOf([expRow({ start: '2025', end: '2025' })], now), 0)
+})
+
+test('experienceYearsOf：起止声明但非法（同年范围串 2025-2025 / 月份越界）→ 行不参与', () => {
+  const now = new Date('2026-08-08')
+  // endRaw 为 null 时端默认为 2025.12 → 行不参与（不再静默 m=20 放大为「至今」）
+  assert.equal(experienceYearsOf([expRow({ start: '2025-2025', end: '2025.12' })], now), null)
+  assert.equal(experienceYearsOf([expRow({ start: '2025.01', end: '2025-2025' })], now), null)
+  assert.equal(experienceYearsOf([expRow({ start: '2025.01', end: '2025-13' })], now), null)
+  // 真缺失（undefined/''）→ 至今语义保留：2025.01 → 2026.08 = 19 个月
+  assert.equal(experienceYearsOf([expRow({ start: '2025.01', end: undefined })], now), 19)
+  assert.equal(experienceYearsOf([expRow({ start: '2025.01', end: '' })], now), 19)
+})

@@ -71,11 +71,6 @@ function ContextCapsule() {
         label={`探索记录 ${exploreCount}`}
         sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }}
       />
-      <Chip
-        size="small"
-        label="关联决策 3"
-        sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover, border: `1px solid ${COLORS.border}` }}
-      />
     </Stack>
   )
 }

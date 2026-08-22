@@ -53,14 +53,15 @@ export interface ExperienceMatchResult {
   note?: string // 状态说明（NEEDS_CONFIRMATION 时解释缺什么——Engine 只说明缺件，不做匹配推理外的解释）
 }
 
-/** 起止字符串 → 年月（YYYY.MM / YYYY-MM / YYYY；非法 → undefined） */
+/** 起止字符串 → 年月（YYYY.MM / YYYY-MM / YYYY；非法或月份越界 → undefined） */
 function parsePeriod(v: string | undefined): { y: number; m: number } | undefined {
   if (!v) return undefined
   const m = v.trim().match(/^(\d{4})(?:[.\-/年](\d{1,2}))?/)
   if (!m) return undefined
   const y = Number(m[1]!)
   const mo = m[2] ? Number(m[2]!) : 1
-  if (!Number.isFinite(y) || !Number.isFinite(mo)) return undefined
+  // 月份越界（如 "2025-2025" 截出 m=20）→ 非法；否则静默接受会放大合并年限
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) return undefined
   return { y, m: mo }
 }
 
@@ -73,9 +74,13 @@ export function experienceYearsOf(experiences: PersonWorkExperience[] | undefine
   for (const row of confirmed) {
     const s = parsePeriod(row.start)
     if (!s) continue
-    const e = parsePeriod(row.end) ?? { y: now.getFullYear(), m: now.getMonth() + 1 }
+    // end 语义三分：真缺失（undefined/''）→ 至今；声明但非法/越界（如 "2025-2025"）→ 行不参与（同「起>止」非法行）
+    const endRaw = row.end !== undefined && row.end !== '' ? row.end : undefined
+    const e = endRaw !== undefined ? parsePeriod(endRaw) : undefined
+    if (endRaw !== undefined && e === undefined) continue
     const sm = s.y * 12 + s.m - 1
-    const em = Math.min(e.y * 12 + e.m - 1, nowM)
+    const end = e ?? { y: now.getFullYear(), m: now.getMonth() + 1 }
+    const em = Math.min(end.y * 12 + end.m - 1, nowM)
     if (em < sm) continue // 起 > 止（非法行不参与）
     intervals.push({ s: sm, e: em })
   }
