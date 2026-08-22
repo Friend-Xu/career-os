@@ -126,7 +126,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['方向候选清单', '画像卡对比'],
       stopCondition: 'exploration_artifact 产出完成——停止，不进入加权打分',
       declaredBoundaries: { forbiddenStages: ['direction_evaluation', 'recommendation'] },
-      outputBudget: 8192, // 方向画像卡 × N + 引用依据（多文件写入），真机实测档位
+      outputBudget: 16384, // 2026-08-22 真机复测：flash 长叙述 + 多文件写入一轮输出；8192 在"准备写入处"截断（4/4 失败）→ 提档
     },
   },
   {
@@ -141,7 +141,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['方向加权评估明细'],
       stopCondition: 'evaluation_artifact 产出完成——停止，不输出最终推荐',
       declaredBoundaries: { forbiddenStages: ['recommendation'] },
-      outputBudget: 8192, // 加权打分明细 × N（表格为主），与探索同档
+      outputBudget: 16384, // 与探索同档（2026-08-22 真机测量指向长叙述 + 多文件写入一轮输出）
     },
   },
   {
@@ -159,7 +159,7 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       expectedOutputs: ['决策报告'],
       stopCondition: '决策报告产出完成——停止，等待 review_recommendation Gate',
       declaredBoundaries: { forbiddenStages: [] },
-      outputBudget: 4096, // 决策报告（14 字段表 + 推荐理由），单文件产出
+      outputBudget: 16384, // 2026-08-22 真机复测：4096 两次 45-57s 空输出（工具调用 JSON 截断态，0 决策）→ 与探索/评估同档提档
     },
   },
 ]
@@ -289,8 +289,26 @@ function buildArtifactContract(workflowId: string, personId: string, stageId: St
       `  workflow_id: ${workflowId}`,
       `  stage_id: recommendation`,
       `  ---`,
-      `- 正文必须含段：## 分析摘要（14 字段表，至少含 direction/direction_match/direction_confidence/risk_level/key_risk/status）与 ## 推荐理由`,
-      `- 推荐方向必须来自方向评估产物之一；每条推荐理由标注依据来源；无据断言禁止写入`,
+      `- 正文必须以「## 分析摘要」两列表格开头（列协议：| 字段 | 值 |；字段名逐字照抄，值按括号内规则填）：`,
+      `  | 字段 | 值 |`,
+      `  |------|-----|`,
+      `  | skill | career-path（来源子流程名） |`,
+      `  | profile | 一句话用户画像（如"机械工程师 3 年经验"，不得为 -） |`,
+      `  | direction | 主攻方向名（必须来自方向评估产物之一） |`,
+      `  | direction_match | -（多方向评估按协议填 -；分项进明细段落） |`,
+      `  | direction_confidence | - 或 高/中/低 |`,
+      `  | city | {已登记城市名} 或 - |`,
+      `  | city_score | - 或 X/10 |`,
+      `  | salary_feasible | true/false |`,
+      `  | risk_level | 低/中/中高/高 |`,
+      `  | key_risk | ≤30 字一句话 |`,
+      `  | status | complete |`,
+      `  | protocol_version | 2.9 |`,
+      `- 各方向分项必须写「## 方向评估明细」段落，列协议（表头逐字照抄，按列位置解析）：`,
+      `  | 方向 | 匹配度 | 置信度 | 关键优势 | 关键风险 |`,
+      `  |------|:--:|:--:|---------|---------|`,
+      `  每方向一行；匹配度只许 71% 或 7.1/10 两种格式（百分号或 /10，其他写法引擎无法解析）`,
+      `- 正文必须含段：## 推荐理由（每条理由标注依据来源）；推荐方向必须来自方向评估产物之一；无据断言禁止写入`,
     ].join('\n')
   }
   return undefined

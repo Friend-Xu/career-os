@@ -342,11 +342,12 @@ test('Stage Policy：每阶段声明输出预算（正整数）；getStageSpec �
     assert.ok(Number.isInteger(s.task.outputBudget) && s.task.outputBudget > 0, `${s.id} outputBudget 应为正整数`)
     assert.equal(getStageSpec(s.id)?.task.outputBudget, s.task.outputBudget, `${s.id} getStageSpec 与定义表不一致`)
   }
-  // 档位锚点：真机实测档（探索/评估/采集 8K；推荐 4K）——调档须连带真机复测，此断言防无意识改动
-  // fact_collection 2026-08-22 真机复测：候选列表 + 候选标记行一轮输出，4096 截断 → 升至 8K
-  assert.equal(getStageSpec('direction_exploration')?.task.outputBudget, 8192)
-  assert.equal(getStageSpec('direction_evaluation')?.task.outputBudget, 8192)
-  assert.equal(getStageSpec('recommendation')?.task.outputBudget, 4096)
+  // 档位锚点：真机实测档（探索/评估/推荐 16K；采集 8K）——调档须连带真机复测，此断言防无意识改动
+  // 2026-08-22 真机复测：探索/评估 8192 在"准备写入处"截断（方向探索 4/4 失败）→ 升至 16K
+  // 2026-08-22 真机复测：推荐 4096 两次空输出（45-57s，0 决策，ok:true——工具调用 JSON 截断态）→ 升至 16K
+  assert.equal(getStageSpec('direction_exploration')?.task.outputBudget, 16384)
+  assert.equal(getStageSpec('direction_evaluation')?.task.outputBudget, 16384)
+  assert.equal(getStageSpec('recommendation')?.task.outputBudget, 16384)
   assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 8192)
 })
 
@@ -1006,6 +1007,24 @@ test('onRecommendationDone：决策 person_id 不匹配 → failed（不记录 a
   assert.equal(stage.status, 'failed')
   assert.equal(stage.gate, undefined)
   assert.deepEqual(stage.artifacts ?? [], [])
+})
+
+test('compileStageTask（Stage 4）：recommendation 契约声明摘要表标准（两列表 12 行 + 明细列协议）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const workflowId = advanceToRecommendation(ws, pid)
+  const { envelope } = compileStageTask(ws, workflowId, 'recommendation')
+  // 摘要表必须逐字声明（v2.8/2.9 决策契约基准：两列表；profile/salary_feasible 为校验器必填基准）
+  assert.ok(envelope.includes('| 字段 | 值 |'), '摘要表列协议应声明')
+  assert.ok(envelope.includes('| skill | career-path'), 'skill 行应声明')
+  assert.ok(envelope.includes('| profile |'), 'profile（v2.1 校验必填）应声明')
+  assert.ok(envelope.includes('| salary_feasible |'), 'salary_feasible true/false 应声明')
+  assert.ok(envelope.includes('| protocol_version | 2.9 |'), 'protocol_version 应声明')
+  assert.ok(envelope.includes('| risk_level | 低/中/中高/高 |'), 'risk_level 值域应声明')
+  // 多方向分项 → 明细段落（列协议按位置解析）
+  assert.ok(envelope.includes('## 方向评估明细'), '多方向分项应走明细段落')
+  assert.ok(envelope.includes('| 方向 | 匹配度 | 置信度 | 关键优势 | 关键风险 |'), '明细列协议应逐字声明')
+  assert.ok(!envelope.includes('/100'), 'X/100（agents 用过的格式）不可解析，契约不得暗示')
 })
 
 test('evaluateStageCompletion decision-registered：artifacts 列空 → 未过；登记后 → 过', () => {
