@@ -29,7 +29,7 @@ test('默认值：无 config.json 时生成 + firstRun', () => {
   assert.equal(config.server.host, '127.0.0.1')
   assert.equal(config.server.port, 5289)
   assert.equal(config.agent.permissionMode, 'bypassPermissions')
-  assert.deepEqual(config.agent.allowedTools, ['Read', 'Write', 'Edit', 'Grep', 'Glob'])
+  assert.deepEqual(config.agent.allowedTools, ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'WebSearch'])
   assert.equal(config.watcher.enabled, true)
   assert.ok(existsSync(path), '首次运行应生成 config.json')
   const written = JSON.parse(readFileSync(path, 'utf8'))

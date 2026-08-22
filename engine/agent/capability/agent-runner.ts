@@ -14,6 +14,7 @@ import type { Logger } from '../../logger.ts'
 import type { Workspace } from '../../storage/workspace.ts'
 import type { AgentEvent, AgentHandle } from '../adapter/claude.ts'
 import { buildFsTools } from '../tools/fs-tools.ts'
+import { buildWebSearchTool, type WebSearchProvider } from '../tools/web-search.ts'
 
 export interface AgentRunnerOptions {
   task: string
@@ -30,6 +31,8 @@ export interface AgentRunnerOptions {
   logger?: Logger
   /** 权限决策源（permissionMode='ask' 时文件工具执行前询问）；缺省 = 直接放行 */
   onPermissionRequest?: (toolName: string) => Promise<boolean>
+  /** WebSearch 工具所需 provider（缺省 = 不注册该工具——allowedTools 白名单交集自然排除） */
+  webSearch?: WebSearchProvider
 }
 
 interface PendingQuestion {
@@ -110,11 +113,12 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
     // 无待答提问的 answer 忽略（提问卡片流程决定调用时序）
   }
 
-  // ─── 工具集：allowedTools ∩ 文件工具 + ask_user_question（恒可用）─────────────
+  // ─── 工具集：allowedTools ∩ {文件工具 + WebSearch} + ask_user_question（恒可用）──────
   const fsTools = buildFsTools(opts.workspace)
   const tools: Record<string, Tool<any, any>> = {}
   for (const name of opts.allowedTools) {
     if (fsTools[name] !== undefined) tools[name] = fsTools[name]
+    else if (name === 'WebSearch' && opts.webSearch !== undefined) tools[name] = buildWebSearchTool(opts.webSearch)
   }
   const askUserQuestion = tool({
     description: '向用户提问（多选项卡片；await 用户选择后返回答案文本）',

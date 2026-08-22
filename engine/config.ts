@@ -174,7 +174,8 @@ export class ConfigError extends Error {
 }
 
 const PERMISSION_MODES: PermissionMode[] = ['acceptEdits', 'ask', 'bypassPermissions']
-const DEFAULT_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Grep', 'Glob']
+// WebSearch = DeepSeek Responses 托管搜索（引擎薄封装；无 provider 时不注册——白名单交集自然排除）
+const DEFAULT_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'WebSearch']
 
 export function defaultConfig(): EngineConfig {
   const workspace = resolve(REPO_ROOT, 'workspace', 'career-advisor')

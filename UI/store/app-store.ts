@@ -335,7 +335,7 @@ interface AppState {
   /** silent=true：task 进引擎但不渲染为 user 消息——Agent 回复成为首条可见消息（Agent 主动开场）；taskType=任务识别（P2 状态显示）
    *  executionContext 双平面（BUG-010 裁决）：conversation=用户主动对话（受 Person Capability Gate）；
    *  workflow_stage=Workflow Stage 执行（控制平面任务，授权来源=用户创建 workflow——只受 Stage evaluator/gate 约束，不经过对话能力门禁） */
-  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string }; executionContext?: 'conversation' | 'workflow_stage' }) => void;
+  sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string }; executionContext?: 'conversation' | 'workflow_stage'; allowedTools?: string[] }) => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -1150,7 +1150,7 @@ export const useAppStore = create<AppState>()(
       '主题推进：聊完一个大主题（如经历）后做一次简短总结："我目前理解你是……，这个理解准确吗？"——用户修正后再进入下一主题。',
       '收尾（用户确认完所有候选后执行）：核对候选清单——教育/经历/技能/约束/兴趣中用户能提供的都已确认；若某类用户明确表示没有，如实记录（如"无工作经历"），不要编造。然后告诉用户"基础档案已按你的确认建立"——init 完成标记由引擎门禁裁决，不要自行声称完成。',
       ...(personId
-        ? [`采集记录：本会话的对话会持续写入 persons/${personId}/intake/session-001.md（原始对话记录）。如果该文件已有内容，先阅读它了解已采集部分并继续；禁止修改该文件（引擎负责写入）。`]
+        ? [`采集记录：本会话的对话由引擎持续写入 persons/${personId}/intake/session-001.md（原始对话记录）——你无需读取，本轮对话历史已包含全部已采集信息；该文件归引擎维护，你没有文件工具，也无需访问任何文件。`]
         : []),
       ...(interests && interests.length > 0
         ? [`当前关注方向（用户自报，非决策，仅作背景参考）：${interests.join('、')}。`]
@@ -1165,7 +1165,10 @@ export const useAppStore = create<AppState>()(
     // 独立会话承载初始化采集（绑定当前人；不污染旧会话/其他任务）
     const initSessionId = get().createSession(`「${personName}」初始化采集`)
     set({ initSessionId })
-    get().sendAgentMessage(lines, { silent: true })
+    // 机制防线（CLAUDE.md §8 Producer Ownership）：初始化访谈 Agent 零文件工具——
+    // 候选/快照/档案文件归引擎（Candidate Inbox 确定性通道），Agent 只提问与答疑；
+    // 物理隔离同时杜绝读他人档案（上下文隔离不再只靠 prompt）。
+    get().sendAgentMessage(lines, { silent: true, allowedTools: [] })
   },
 
   expandToFullAgent: () => {
@@ -1223,7 +1226,7 @@ export const useAppStore = create<AppState>()(
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
       const session = sessions.find((s) => s.id === sessionId)
-      void runAgentTask(sessionId, content, isWorkflowStage ? undefined : session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef)
+      void runAgentTask(sessionId, content, isWorkflowStage ? undefined : session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef, opts?.allowedTools)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) {
@@ -2474,6 +2477,7 @@ async function runAgentTask(
   taskType?: string,
   taskRequest?: AgentTaskRequest,
   stageRef?: { workflowId: string; stageId: string },
+  allowedTools?: string[],
 ): Promise<void> {
   if (!engine) return
   // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
@@ -2490,6 +2494,7 @@ async function runAgentTask(
         : {}),
       ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
       ...(stageRef ? { workflowId: stageRef.workflowId, stageId: stageRef.stageId } : {}),
+      ...(allowedTools !== undefined ? { allowedTools } : {}),
       ...(useAppStore.getState().agentSettings.model
         ? { model: useAppStore.getState().agentSettings.model }
         : {}),

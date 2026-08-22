@@ -108,6 +108,7 @@ export class AgentRuntime {
       outputBudget: params.outputBudget,
       abortController: abort,
       logger: this.logger,
+      ...(baseUrl !== undefined ? { webSearch: { baseUrl, apiKey, model } } : {}),
       onPermissionRequest: (tool) =>
         new Promise<boolean>((resolve) => {
           const requestId = `p-${++this.permissionSeq}`
