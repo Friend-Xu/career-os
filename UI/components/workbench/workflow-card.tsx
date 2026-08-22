@@ -51,8 +51,12 @@ export function WorkflowCard() {
           <Button
             size="small"
             variant="outlined"
-            disabled={!person.personId}
-            title="发起「职业方向」工作流：阶段 1 收集个人事实（含候选确认）→ 方向探索 → 评估 → 推荐"
+            disabled={!person.personId || person.initStatus !== 'active'}
+            title={
+              person.initStatus !== 'active'
+                ? '请先完成职业档案初始化（基础档案建立后才能发起职业方向工作流）'
+                : '发起「职业方向」工作流：方向探索 → 评估 → 推荐（事实收集已由初始化闭环完成）'
+            }
             onClick={() => void startWorkflow('帮我确定职业方向')}
             sx={{ fontSize: 11.5 }}
           >

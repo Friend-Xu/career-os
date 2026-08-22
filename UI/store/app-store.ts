@@ -832,15 +832,20 @@ export const useAppStore = create<AppState>()(
     try {
       const res = await engine.startWorkflow({ type: 'career_direction', personId: person.personId, statement })
       const wf = res.workflow
+      // 新语义（P0-1/P1）：初始化完成后工作流从阶段 2 方向探索开始（阶段 1 事实收集已由初始化闭环完成）
+      const stageIdx = (wf.stages?.findIndex((s) => s.id === wf.currentStage) ?? -1) + 1
       useToastStore.getState().push(
         'success',
-        res.path === 'B'
-          ? `工作流已开始（已有候选待确认——阶段 1/${wf.totalStages} 等待你的确认）`
-          : `工作流已开始（阶段 1/${wf.totalStages} 事实收集——Agent 正在收集）`,
+        wf.currentStage === 'direction_exploration'
+          ? `工作流已开始（阶段 ${stageIdx}/${wf.totalStages} 方向探索——Agent 正在工作）`
+          : res.path === 'B'
+            ? `工作流已开始（已有候选待确认——阶段 1/${wf.totalStages} 等待你的确认）`
+            : `工作流已开始（阶段 1/${wf.totalStages} 事实收集——Agent 正在收集）`,
       )
-      // Path A：当前 Stage running——发用户目标原文；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
+      // 当前 Stage running → 发用户目标原文；Stage Envelope 由引擎按 workflowId/stageId 校验后注入
       // （Agent Execution Boundary：UI 不拼阶段指令，引擎是唯一 Stage 编译器）
-      if (res.path === 'A' && wf.currentStage) {
+      const cur = wf.stages?.find((s) => s.id === wf.currentStage)
+      if (cur?.status === 'running' && wf.currentStage) {
         get().sendAgentMessage(statement, { silent: true, stageRef: { workflowId: wf.id, stageId: wf.currentStage }, executionContext: 'workflow_stage' })
       }
     } catch (err) {
