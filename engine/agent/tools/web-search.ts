@@ -18,6 +18,8 @@ import { z } from 'zod'
 import { tool } from 'ai'
 import { generateText, type Tool } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import type { WebSearchMode } from '../providers/capabilities.ts'
 import type { Logger } from '../../logger.ts'
 
 export interface WebSearchProvider {
@@ -25,10 +27,14 @@ export interface WebSearchProvider {
   baseUrl: string
   apiKey: string
   model: string
+  /** 执行模式（Provider Capability Registry 判定：responses/google/off——off 不会到达这里） */
+  mode: WebSearchMode
 }
 
 export interface SearchSource {
   url: string
+  /** 结构化来源标题（native 路径透出；文本提取无标题） */
+  title?: string
 }
 
 export interface SearchResult {
@@ -70,7 +76,7 @@ export class SearchPolicyError extends Error {
   }
 }
 
-// ─── Source Normalizer：输出文本 URL 提取 ───────────────────────────────────
+// ─── Source Normalizer：结构化来源 + 输出文本 URL 提取 ───────────────────────
 
 /** 提取文本内引用 URL：去尾部标点、去 #ws_call_id 噪声后缀、去重、保序、限 20 条 */
 export function extractSourceUrls(text: string): SearchSource[] {
@@ -88,10 +94,26 @@ export function extractSourceUrls(text: string): SearchSource[] {
   return out
 }
 
-// ─── 执行路径：主路径（官方 responses 适配器）→ 守卫降级（薄封装）──────────
+/** 结构化来源（SDK sources / google groundingChunks，含可选标题）与文本提取合并：结构化优先、URL 去重 */
+function mergeSources(structured: SearchSource[], text: string): SearchSource[] {
+  const byUrl = new Map<string, SearchSource>()
+  for (const s of structured) {
+    if (s.url !== '' && !byUrl.has(s.url)) byUrl.set(s.url, { url: s.url, ...(s.title ? { title: s.title } : {}) })
+  }
+  for (const s of extractSourceUrls(text)) {
+    if (!byUrl.has(s.url)) byUrl.set(s.url, s)
+  }
+  return [...byUrl.values()]
+}
 
-/** 主路径：@ai-sdk/openai responses 适配器 + provider 侧 webSearch 工具（非流式，工具内一次性检索） */
-async function sdkSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+function renderSources(sources: SearchSource[]): string {
+  return `## 数据来源\n${sources.map((s) => (s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`)).join('\n')}`
+}
+
+// ─── 执行路径：注册表分派（responses → 守卫降级；google → 无降级诚实失败）──
+
+/** 'responses' 模式：OpenAI Responses 协议 + provider 侧 webSearch（DeepSeek 兼容/OpenAI 原生共用） */
+async function responsesSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
   const openai = createOpenAI({ apiKey: provider.apiKey, baseURL: responsesRoot(provider.baseUrl) })
   const result = await generateText({
     model: openai.responses(provider.model),
@@ -103,10 +125,33 @@ async function sdkSearch(provider: WebSearchProvider, query: string): Promise<Se
   if (result.text.trim().length === 0) {
     throw new Error('搜索完成但无文本产出（官方适配器解析为空）')
   }
-  return { text: result.text, sources: extractSourceUrls(result.text), cached: false }
+  // native 结构化来源（OpenAI 原生 url_citation → SDK sources 含 title）；DeepSeek 不填 → 文本提取兜底
+  const structured = (result.sources ?? [])
+    .filter((s) => s.sourceType === 'url')
+    .map((s) => ({ url: s.url, ...(s.title !== undefined ? { title: s.title } : {}) }))
+  return { text: result.text, sources: mergeSources(structured, result.text), cached: false }
 }
 
-/** 守卫降级路径：裸 fetch 薄封装（协议演进护栏；DeepSeek 正常响应 error:null——非空才是真错误） */
+/** 'google' 模式：Gemini grounding（google.tools.googleSearch 服务端执行）；SDK 将 groundingChunks 映射为 sources（含 title） */
+async function googleSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+  const google = createGoogleGenerativeAI({ apiKey: provider.apiKey })
+  const result = await generateText({
+    model: google(provider.model),
+    system: SEARCH_INSTRUCTIONS,
+    prompt: query,
+    maxOutputTokens: 4000,
+    tools: { webSearch: google.tools.googleSearch({ searchTypes: { webSearch: {} } }) },
+  })
+  if (result.text.trim().length === 0) {
+    throw new Error('搜索完成但无文本产出（Google 适配器解析为空）')
+  }
+  const structured = (result.sources ?? [])
+    .filter((s) => s.sourceType === 'url')
+    .map((s) => ({ url: s.url, ...(s.title !== undefined ? { title: s.title } : {}) }))
+  return { text: result.text, sources: mergeSources(structured, result.text), cached: false }
+}
+
+/** 守卫降级路径（仅 'responses' 模式）：裸 fetch 薄封装（协议演进护栏；DeepSeek 正常响应 error:null——非空才是真错误） */
 export async function hostedSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
   const res = await fetch(`${responsesRoot(provider.baseUrl)}/responses`, {
     method: 'POST',
@@ -204,11 +249,14 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
       trace('search_start')
       let result: SearchResult
       try {
-        if (fallbackLocked) {
+        if (opts.provider.mode === 'google') {
+          // Google grounding：无 Responses 兼容降级路径——失败即诚实报错（不当兼容）
+          result = await googleSearch(opts.provider, query)
+        } else if (fallbackLocked) {
           result = await hostedSearch(opts.provider, query)
         } else {
           try {
-            result = await sdkSearch(opts.provider, query)
+            result = await responsesSearch(opts.provider, query)
           } catch (err) {
             // 协议守卫：主路径失败 → 降级薄封装；降级成功即锁定本会话（防每次双请求）
             trace('fallback')
@@ -224,7 +272,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
       if (result.sources.length > 0 && !result.text.includes('数据来源')) {
         result = {
           ...result,
-          text: `${result.text}\n\n## 数据来源\n${result.sources.map((s) => `- ${s.url}`).join('\n')}`,
+          text: `${result.text}\n\n${renderSources(result.sources)}`,
         }
       }
       if (opts.cacheTtlMs > 0) cache.set(key, { result, at: Date.now() })

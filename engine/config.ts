@@ -24,6 +24,10 @@ export interface AgentProvider {
   apiKey?: string
   enabled: boolean
   models?: string[]
+  /** 能力声明（Provider Capability Registry P2）：显式覆盖 Registry 推断（'auto' 缺省 = 按 id/域名推断）。
+   *  webSearch: 'responses'（OpenAI Responses + provider 侧搜索）/ 'google'（Gemini grounding）/
+   *  'off'（不注册 WebSearch 工具）。配置文件字段，设置页不管理（透传保字段）。 */
+  capabilities?: { webSearch?: 'auto' | 'responses' | 'google' | 'off' }
 }
 
 /**
@@ -43,6 +47,8 @@ export interface AgentConnection {
   validModels: string[]
   /** 凭据来源（env = 运行环境覆盖；config = config.json providers 登记） */
   credentialSource: 'env' | 'config'
+  /** 能力声明（P2 Registry 输入：显式覆盖优先于 id/域名推断） */
+  capabilities?: { webSearch?: 'auto' | 'responses' | 'google' | 'off' }
 }
 
 /**
@@ -70,6 +76,7 @@ export function resolveAgentConnection(config: EngineConfig): AgentConnection | 
     ...(model !== undefined ? { model } : {}),
     validModels,
     credentialSource: envKey !== undefined && envKey !== '' ? 'env' : 'config',
+    ...(provider.capabilities !== undefined ? { capabilities: provider.capabilities } : {}),
   }
 }
 
@@ -182,6 +189,8 @@ const DEFAULT_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'WebSear
 // Search Capability Layer P1a 默认旋钮（config.json 可覆盖；runtime 无配置时也以此为缺省）
 export const DEFAULT_SEARCH_BUDGET = 8
 export const DEFAULT_SEARCH_CACHE_TTL_MINUTES = 30
+// P2 Provider Capability Registry：webSearch 能力声明合法值
+const WEB_SEARCH_VALUES = ['auto', 'responses', 'google', 'off']
 
 export function defaultConfig(): EngineConfig {
   const workspace = resolve(REPO_ROOT, 'workspace', 'career-advisor')
@@ -287,6 +296,21 @@ function assertProviders(v: unknown, source: ConfigSource): AgentProvider[] | un
     if (p.models !== undefined && (!Array.isArray(p.models) || p.models.some((m) => typeof m !== 'string'))) {
       throw new ConfigError(`agent.providers[${i}].models`, p.models, 'string[]', source)
     }
+    // capabilities（P2 Registry 输入）：webSearch 枚举校验（'auto' 归一为不声明——推断语义）
+    const cap = p.capabilities
+    const isCapObject = cap !== undefined && typeof cap === 'object' && cap !== null && !Array.isArray(cap)
+    const declaredWebSearch = isCapObject ? (cap as Record<string, unknown>).webSearch : undefined
+    if (cap !== undefined && !isCapObject) {
+      throw new ConfigError(`agent.providers[${i}].capabilities`, cap, '{ webSearch? }', source)
+    }
+    if (declaredWebSearch !== undefined && !WEB_SEARCH_VALUES.includes(declaredWebSearch as never)) {
+      throw new ConfigError(
+        `agent.providers[${i}].capabilities.webSearch`,
+        declaredWebSearch,
+        WEB_SEARCH_VALUES.join('/'),
+        source,
+      )
+    }
     return {
       id: p.id,
       ...(p.label !== undefined ? { label: p.label } : {}),
@@ -294,6 +318,9 @@ function assertProviders(v: unknown, source: ConfigSource): AgentProvider[] | un
       ...(p.apiKey !== undefined ? { apiKey: p.apiKey } : {}),
       enabled: p.enabled,
       ...(p.models !== undefined ? { models: p.models } : {}),
+      ...(typeof declaredWebSearch === 'string' && declaredWebSearch !== 'auto'
+        ? { capabilities: { webSearch: declaredWebSearch } }
+        : {}),
     } as AgentProvider
   })
 }

@@ -12,6 +12,7 @@
  */
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
+import type { WebSearchMode } from '../agent/providers/capabilities.ts'
 import { createSearchSession, type CacheEntry } from '../agent/tools/web-search.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
@@ -72,6 +73,8 @@ export interface AgentDefaults {
   searchBudget?: number
   /** WebSearch 缓存 TTL 分钟（引擎单方决定；缺省 = DEFAULT_SEARCH_CACHE_TTL_MINUTES） */
   searchCacheTtlMinutes?: number
+  /** WebSearch 执行模式（Provider Capability Registry 判定；'off' = 不注册工具；缺省 = responses，向后兼容） */
+  webSearchMode?: WebSearchMode
 }
 
 interface TaskState {
@@ -116,10 +119,10 @@ export class AgentRuntime {
       outputBudget: params.outputBudget,
       abortController: abort,
       logger: this.logger,
-      ...(baseUrl !== undefined
+      ...(baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
         ? {
             webSearch: createSearchSession({
-              provider: { baseUrl, apiKey, model },
+              provider: { baseUrl, apiKey, model, mode: defaults.webSearchMode ?? 'responses' },
               budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
               cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
               cache: this.searchCache,

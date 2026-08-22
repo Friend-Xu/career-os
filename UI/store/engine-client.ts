@@ -69,6 +69,8 @@ export interface AgentProviderView {
   apiKey?: string
   enabled: boolean
   models?: string[]
+  /** 能力声明（Provider Capability Registry P2；配置文件字段，设置页只透传不编辑——保存 providers 不丢字段） */
+  capabilities?: { webSearch?: 'auto' | 'responses' | 'google' | 'off' }
 }
 
 export interface InitResult {

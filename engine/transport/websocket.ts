@@ -16,6 +16,7 @@ import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
+import { webSearchModeOf } from '../agent/providers/capabilities.ts'
 import {
   AGENT_TASK_TYPES,
   CONTEXT_REF_TYPES,
@@ -1694,6 +1695,7 @@ export async function startServer(opts: {
           baseUrl: conn.baseUrl,
           searchBudget: config.agent.search?.budgetPerTask,
           searchCacheTtlMinutes: config.agent.search?.cacheTtlMinutes,
+          webSearchMode: webSearchModeOf(conn),
         },
         workspace,
       )

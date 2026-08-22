@@ -8,7 +8,12 @@ import {
   type SearchSessionOptions,
 } from '../agent/tools/web-search.ts'
 
-const provider = { baseUrl: 'https://api.deepseek.com/anthropic', apiKey: 'sk-test', model: 'deepseek-v4-flash' }
+const provider = {
+  baseUrl: 'https://api.deepseek.com/anthropic',
+  apiKey: 'sk-test',
+  model: 'deepseek-v4-flash',
+  mode: 'responses' as const,
+}
 
 function makeSession(extra: Partial<SearchSessionOptions> = {}): ReturnType<typeof createSearchSession> {
   return createSearchSession({ provider, budget: 8, cacheTtlMs: 30 * 60_000, ...extra })
@@ -42,7 +47,7 @@ function mockFetch(responses: unknown[] | unknown, status = 200): { calls: MockC
 }
 
 /** OpenAI Responses 形状（合成数据；字段集与 @ai-sdk/openai responses 适配器 zod 校验对齐） */
-function responsesBody(text: string): Record<string, unknown> {
+function responsesBody(text: string, annotations: unknown[] = []): Record<string, unknown> {
   return {
     id: 'resp_synth_1',
     object: 'response',
@@ -62,7 +67,7 @@ function responsesBody(text: string): Record<string, unknown> {
     output: [
       { type: 'reasoning', id: 'r1', status: 'completed', content: [{ type: 'reasoning_text', text: '…' }], summary: [] },
       { type: 'web_search_call', id: 'call_1', status: 'completed', action: { type: 'search', queries: ['q1'] } },
-      { type: 'message', id: 'm1', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text, annotations: [] }] },
+      { type: 'message', id: 'm1', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text, annotations }] },
     ],
     parallel_tool_calls: true,
     presence_penalty: 0,
@@ -83,6 +88,24 @@ function responsesBody(text: string): Record<string, unknown> {
     usage: { total_tokens: 42, input_tokens: 10, output_tokens: 32 },
     user: null,
     metadata: {},
+  }
+}
+
+/** Google GenerateContentResponse 形状（合成数据；字段集与 @ai-sdk/google 适配器 zod 校验对齐） */
+function googleBody(text: string): Record<string, unknown> {
+  return {
+    candidates: [
+      {
+        content: { role: 'model', parts: [{ text }] },
+        finishReason: 'STOP',
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://g.example.com/1', title: 'Gemini 引用页' } }],
+          webSearchQueries: ['合成查询'],
+        },
+      },
+    ],
+    usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 20, totalTokenCount: 25 },
+    modelVersion: 'gemini-synth-1',
   }
 }
 
@@ -160,6 +183,38 @@ test('主路径：SDK 适配器空文本（协议形态变化）→ 守卫降级
   const second = await session.execute('查询B')
   assert.equal(second.text, '降级路径结果')
   assert.equal(calls.length, 3, '锁定后新查询 = 1 次请求')
+})
+
+// ─── P2 native sources（结构化标题）────────────────────────────────────────
+
+test('responses 模式：url_citation → SDK sources（含 title）→ 文本缺来源段时渲染 [title](url)', async () => {
+  const { calls } = mockFetch(
+    responsesBody('结论：1.5-2.0万', [
+      { type: 'url_citation', url: 'https://ref.example.com/a', title: '合成引用页', start_index: 0, end_index: 10 },
+    ]),
+  )
+  const session = makeSession()
+  const out = await session.execute('Synthetic 薪资查询')
+  assert.deepEqual(out.sources, [{ url: 'https://ref.example.com/a', title: '合成引用页' }])
+  assert.match(out.text, /- \[合成引用页\]\(https:\/\/ref\.example\.com\/a\)/)
+  assert.equal(calls.length, 1)
+  assert.equal(out.cached, false)
+})
+
+test('google 模式：grounding 检索 → SDK sources（含 title）+ providerOptions.google.googleSearch 下发', async () => {
+  const { calls } = mockFetch(googleBody('Gemini 结论：1.8-2.4万'))
+  const session = makeSession({ provider: { ...provider, mode: 'google', model: 'gemini-synth-1' } })
+  const out = await session.execute('Synthetic 薪资查询')
+  assert.match(out.text, /Gemini 结论：1.8-2.4万/)
+  assert.deepEqual(out.sources, [{ url: 'https://g.example.com/1', title: 'Gemini 引用页' }])
+  const body = JSON.parse(String(calls[0]!.init.body))
+  assert.ok(JSON.stringify(body).includes('googleSearch'), '请求体应含 googleSearch grounding 开关')
+})
+
+test('google 模式：失败即抛错（无 responses 兼容降级——诚实失败）', async () => {
+  mockFetch([{ status: 200, body: googleBody('') }, { status: 500, body: 'boom' }])
+  const session = makeSession({ provider: { ...provider, mode: 'google' } })
+  await assert.rejects(() => session.execute('查询C'), /boom|无文本产出/)
 })
 
 test('主路径：双路径全失败 → 抛错（错误文本由工具层转达，不抛穿循环）', async () => {

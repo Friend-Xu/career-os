@@ -32,3 +32,29 @@ test('agent.search：非法值 → ConfigError 带字段名（fail fast，不静
     )
   }
 })
+
+test('agent.providers[].capabilities：合法值解析；auto 归一为不声明（推断语义）', () => {
+  const { config } = loadFrom({
+    agent: {
+      providers: [
+        { id: 'deepseek', enabled: true, capabilities: { webSearch: 'responses' } },
+        { id: 'custom-1', enabled: true, capabilities: { webSearch: 'off' } },
+        { id: 'custom-2', enabled: true, capabilities: { webSearch: 'auto' } },
+      ],
+    },
+  })
+  const caps = config.agent.providers!.map((p) => p.capabilities)
+  assert.deepEqual(caps[0], { webSearch: 'responses' })
+  assert.deepEqual(caps[1], { webSearch: 'off' })
+  assert.equal(caps[2], undefined, 'auto = 缺省推断，不落配置')
+})
+
+test('agent.providers[].capabilities：非法枚举 → ConfigError（fail fast）', () => {
+  for (const bad of ['native', 'hosted', 'ON', 3, null]) {
+    assert.throws(
+      () => loadFrom({ agent: { providers: [{ id: 'custom-x', enabled: true, capabilities: { webSearch: bad } }] } }),
+      (err: unknown) => err instanceof ConfigError && err.message.includes('capabilities.webSearch'),
+      `应拒绝 webSearch=${JSON.stringify(bad)}`,
+    )
+  }
+})
