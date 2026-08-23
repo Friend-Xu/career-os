@@ -24,6 +24,7 @@
     "@ai-sdk/anthropic": "^4.0.41",
     "@ai-sdk/deepseek": "^3.0.31",
     "@ai-sdk/google": "^4.0.50",
+    "@ai-sdk/mcp": "^2.0.36",
     "@ai-sdk/openai": "^4.0.46",
     "@anthropic-ai/claude-agent-sdk": "^0.3.220",
     "@types/better-sqlite3": "^9.6.0",

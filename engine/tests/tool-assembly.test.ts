@@ -82,6 +82,10 @@ test('治理元数据保真：source/egress/budget/traceScope 原样透传（不
   assert.ok(!String(out.tools.WebSearch.description).includes('provider'))
 })
 
-test('KNOWN_TOOL_NAMES = 引擎注册表事实源（Phase 1 = 文件工具 5 + WebSearch）', () => {
-  assert.deepEqual([...KNOWN_TOOL_NAMES], ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'WebSearch'])
+test('KNOWN_TOOL_NAMES = 引擎注册表事实源（文件 5 + WebSearch + Exa 2）', () => {
+  assert.deepEqual([...KNOWN_TOOL_NAMES], [
+    'Read', 'Write', 'Edit', 'Grep', 'Glob',
+    'WebSearch',
+    'WebResearch', 'WebFetch',
+  ])
 })

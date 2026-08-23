@@ -19,6 +19,7 @@ import { tool } from 'ai'
 import { generateText, type Tool } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { PRIVACY_PATTERN } from './privacy-filter.ts'
 import type { WebSearchMode } from '../providers/capabilities.ts'
 import type { Logger } from '../../logger.ts'
 import type { ToolRuntimeMeta } from './tool-assembly.ts'
@@ -59,9 +60,6 @@ export interface SearchSessionOptions {
 /** 检索指令（主路径 system / 降级路径 instructions 同源）：只检索事实 + 要求来源段 + 标注不确定 */
 const SEARCH_INSTRUCTIONS =
   '你是职业数据检索助手：只检索事实数据，输出简明结构化结论，并在末尾以「## 数据来源」列出引用平台与 URL；不确定的数据明确标注。'
-
-const PRIVACY_PATTERN =
-  /(1[3-9]\d{9})|(\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]?)|([\w.+-]+@[\w-]+\.[\w.]+)/
 
 function responsesRoot(baseUrl: string): string {
   return baseUrl.replace(/\/anthropic\/?$/, '').replace(/\/+$/, '')
@@ -107,7 +105,8 @@ function mergeSources(structured: SearchSource[], text: string): SearchSource[] 
   return [...byUrl.values()]
 }
 
-function renderSources(sources: SearchSource[]): string {
+/** 来源段渲染（共享：外部检索工具统一「## 数据来源」格式） */
+export function renderSources(sources: SearchSource[]): string {
   return `## 数据来源\n${sources.map((s) => (s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`)).join('\n')}`
 }
 

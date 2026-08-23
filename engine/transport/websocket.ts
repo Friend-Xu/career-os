@@ -17,6 +17,7 @@ import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRec
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { webSearchModeOf } from '../agent/providers/capabilities.ts'
+import { ExaConnector } from '../agent/tools/exa.ts'
 import {
   AGENT_TASK_TYPES,
   CONTEXT_REF_TYPES,
@@ -1365,6 +1366,11 @@ export async function startServer(opts: {
       return []
     }
   }
+  // 外部工具源（Tool Runtime P2）：Exa MCP——config 显式启用才连接（外部工具默认关闭，
+  // 双开关：toolSources.exa.enabled + allowedTools 白名单）；连接失败 fail-safe（不注册）。
+  const exaSource = config.agent.toolSources?.exa
+  const exaConnector = exaSource?.enabled === true ? new ExaConnector({ apiKey: exaSource.apiKey, logger }) : undefined
+  void exaConnector?.connect()
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
@@ -1414,7 +1420,7 @@ export async function startServer(opts: {
         }
       }
     }
-  })
+  }, exaConnector)
 
   const handlers: Record<string, (params?: unknown) => unknown> = {
     [METHODS.init]: () => store.init(),

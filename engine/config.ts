@@ -127,6 +127,12 @@ export interface EngineConfig {
     /** WebSearch 治理旋钮（Search Capability Layer P1a）：任务级搜索预算（外部调用次数上限，
      *  缓存命中不消耗）+ 检索结果缓存 TTL（分钟；引擎内存缓存，重启失效）。引擎单方决定，客户端不可设。 */
     search?: { budgetPerTask?: number; cacheTtlMinutes?: number }
+    /**
+     * 外部工具源（Tool Runtime 第二阶段 P2）：MCP/数据源开关——外部工具默认关闭（Phase 0 冻结：
+     *  无管理后台，配置文件字段）。enabled=true 才连接/注册；工具进白名单（allowedTools）才装配。
+     *  exa：Exa hosted MCP（https://mcp.exa.ai/mcp，匿名限速可用；apiKey 可选，Authorization Bearer 提升额度）。
+     */
+    toolSources?: { exa?: { apiKey?: string; enabled: boolean } }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -364,6 +370,33 @@ function assertSearch(v: unknown, source: ConfigSource): { budgetPerTask?: numbe
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+/** 外部工具源校验（Tool Runtime 第二阶段 P2）：exa 段形状校验；enabled 缺省 = false（外部工具默认关闭） */
+function assertToolSources(v: unknown, source: ConfigSource): { exa?: { apiKey?: string; enabled: boolean } } | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v !== 'object' || Array.isArray(v)) {
+    throw new ConfigError('agent.toolSources', v, '{ exa?: { apiKey?, enabled } }', source)
+  }
+  const s = v as Record<string, unknown>
+  const out: { exa?: { apiKey?: string; enabled: boolean } } = {}
+  if (s.exa !== undefined) {
+    if (typeof s.exa !== 'object' || s.exa === null || Array.isArray(s.exa)) {
+      throw new ConfigError('agent.toolSources.exa', s.exa, '{ apiKey?, enabled }', source)
+    }
+    const e = s.exa as Record<string, unknown>
+    if (e.apiKey !== undefined && typeof e.apiKey !== 'string') {
+      throw new ConfigError('agent.toolSources.exa.apiKey', e.apiKey, '字符串或空（匿名限速可用）', source)
+    }
+    if (e.enabled !== undefined && typeof e.enabled !== 'boolean') {
+      throw new ConfigError('agent.toolSources.exa.enabled', e.enabled, '布尔（缺省 false = 外部工具默认关闭）', source)
+    }
+    out.exa = {
+      ...(e.apiKey !== undefined ? { apiKey: e.apiKey } : {}),
+      enabled: e.enabled === true,
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function assertPath(v: unknown, source: ConfigSource): string {
   if (typeof v !== 'string' || v.length === 0) {
     throw new ConfigError('paths.*', v, '非空字符串（绝对或相对路径）', source)
@@ -518,6 +551,7 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.agent.providers !== undefined) config.agent.providers = assertProviders(file.agent.providers, 'config.json')
       if (file.agent.taskModels !== undefined) config.agent.taskModels = assertTaskModels(file.agent.taskModels, 'config.json')
       if (file.agent.search !== undefined) config.agent.search = assertSearch(file.agent.search, 'config.json')
+      if (file.agent.toolSources !== undefined) config.agent.toolSources = assertToolSources(file.agent.toolSources, 'config.json')
       if (file.agent.permissionMode !== undefined) config.agent.permissionMode = assertPermissionMode(file.agent.permissionMode, 'config.json')
       if (file.agent.allowedTools !== undefined) config.agent.allowedTools = assertTools(file.agent.allowedTools, 'config.json')
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')

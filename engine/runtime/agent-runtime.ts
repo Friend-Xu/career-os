@@ -15,6 +15,15 @@ import { resolveLanguageModel } from '../agent/providers/model.ts'
 import type { WebSearchMode } from '../agent/providers/capabilities.ts'
 import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { buildWebSearchTool, createSearchSession, WEB_SEARCH_TOOL_META, type CacheEntry } from '../agent/tools/web-search.ts'
+import {
+  buildExaTools,
+  createExaSession,
+  EXA_CACHE_TTL_MINUTES,
+  EXA_SESSION_BUDGET,
+  EXA_TOOL_META,
+  ExaConnector,
+  type ExaCacheEntry,
+} from '../agent/tools/exa.ts'
 import type { ToolSourceDef } from '../agent/tools/tool-assembly.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
@@ -30,6 +39,68 @@ import type {
 } from '../ir/agent-task.ts'
 
 export type { AgentRuntimeEvent }
+
+/** 工具来源组装入参（独立函数——websocket 接线层传参不在单测域，真机验收覆盖） */
+export interface BuildSourcesOptions {
+  workspace: Workspace
+  defaults: AgentDefaults
+  exaConnector?: ExaConnector
+  searchCache: Map<string, CacheEntry>
+  exaCache: Map<string, ExaCacheEntry>
+  logger: Logger
+  baseUrl?: string
+  /** start() fail fast 校验后必填（无凭证/无模型拒绝启动） */
+  apiKey: string
+  model: string
+}
+
+/**
+ * 工具来源组装（Tool Assembly Layer 的 source 侧）：builtin 文件工具恒在；hosted WebSearch 按
+ * 现有条件注入（无 provider/off 模式 → 不注册——装配层交集自然排除）；mcp 源（Exa）在连接
+ * 已就绪时注入（未启用/连接失败 → 不注入，fail-safe）。data 源（统计局）随 Phase 3 加入。
+ */
+export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
+  const { defaults } = opts
+  return [
+    { tools: buildFsTools(opts.workspace), meta: FS_TOOL_META },
+    ...(opts.baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
+      ? [
+          {
+            tools: { WebSearch: buildWebSearchTool(createSearchSession({
+              provider: { baseUrl: opts.baseUrl, apiKey: opts.apiKey, model: opts.model, mode: defaults.webSearchMode ?? 'responses' },
+              budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+              cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
+              cache: opts.searchCache,
+              logger: opts.logger,
+            })) },
+            meta: {
+              WebSearch: {
+                ...WEB_SEARCH_TOOL_META,
+                budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+              },
+            },
+          },
+        ]
+      : []),
+    ...(opts.exaConnector?.ready === true
+      ? [
+          {
+            tools: buildExaTools(
+              opts.exaConnector,
+              createExaSession({
+                connector: opts.exaConnector,
+                budget: EXA_SESSION_BUDGET,
+                cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000,
+                cache: opts.exaCache,
+                logger: opts.logger,
+              }),
+            ),
+            meta: EXA_TOOL_META,
+          },
+        ]
+      : []),
+  ]
+}
 
 export interface AgentStartParams {
   task: string
@@ -95,10 +166,15 @@ export class AgentRuntime {
   private emit: (taskId: string, ev: AgentRuntimeEvent) => void
   /** WebSearch 检索缓存（引擎级单例：跨任务共享，进程存续——引擎重启即失效，可接受） */
   private searchCache = new Map<string, CacheEntry>()
+  /** Exa 检索缓存（引擎级单例：跨任务共享；与 WebSearch 缓存独立命名空间） */
+  private exaCache = new Map<string, ExaCacheEntry>()
+  /** Exa MCP 连接器（Tool Runtime P2；缺省 = 不注册该源——未启用/连接失败均 fail-safe） */
+  private exaConnector?: ExaConnector
 
-  constructor(logger: Logger, emit: (taskId: string, ev: AgentRuntimeEvent) => void) {
+  constructor(logger: Logger, emit: (taskId: string, ev: AgentRuntimeEvent) => void, exaConnector?: ExaConnector) {
     this.logger = logger
     this.emit = emit
+    this.exaConnector = exaConnector
   }
 
   start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): string {
@@ -112,31 +188,19 @@ export class AgentRuntime {
     if (!apiKey) throw new Error('未配置已启用的服务商（apiKey）——请在设置页添加并启用服务商后再试')
     if (!model) throw new Error('服务商未登记模型——请在设置页勾选模型后再试')
 
-    // 工具来源组装（Tool Assembly Layer）：builtin 文件工具恒在；hosted WebSearch 按
-    // 现有条件注入（无 provider/off 模式 → 不注册——装配层交集自然排除）。
-    // mcp/data 源随 Tool Runtime 第二阶段 Phase 2/3 加入。
-    const sources: ToolSourceDef[] = [
-      { tools: buildFsTools(workspace), meta: FS_TOOL_META },
-      ...(baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
-        ? [
-            {
-              tools: { WebSearch: buildWebSearchTool(createSearchSession({
-                provider: { baseUrl, apiKey, model, mode: defaults.webSearchMode ?? 'responses' },
-                budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
-                cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
-                cache: this.searchCache,
-                logger: this.logger,
-              })) },
-              meta: {
-                WebSearch: {
-                  ...WEB_SEARCH_TOOL_META,
-                  budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
-                },
-              },
-            },
-          ]
-        : []),
-    ]
+    // 工具来源组装（Tool Assembly Layer）：独立函数 buildToolSources（单测覆盖源组合；
+    // websocket → AgentRuntime 的 connector 传参属接线层，真机验收覆盖）
+    const sources = buildToolSources({
+      workspace,
+      defaults,
+      exaConnector: this.exaConnector,
+      searchCache: this.searchCache,
+      exaCache: this.exaCache,
+      logger: this.logger,
+      baseUrl,
+      apiKey,
+      model,
+    })
     const handle = createAgentRunner({
       task: params.task,
       context: params.context,
@@ -225,8 +289,9 @@ export class AgentRuntime {
     resolve(allow)
   }
 
-  /** 优雅关闭：中止所有活跃任务（abort → SDK close → CLI 子进程终止） */
+  /** 优雅关闭：中止所有活跃任务（abort → SDK close → CLI 子进程终止）+ 关闭外部 MCP 连接 */
   shutdown(): void {
     for (const taskId of [...this.tasks.keys()]) this.cancel(taskId)
+    void this.exaConnector?.close()
   }
 }
