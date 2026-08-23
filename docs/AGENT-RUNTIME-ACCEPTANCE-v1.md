@@ -246,8 +246,10 @@ Provider Decoupling        ★★★★★
 真实模型行为               ★★★★★（含信息稀疏/诱导幻觉/冲突三对抗 case 全过）
 Artifact Memory 架构        ★★★★★（E 评估/推荐 = 无会话续接，Artifact Graph + Evidence Graph 承担状态）
 Production Readiness        ★★★★☆（2026-08-23 更新：P0-1 已修复（PR-1/PR-2/PR-3 + UI 接线，
-                            person_001/002 真机全链）+ I-1/I-2/I-3/I-4 PASS；剩余 Hardening v2
-                            （长跑/并发/Provider 稳定性）与 Provider Stability v0.1 见「后续方向」）
+                            person_001/002 真机全链）+ I-1/I-2/I-3/I-4 PASS；Provider Stability
+                            v0.1 已交付（外部工具链路统一 timeout/重试/错误归一/耗时 trace——
+                            见 ADR-030 Consequence）；剩余 Hardening v2（长跑/并发/模型主链路
+                            断点续跑与取消传播）见「下一阶段」）
 ```
 
 ### Stage Policy（本轮落地，ADR-030 收尾项）
@@ -257,11 +259,29 @@ Production Readiness        ★★★★☆（2026-08-23 更新：P0-1 已修复
 - 防截断防线：预算 ≥ 阶段真实产出需要（4096 档是兼容模式截断事故后的显式余量）
 - 测试锚点：`workflow-registry.test.ts` Stage Policy 完整性 + `agent-runner.test.ts` 请求体 `max_tokens` 断言
 
+### Provider Stability v0.1（2026-08-23 交付，Hardening v2 前置项）
+
+- 目标：外部工具链路「挂死不报 / 错误不可读 / 无耗时可观测」→ 统一封装
+- 载体：`engine/agent/tools/external-call.ts`（Agent 工具链路唯一裸 fetch 出口；
+  grep 验证工具链路无裸 `fetch(`）
+- 接入面：NBS（api.ts 全请求 + 重试退避 600ms 对齐节流纪律）/ WebSearch（主路径 SDK
+  abortSignal 60s + maxRetries 1，hosted 降级 retries=0——重试=计费搜索×2）/ Exa MCP
+  （SDK 默认**无超时**——挂起=永不 ready；显式 init/call 超时 + maxRetries 1）/ Zhipu 视觉
+  （60s 超时，外层退避循环保留）/ 设置页 /models 探测（10s）
+- 实测校准：WebSearch 20-37s（默认 60s 留余量）、NBS ~300ms、Exa ~1.8s
+- 证据链：tool_done 已有工具级 durationMs；调用级 `http_call`（endpoint 类别 + attempts +
+  durationMs + kind）进既有 trace 命名空间（web_search-*.jsonl 等），P3 `computeSearchStats`
+  白名单外新事件不计数（指标板零破坏）
+- 预算口径：一次逻辑调用（含重试）计一次预算——重试是传输层故障处理，不重复消耗
+- 测试：1003/1003 + tsc 0（新增 external-call.test.ts 11 例 + 接入点用例）
+- 不纳入（Hardening v2）：模型主链路 streamText 重试退避/断点续跑、取消传播至 in-flight
+  外部调用、timeout/retry 配置化（Phase 4 Tool Governance 与 budget/cache 一并）
+
 ### 下一阶段：Agent Runtime Hardening v2（非迁移阻塞项，正式立项）
 
 - 长跑稳定性：100 次工作流连续跑
 - 并发任务（多 Agent 任务并行 + 权限往返互不干扰）
-- Provider 稳定性：timeout / rate limit / 重试退避 / 断点续跑
+- 模型主链路 Provider 稳定性：streamText 重试退避 / 断点续跑 / 取消传播至 in-flight 外部调用
 - `checkAgentHealth` 常态化（设置页健康投影已有，扩展为可观测性基线）
 
 ## 前端用户视角验收（2026-08-22，可复现实验）

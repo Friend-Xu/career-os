@@ -24,9 +24,9 @@ import {
   type ExaMcpToolName,
 } from '../agent/tools/exa.ts'
 
-/** fake MCP client：listTools/toolsFromDefinitions/callTool/close；记录 callTool 调用 */
+/** fake MCP client：listTools/toolsFromDefinitions/callTool/close；记录 callTool 调用与 options */
 function fakeClient(opts?: { searchResult?: string; searchError?: boolean; callThrow?: string }) {
-  const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+  const calls: Array<{ name: string; args: Record<string, unknown>; options?: unknown }> = []
   const baseTools = {
     web_search_exa: tool({
       description: 'Search the web with Exa',
@@ -51,8 +51,16 @@ function fakeClient(opts?: { searchResult?: string; searchError?: boolean; callT
       tools: Object.entries(baseTools).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })),
     }),
     toolsFromDefinitions: () => baseTools,
-    callTool: async ({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) => {
-      calls.push({ name, args })
+    callTool: async ({
+      name,
+      arguments: args,
+      options,
+    }: {
+      name: string
+      arguments: Record<string, unknown>
+      options?: unknown
+    }) => {
+      calls.push({ name, args, ...(options !== undefined ? { options } : {}) })
       const exec = (baseTools as unknown as Record<string, { execute?: (i: unknown) => Promise<unknown> }>)[name]
       if (exec === undefined || exec.execute === undefined) throw new Error(`tool not found: ${name}`)
       return exec.execute(args)
@@ -157,6 +165,37 @@ test('callToolText：多 text 块拼接 + isError → 抛错误', async () => {
   const c = connectorWith(async () => fake.client)
   await c.connect()
   await assert.rejects(() => c.callToolText('web_search_exa', { query: 'q' }), /外部检索服务错误/)
+})
+
+test('Provider Stability：callToolText 传 callTool RequestOptions（注入的 timeout/maxTotalTimeout 透传）', async () => {
+  const fake = fakeClient()
+  const c = new ExaConnector({
+    clientFactory: async () => fake.client,
+    callTimeoutMs: 1234,
+    callMaxTotalTimeoutMs: 5678,
+  })
+  await c.connect()
+  await c.callToolText('web_search_exa', { query: 'q' })
+  assert.deepEqual(fake.calls[0].options, { timeout: 1234, maxTotalTimeout: 5678 }, 'SDK callTool 超时配置透传')
+})
+
+test('Provider Stability：callToolText 成功/失败 → exa trace 带 durationMs（call_ok/call_error，toolName 可溯源）', async () => {
+  const traces: Array<Record<string, unknown>> = []
+  const logger: Logger = { debug() {}, info() {}, warn() {}, error() {}, trace(_scope, entry) { traces.push(entry) } }
+  const c = new ExaConnector({ clientFactory: async () => fakeClient().client, logger })
+  await c.connect()
+  await c.callToolText('web_search_exa', { query: 'q' })
+  const ok = traces.find((t) => t.event === 'call_ok')
+  assert.ok(ok !== undefined, '成功应有 call_ok trace')
+  assert.equal(ok.toolName, 'web_search_exa')
+  assert.ok(typeof ok.durationMs === 'number' && (ok.durationMs as number) >= 0)
+  // 失败路径（SDK 层异常）
+  const c2 = new ExaConnector({ clientFactory: async () => fakeClient({ callThrow: 'boom' }).client, logger })
+  await c2.connect()
+  await assert.rejects(() => c2.callToolText('web_search_exa', { query: 'q' }), /boom/)
+  const err = traces.find((t) => t.event === 'call_error')
+  assert.ok(err !== undefined, '失败应有 call_error trace')
+  assert.ok(typeof err.durationMs === 'number' && (err.durationMs as number) >= 0)
 })
 
 test('来源保障：检索文本无来源段但含 URL → 追加「## 数据来源」', async () => {

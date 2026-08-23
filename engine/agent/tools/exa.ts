@@ -28,6 +28,12 @@ export const EXA_MCP_URL = 'https://mcp.exa.ai/mcp'
 export const EXA_SESSION_BUDGET = 5
 export const EXA_CACHE_TTL_MINUTES = 30
 
+// Provider Stability v0.1：@ai-sdk/mcp 默认无超时（挂起 = 永不 ready）——显式接入 SDK 配置
+export const EXA_INIT_TIMEOUT_MS = 15_000
+export const EXA_INIT_MAX_TOTAL_TIMEOUT_MS = 30_000
+export const EXA_CALL_TIMEOUT_MS = 60_000
+export const EXA_CALL_MAX_TOTAL_TIMEOUT_MS = 180_000
+
 /** MCP 工具名 → 认知层工具名（T1：协议/供应商标识在转译点消失，Agent 只见能力动词） */
 export const EXA_TOOL_MAP = {
   web_search_exa: 'WebResearch',
@@ -68,6 +74,10 @@ export interface ExaConnectorOptions {
   logger?: Logger
   /** 测试注入：MCP client 工厂（缺省 = 真连 Exa hosted endpoint） */
   clientFactory?: () => Promise<MCPClient>
+  /** 调用超时（毫秒；缺省 = EXA_CALL_TIMEOUT_MS；测试注短值验证透传） */
+  callTimeoutMs?: number
+  /** 调用总超时上限（毫秒；缺省 = EXA_CALL_MAX_TOTAL_TIMEOUT_MS） */
+  callMaxTotalTimeoutMs?: number
 }
 
 export class ExaConnector {
@@ -100,6 +110,9 @@ export class ExaConnector {
                 ? { headers: { Authorization: `Bearer ${this.opts.apiKey}` } }
                 : {}),
             },
+            // Provider Stability v0.1：SDK 默认无超时（挂起 = 连接永不 ready）+ 瞬态失败重试默认 0
+            initializationOptions: { timeout: EXA_INIT_TIMEOUT_MS, maxTotalTimeout: EXA_INIT_MAX_TOTAL_TIMEOUT_MS },
+            maxRetries: 1,
           })))()
       const defs = await client.listTools()
       this.mcpTools = client.toolsFromDefinitions(defs) as Record<string, Tool<any, any>>
@@ -127,21 +140,34 @@ export class ExaConnector {
     return this.mcpTools?.[name]
   }
 
-  /** 调用 MCP 工具并提取文本（CallToolResult.content 的 text 块拼接） */
+  /** 调用 MCP 工具并提取文本（CallToolResult.content 的 text 块拼接）；
+   *  超时/重试由 SDK 配置承担（callTool RequestOptions + maxRetries=1），本层记耗时 trace */
   async callToolText(name: ExaMcpToolName, args: Record<string, unknown>): Promise<string> {
     const client = this.client
     if (client === null) throw new Error('外部检索连接未就绪')
-    const res = await client.callTool({ name, arguments: args })
-    const content = (res.content ?? []) as Array<{ type?: string; text?: string }>
-    const text = content
-      .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
-      .map((c) => c.text)
-      .join('\n')
-    if (res.isError === true) {
-      throw new Error(`外部检索服务错误：${text.slice(0, 200)}`)
+    const startedAt = Date.now()
+    try {
+      const res = await client.callTool({
+        name,
+        arguments: args,
+        options: {
+          timeout: this.opts.callTimeoutMs ?? EXA_CALL_TIMEOUT_MS,
+          maxTotalTimeout: this.opts.callMaxTotalTimeoutMs ?? EXA_CALL_MAX_TOTAL_TIMEOUT_MS,
+        },
+      })
+      const content = (res.content ?? []) as Array<{ type?: string; text?: string }>
+      const text = content
+        .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
+        .map((c) => c.text)
+        .join('\n')
+      if (res.isError === true) throw new Error(`外部检索服务错误：${text.slice(0, 200)}`)
+      if (text.trim().length === 0) throw new Error('检索完成但无文本产出')
+      this.opts.logger?.trace('exa', { event: 'call_ok', toolName: name, durationMs: Date.now() - startedAt })
+      return text
+    } catch (err) {
+      this.opts.logger?.trace('exa', { event: 'call_error', toolName: name, durationMs: Date.now() - startedAt })
+      throw err
     }
-    if (text.trim().length === 0) throw new Error('检索完成但无文本产出')
-    return text
   }
 
   async close(): Promise<void> {
