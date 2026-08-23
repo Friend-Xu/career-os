@@ -67,11 +67,11 @@ export async function resolveIndicator(keyword: string, deps: ResolverDeps = {})
   // Stage 1a：curator 命中（语义名精确 = 1；别名 = 0.95——curated 资产最高优先）
   const exact = findCuratorExactIn(curator, q)
   if (exact !== undefined) {
-    return { kind: 'resolved', indicator: toResolved(exact, 1) }
+    return resolveCuratorHit(curator, exact, q, 1)
   }
   const byAlias = findCuratorByAliasIn(curator, q)
   if (byAlias !== undefined) {
-    return { kind: 'resolved', indicator: toResolved(byAlias, 0.95) }
+    return resolveCuratorHit(curator, byAlias, q, 0.95)
   }
 
   // Stage 1b：树搜索兜底（无 tree deps = 测试场景直接 miss）
@@ -155,6 +155,25 @@ export async function resolveIndicator(keyword: string, deps: ResolverDeps = {})
 
 function toResolved(e: CuratorEntry, confidence: number): ResolvedIndicator {
   return { indicatorId: e.indicatorId, catalogId: e.catalogId, name: e.name, path: e.path, confidence }
+}
+
+/** 人均维度词检测（P4.5 强语义：口径变化——per_capita 查询 vs total 条目必须 Gate；不含 rate/share——
+ *  无实战实例的维度后置，数据驱动扩展） */
+export function wantsPerCapita(keyword: string): boolean {
+  return /(人均|每人|平均每|per[\s-]*capita)/i.test(keyword)
+}
+
+/** 维度一致性 Gate：query 含人均词（口径变化）时，total 条目不得静默承接 per_capita 查询——
+ *  - 同 path 存在 per_capita 兄弟条目 → 映射到兄弟（语义归一：人均地区生产总值 → 人均国内生产总值；
+ *    置信降档 0.9——映射性命中低于直接别名命中，诚实降级）
+ *  - 无兄弟 → candidates（歧义显式化，不静默选——携带原条目线索供指认） */
+function resolveCuratorHit(curator: CuratorEntry[], hit: CuratorEntry, keyword: string, confidence: number): ResolveResult {
+  if (wantsPerCapita(keyword) && hit.dimension !== 'per_capita') {
+    const sibling = curator.find((e) => e.dimension === 'per_capita' && e.path === hit.path)
+    if (sibling !== undefined) return { kind: 'resolved', indicator: toResolved(sibling, 0.9) }
+    return { kind: 'candidates', options: [toResolved(hit, confidence)] }
+  }
+  return { kind: 'resolved', indicator: toResolved(hit, confidence) }
 }
 
 function findCuratorExactIn(list: CuratorEntry[], keyword: string): CuratorEntry | undefined {

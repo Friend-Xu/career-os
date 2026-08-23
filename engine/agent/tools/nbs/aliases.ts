@@ -21,6 +21,9 @@ export interface CuratorEntry {
   catalogId: string
   /** 口径说明（查询时随结果/降级提示呈现） */
   note?: string
+  /** 口径维度（P4.5 维度一致性 Gate）：缺省 = total（总量口径）；
+   *  per_capita 必须显式标注——查询含人均词时，total 条目不得静默承接（维度 Gate 拦截） */
+  dimension?: 'total' | 'per_capita'
 }
 
 export const NBS_CURATOR: CuratorEntry[] = [
@@ -38,6 +41,7 @@ export const NBS_CURATOR: CuratorEntry[] = [
     path: '国民经济核算 > 国内生产总值',
     indicatorId: 'eb4d93f19d57495c89f98875e03e01be',
     catalogId: 'f7fd25aaad184414875632cf2327da60',
+    dimension: 'per_capita',
     note: '城市级人均 GDP 不属国家数据年度口径——城市查询请改用省级或相关产业指标',
   },
   {
@@ -46,6 +50,7 @@ export const NBS_CURATOR: CuratorEntry[] = [
     path: '人民生活 > 全国居民人均收入情况',
     indicatorId: '305bba1e881e413b91f32a06a4be65fd',
     catalogId: 'd153132154a549a78363017ef74ca784',
+    dimension: 'per_capita',
   },
   {
     name: '社会消费品零售总额',
