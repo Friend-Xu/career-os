@@ -1094,19 +1094,39 @@ export interface PersonHealth {
   summary: string
 }
 
-/** WebSearch 指标投影（P3 指标板：logs/traces/web_search-*.jsonl 聚合，纯读派生不落盘。
- *  只输出计数与时间戳——trace 文件含任务原文，RPC 永不回传查询内容（隐私红线）。 */
-export interface SearchStats {
-  /** search_start 次数（实际发起检索） */
-  searches: number
-  /** cache_hit 次数（引擎级共享缓存命中，不耗预算） */
-  cacheHits: number
-  /** fallback 次数（官方路径失败 → 守卫降级薄封装） */
-  fallbacks: number
-  /** search_error 次数 */
+/** 工具指标投影（Phase 4B ToolStats 统一指标板：logs/traces 聚合，纯读派生不落盘。
+ *  只输出计数/耗时聚合与时间戳——trace 文件含任务原文，RPC 永不回传查询内容（隐私红线）。
+ *  聚合源：tool-*.jsonl（工具级审计事件，含 source/provider/durationMs）+
+ *  会话命名空间 trace（web_search/nbs/nbs_profile/exa：cache_hit/budget_exhausted/fallback/http_call）。 */
+export interface ToolStatEntry {
+  /** 工具名（认知层名，如 QueryMacroStats/WebSearch/Read） */
+  name: string
+  source: ToolSource
+  /** 供应商标识（审计面；builtin 无） */
+  provider?: string
+  /** 执行次数（tool_done + tool_error） */
+  calls: number
+  /** 失败次数（tool_error） */
   errors: number
-  /** budget_exhausted 次数（任务搜索预算用尽） */
+  /** 平均耗时（ms；无样本 → null） */
+  avgDurationMs: number | null
+  /** 最大耗时（ms；无样本 → null） */
+  maxDurationMs: number | null
+}
+
+export interface ToolStats {
+  /** 按工具（trace 出现序；无 trace → []） */
+  byTool: ToolStatEntry[]
+  /** 按来源（builtin/hosted/mcp/data 汇总；无 trace → []） */
+  bySource: { source: ToolSource; calls: number; errors: number; avgDurationMs: number | null }[]
+  /** 外部 HTTP 调用次数（Provider Stability http_call；v0.1 起落盘） */
+  externalCalls: number
+  /** 缓存命中（会话级：web_search/nbs/nbs_profile/exa cache_hit） */
+  cacheHits: number
+  /** 预算用尽（会话级 budget_exhausted） */
   budgetExhausted: number
+  /** WebSearch 守卫降级（fallback） */
+  fallbacks: number
   /** 最早 trace 时间（ISO）；无 trace → null */
   since: string | null
   /** 最晚 trace 时间（ISO）；无 trace → null */
