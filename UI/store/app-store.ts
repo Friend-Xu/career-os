@@ -19,7 +19,7 @@ import type {
   ResumeVersion,
   RewriteFeedbackReason,
   RewriteState,
-  SearchStats,
+  ToolStats,
   Session,
   StageStatus,
 } from '../types'
@@ -234,8 +234,8 @@ interface AppState {
   careerContext: CareerContext | null;
   /** 健康投影（契约 v1，引擎实时计算；offline 时页面用 mock 兜底） */
   health: HealthReport | null;
-  /** WebSearch 指标投影（P3 指标板：引擎 system/search-stats 聚合；offline/空 → null 诚实空态） */
-  searchStats: SearchStats | null;
+  /** 工具指标投影（Phase 4B 工具指标板：引擎 system/tool-stats 聚合；offline/空 → null 诚实空态） */
+  toolStats: ToolStats | null;
   companies: CompanyView[];
   /** 候选池（公司适配榜候选层；引擎 candidates/list） */
   candidates: CandidatePoolEntry[];
@@ -616,7 +616,7 @@ export const useAppStore = create<AppState>()(
       /** AI Read Model（M3.5.4）：CareerContext 投影（引擎实时派生；offline 为 null） */
       careerContext: null,
       health: null,
-      searchStats: null,
+      toolStats: null,
       companies: COMPANIES,
       candidates: [],
       jobLeads: [],
@@ -3093,12 +3093,12 @@ async function pullHealth(): Promise<void> {
   }
 }
 
-/** WebSearch 指标投影（P3 指标板）：system/search-stats RPC；失败保持 null（诚实空态，无 mock 兜底） */
-export async function pullSearchStats(): Promise<void> {
+/** 工具指标投影（Phase 4B 工具指标板）：system/tool-stats RPC；失败保持 null（诚实空态，无 mock 兜底） */
+export async function pullToolStats(): Promise<void> {
   if (!engine) return
   try {
-    const stats = await engine.searchStats()
-    useAppStore.setState({ searchStats: stats })
+    const stats = await engine.toolStats()
+    useAppStore.setState({ toolStats: stats })
   } catch {
     // offline/旧引擎：保持 null
   }
@@ -3271,7 +3271,7 @@ export function connectEngine(): void {
       void pullContexts()
       void pullKnowledge()
       void pullHealth()
-      void pullSearchStats()
+      void pullToolStats()
       void pullJobs()
       void pullApplications()
       void pullCandidates()

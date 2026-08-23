@@ -26,7 +26,8 @@ import type {
   EvidenceItem,
   CareerClaim,
   ClaimCoverageRow,
-  SearchStats,
+  ToolStats,
+  ToolStatEntry,
   ToolSource,
   ToolEvidence,
 } from '../../engine/ir/schema.ts';
@@ -47,7 +48,8 @@ export type { ApplicationRecord };
 export type { ApplicationView };
 export type { GapResult };
 export type { HealthReport };
-export type { SearchStats };
+export type { ToolStats };
+export type { ToolStatEntry };
 export type { ToolSource };
 export type { ToolEvidence };
 export type { RiskLevel };
