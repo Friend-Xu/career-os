@@ -1,12 +1,11 @@
 /**
  * Runtime Dependency Audit（ADR-030 验收 H）：静态审计引擎生产运行时的 CLI 痕迹。
- * 目标：production runtime dependency 中 Claude CLI 相关计数全为 0；benchmark/legacy 保留位不受限。
+ * 目标：production runtime dependency 中 Claude CLI 相关计数全为 0（2026-08-23 H 收尾：
+ * claude adapter 保留位已随依赖一并删除——审计无豁免位）。
  * 运行：node tests/runtime-dependency-audit.mjs（不用真实运行时，静态扫描）
  *
- * 审计规则（排除清单 = 明确保留的回归基准位）：
- *   允许：agent/adapter/claude.ts（benchmark/legacy-adapter 保留）、tests/bench-extract.mjs、
- *        tests/fixtures（无）、engine/tests/**（测试资产）
- *   禁止：其余任何 runtime 文件出现 claude-agent-sdk import / ANTHROPIC_ env 读取 / claude spawn
+ * 审计规则：tests/ 属测试资产（fixtures/helper 任意）；其余任何 runtime 文件出现
+ * claude-agent-sdk import / ANTHROPIC_ env 读取 / claude spawn → 检出即失败
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -14,8 +13,6 @@ import { fileURLToPath } from 'node:url'
 
 const ENGINE = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXCLUDED = [
-  'agent/adapter/claude.ts', // benchmark/legacy-adapter 保留位（ADR-030 决策 5）
-  'tests/bench-extract.mjs', // A/B benchmark 回归基准
   'tests/', // 测试资产（fixtures/helper 任意）
 ]
 
@@ -54,11 +51,11 @@ for (const f of walk(ENGINE)) {
 }
 
 console.log('┌─ Runtime Dependency Audit（ADR-030 H）──────────────────┐')
-console.log(`扫描 runtime 文件：${scanned} 个（排除保留位：claude.ts / bench-extract / tests/）`)
+console.log(`扫描 runtime 文件：${scanned} 个（排除 tests/ 测试资产）`)
 console.log('')
 if (findings.length === 0) {
   console.log('✅ 生产运行时 CLI 依赖 = 0（claude-agent-sdk / spawn / ANTHROPIC_* / ~/.claude 全部清零）')
-  console.log('✅ 保留位正常：agent/adapter/claude.ts（benchmark 基准）不受本审计约束')
+  console.log('✅ claude adapter 保留位已移除（历史锚点 tag pre-provider-decoupling）')
   process.exit(0)
 } else {
   console.log('❌ 发现运行时残留：')

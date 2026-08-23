@@ -14,8 +14,7 @@
     "test": "node --test --test-isolation=none \"tests/*.test.ts\"",
     "smoke:bridge": "node tests/bridge-smoke.mjs",
     "smoke:proposal": "node tests/proposal-e2e.mjs",
-    "smoke:handlers": "node tests/handlers-smoke.mjs",
-    "smoke:question": "node tests/adapter-question-smoke.mjs"
+    "smoke:handlers": "node tests/handlers-smoke.mjs"
   },
   "engines": {
     "node": ">=24"
@@ -26,7 +25,6 @@
     "@ai-sdk/google": "^4.0.50",
     "@ai-sdk/mcp": "^2.0.36",
     "@ai-sdk/openai": "^4.0.46",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
     "@types/better-sqlite3": "^9.6.0",
     "@types/ws": "^8.18.1",
     "ai": "^7.0.77",

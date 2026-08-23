@@ -1,7 +1,8 @@
 /**
  * JD 信息提取（一次性）：粘贴 JD 原文 → 提取结构化字段 → JSON 回填建档表单。
  * - 运行时唯一路径（ADR-030 Step 6）：StructuredExtractor + generateObject（schema 下发 + 校验重试 + 类型直达）
- * - CLI 适配路径已移出（tests/cli-jd-extract.ts，legacy 基准用；生产运行时零 CLI 引用）
+ * - CLI 适配路径已随保留位删除（历史锚点 tag pre-provider-decoupling；ADR-030 Step 6：
+ *   运行时唯一路径 = 本文件 direct 提取）
  */
 import type { LanguageModel } from 'ai'
 import { z } from 'zod'
