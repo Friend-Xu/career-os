@@ -273,9 +273,20 @@ Production Readiness        ★★★★☆（2026-08-23 更新：P0-1 已修复
   durationMs + kind）进既有 trace 命名空间（web_search-*.jsonl 等），P3 `computeSearchStats`
   白名单外新事件不计数（指标板零破坏）
 - 预算口径：一次逻辑调用（含重试）计一次预算——重试是传输层故障处理，不重复消耗
-- 测试：1003/1003 + tsc 0（新增 external-call.test.ts 11 例 + 接入点用例）
+- 测试：1005/1005 + tsc 0（新增 external-call.test.ts 11 例 + 接入点用例）
 - 不纳入（Hardening v2）：模型主链路 streamText 重试退避/断点续跑、取消传播至 in-flight
-  外部调用、timeout/retry 配置化（Phase 4 Tool Governance 与 budget/cache 一并）
+  外部调用、timeout/retry 配置化（Phase 4C Tool Governance 与 budget/cache 一并）
+
+### Phase 4B ToolStats（2026-08-23 交付）
+
+- SearchStats（单一 WebSearch 指标板）→ **ToolStats 统一指标板**：search-stats 移除无死代码
+- 聚合：tool-*.jsonl（工具级审计事件——name/source/provider/durationMs，全工具统一）+
+  会话命名空间（web_search/nbs/nbs_profile/exa：cache_hit/budget_exhausted/fallback/http_call）
+- RPC `system/tool-stats`；UI 状态栏「工具 N 次 · 缓存 M」+ 工具指标弹层（按工具表 /
+  按来源汇总 / 外部调用 / 缓存 / 降级 / 预算 / 时间窗）；诚实空态无 mock
+- 真机（Playwright）：123 次调用 · 40 外部 HTTP · 降级 1（11 工具 × 4 来源全对）；
+  修复 alpha(CSS var) 不支持运行时错误；console 0 error/0 warning
+- source ranking 后置：需 100-500 次真实任务数据（Phase 4C 数据前提——不拍脑袋）
 
 ### 下一阶段：Agent Runtime Hardening v2（非迁移阻塞项，正式立项）
 
