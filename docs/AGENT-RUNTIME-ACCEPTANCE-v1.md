@@ -288,6 +288,17 @@ Production Readiness        ★★★★☆（2026-08-23 更新：P0-1 已修复
   修复 alpha(CSS var) 不支持运行时错误；console 0 error/0 warning
 - source ranking 后置：需 100-500 次真实任务数据（Phase 4C 数据前提——不拍脑袋）
 
+### Phase 4C Tool Governance 旋钮配置化（2026-08-23 交付）
+
+- `config.agent.toolSources.exa.{budgetPerTask,cacheTtlMinutes,callTimeoutMs}` +
+  `toolSources.nbs.{budgetPerTask,cacheTtlMinutes,profileBudgetPerTask,timeoutMs,retries}`
+  + `agent.search.{timeoutMs,hostedRetries}`——可选正整数，缺省 = 引擎常量（行为不变）
+- retries 限幅 0-3（重试是安全调整，引擎限幅 fail fast——配置错误放大成本的防线）
+- 注入分层：connector 级（Exa/NBS 构造，超时/重试）与会话级（AgentDefaults →
+  buildToolSources，budget/cache）；校验/describe 同步
+- 真机：显式值 = 常量等值 → smoke 5/5（NBS 273ms / Exa 2007ms）；1008/1008 + tsc 0
+- source ranking 后置维持（需 100-500 次真实任务数据支撑；不可拍脑袋）
+
 ### 下一阶段：Agent Runtime Hardening v2（非迁移阻塞项，正式立项）
 
 - 长跑稳定性：100 次工作流连续跑
