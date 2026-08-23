@@ -281,3 +281,49 @@ test('loadConfig：taskModels 形状非法（非字符串）→ ConfigError', ()
   assert.throws(() => loadConfig(['--config', path]), ConfigError)
   rmSync(join(path, '..'), { recursive: true, force: true })
 })
+
+// ─── Phase 4C：治理旋钮配置化（toolSources 扩展 + search 超时/重试）──────────
+
+test('Phase 4C：toolSources 治理旋钮解析（exa budget/cache/timeout；nbs 单查/画像预算/超时/重试 0-3）', () => {
+  clearEnv()
+  const path = tempConfigFile({
+    agent: {
+      toolSources: {
+        exa: { enabled: true, budgetPerTask: 7, cacheTtlMinutes: 90, callTimeoutMs: 45_000 },
+        nbs: { enabled: true, budgetPerTask: 5, cacheTtlMinutes: 2880, profileBudgetPerTask: 9, timeoutMs: 20_000, retries: 2 },
+      },
+    },
+  })
+  const { config } = loadConfig(['--config', path])
+  assert.equal(config.agent.toolSources?.exa?.budgetPerTask, 7)
+  assert.equal(config.agent.toolSources?.exa?.cacheTtlMinutes, 90)
+  assert.equal(config.agent.toolSources?.exa?.callTimeoutMs, 45_000)
+  assert.equal(config.agent.toolSources?.nbs?.budgetPerTask, 5)
+  assert.equal(config.agent.toolSources?.nbs?.profileBudgetPerTask, 9)
+  assert.equal(config.agent.toolSources?.nbs?.timeoutMs, 20_000)
+  assert.equal(config.agent.toolSources?.nbs?.retries, 2)
+  rmSync(join(path, '..'), { recursive: true, force: true })
+})
+
+test('Phase 4C：search 扩展旋钮（timeoutMs/hostedRetries 0-3）；restri 超限/负数 → fail fast', () => {
+  clearEnv()
+  const ok = loadConfig(['--config', tempConfigFile({ agent: { search: { timeoutMs: 90_000, hostedRetries: 0 } } })]).config
+  assert.equal(ok.agent.search?.timeoutMs, 90_000)
+  assert.equal(ok.agent.search?.hostedRetries, 0)
+
+  const p1 = tempConfigFile({ agent: { search: { hostedRetries: 4 } } })
+  assert.throws(() => loadConfig(['--config', p1]), /hostedRetries.*0-3/)
+  rmSync(join(p1, '..'), { recursive: true, force: true })
+
+  const p2 = tempConfigFile({ agent: { toolSources: { nbs: { enabled: true, retries: 5 } } } })
+  assert.throws(() => loadConfig(['--config', p2]), /retries.*0-3/)
+  rmSync(join(p2, '..'), { recursive: true, force: true })
+
+  const p3 = tempConfigFile({ agent: { toolSources: { nbs: { enabled: true, retries: -1 } } } })
+  assert.throws(() => loadConfig(['--config', p3]), /retries.*0-3/)
+  rmSync(join(p3, '..'), { recursive: true, force: true })
+
+  const p4 = tempConfigFile({ agent: { toolSources: { exa: { enabled: true, budgetPerTask: 0 } } } })
+  assert.throws(() => loadConfig(['--config', p4]), /budgetPerTask.*正整数/)
+  rmSync(join(p4, '..'), { recursive: true, force: true })
+})

@@ -1372,11 +1372,25 @@ export async function startServer(opts: {
   }
   // 外部工具源（Tool Runtime P2/P3）：Exa MCP + NBS 数据——config 显式启用才连接（外部工具
   // 默认关闭，双开关：toolSources.*.enabled + allowedTools 白名单）；失败 fail-safe（不注册）。
+  // 治理旋钮（Phase 4C 配置化）：connector 级超时/重试在此注入（budget/cache 走任务 defaults）。
   const exaSource = config.agent.toolSources?.exa
-  const exaConnector = exaSource?.enabled === true ? new ExaConnector({ apiKey: exaSource.apiKey, logger }) : undefined
+  const exaConnector = exaSource?.enabled === true
+    ? new ExaConnector({
+        apiKey: exaSource.apiKey,
+        logger,
+        ...(exaSource.callTimeoutMs !== undefined ? { callTimeoutMs: exaSource.callTimeoutMs } : {}),
+      })
+    : undefined
   void exaConnector?.connect()
   const nbsSource = config.agent.toolSources?.nbs
-  const nbsConnector = nbsSource?.enabled === true ? new NbsConnector({ logger }) : undefined
+  const nbsConnector = nbsSource?.enabled === true
+    ? new NbsConnector({
+        logger,
+        ...(nbsSource.timeoutMs !== undefined || nbsSource.retries !== undefined
+          ? { http: { ...(nbsSource.timeoutMs !== undefined ? { timeoutMs: nbsSource.timeoutMs } : {}), ...(nbsSource.retries !== undefined ? { retries: nbsSource.retries } : {}) } }
+          : {}),
+      })
+    : undefined
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
@@ -1714,7 +1728,15 @@ export async function startServer(opts: {
           baseUrl: conn.baseUrl,
           searchBudget: config.agent.search?.budgetPerTask,
           searchCacheTtlMinutes: config.agent.search?.cacheTtlMinutes,
+          searchTimeoutMs: config.agent.search?.timeoutMs,
+          searchHostedRetries: config.agent.search?.hostedRetries,
           webSearchMode: webSearchModeOf(conn),
+          // Phase 4C 治理旋钮：外部工具源任务级预算/缓存（connector 级超时重试已在构造注入）
+          exaBudget: exaSource?.budgetPerTask,
+          exaCacheTtlMinutes: exaSource?.cacheTtlMinutes,
+          nbsBudget: nbsSource?.budgetPerTask,
+          nbsProfileBudget: nbsSource?.profileBudgetPerTask,
+          nbsCacheTtlMinutes: nbsSource?.cacheTtlMinutes,
         },
         workspace,
       )

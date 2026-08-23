@@ -299,6 +299,28 @@ test('buildToolSources：无 baseUrl → 仅 builtin（WebSearch 与 mcp 均不�
   assert.deepEqual(Object.keys(sources[1].tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'])
 })
 
+test('Phase 4C：defaults 治理旋钮透传（exaBudget → 会话 trace budgetTotal；缓存 TTL 命中不重发）', async () => {
+  const fake = fakeClient()
+  const c = connectorWith(async () => fake.client)
+  await c.connect()
+  const traces: Array<Record<string, unknown>> = []
+  const logger: Logger = { debug() {}, info() {}, warn() {}, error() {}, trace(_scope, entry) { traces.push(entry) } }
+  const opts = sourcesOpts(c, 'https://api.deepseek.com/anthropic')
+  opts.logger = logger
+  opts.defaults = { ...opts.defaults, exaBudget: 7, exaCacheTtlMinutes: 90 }
+  const sources = buildToolSources(opts)
+  const mcp = sources.find((s) => s.meta.WebResearch !== undefined)
+  assert.ok(mcp !== undefined, 'mcp 源注入')
+  const exec = mcp.tools.WebResearch.execute
+  assert.ok(exec !== undefined)
+  await exec({ query: 'q' }, { toolCallId: 'x', messages: [] } as never)
+  await exec({ query: 'q' }, { toolCallId: 'y', messages: [] } as never)
+  const start = traces.find((t) => t.event === 'search_start')
+  assert.ok(start !== undefined)
+  assert.equal(start.budgetTotal, 7, 'defaults.exaBudget 透传会话预算')
+  assert.equal(fake.calls.length, 1, '90 分钟 TTL：同参数第二次命中缓存不外发')
+})
+
 // ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────
 
 test('证据：WebResearch 成功 → takeEvidence 带来源 URL；跨工具不串桶；取即清', async () => {

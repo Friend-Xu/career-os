@@ -59,6 +59,10 @@ export interface SearchSessionOptions {
   budget: number
   /** 缓存 TTL（毫秒；0 = 不缓存） */
   cacheTtlMs: number
+  /** 单次调用超时毫秒（Phase 4C 配置化；缺省 = WEBSEARCH_MODEL_TIMEOUT_MS） */
+  timeoutMs?: number
+  /** 守卫降级重试次数（Phase 4C；缺省 0——降级即恢复语义，重试=计费搜索×2） */
+  hostedRetries?: number
   /** 共享缓存（引擎级单例——跨任务复用检索结果；缺省 = 会话私有，测试友好） */
   cache?: Map<string, CacheEntry>
   logger?: Logger
@@ -120,7 +124,7 @@ export function renderSources(sources: SearchSource[]): string {
 // ─── 执行路径：注册表分派（responses → 守卫降级；google → 无降级诚实失败）──
 
 /** 'responses' 模式：OpenAI Responses 协议 + provider 侧 webSearch（DeepSeek 兼容/OpenAI 原生共用） */
-async function responsesSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+async function responsesSearch(provider: WebSearchProvider, query: string, timeoutMs?: number): Promise<SearchResult> {
   const openai = createOpenAI({ apiKey: provider.apiKey, baseURL: responsesRoot(provider.baseUrl) })
   const result = await generateText({
     model: openai.responses(provider.model),
@@ -130,7 +134,7 @@ async function responsesSearch(provider: WebSearchProvider, query: string): Prom
     maxOutputTokens: 4000,
     // Provider Stability v0.1：主路径显式超时（SDK fetch 无默认超时）+ 重试上限 1
     // （重试 = 服务端搜索重算计费；超时/失败有 fallback 链兜底，压缩双成本）
-    abortSignal: AbortSignal.timeout(WEBSEARCH_MODEL_TIMEOUT_MS),
+    abortSignal: AbortSignal.timeout(timeoutMs ?? WEBSEARCH_MODEL_TIMEOUT_MS),
     maxRetries: 1,
   })
   if (result.text.trim().length === 0) {
@@ -144,7 +148,7 @@ async function responsesSearch(provider: WebSearchProvider, query: string): Prom
 }
 
 /** 'google' 模式：Gemini grounding（google.tools.googleSearch 服务端执行）；SDK 将 groundingChunks 映射为 sources（含 title） */
-async function googleSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
+async function googleSearch(provider: WebSearchProvider, query: string, timeoutMs?: number): Promise<SearchResult> {
   const google = createGoogleGenerativeAI({ apiKey: provider.apiKey })
   const result = await generateText({
     model: google(provider.model),
@@ -152,7 +156,7 @@ async function googleSearch(provider: WebSearchProvider, query: string): Promise
     prompt: query,
     maxOutputTokens: 4000,
     tools: { webSearch: google.tools.googleSearch({ searchTypes: { webSearch: {} } }) },
-    abortSignal: AbortSignal.timeout(WEBSEARCH_MODEL_TIMEOUT_MS),
+    abortSignal: AbortSignal.timeout(timeoutMs ?? WEBSEARCH_MODEL_TIMEOUT_MS),
     maxRetries: 1,
   })
   if (result.text.trim().length === 0) {
@@ -169,7 +173,7 @@ async function googleSearch(provider: WebSearchProvider, query: string): Promise
 export async function hostedSearch(
   provider: WebSearchProvider,
   query: string,
-  call?: { timeoutMs?: number; logger?: Logger },
+  call?: { timeoutMs?: number; logger?: Logger; retries?: number },
 ): Promise<SearchResult> {
   const res = await externalFetch(
     `${responsesRoot(provider.baseUrl)}/responses`,
@@ -186,7 +190,7 @@ export async function hostedSearch(
     },
     {
       timeoutMs: call?.timeoutMs ?? WEBSEARCH_HOSTED_TIMEOUT_MS,
-      retries: 0,
+      retries: call?.retries ?? 0,
       ...(call?.logger !== undefined ? { logger: call.logger } : {}),
       traceScope: 'web_search',
       endpoint: 'websearch:responses',
@@ -292,16 +296,16 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
       try {
         if (opts.provider.mode === 'google') {
           // Google grounding：无 Responses 兼容降级路径——失败即诚实报错（不当兼容）
-          result = await googleSearch(opts.provider, query)
+          result = await googleSearch(opts.provider, query, opts.timeoutMs)
         } else if (fallbackLocked) {
-          result = await hostedSearch(opts.provider, query, { logger: opts.logger })
+          result = await hostedSearch(opts.provider, query, { timeoutMs: opts.timeoutMs, logger: opts.logger, retries: opts.hostedRetries })
         } else {
           try {
-            result = await responsesSearch(opts.provider, query)
+            result = await responsesSearch(opts.provider, query, opts.timeoutMs)
           } catch (err) {
             // 协议守卫：主路径失败 → 降级薄封装；降级成功即锁定本会话（防每次双请求）
             trace('fallback')
-            result = await hostedSearch(opts.provider, query, { logger: opts.logger })
+            result = await hostedSearch(opts.provider, query, { timeoutMs: opts.timeoutMs, logger: opts.logger, retries: opts.hostedRetries })
             fallbackLocked = true
           }
         }

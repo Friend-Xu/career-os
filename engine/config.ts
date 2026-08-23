@@ -125,15 +125,24 @@ export interface EngineConfig {
      *  配置文件字段（设置页不管理） */
     taskModels?: { jd_extract?: string; career_analysis?: string; resume_extract?: string }
     /** WebSearch 治理旋钮（Search Capability Layer P1a）：任务级搜索预算（外部调用次数上限，
-     *  缓存命中不消耗）+ 检索结果缓存 TTL（分钟；引擎内存缓存，重启失效）。引擎单方决定，客户端不可设。 */
-    search?: { budgetPerTask?: number; cacheTtlMinutes?: number }
+     *  缓存命中不消耗）+ 检索结果缓存 TTL（分钟；引擎内存缓存，重启失效）+ 单次调用超时
+     *  （毫秒）+ 守卫降级路径重试次数（0，降级即恢复语义——重试=计费搜索×2）。引擎单方决定，客户端不可设。 */
+    search?: { budgetPerTask?: number; cacheTtlMinutes?: number; timeoutMs?: number; hostedRetries?: number }
     /**
      * 外部工具源（Tool Runtime 第二阶段 P2/P3）：MCP/数据源开关——外部工具默认关闭（Phase 0 冻结：
      *  无管理后台，配置文件字段）。enabled=true 才连接/注册；工具进白名单（allowedTools）才装配。
      *  exa：Exa hosted MCP（https://mcp.exa.ai/mcp，匿名限速可用；apiKey 可选，Authorization Bearer 提升额度）。
      *  nbs：国家数据年度口径（data.stats.gov.cn 新版 API，无 key；权威统计数据，QueryMacroStats）。
+     *  治理旋钮（Phase 4C 配置化；缺省 = 引擎常量，字段可选）：
+     *  - budgetPerTask/cacheTtlMinutes：任务级外部调用预算 / 结果缓存 TTL 分钟
+     *  - callTimeoutMs（exa）/timeoutMs（nbs）：单次外部调用超时（毫秒）
+     *  - retries（nbs）：传输层瞬时错误重试次数（0-3；重试是安全调整，引擎限幅）
+     *  - profileBudgetPerTask（nbs）：画像矩阵会话预算（API 请求口径）
      */
-    toolSources?: { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } }
+    toolSources?: {
+      exa?: { apiKey?: string; enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; callTimeoutMs?: number }
+      nbs?: { enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; profileBudgetPerTask?: number; timeoutMs?: number; retries?: number }
+    }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -353,38 +362,60 @@ function assertMaxTurns(v: unknown, source: ConfigSource): number | undefined {
   return v
 }
 
-/** WebSearch 治理旋钮校验：两个字段均为正整数（缺失 = 引擎默认，不报错） */
-function assertSearch(v: unknown, source: ConfigSource): { budgetPerTask?: number; cacheTtlMinutes?: number } | undefined {
+/** 正整数校验 helper（治理旋钮共用；缺失 = 引擎默认，不报错） */
+function assertPositiveInt(field: string, v: unknown, source: ConfigSource): number | undefined {
+  if (v === undefined) return undefined
+  if (typeof v !== 'number' || !Number.isInteger(v) || (v as number) <= 0) {
+    throw new ConfigError(field, v, '正整数', source)
+  }
+  return v as number
+}
+
+/** WebSearch 治理旋钮校验（Phase 4C：budget/cache 超时/降级重试 四字段均正整数） */
+function assertSearch(v: unknown, source: ConfigSource): { budgetPerTask?: number; cacheTtlMinutes?: number; timeoutMs?: number; hostedRetries?: number } | undefined {
   if (v === undefined || v === null) return undefined
   if (typeof v !== 'object' || Array.isArray(v)) {
-    throw new ConfigError('agent.search', v, '{ budgetPerTask?, cacheTtlMinutes? }', source)
+    throw new ConfigError('agent.search', v, '{ budgetPerTask?, cacheTtlMinutes?, timeoutMs?, hostedRetries? }', source)
   }
   const s = v as Record<string, unknown>
-  const out: { budgetPerTask?: number; cacheTtlMinutes?: number } = {}
-  for (const key of ['budgetPerTask', 'cacheTtlMinutes'] as const) {
-    if (s[key] === undefined) continue
-    if (typeof s[key] !== 'number' || !Number.isInteger(s[key]) || (s[key] as number) <= 0) {
-      throw new ConfigError(`agent.search.${key}`, s[key], '正整数', source)
+  const out: { budgetPerTask?: number; cacheTtlMinutes?: number; timeoutMs?: number; hostedRetries?: number } = {}
+  for (const key of ['budgetPerTask', 'cacheTtlMinutes', 'timeoutMs'] as const) {
+    const n = assertPositiveInt(`agent.search.${key}`, s[key], source)
+    if (n !== undefined) (out as Record<string, number>)[key] = n
+  }
+  // hostedRetries 允许 0（降级路径默认不重试——重试=计费搜索×2），限幅 0-3
+  if (s.hostedRetries !== undefined) {
+    const r = s.hostedRetries
+    if (typeof r !== 'number' || !Number.isInteger(r) || r < 0 || r > 3) {
+      throw new ConfigError('agent.search.hostedRetries', r, '0-3 整数（0 = 不重试；重试=计费搜索×2）', source)
     }
-    out[key] = s[key] as number
+    out.hostedRetries = r
   }
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-/** 外部工具源校验（Tool Runtime 第二阶段 P2/P3）：exa/nbs 段形状校验；enabled 缺省 = false（外部工具默认关闭） */
+/** 外部工具源校验（Tool Runtime 第二阶段 P2/P3 + Phase 4C 治理旋钮）：
+ *  exa/nbs 段形状校验；enabled 缺省 = false（外部工具默认关闭）；
+ *  budget/cache/超时/重试均为可选正整数（缺省 = 引擎常量） */
 function assertToolSources(
   v: unknown,
   source: ConfigSource,
-): { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } } | undefined {
+): {
+  exa?: { apiKey?: string; enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; callTimeoutMs?: number }
+  nbs?: { enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; profileBudgetPerTask?: number; timeoutMs?: number; retries?: number }
+} | undefined {
   if (v === undefined || v === null) return undefined
   if (typeof v !== 'object' || Array.isArray(v)) {
-    throw new ConfigError('agent.toolSources', v, '{ exa?: { apiKey?, enabled }, nbs?: { enabled } }', source)
+    throw new ConfigError('agent.toolSources', v, '{ exa?, nbs? }', source)
   }
   const s = v as Record<string, unknown>
-  const out: { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } } = {}
+  const out: {
+    exa?: { apiKey?: string; enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; callTimeoutMs?: number }
+    nbs?: { enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; profileBudgetPerTask?: number; timeoutMs?: number; retries?: number }
+  } = {}
   if (s.exa !== undefined) {
     if (typeof s.exa !== 'object' || s.exa === null || Array.isArray(s.exa)) {
-      throw new ConfigError('agent.toolSources.exa', s.exa, '{ apiKey?, enabled }', source)
+      throw new ConfigError('agent.toolSources.exa', s.exa, '{ apiKey?, enabled, budgetPerTask?, cacheTtlMinutes?, callTimeoutMs? }', source)
     }
     const e = s.exa as Record<string, unknown>
     if (e.apiKey !== undefined && typeof e.apiKey !== 'string') {
@@ -393,20 +424,40 @@ function assertToolSources(
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') {
       throw new ConfigError('agent.toolSources.exa.enabled', e.enabled, '布尔（缺省 false = 外部工具默认关闭）', source)
     }
-    out.exa = {
+    const outE: { apiKey?: string; enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; callTimeoutMs?: number } = {
       ...(e.apiKey !== undefined ? { apiKey: e.apiKey } : {}),
       enabled: e.enabled === true,
     }
+    for (const key of ['budgetPerTask', 'cacheTtlMinutes', 'callTimeoutMs'] as const) {
+      const n = assertPositiveInt(`agent.toolSources.exa.${key}`, e[key], source)
+      if (n !== undefined) (outE as unknown as Record<string, number>)[key] = n
+    }
+    out.exa = outE
   }
   if (s.nbs !== undefined) {
     if (typeof s.nbs !== 'object' || s.nbs === null || Array.isArray(s.nbs)) {
-      throw new ConfigError('agent.toolSources.nbs', s.nbs, '{ enabled }', source)
+      throw new ConfigError('agent.toolSources.nbs', s.nbs, '{ enabled, budgetPerTask?, cacheTtlMinutes?, profileBudgetPerTask?, timeoutMs?, retries? }', source)
     }
     const n = s.nbs as Record<string, unknown>
     if (n.enabled !== undefined && typeof n.enabled !== 'boolean') {
       throw new ConfigError('agent.toolSources.nbs.enabled', n.enabled, '布尔（缺省 false = 外部工具默认关闭）', source)
     }
-    out.nbs = { enabled: n.enabled === true }
+    const outN: { enabled: boolean; budgetPerTask?: number; cacheTtlMinutes?: number; profileBudgetPerTask?: number; timeoutMs?: number; retries?: number } = {
+      enabled: n.enabled === true,
+    }
+    for (const key of ['budgetPerTask', 'cacheTtlMinutes', 'profileBudgetPerTask', 'timeoutMs'] as const) {
+      const val = assertPositiveInt(`agent.toolSources.nbs.${key}`, n[key], source)
+      if (val !== undefined) (outN as unknown as Record<string, number>)[key] = val
+    }
+    // retries 允许 0（不重试），限幅 0-3：重试是安全调整（错误配置放大成本，引擎限幅防误配）
+    if (n.retries !== undefined) {
+      const r = n.retries
+      if (typeof r !== 'number' || !Number.isInteger(r) || r < 0 || r > 3) {
+        throw new ConfigError('agent.toolSources.nbs.retries', r, '0-3 整数（重试是安全调整，引擎限幅）', source)
+      }
+      outN.retries = r
+    }
+    out.nbs = outN
   }
   return Object.keys(out).length > 0 ? out : undefined
 }
@@ -641,7 +692,7 @@ export function describeConfig(config: EngineConfig): string[] {
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,
-    `agent.search = budgetPerTask ${config.agent.search?.budgetPerTask ?? DEFAULT_SEARCH_BUDGET} 次 / cacheTtl ${config.agent.search?.cacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES} 分钟（WebSearch 治理旋钮）`,
+    `agent.search = budgetPerTask ${config.agent.search?.budgetPerTask ?? DEFAULT_SEARCH_BUDGET} 次 / cacheTtl ${config.agent.search?.cacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES} 分钟 / timeout ${config.agent.search?.timeoutMs ?? '引擎默认(60s)'}ms（WebSearch 治理旋钮）`,
     `paths.workspace = ${config.paths.workspace}（信息池真相源）`,
     `paths.skills = ${config.paths.skills}（skill 加载目录）`,
     `paths.logs = ${config.paths.logs}（应用日志 + Agent 轨迹）`,

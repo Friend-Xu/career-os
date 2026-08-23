@@ -83,19 +83,23 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
     provider: { baseUrl: opts.baseUrl ?? '', apiKey: opts.apiKey, model: opts.model, mode: defaults.webSearchMode ?? 'responses' },
     budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
     cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
+    timeoutMs: defaults.searchTimeoutMs,
+    hostedRetries: defaults.searchHostedRetries,
     cache: opts.searchCache,
     logger: opts.logger,
   })
   // Exa（mcp）：证据按认知层工具名分桶（WebResearch/WebFetch 各自归属）；
   // 行业证据模板（QueryIndustryEvidence）独立会话（预算/缓存互不挤占，证据独立标签）
+  const exaBudget = defaults.exaBudget ?? EXA_SESSION_BUDGET
+  const exaCacheTtlMs = (defaults.exaCacheTtlMinutes ?? EXA_CACHE_TTL_MINUTES) * 60_000
   const exaSession = opts.exaConnector?.ready === true
-    ? createExaSession({ connector: opts.exaConnector, budget: EXA_SESSION_BUDGET, cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000, cache: opts.exaCache, logger: opts.logger })
+    ? createExaSession({ connector: opts.exaConnector, budget: exaBudget, cacheTtlMs: exaCacheTtlMs, cache: opts.exaCache, logger: opts.logger })
     : null
   const industrySession = opts.exaConnector?.ready === true
     ? createExaSession({
         connector: opts.exaConnector,
-        budget: EXA_SESSION_BUDGET,
-        cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000,
+        budget: exaBudget,
+        cacheTtlMs: exaCacheTtlMs,
         cache: opts.exaCache,
         logger: opts.logger,
         evidenceLabels: { web_search_exa: 'QueryIndustryEvidence', web_fetch_exa: 'WebFetch' },
@@ -105,15 +109,15 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
   const nbsTools = opts.nbsConnector === undefined ? null : {
     session: createNbsSession({
       connector: opts.nbsConnector,
-      budget: NBS_SESSION_BUDGET,
-      cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
+      budget: defaults.nbsBudget ?? NBS_SESSION_BUDGET,
+      cacheTtlMs: (defaults.nbsCacheTtlMinutes ?? NBS_CACHE_TTL_MINUTES) * 60_000,
       cache: opts.nbsCache,
       logger: opts.logger,
     }),
     profileSession: createNbsProfileSession({
       connector: opts.nbsConnector,
-      budget: NBS_PROFILE_SESSION_MAX_REQUESTS,
-      cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
+      budget: defaults.nbsProfileBudget ?? NBS_PROFILE_SESSION_MAX_REQUESTS,
+      cacheTtlMs: (defaults.nbsCacheTtlMinutes ?? NBS_CACHE_TTL_MINUTES) * 60_000,
       cache: opts.nbsCache,
       logger: opts.logger,
     }),
@@ -219,6 +223,20 @@ export interface AgentDefaults {
   searchCacheTtlMinutes?: number
   /** WebSearch 执行模式（Provider Capability Registry 判定；'off' = 不注册工具；缺省 = responses，向后兼容） */
   webSearchMode?: WebSearchMode
+  /** WebSearch 单次调用超时毫秒（Phase 4C 配置化；缺省 = WEBSEARCH_MODEL_TIMEOUT_MS） */
+  searchTimeoutMs?: number
+  /** WebSearch 守卫降级重试次数（0-3；缺省 = 0——降级即恢复语义） */
+  searchHostedRetries?: number
+  /** Exa 任务级预算（缺省 = EXA_SESSION_BUDGET） */
+  exaBudget?: number
+  /** Exa 缓存 TTL 分钟（缺省 = EXA_CACHE_TTL_MINUTES） */
+  exaCacheTtlMinutes?: number
+  /** NBS 单查询会话预算（缺省 = NBS_SESSION_BUDGET） */
+  nbsBudget?: number
+  /** NBS 画像会话预算（缺省 = NBS_PROFILE_SESSION_MAX_REQUESTS） */
+  nbsProfileBudget?: number
+  /** NBS 缓存 TTL 分钟（缺省 = NBS_CACHE_TTL_MINUTES） */
+  nbsCacheTtlMinutes?: number
 }
 
 interface TaskState {
