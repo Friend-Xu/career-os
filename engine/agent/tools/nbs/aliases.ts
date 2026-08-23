@@ -33,6 +33,14 @@ export const NBS_CURATOR: CuratorEntry[] = [
     note: '城市级 GDP 不属国家数据年度口径——城市查询请改用省级或相关产业指标',
   },
   {
+    name: '人均国内生产总值',
+    aliases: ['人均GDP', '人均生产总值'],
+    path: '国民经济核算 > 国内生产总值',
+    indicatorId: 'eb4d93f19d57495c89f98875e03e01be',
+    catalogId: 'f7fd25aaad184414875632cf2327da60',
+    note: '城市级人均 GDP 不属国家数据年度口径——城市查询请改用省级或相关产业指标',
+  },
+  {
     name: '居民人均可支配收入',
     aliases: ['人均可支配收入', '居民收入', '可支配收入'],
     path: '人民生活 > 全国居民人均收入情况',
@@ -63,9 +71,20 @@ export function findCuratorExact(keyword: string): CuratorEntry | undefined {
 }
 
 /** curator 别名命中：keyword 与别名精确相等，或 keyword 包含别名（如「苏州GDP」包含「GDP」）。
- *  单向包含——短关键词（「工业」）不得误命中长别名（「规模以上工业增加值」）。 */
+ *  单向包含——短关键词（「工业」）不得误命中长别名（「规模以上工业增加值」）；
+ *  多命中取**最长**别名（最具体优先）——「人均GDP」应命中「人均GDP」而非「GDP」，不按表序先到先得。 */
 export function findCuratorByAlias(keyword: string): CuratorEntry | undefined {
   const q = keyword.trim()
   if (q.length === 0) return undefined
-  return NBS_CURATOR.find((e) => e.aliases.some((a) => q === a || q.includes(a)))
+  let best: CuratorEntry | undefined
+  let bestLen = 0
+  for (const e of NBS_CURATOR) {
+    for (const a of e.aliases) {
+      if ((q === a || q.includes(a)) && a.length > bestLen) {
+        best = e
+        bestLen = a.length
+      }
+    }
+  }
+  return best
 }

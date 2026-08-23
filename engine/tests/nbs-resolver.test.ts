@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveIndicator, type ResolverTreeDeps } from '../agent/tools/nbs/resolver.ts'
-import { NBS_CURATOR } from '../agent/tools/nbs/aliases.ts'
+import { NBS_CURATOR, findCuratorByAlias } from '../agent/tools/nbs/aliases.ts'
 import type { NbsCatalogNode, NbsIndicator } from '../agent/tools/nbs/api.ts'
 
 const cat = (id: string, name: string, leaf = false): NbsCatalogNode => ({ _id: id, _name: name, isLeaf: leaf })
@@ -46,6 +46,26 @@ test('curator 别名命中：「GDP」→ 国内生产总值（confidence=0.95�
   if (r.kind !== 'resolved') return
   assert.equal(r.indicator.name, '国内生产总值')
   assert.equal(r.indicator.confidence, 0.95)
+})
+
+test('别名最长命中（3C 探测发现修复）：「人均GDP」→ 人均国内生产总值，不被短别名「GDP」劫持；「苏州GDP」仍指 GDP', async () => {
+  const pgdp = await resolveIndicator('人均GDP', { curator: NBS_CURATOR })
+  assert.equal(pgdp.kind, 'resolved')
+  if (pgdp.kind !== 'resolved') return
+  assert.equal(pgdp.indicator.name, '人均国内生产总值')
+  assert.equal(pgdp.indicator.confidence, 0.95)
+  for (const kw of ['GDP', '苏州GDP']) {
+    const r = await resolveIndicator(kw, { curator: NBS_CURATOR })
+    assert.equal(r.kind, 'resolved')
+    if (r.kind !== 'resolved') return
+    assert.equal(r.indicator.name, '国内生产总值', `${kw} 不受人均别名影响`)
+  }
+})
+
+test('findCuratorByAlias：长别名优先且短词不误命中（「工业」无别名命中）', async () => {
+  assert.equal(findCuratorByAlias('人均GDP')?.name, '人均国内生产总值')
+  assert.equal(findCuratorByAlias('GDP')?.name, '国内生产总值')
+  assert.equal(findCuratorByAlias('工业'), undefined)
 })
 
 test('树兜底：分类名匹配分支下钻 → 叶子指标名命中（展示名带单位后缀 → 前缀分 0.7）', async () => {

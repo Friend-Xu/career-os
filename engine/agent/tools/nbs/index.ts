@@ -35,14 +35,35 @@ import {
 } from './api.ts'
 import { NBS_CURATOR } from './aliases.ts'
 import { resolveIndicator as resolveByResolver, type ResolveResult, type ResolverTreeDeps, type ResolvedIndicator } from './resolver.ts'
+import {
+  PROFILE_QUERY_THROTTLE_MS,
+  URBAN_ECONOMY_V1,
+  queryRegionProfiles,
+  renderProfileMatrix,
+  type ProfileConnector,
+  type ProfileRows,
+} from './profile.ts'
 import type { ToolRuntimeMeta } from '../tool-assembly.ts'
 
 export const NBS_SESSION_BUDGET = 3
 export const NBS_CACHE_TTL_MINUTES = 1440
+/** 画像会话预算（API 请求口径 = 外部 esData 调用次数；3 区域 × 4 指标全异分类最坏 12） */
+export const NBS_PROFILE_SESSION_MAX_REQUESTS = 12
 
 /** QueryMacroStats 治理元数据（Tool Assembly Layer）：data 源 = 结构化数据查询（出境 external） */
 export const NBS_TOOL_META: Record<string, ToolRuntimeMeta> = {
   QueryMacroStats: { source: 'data', egress: 'external', budget: NBS_SESSION_BUDGET, traceScope: 'nbs', provider: 'nbs' },
+}
+
+/** CompareRegionProfiles 治理元数据：同 data 源；独立会话预算（互不挤占 QueryMacroStats） */
+export const NBS_PROFILE_TOOL_META: Record<string, ToolRuntimeMeta> = {
+  CompareRegionProfiles: {
+    source: 'data',
+    egress: 'external',
+    budget: NBS_PROFILE_SESSION_MAX_REQUESTS,
+    traceScope: 'nbs_profile',
+    provider: 'nbs',
+  },
 }
 
 /** 预算/隐私策略错误（工具层转文本回给模型，不抛穿循环） */
@@ -165,6 +186,37 @@ export class NbsConnector {
       rootId: NBS_TREE_ROOT_CATALOG_ID,
     })
     const out: { year: string; value: string; unit: string; indicatorName: string }[] = []
+    for (const y of series) {
+      for (const v of y.values ?? []) {
+        const value = v.value
+        if (value === undefined || value === '') continue
+        out.push({
+          year: y.name ?? y.code ?? '',
+          value,
+          unit: v.du_name ?? '',
+          indicatorName: v.i_showname ?? v._name ?? '',
+        })
+      }
+    }
+    return out
+  }
+
+  /** 批量数据序列查询（同分类多指标一次 esData；ProfileConnector 窄接口实现——画像矩阵用） */
+  async querySeriesBatch(opts: {
+    cid: string
+    indicatorIds: string[]
+    regionCode: string
+    regionName: string
+    years: string[]
+  }): Promise<ProfileRows[]> {
+    const series = await fetchSeries({
+      cid: opts.cid,
+      indicatorIds: opts.indicatorIds,
+      das: [{ text: opts.regionName, value: opts.regionCode }],
+      dts: opts.years,
+      rootId: NBS_TREE_ROOT_CATALOG_ID,
+    })
+    const out: ProfileRows[] = []
     for (const y of series) {
       for (const v of y.values ?? []) {
         const value = v.value
@@ -327,6 +379,90 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
   }
 }
 
+// ─── NbsProfileSession：任务级治理（预算 + 缓存 + 隐私；画像矩阵）──────────
+
+export interface NbsProfileSessionOptions {
+  connector: ProfileConnector
+  /** 任务级画像预算（正整数；API 请求口径 = 外部 esData 调用次数——Engine 决定，Agent 只消费） */
+  budget: number
+  /** 缓存 TTL（毫秒；宏观数据低频，默认天级） */
+  cacheTtlMs: number
+  /** 外部请求节流（毫秒；缺省 = PROFILE_QUERY_THROTTLE_MS 真机安全值；测试注入 0） */
+  throttleMs?: number
+  /** 共享缓存（引擎级单例——跨任务复用；key 含 profileId+regions，与 QueryMacroStats 命名空间隔离） */
+  cache?: Map<string, NbsCacheEntry>
+  logger?: Logger
+}
+
+export interface NbsProfileSession {
+  /** 执行入口：隐私拒绝/预算用尽抛 NbsPolicyError；外部失败抛 Error（工具层转文本） */
+  execute(regions: string[]): Promise<string>
+}
+
+export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProfileSession {
+  if (!Number.isInteger(opts.budget) || opts.budget <= 0) {
+    throw new Error(`nbs profile budget 应为正整数（当前 ${opts.budget}）`)
+  }
+  const cache = opts.cache ?? new Map<string, NbsCacheEntry>()
+  let used = 0
+  const trace = (event: string, extra?: Record<string, unknown>): void => {
+    opts.logger?.trace('nbs_profile', { event, budgetUsed: used, budgetTotal: opts.budget, ...extra })
+  }
+  // 预算门卫（计数代理）：只在外部 esData 调用时消耗——本地解析/歧义/未匹配不消耗（对齐 QueryMacroStats）
+  const guardedConnector: ProfileConnector = {
+    resolveIndicator: (keyword) => opts.connector.resolveIndicator(keyword),
+    querySeriesBatch: async (q) => {
+      if (used >= opts.budget) {
+        trace('budget_exhausted')
+        throw new NbsPolicyError(
+          'budget_exhausted',
+          `CompareRegionProfiles 已停用：本任务画像查询预算（${opts.budget} 次）用尽。请基于已获得的数据继续完成当前任务，不要再调用区域画像查询。`,
+        )
+      }
+      used += 1 // 预算语义 = 外部数据请求次数：调用即消耗（失败亦然）
+      trace('query_batch', { regionName: q.regionName, indicatorCount: q.indicatorIds.length })
+      return opts.connector.querySeriesBatch(q)
+    },
+  }
+
+  return {
+    async execute(regions) {
+      const flat = regions.join(' ')
+      if (PRIVACY_PATTERN.test(flat)) {
+        throw new NbsPolicyError(
+          'privacy',
+          'CompareRegionProfiles 拒绝执行：查询含疑似个人信息（手机号/邮箱/身份证），隐私红线禁止外发。请改用不含个人标识的地区名。',
+        )
+      }
+      const key = `nbs_profile::${URBAN_ECONOMY_V1.id}::${regions.join(',')}`
+      if (opts.cacheTtlMs > 0) {
+        const hit = cache.get(key)
+        if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
+          trace('cache_hit')
+          const at = new Date(hit.at).toISOString().slice(0, 16)
+          return `${hit.text}\n\n（本结果为统计缓存，首次查询时间 ${at}——官方年度数据低频更新）`
+        }
+        if (hit !== undefined) cache.delete(key)
+      }
+      trace('profile_start', { regions: regions.length })
+      const matrix = await queryRegionProfiles(
+        guardedConnector,
+        URBAN_ECONOMY_V1,
+        regions,
+        opts.throttleMs ?? PROFILE_QUERY_THROTTLE_MS,
+      )
+      const text = renderProfileMatrix(matrix, URBAN_ECONOMY_V1)
+      trace('profile_ok', {
+        regions: matrix.length,
+        available: matrix.reduce((n, r) => n + r.coverage.available, 0),
+        total: matrix.reduce((n, r) => n + r.coverage.total, 0),
+      })
+      if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
+      return text
+    },
+  }
+}
+
 // ─── 客户端工具（streamText 工具循环）───────────────────────────────────────
 
 /** data capability → AI SDK 工具（认知层包装：能力语义名 + 权威定位描述 + 治理会话执行） */
@@ -355,4 +491,30 @@ export function buildNbsTools(session: NbsSession): Record<string, Tool<any, any
     },
   })
   return { QueryMacroStats: queryMacroStats }
+}
+
+/** 画像矩阵工具（data capability 第二个工具；无协议/供应商标识——T1 认知面隔离） */
+export function buildNbsProfileTools(session: NbsProfileSession): Record<string, Tool<any, any>> {
+  const compareRegionProfiles = tool({
+    description:
+      '区域经济画像对比（权威统计数据·年度口径）：一次查询多个区域 × 一组经济指标（GDP、人均GDP、工业增加值、居民人均可支配收入），返回证据矩阵——各指标数值/年份与缺失覆盖诚实标注（无数据的指标明确说明，不补数、不做结论）。适用场景：城市/区域经济对比分析。标准地名为宜（苏州/上海/江苏/全国）。注意：本工具每任务有查询预算，请聚焦 2-3 个关键区域一次查清。',
+    inputSchema: z.object({
+      regions: z
+        .array(z.string().min(1).max(20))
+        .min(1)
+        .max(3)
+        .describe('地区名列表（2-3 个区域对比；如 苏州/上海/杭州；省区市全称/简称或主要城市）'),
+    }),
+    execute: async (input) => {
+      const regions = Array.isArray(input.regions) ? input.regions.map(String) : []
+      if (regions.length === 0) return 'CompareRegionProfiles 失败：regions 至少需要 1 个地区'
+      try {
+        return await session.execute(regions)
+      } catch (err) {
+        if (err instanceof NbsPolicyError) return err.message
+        return `CompareRegionProfiles 失败：${err instanceof Error ? err.message : String(err)}`
+      }
+    },
+  })
+  return { CompareRegionProfiles: compareRegionProfiles }
 }

@@ -160,7 +160,18 @@ function toResolved(e: CuratorEntry, confidence: number): ResolvedIndicator {
 function findCuratorExactIn(list: CuratorEntry[], keyword: string): CuratorEntry | undefined {
   return list.find((e) => e.name === keyword)
 }
-/** 别名命中 = keyword 与别名精确相等或包含别名（单向——短词不误命中长别名） */
+/** 别名命中 = keyword 与别名精确相等或包含别名（单向：短词不误命中长别名）；
+ *  多命中取最长别名（最具体优先）——「人均GDP」命中「人均GDP」而非「GDP」 */
 function findCuratorByAliasIn(list: CuratorEntry[], keyword: string): CuratorEntry | undefined {
-  return list.find((e) => e.aliases.some((a) => keyword === a || keyword.includes(a)))
+  let best: CuratorEntry | undefined
+  let bestLen = 0
+  for (const e of list) {
+    for (const a of e.aliases) {
+      if ((keyword === a || keyword.includes(a)) && a.length > bestLen) {
+        best = e
+        bestLen = a.length
+      }
+    }
+  }
+  return best
 }

@@ -48,12 +48,12 @@ export interface AssembleOptions {
 
 /** 引擎已知工具名全集（注册表事实源——Stage 声明校验与未来新增工具都改这里）。
  *  Phase 1 = 文件工具 5 + WebSearch；Phase 2 = Exa MCP（WebResearch/WebFetch）；
- *  Phase 3 = NBS 数据能力（QueryMacroStats）。 */
+ *  Phase 3 = NBS 数据能力（QueryMacroStats + CompareRegionProfiles）。 */
 export const KNOWN_TOOL_NAMES: readonly string[] = [
   'Read', 'Write', 'Edit', 'Grep', 'Glob',
   'WebSearch',
   'WebResearch', 'WebFetch',
-  'QueryMacroStats',
+  'QueryMacroStats', 'CompareRegionProfiles',
 ]
 
 /** 三级交集装配：Stage 声明 ∩ 全局白名单 ∩ 已注册；同名重复注册 fail fast */

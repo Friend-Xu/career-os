@@ -77,12 +77,24 @@ export const NBS_REGIONS: NbsRegion[] = [
   { code: '620100000000', name: '兰州市', shortName: '兰州', level: 'city' },
 ]
 
-/** 地区名 → 区划代码（全名/短名精确优先，包含兜底；未命中 = undefined） */
-export function findRegionCode(input: string): string | undefined {
+/** 地区名 → 行政区划条目（全名/短名精确优先，包含兜底；未命中 = undefined）。
+ *  现行语义（文档化）：复合地名（如「江苏苏州」）按包含匹配会命中**省级**（江苏省在表中先于苏州市）——
+ *  调用方应回显 canonical 名+级别使错位可见，或要求标准地名。 */
+export function findRegion(input: string): NbsRegion | undefined {
   const q = input.trim()
   if (q.length === 0) return undefined
   const exact = NBS_REGIONS.find((r) => r.name === q || r.shortName === q)
-  if (exact !== undefined) return exact.code
+  if (exact !== undefined) return exact
   const fuzzy = NBS_REGIONS.find((r) => r.name.includes(q) || q.includes(r.shortName))
-  return fuzzy?.code
+  return fuzzy
+}
+
+/** 地区名 → 区划代码（委托 findRegion；未命中 = undefined） */
+export function findRegionCode(input: string): string | undefined {
+  return findRegion(input)?.code
+}
+
+/** 行政区级别展示名（矩阵回显——实际查了什么级别一眼可见） */
+export function regionLevelLabel(level: NbsRegion['level']): string {
+  return level === 'nation' ? '全国' : level === 'province' ? '省级' : '地级市'
 }

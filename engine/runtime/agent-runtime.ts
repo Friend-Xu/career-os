@@ -26,10 +26,14 @@ import {
 } from '../agent/tools/exa.ts'
 import {
   buildNbsTools,
+  buildNbsProfileTools,
   createNbsSession,
+  createNbsProfileSession,
   NBS_CACHE_TTL_MINUTES,
   NBS_SESSION_BUDGET,
+  NBS_PROFILE_SESSION_MAX_REQUESTS,
   NBS_TOOL_META,
+  NBS_PROFILE_TOOL_META,
   NbsConnector,
   type NbsCacheEntry,
 } from '../agent/tools/nbs/index.ts'
@@ -72,18 +76,42 @@ export interface BuildSourcesOptions {
  */
 export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
   const { defaults } = opts
+  // 托管检索（hosted）：预算/缓存/证据会话（证据 = Tool Evidence Contract 生产方）
+  const searchSession = createSearchSession({
+    provider: { baseUrl: opts.baseUrl ?? '', apiKey: opts.apiKey, model: opts.model, mode: defaults.webSearchMode ?? 'responses' },
+    budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+    cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
+    cache: opts.searchCache,
+    logger: opts.logger,
+  })
+  // Exa（mcp）：证据按认知层工具名分桶（WebResearch/WebFetch 各自归属）
+  const exaSession = opts.exaConnector?.ready === true
+    ? createExaSession({ connector: opts.exaConnector, budget: EXA_SESSION_BUDGET, cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000, cache: opts.exaCache, logger: opts.logger })
+    : null
+  // NBS（data）：两个治理会话（单查询/画像），共用连接器；证据各自归属
+  const nbsTools = opts.nbsConnector === undefined ? null : {
+    session: createNbsSession({
+      connector: opts.nbsConnector,
+      budget: NBS_SESSION_BUDGET,
+      cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
+      cache: opts.nbsCache,
+      logger: opts.logger,
+    }),
+    profileSession: createNbsProfileSession({
+      connector: opts.nbsConnector,
+      budget: NBS_PROFILE_SESSION_MAX_REQUESTS,
+      cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
+      cache: opts.nbsCache,
+      logger: opts.logger,
+    }),
+    connector: opts.nbsConnector,
+  }
   return [
     { tools: buildFsTools(opts.workspace), meta: FS_TOOL_META },
     ...(opts.baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
       ? [
           {
-            tools: { WebSearch: buildWebSearchTool(createSearchSession({
-              provider: { baseUrl: opts.baseUrl, apiKey: opts.apiKey, model: opts.model, mode: defaults.webSearchMode ?? 'responses' },
-              budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
-              cacheTtlMs: (defaults.searchCacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES) * 60_000,
-              cache: opts.searchCache,
-              logger: opts.logger,
-            })) },
+            tools: { WebSearch: buildWebSearchTool(searchSession) },
             meta: {
               WebSearch: {
                 ...WEB_SEARCH_TOOL_META,
@@ -93,36 +121,24 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
           },
         ]
       : []),
-    ...(opts.exaConnector?.ready === true
+    ...(exaSession !== null
       ? [
           {
-            tools: buildExaTools(
-              opts.exaConnector,
-              createExaSession({
-                connector: opts.exaConnector,
-                budget: EXA_SESSION_BUDGET,
-                cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000,
-                cache: opts.exaCache,
-                logger: opts.logger,
-              }),
-            ),
+            tools: buildExaTools(opts.exaConnector as ExaConnector, exaSession),
             meta: EXA_TOOL_META,
           },
         ]
       : []),
-    ...(opts.nbsConnector !== undefined
+    ...(nbsTools !== null
       ? [
           {
-            tools: buildNbsTools(
-              createNbsSession({
-                connector: opts.nbsConnector,
-                budget: NBS_SESSION_BUDGET,
-                cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
-                cache: opts.nbsCache,
-                logger: opts.logger,
-              }),
-            ),
-            meta: NBS_TOOL_META,
+            // data 源双工具：单查询（QueryMacroStats）+ 区域画像矩阵（CompareRegionProfiles）——
+            // 共用同一 NbsConnector（指标索引/树缓存/解析器），治理会话各自独立（预算互不挤占）
+            tools: {
+              ...buildNbsTools(nbsTools.session),
+              ...buildNbsProfileTools(nbsTools.profileSession),
+            },
+            meta: { ...NBS_TOOL_META, ...NBS_PROFILE_TOOL_META },
           },
         ]
       : []),
