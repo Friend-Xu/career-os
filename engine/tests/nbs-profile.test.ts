@@ -275,3 +275,18 @@ test('画像定义：urban_economy_v1 含 4 指标（GDP/人均GDP/工业增加�
     ['GDP', '人均GDP', '工业增加值', '居民人均可支配收入'],
   )
 })
+
+// ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────
+
+test('证据：画像成功 → takeEvidence（citation 含 profile id + regions）；取即清', async () => {
+  const f = fakeProfile({ resolves: ALL_RESOLVES, rowsByIndicatorId: happyRows() })
+  const session = createNbsProfileSession({ connector: f.connector, budget: 12, cacheTtlMs: 0, throttleMs: 0 })
+  await session.execute(['苏州'])
+  const evs = session.takeEvidence()
+  assert.equal(evs.length, 1)
+  assert.equal(evs[0].source, 'data')
+  assert.equal(evs[0].provider, 'nbs')
+  assert.ok(evs[0].citation.startsWith('urban_economy_v1::'), `citation 含画像 id，实际 ${evs[0].citation}`)
+  assert.ok(evs[0].citation.includes('苏州'))
+  assert.deepEqual(session.takeEvidence(), [], '取即清')
+})

@@ -26,11 +26,33 @@ export type PoolNodeType = 'person' | 'decision' | 'direction' | 'city' | 'compa
 export type EdgeStrength = 'high' | 'medium' | 'low'
 export type ChatRole = 'user' | 'assistant' | 'system'
 export type ToolCallStatus = 'running' | 'done' | 'error'
+
+/** 工具证据引用（Tool Evidence Contract v0.1，Phase 3C）：
+ *  生产方 = Connector/Session（Engine 侧）——citation/fetchedAt 是系统事实（ADR-030：
+ *  Agent 负责判断、Engine 负责事实），Agent 只读不写；UI 审计面渲染。
+ *  citation 语义按 source/provider：nbs = 指标 id；exa/web-search = 来源 URL；
+ *  period = 数据时间（如「2024年」；检索类无固定时间 → 缺省）。 */
+export interface ToolEvidence {
+  source: ToolSource
+  /** 供应商标识（审计面；如 exa/nbs/hosted） */
+  provider?: string
+  /** 证据定位（指标 id / 来源 URL） */
+  citation: string
+  /** 证据获取时刻（ISO；生产方记录——缓存命中时为首次获取时刻） */
+  fetchedAt: string
+  /** 数据/内容时间（生产方给出；如 NBS 数据年份） */
+  period?: string
+  /** 生产方置信（如 NBS 解析置信 0-1；检索类无 → 缺省） */
+  confidence?: number
+}
+
 export interface ToolCallInfo {
   name: string
   status: ToolCallStatus
   /** 工具来源（additive 可选；UI 审计面角标用——mcp → 「MCP」标识；认知面不受影响） */
   source?: ToolSource
+  /** 证据引用（additive 可选；Tool Evidence Contract——生产方写入，Agent 只读） */
+  evidence?: ToolEvidence[]
 }
 
 /** 人（角色 = 人，不是岗位）：profiles/{name}.md（旧）→ persons/{person_id}/（M6.5 新真相源） */
@@ -1015,12 +1037,13 @@ export type ToolSource = 'builtin' | 'hosted' | 'mcp' | 'data'
  * 引擎 → 前端 Agent 事件（WS agent.event 帧 data；权限事件已换为 requestId——canUseTool
  * promise 留在引擎挂起表；session_id 供前端会话存 resume 凭据；thinking_* 归一化自
  * SDK thinking_tokens 系统消息与 thinking 内容块——思考提示 + 折叠思考块展示）
- * tool_start/tool_done 的 source = 工具来源（additive 可选，v2.9 存量事件无此字段仍合法）
+ * tool_start/tool_done 的 source = 工具来源，tool_done 的 evidence = 证据引用
+ * （均 additive 可选，v2.9 存量事件无此字段仍合法；evidence 生产方写入——Tool Evidence Contract）
  */
 export type AgentRuntimeEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string; source?: ToolSource }
-  | { type: 'tool_done'; name: string; source?: ToolSource }
+  | { type: 'tool_done'; name: string; source?: ToolSource; evidence?: ToolEvidence[] }
   | { type: 'thinking_start' }
   | { type: 'thinking_delta'; text: string }
   | { type: 'thinking_stop' }

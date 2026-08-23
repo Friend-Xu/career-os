@@ -330,6 +330,33 @@ test('诚实边界：查询无数据 → 降级提示（含城市级口径提示
   }
 })
 
+// ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────
+
+test('证据：查询成功 → takeEvidence（data/nbs/citation=指标id/period=最新年份/confidence）；缓存命中复现；取即清', async () => {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify(SERIES_BODY), { status: 200 })) as typeof fetch
+  try {
+    const session = createNbsSession({ connector: makeConnector(), budget: 3, cacheTtlMs: 60_000 })
+    await session.execute({ indicator: '工业增加值', region: '江苏' })
+    const evs = session.takeEvidence()
+    assert.equal(evs.length, 1)
+    assert.equal(evs[0].source, 'data')
+    assert.equal(evs[0].provider, 'nbs')
+    assert.equal(evs[0].citation, '1e344d8fa0d040f88e80b5bf0b56dbac', 'citation = 指标 id')
+    assert.equal(evs[0].period, '2024年', 'period = 最新数据年份')
+    assert.equal(evs[0].confidence, 1, 'confidence = curator 精确分')
+    assert.equal(session.takeEvidence().length, 0, '取即清')
+    // 缓存命中：证据复现（fetchedAt = 首次获取时刻，period/confidence 不丢）
+    await session.execute({ indicator: '工业增加值', region: '江苏' })
+    const hitEvs = session.takeEvidence()
+    assert.equal(hitEvs.length, 1)
+    assert.equal(hitEvs[0].citation, '1e344d8fa0d040f88e80b5bf0b56dbac')
+    assert.equal(hitEvs[0].period, '2024年')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
 // ─── buildToolSources：data 源组装 ─────────────────────────────────────────
 
 test('buildToolSources：NBS 启用 → data 源注入（QueryMacroStats + 元数据）；未启用 → 不注入', () => {

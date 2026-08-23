@@ -166,3 +166,31 @@ test('outputBudget：预算下发 provider 请求体（max_tokens）；缺省 = 
   const body2 = server2.requests[0] as Record<string, unknown>
   assert.equal(body2.max_tokens, 8000)
 })
+
+test('Tool Evidence Contract：tool_done 携带装配层生产方证据（evidence 访问器 → 取即清）', async () => {
+  const server = await startFakeAnthropicServer([
+    toolUseTurn('Write', { file_path: 'ev.md', content: 'x' }),
+    textTurn('完成'),
+  ])
+  const ws = tmpWorkspace()
+  const sources = [
+    {
+      tools: buildFsTools(ws),
+      meta: FS_TOOL_META,
+      evidence: {
+        Write: () => [{ source: 'builtin' as const, citation: 'ev://write-1', fetchedAt: '2026-01-01T00:00:00.000Z' }],
+      },
+    },
+  ]
+  const handle = createAgentRunner(runnerOpts(server, ws, { sources }))
+  const events = await collect(handle)
+  await server.close()
+  const done = events.find((e) => e.type === 'tool_done' && e.name === 'Write')
+  assert.ok(done !== undefined && done.type === 'tool_done', 'tool_done 事件存在')
+  if (done !== undefined && done.type === 'tool_done') {
+    assert.equal(done.source, 'builtin', 'source 透传不受 evidence 影响')
+    assert.ok(done.evidence !== undefined, 'tool_done 携带 evidence')
+    assert.equal(done.evidence[0].citation, 'ev://write-1')
+    assert.equal(done.evidence[0].source, 'builtin')
+  }
+})

@@ -13,7 +13,7 @@
 import { APICallError, stepCountIs, streamText, tool } from 'ai'
 import { z } from 'zod'
 import type { LanguageModel, Tool } from 'ai'
-import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
+import type { AgentError, AgentQuestion, ToolEvidence } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
 import type { AgentEvent, AgentHandle } from '../adapter/claude.ts'
 import { assembleTools, type ToolRuntimeMeta, type ToolSourceDef } from '../tools/tool-assembly.ts'
@@ -125,6 +125,7 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
   })
   const tools: Record<string, Tool<any, any>> = assembled.tools
   const meta: Record<string, ToolRuntimeMeta> = assembled.meta
+  const evidenceOf: Record<string, () => ToolEvidence[] | undefined> = assembled.evidence
   const askUserQuestion = tool({
     description: '向用户提问（多选项卡片；await 用户选择后返回答案文本）',
     inputSchema: z.object({
@@ -232,10 +233,24 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
           }
         },
         onStepFinish: ({ toolCalls }) => {
+          // Tool Evidence Contract：工具名第一个 tool_done 携带该工具本步全部证据（取即清——
+          // 生产方=Session，Agent 只读；同工具多调用的其余 tool_done 不带，避免重复承载）
+          const taken = new Set<string>()
           for (const call of toolCalls) {
             if (call.toolName in wrappedTools) {
               const m = meta[call.toolName]
-              push({ type: 'tool_done', name: call.toolName, ...(m !== undefined ? { source: m.source } : {}) })
+              let evidence: ToolEvidence[] | undefined
+              if (!taken.has(call.toolName)) {
+                taken.add(call.toolName)
+                const evs = evidenceOf[call.toolName]?.() ?? []
+                if (evs.length > 0) evidence = evs
+              }
+              push({
+                type: 'tool_done',
+                name: call.toolName,
+                ...(m !== undefined ? { source: m.source } : {}),
+                ...(evidence !== undefined ? { evidence } : {}),
+              })
             }
           }
         },

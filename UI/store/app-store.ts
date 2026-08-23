@@ -2662,7 +2662,11 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
     case 'tool_done':
       patchStreamingMessage(sessionId, messageId, (m) => ({
         ...m,
-        toolCalls: m.toolCalls?.map((t) => (t.name === ev.name ? { ...t, status: 'done' as const } : t)),
+        toolCalls: m.toolCalls?.map((t) =>
+          t.name === ev.name
+            ? { ...t, status: 'done' as const, ...(ev.evidence !== undefined ? { evidence: ev.evidence } : {}) }
+            : t,
+        ),
       }))
       break
     case 'permission_request': {

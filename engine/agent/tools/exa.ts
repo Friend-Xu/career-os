@@ -18,6 +18,7 @@ import type { MCPClient } from '@ai-sdk/mcp'
 import { tool } from 'ai'
 import type { Tool } from 'ai'
 import type { Logger } from '../../logger.ts'
+import type { ToolEvidence } from '../../ir/schema.ts'
 import { extractSourceUrls, renderSources } from './web-search.ts'
 import { PRIVACY_PATTERN } from './privacy-filter.ts'
 import type { ToolRuntimeMeta } from './tool-assembly.ts'
@@ -171,6 +172,8 @@ export interface ExaSessionOptions {
 export interface ExaSession {
   /** 执行入口：隐私拒绝/预算用尽抛 ExaPolicyError；外部失败抛 Error（工具层转文本） */
   execute(toolName: ExaMcpToolName, args: Record<string, unknown>): Promise<string>
+  /** 证据引用（Tool Evidence Contract 生产方：检索成功的来源 URL；按认知层工具名分桶，取即清） */
+  takeEvidence(displayName: string): ToolEvidence[]
 }
 
 export function createExaSession(opts: ExaSessionOptions): ExaSession {
@@ -179,8 +182,21 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
   }
   const cache = opts.cache ?? new Map<string, ExaCacheEntry>()
   let used = 0
+  const evidenceBuf = new Map<string, ToolEvidence[]>()
   const trace = (event: string): void => {
     opts.logger?.trace('exa', { event, budgetUsed: used, budgetTotal: opts.budget })
+  }
+  const recordEvidence = (displayName: string, text: string, at: number): void => {
+    const urls = extractSourceUrls(text).map((s) => s.url).filter((u) => u !== '')
+    if (urls.length === 0) return
+    const list = evidenceBuf.get(displayName) ?? []
+    list.push({
+      source: 'mcp',
+      provider: 'exa',
+      citation: urls.join(' | '),
+      fetchedAt: new Date(at).toISOString(),
+    })
+    evidenceBuf.set(displayName, list)
   }
 
   return {
@@ -199,6 +215,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
         const hit = cache.get(key)
         if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
           trace('cache_hit')
+          recordEvidence(EXA_TOOL_MAP[toolName], hit.text, hit.at)
           const at = new Date(hit.at).toISOString().slice(0, 16)
           return `${hit.text}\n\n（本结果为检索缓存，首次检索时间 ${at}——如需要最新数据请换查询角度）`
         }
@@ -225,8 +242,14 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
       if (urls.length > 0 && !text.includes('数据来源')) {
         text = `${text}\n\n${renderSources(urls)}`
       }
+      recordEvidence(EXA_TOOL_MAP[toolName], text, Date.now())
       if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
       return text
+    },
+    takeEvidence(displayName) {
+      const out = evidenceBuf.get(displayName) ?? []
+      evidenceBuf.delete(displayName)
+      return out
     },
   }
 }

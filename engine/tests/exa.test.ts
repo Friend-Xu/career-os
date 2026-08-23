@@ -258,3 +258,37 @@ test('buildToolSources：无 baseUrl → 仅 builtin（WebSearch 与 mcp 均不�
   assert.equal(sources.length, 2, 'builtin + mcp（无 provider 不注册 WebSearch）')
   assert.deepEqual(Object.keys(sources[1].tools).sort(), ['WebFetch', 'WebResearch'])
 })
+
+// ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────
+
+test('证据：WebResearch 成功 → takeEvidence 带来源 URL；跨工具不串桶；取即清', async () => {
+  const fake = fakeClient({ searchResult: '检索结论 https://exa.example.com/deep' })
+  const c = connectorWith(async () => fake.client)
+  await c.connect()
+  const session = createExaSession({ connector: c, budget: 5, cacheTtlMs: 0 })
+  await session.execute('web_search_exa', { query: '行业研究' })
+  const evs = session.takeEvidence('WebResearch')
+  assert.equal(evs.length, 1)
+  assert.equal(evs[0].source, 'mcp')
+  assert.equal(evs[0].provider, 'exa')
+  assert.ok(evs[0].citation.includes('https://exa.example.com/deep'), 'citation = 来源 URL')
+  assert.ok(!Number.isNaN(Date.parse(evs[0].fetchedAt)))
+  assert.deepEqual(session.takeEvidence('WebResearch'), [], '取即清')
+  assert.deepEqual(session.takeEvidence('WebFetch'), [], '未调用工具不串桶')
+})
+
+test('证据：缓存命中 → 复现来源引用（fetchedAt = 首次时刻）', async () => {
+  const fake = fakeClient({ searchResult: '检索结论 https://exa.example.com/deep' })
+  const c = connectorWith(async () => fake.client)
+  await c.connect()
+  const session = createExaSession({ connector: c, budget: 5, cacheTtlMs: 1_000_000 })
+  await session.execute('web_search_exa', { query: '行业研究' })
+  const firstEvs = session.takeEvidence('WebResearch')
+  assert.equal(firstEvs.length, 1)
+  assert.ok(firstEvs[0].citation.includes('https://exa.example.com/deep'))
+  const hit = await session.execute('web_search_exa', { query: '行业研究' })
+  assert.ok(hit.includes('检索缓存'))
+  const hitEvs = session.takeEvidence('WebResearch')
+  assert.equal(hitEvs.length, 1, '缓存命中执行同样产生证据记录')
+  assert.ok(hitEvs[0].citation.includes('https://exa.example.com/deep'))
+})

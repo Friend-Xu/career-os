@@ -12,7 +12,7 @@
  *   与「无 provider 不注册 WebSearch」同一语义）。
  */
 import type { Tool } from 'ai'
-import type { ToolSource } from '../../ir/schema.ts'
+import type { ToolEvidence, ToolSource } from '../../ir/schema.ts'
 
 /** 治理元数据（挂 source 层，不进入 AI SDK tool schema） */
 export interface ToolRuntimeMeta {
@@ -27,15 +27,21 @@ export interface ToolRuntimeMeta {
   provider?: string
 }
 
-/** 一个工具来源：一组工具 + 各自的治理元数据（builtin/hosted/mcp/data 各是一个 source） */
+/**
+ * 一个工具来源：一组工具 + 各自的治理元数据（builtin/hosted/mcp/data 各是一个 source）。
+ * evidence = 工具名 → 最近证据读取器（生产方 = Session 取证缓冲；runner 在 tool_done 时取——
+ * 取即清，防跨步陈旧）。Agent 无写入权（Tool Evidence Contract，ADR-030 Producer Ownership）。
+ */
 export interface ToolSourceDef {
   tools: Record<string, Tool<any, any>>
   meta: Record<string, ToolRuntimeMeta>
+  evidence?: Record<string, () => ToolEvidence[] | undefined>
 }
 
 export interface AssembledTools {
   tools: Record<string, Tool<any, any>>
   meta: Record<string, ToolRuntimeMeta>
+  evidence: Record<string, () => ToolEvidence[] | undefined>
 }
 
 export interface AssembleOptions {
@@ -80,12 +86,16 @@ export function assembleTools(opts: AssembleOptions): AssembledTools {
   }
   const tools: Record<string, Tool<any, any>> = {}
   const meta: Record<string, ToolRuntimeMeta> = {}
+  const evidence: Record<string, () => ToolEvidence[] | undefined> = {}
   for (const name of opts.allowedTools) {
     if (opts.stageTools !== undefined && !opts.stageTools.includes(name)) continue
     const hit = byName.get(name)
     if (hit === undefined) continue // 已知但未注册（外部工具未启用）→ 交集自然排除，不假装可用
     tools[name] = hit.tool
     meta[name] = hit.meta
+    const src = opts.sources.find((s) => s.tools[name] !== undefined)
+    const accessor = src?.evidence?.[name]
+    if (accessor !== undefined) evidence[name] = accessor
   }
-  return { tools, meta }
+  return { tools, meta, evidence }
 }

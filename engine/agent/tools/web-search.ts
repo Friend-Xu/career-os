@@ -22,6 +22,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { PRIVACY_PATTERN } from './privacy-filter.ts'
 import type { WebSearchMode } from '../providers/capabilities.ts'
 import type { Logger } from '../../logger.ts'
+import type { ToolEvidence } from '../../ir/schema.ts'
 import type { ToolRuntimeMeta } from './tool-assembly.ts'
 
 export interface WebSearchProvider {
@@ -202,6 +203,8 @@ export interface CacheEntry {
 export interface SearchSession {
   /** 工具执行入口：隐私拒绝/预算用尽抛 SearchPolicyError；外部失败抛 Error（工具层转文本） */
   execute(query: string): Promise<SearchResult>
+  /** 证据引用（Tool Evidence Contract 生产方：检索成功的来源引用；取即清——runner 在 tool_done 取） */
+  takeEvidence(): ToolEvidence[]
 }
 
 export function createSearchSession(opts: SearchSessionOptions): SearchSession {
@@ -211,8 +214,20 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
   const cache = opts.cache ?? new Map<string, CacheEntry>()
   let used = 0
   let fallbackLocked = false
+  const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string): void => {
     opts.logger?.trace('web_search', { event, budgetUsed: used, budgetTotal: opts.budget })
+  }
+  const recordEvidence = (sources: SearchSource[], at: number): void => {
+    const citation = sources.map((s) => s.url).filter((u) => u !== '').join(' | ')
+    if (citation !== '') {
+      evidenceBuf.push({
+        source: 'hosted',
+        provider: 'hosted',
+        citation,
+        fetchedAt: new Date(at).toISOString(),
+      })
+    }
   }
 
   return {
@@ -228,6 +243,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
         const hit = cache.get(key)
         if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
           trace('cache_hit')
+          recordEvidence(hit.result.sources, hit.at)
           // 缓存结果附首次搜索时间（模型知情可判断新鲜度，避免无意义重搜）
           const at = new Date(hit.at).toISOString().slice(0, 16)
           return {
@@ -275,8 +291,14 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
           text: `${result.text}\n\n${renderSources(result.sources)}`,
         }
       }
+      recordEvidence(result.sources, Date.now())
       if (opts.cacheTtlMs > 0) cache.set(key, { result, at: Date.now() })
       return result
+    },
+    takeEvidence() {
+      const out = [...evidenceBuf]
+      evidenceBuf.length = 0
+      return out
     },
   }
 }

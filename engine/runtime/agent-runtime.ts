@@ -118,6 +118,7 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
                 budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
               },
             },
+            evidence: { WebSearch: () => searchSession.takeEvidence() },
           },
         ]
       : []),
@@ -126,6 +127,10 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
           {
             tools: buildExaTools(opts.exaConnector as ExaConnector, exaSession),
             meta: EXA_TOOL_META,
+            evidence: {
+              WebResearch: () => exaSession.takeEvidence('WebResearch'),
+              WebFetch: () => exaSession.takeEvidence('WebFetch'),
+            },
           },
         ]
       : []),
@@ -139,6 +144,10 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
               ...buildNbsProfileTools(nbsTools.profileSession),
             },
             meta: { ...NBS_TOOL_META, ...NBS_PROFILE_TOOL_META },
+            evidence: {
+              QueryMacroStats: () => nbsTools.session.takeEvidence(),
+              CompareRegionProfiles: () => nbsTools.profileSession.takeEvidence(),
+            },
           },
         ]
       : []),

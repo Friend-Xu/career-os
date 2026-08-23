@@ -20,6 +20,7 @@ import { tool } from 'ai'
 import type { Tool } from 'ai'
 import { z } from 'zod'
 import type { Logger } from '../../../logger.ts'
+import type { ToolEvidence } from '../../../ir/schema.ts'
 import { PRIVACY_PATTERN } from '../privacy-filter.ts'
 import { findRegionCode } from './regions.ts'
 import {
@@ -238,6 +239,8 @@ export class NbsConnector {
 export interface NbsCacheEntry {
   text: string
   at: number
+  /** 证据快照（缓存命中时作为生产方证据引用复现——fetchedAt 为首次获取时刻） */
+  evidence?: ToolEvidence[]
 }
 
 export interface NbsSessionOptions {
@@ -262,6 +265,31 @@ export interface NbsQueryInput {
 export interface NbsSession {
   /** 执行入口：隐私拒绝/预算用尽抛 NbsPolicyError；外部失败抛 Error（工具层转文本） */
   execute(input: NbsQueryInput): Promise<string>
+  /** 证据引用（Tool Evidence Contract 生产方：成功查询的指标证据；取即清——runner 在 tool_done 取） */
+  takeEvidence(): ToolEvidence[]
+}
+
+/** 证据 period = 最新数据年份（rows 年份文本如「2024年」→ 取最大；无 → undefined） */
+function latestYear(rows: Array<{ year: string }>): string | undefined {
+  let max = -1
+  for (const r of rows) {
+    const m = /^(\d{4})/.exec(r.year)
+    if (m !== null && Number(m[1]) > max) max = Number(m[1])
+  }
+  return max >= 0 ? `${max}年` : undefined
+}
+
+/** 构建 NBS 查询证据（生产方记录：citation=指标 id，period=最新年份，confidence=解析置信） */
+function buildNbsEvidence(resolved: ResolvedIndicator, rows: Array<{ year: string }>, at: number): ToolEvidence {
+  const period = latestYear(rows)
+  return {
+    source: 'data',
+    provider: 'nbs',
+    citation: resolved.indicatorId,
+    fetchedAt: new Date(at).toISOString(),
+    ...(period !== undefined ? { period } : {}),
+    ...(resolved.confidence !== undefined ? { confidence: resolved.confidence } : {}),
+  }
 }
 
 export function createNbsSession(opts: NbsSessionOptions): NbsSession {
@@ -270,6 +298,7 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
   }
   const cache = opts.cache ?? new Map<string, NbsCacheEntry>()
   let used = 0
+  const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string): void => {
     opts.logger?.trace('nbs', { event, budgetUsed: used, budgetTotal: opts.budget })
   }
@@ -289,6 +318,7 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
         const hit = cache.get(key)
         if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
           trace('cache_hit')
+          evidenceBuf.push(...(hit.evidence ?? []))
           const at = new Date(hit.at).toISOString().slice(0, 16)
           return `${hit.text}\n\n（本结果为统计缓存，首次查询时间 ${at}——官方年度数据低频更新）`
         }
@@ -369,12 +399,19 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
           indicatorId: resolved.indicatorId,
           confidence: resolved.confidence,
         })
-        if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
+        const ev = buildNbsEvidence(resolved, rows, Date.now())
+        evidenceBuf.push(ev)
+        if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now(), evidence: [ev] })
         return text
       } catch (err) {
         trace('search_error')
         throw err
       }
+    },
+    takeEvidence() {
+      const out = [...evidenceBuf]
+      evidenceBuf.length = 0
+      return out
     },
   }
 }
@@ -397,6 +434,8 @@ export interface NbsProfileSessionOptions {
 export interface NbsProfileSession {
   /** 执行入口：隐私拒绝/预算用尽抛 NbsPolicyError；外部失败抛 Error（工具层转文本） */
   execute(regions: string[]): Promise<string>
+  /** 证据引用（Tool Evidence Contract 生产方：画像矩阵证据；取即清） */
+  takeEvidence(): ToolEvidence[]
 }
 
 export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProfileSession {
@@ -405,6 +444,7 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
   }
   const cache = opts.cache ?? new Map<string, NbsCacheEntry>()
   let used = 0
+  const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string, extra?: Record<string, unknown>): void => {
     opts.logger?.trace('nbs_profile', { event, budgetUsed: used, budgetTotal: opts.budget, ...extra })
   }
@@ -439,6 +479,7 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
         const hit = cache.get(key)
         if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
           trace('cache_hit')
+          evidenceBuf.push(...(hit.evidence ?? []))
           const at = new Date(hit.at).toISOString().slice(0, 16)
           return `${hit.text}\n\n（本结果为统计缓存，首次查询时间 ${at}——官方年度数据低频更新）`
         }
@@ -457,8 +498,20 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
         available: matrix.reduce((n, r) => n + r.coverage.available, 0),
         total: matrix.reduce((n, r) => n + r.coverage.total, 0),
       })
-      if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
+      const ev: ToolEvidence = {
+        source: 'data',
+        provider: 'nbs',
+        citation: `${URBAN_ECONOMY_V1.id}::${regions.join('|')}`,
+        fetchedAt: new Date().toISOString(),
+      }
+      evidenceBuf.push(ev)
+      if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now(), evidence: [ev] })
       return text
+    },
+    takeEvidence() {
+      const out = [...evidenceBuf]
+      evidenceBuf.length = 0
+      return out
     },
   }
 }

@@ -324,3 +324,24 @@ test('buildWebSearchTool：双路径全失败 → 错误文本回给模型（对
   const out = await runTool(t, { query: '测试查询' })
   assert.match(out, /^web_search 失败：/)
 })
+
+// ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────
+
+test('Tool Evidence Contract：成功检索 → takeEvidence 带来源引用；缓存命中 → 复现；取即清', async () => {
+  mockFetch(responsesBody('数据：1.5-2.0万\n\n## 数据来源\n- 平台X：https://ref.example.com/salary'))
+  const session = makeSession()
+  await session.execute('苏州 医疗器械 薪资')
+  const evs = session.takeEvidence()
+  assert.equal(evs.length, 1)
+  assert.equal(evs[0].source, 'hosted')
+  assert.equal(evs[0].provider, 'hosted')
+  assert.ok(evs[0].citation.includes('https://ref.example.com/salary'), 'citation = 来源 URL')
+  assert.ok(!Number.isNaN(Date.parse(evs[0].fetchedAt)), 'fetchedAt 为 ISO 时刻')
+  assert.equal(session.takeEvidence().length, 0, '取即清')
+  // 缓存命中：证据复现（fetchedAt = 首次获取时刻）
+  const hit = await session.execute('苏州 医疗器械 薪资')
+  assert.equal(hit.cached, true)
+  const hitEvs = session.takeEvidence()
+  assert.equal(hitEvs.length, 1)
+  assert.ok(hitEvs[0].citation.includes('https://ref.example.com/salary'))
+})
