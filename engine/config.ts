@@ -128,11 +128,12 @@ export interface EngineConfig {
      *  缓存命中不消耗）+ 检索结果缓存 TTL（分钟；引擎内存缓存，重启失效）。引擎单方决定，客户端不可设。 */
     search?: { budgetPerTask?: number; cacheTtlMinutes?: number }
     /**
-     * 外部工具源（Tool Runtime 第二阶段 P2）：MCP/数据源开关——外部工具默认关闭（Phase 0 冻结：
+     * 外部工具源（Tool Runtime 第二阶段 P2/P3）：MCP/数据源开关——外部工具默认关闭（Phase 0 冻结：
      *  无管理后台，配置文件字段）。enabled=true 才连接/注册；工具进白名单（allowedTools）才装配。
      *  exa：Exa hosted MCP（https://mcp.exa.ai/mcp，匿名限速可用；apiKey 可选，Authorization Bearer 提升额度）。
+     *  nbs：国家数据年度口径（data.stats.gov.cn 新版 API，无 key；权威统计数据，QueryMacroStats）。
      */
-    toolSources?: { exa?: { apiKey?: string; enabled: boolean } }
+    toolSources?: { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } }
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
@@ -370,14 +371,17 @@ function assertSearch(v: unknown, source: ConfigSource): { budgetPerTask?: numbe
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-/** 外部工具源校验（Tool Runtime 第二阶段 P2）：exa 段形状校验；enabled 缺省 = false（外部工具默认关闭） */
-function assertToolSources(v: unknown, source: ConfigSource): { exa?: { apiKey?: string; enabled: boolean } } | undefined {
+/** 外部工具源校验（Tool Runtime 第二阶段 P2/P3）：exa/nbs 段形状校验；enabled 缺省 = false（外部工具默认关闭） */
+function assertToolSources(
+  v: unknown,
+  source: ConfigSource,
+): { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } } | undefined {
   if (v === undefined || v === null) return undefined
   if (typeof v !== 'object' || Array.isArray(v)) {
-    throw new ConfigError('agent.toolSources', v, '{ exa?: { apiKey?, enabled } }', source)
+    throw new ConfigError('agent.toolSources', v, '{ exa?: { apiKey?, enabled }, nbs?: { enabled } }', source)
   }
   const s = v as Record<string, unknown>
-  const out: { exa?: { apiKey?: string; enabled: boolean } } = {}
+  const out: { exa?: { apiKey?: string; enabled: boolean }; nbs?: { enabled: boolean } } = {}
   if (s.exa !== undefined) {
     if (typeof s.exa !== 'object' || s.exa === null || Array.isArray(s.exa)) {
       throw new ConfigError('agent.toolSources.exa', s.exa, '{ apiKey?, enabled }', source)
@@ -393,6 +397,16 @@ function assertToolSources(v: unknown, source: ConfigSource): { exa?: { apiKey?:
       ...(e.apiKey !== undefined ? { apiKey: e.apiKey } : {}),
       enabled: e.enabled === true,
     }
+  }
+  if (s.nbs !== undefined) {
+    if (typeof s.nbs !== 'object' || s.nbs === null || Array.isArray(s.nbs)) {
+      throw new ConfigError('agent.toolSources.nbs', s.nbs, '{ enabled }', source)
+    }
+    const n = s.nbs as Record<string, unknown>
+    if (n.enabled !== undefined && typeof n.enabled !== 'boolean') {
+      throw new ConfigError('agent.toolSources.nbs.enabled', n.enabled, '布尔（缺省 false = 外部工具默认关闭）', source)
+    }
+    out.nbs = { enabled: n.enabled === true }
   }
   return Object.keys(out).length > 0 ? out : undefined
 }

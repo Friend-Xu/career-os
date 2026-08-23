@@ -290,6 +290,7 @@ export const WEB_SEARCH_TOOL_META: ToolRuntimeMeta = {
   source: 'hosted',
   egress: 'external',
   traceScope: 'web_search',
+  provider: 'hosted',
 }
 
 /** streamText 客户端工具：Agent 按需调用（权限闸/步数护栏/事件归一全部复用现有循环） */

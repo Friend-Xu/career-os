@@ -24,6 +24,15 @@ import {
   ExaConnector,
   type ExaCacheEntry,
 } from '../agent/tools/exa.ts'
+import {
+  buildNbsTools,
+  createNbsSession,
+  NBS_CACHE_TTL_MINUTES,
+  NBS_SESSION_BUDGET,
+  NBS_TOOL_META,
+  NbsConnector,
+  type NbsCacheEntry,
+} from '../agent/tools/nbs/index.ts'
 import type { ToolSourceDef } from '../agent/tools/tool-assembly.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
@@ -45,8 +54,10 @@ export interface BuildSourcesOptions {
   workspace: Workspace
   defaults: AgentDefaults
   exaConnector?: ExaConnector
+  nbsConnector?: NbsConnector
   searchCache: Map<string, CacheEntry>
   exaCache: Map<string, ExaCacheEntry>
+  nbsCache: Map<string, NbsCacheEntry>
   logger: Logger
   baseUrl?: string
   /** start() fail fast 校验后必填（无凭证/无模型拒绝启动） */
@@ -57,7 +68,7 @@ export interface BuildSourcesOptions {
 /**
  * 工具来源组装（Tool Assembly Layer 的 source 侧）：builtin 文件工具恒在；hosted WebSearch 按
  * 现有条件注入（无 provider/off 模式 → 不注册——装配层交集自然排除）；mcp 源（Exa）在连接
- * 已就绪时注入（未启用/连接失败 → 不注入，fail-safe）。data 源（统计局）随 Phase 3 加入。
+ * 已就绪时注入；data 源（NBS）在启用时注入（未启用 → 不注入，fail-safe）。
  */
 export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
   const { defaults } = opts
@@ -96,6 +107,22 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
               }),
             ),
             meta: EXA_TOOL_META,
+          },
+        ]
+      : []),
+    ...(opts.nbsConnector !== undefined
+      ? [
+          {
+            tools: buildNbsTools(
+              createNbsSession({
+                connector: opts.nbsConnector,
+                budget: NBS_SESSION_BUDGET,
+                cacheTtlMs: NBS_CACHE_TTL_MINUTES * 60_000,
+                cache: opts.nbsCache,
+                logger: opts.logger,
+              }),
+            ),
+            meta: NBS_TOOL_META,
           },
         ]
       : []),
@@ -168,13 +195,23 @@ export class AgentRuntime {
   private searchCache = new Map<string, CacheEntry>()
   /** Exa 检索缓存（引擎级单例：跨任务共享；与 WebSearch 缓存独立命名空间） */
   private exaCache = new Map<string, ExaCacheEntry>()
+  /** NBS 统计缓存（引擎级单例：宏观数据低频，天级 TTL） */
+  private nbsCache = new Map<string, NbsCacheEntry>()
   /** Exa MCP 连接器（Tool Runtime P2；缺省 = 不注册该源——未启用/连接失败均 fail-safe） */
   private exaConnector?: ExaConnector
+  /** NBS 数据连接器（Tool Runtime P3；缺省 = 不注册该源——未启用即不注入） */
+  private nbsConnector?: NbsConnector
 
-  constructor(logger: Logger, emit: (taskId: string, ev: AgentRuntimeEvent) => void, exaConnector?: ExaConnector) {
+  constructor(
+    logger: Logger,
+    emit: (taskId: string, ev: AgentRuntimeEvent) => void,
+    exaConnector?: ExaConnector,
+    nbsConnector?: NbsConnector,
+  ) {
     this.logger = logger
     this.emit = emit
     this.exaConnector = exaConnector
+    this.nbsConnector = nbsConnector
   }
 
   start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): string {
@@ -194,8 +231,10 @@ export class AgentRuntime {
       workspace,
       defaults,
       exaConnector: this.exaConnector,
+      nbsConnector: this.nbsConnector,
       searchCache: this.searchCache,
       exaCache: this.exaCache,
+      nbsCache: this.nbsCache,
       logger: this.logger,
       baseUrl,
       apiKey,

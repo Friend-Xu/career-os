@@ -181,9 +181,9 @@ test('工具层错误语义：callTool 抛错 → 错误文本回给模型（不
   assert.ok(typeof out === 'string' && out.startsWith('WebResearch 失败：'), `应返回错误文本，实际 ${out}`)
 })
 
-test('治理元数据保真：EXA_TOOL_META = mcp 源 / external 出境 / 预算 5 / trace 前缀 exa', () => {
-  assert.deepEqual(EXA_TOOL_META.WebResearch, { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa' })
-  assert.deepEqual(EXA_TOOL_META.WebFetch, { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa' })
+test('治理元数据保真：EXA_TOOL_META = mcp 源 / external 出境 / 预算 5 / trace 前缀 exa / provider exa', () => {
+  assert.deepEqual(EXA_TOOL_META.WebResearch, { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa', provider: 'exa' })
+  assert.deepEqual(EXA_TOOL_META.WebFetch, { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa', provider: 'exa' })
 })
 
 test('session budget 校验：非正整数 → fail fast（引擎单方决定，配置错误立即暴露）', () => {
@@ -215,6 +215,7 @@ function sourcesOpts(connector?: ExaConnector, baseUrl?: string) {
     exaConnector: connector,
     searchCache: new Map(),
     exaCache: new Map(),
+    nbsCache: new Map(),
     logger: fakeLogger,
     ...(baseUrl !== undefined ? { baseUrl } : {}),
     apiKey: 'fake-key',

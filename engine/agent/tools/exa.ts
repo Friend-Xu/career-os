@@ -44,8 +44,8 @@ const EXA_TOOL_DESCRIPTIONS: Record<ExaMcpToolName, string> = {
 
 /** Exa 工具治理元数据（Tool Assembly Layer）：mcp 源 = 外部协议适配（数据出境 external） */
 export const EXA_TOOL_META: Record<string, ToolRuntimeMeta> = {
-  WebResearch: { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa' },
-  WebFetch: { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa' },
+  WebResearch: { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa', provider: 'exa' },
+  WebFetch: { source: 'mcp', egress: 'external', budget: EXA_SESSION_BUDGET, traceScope: 'exa', provider: 'exa' },
 }
 
 /** 预算/隐私策略错误（工具层转为文本回给模型，不抛穿循环） */

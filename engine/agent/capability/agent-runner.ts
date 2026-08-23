@@ -145,11 +145,18 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
   tools.ask_user_question = askUserQuestion
   meta.ask_user_question = { source: 'builtin', egress: 'local', traceScope: 'ask' }
 
-  /** 工具级审计 trace（T4）：事件 + 来源 + 耗时——trace 面必带 source，认知面（描述）无供应商标识 */
+  /** 工具级审计 trace（T4）：事件 + 来源 + 供应商标识 + 耗时——trace 面必带 source/provider，认知面（描述）无供应商标识 */
   const traceTool = (event: 'tool_start' | 'tool_done' | 'tool_denied' | 'tool_error', name: string, extra?: Record<string, unknown>): void => {
     const m = meta[name]
     if (opts.logger === undefined || m === undefined) return
-    opts.logger.trace('tool', { event, name, source: m.source, egress: m.egress, ...extra })
+    opts.logger.trace('tool', {
+      event,
+      name,
+      source: m.source,
+      egress: m.egress,
+      ...(m.provider !== undefined ? { provider: m.provider } : {}),
+      ...extra,
+    })
   }
 
   const executeGuarded = async (name: string, exec: () => PromiseLike<string>): Promise<string> => {

@@ -23,6 +23,8 @@ export interface ToolRuntimeMeta {
   budget?: number
   /** trace 命名空间（logger.trace 前缀） */
   traceScope: string
+  /** 供应商标识（仅审计面：trace 事件携带；如 exa/nbs） */
+  provider?: string
 }
 
 /** 一个工具来源：一组工具 + 各自的治理元数据（builtin/hosted/mcp/data 各是一个 source） */
@@ -45,11 +47,13 @@ export interface AssembleOptions {
 }
 
 /** 引擎已知工具名全集（注册表事实源——Stage 声明校验与未来新增工具都改这里）。
- *  Phase 1 = 文件工具 5 + WebSearch；Phase 2 = Exa MCP（WebResearch/WebFetch）。 */
+ *  Phase 1 = 文件工具 5 + WebSearch；Phase 2 = Exa MCP（WebResearch/WebFetch）；
+ *  Phase 3 = NBS 数据能力（QueryMacroStats）。 */
 export const KNOWN_TOOL_NAMES: readonly string[] = [
   'Read', 'Write', 'Edit', 'Grep', 'Glob',
   'WebSearch',
   'WebResearch', 'WebFetch',
+  'QueryMacroStats',
 ]
 
 /** 三级交集装配：Stage 声明 ∩ 全局白名单 ∩ 已注册；同名重复注册 fail fast */
