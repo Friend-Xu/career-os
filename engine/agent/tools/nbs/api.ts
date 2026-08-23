@@ -12,9 +12,37 @@
  *
  * 指标搜索：顶级分类（约 28 个）指标列表内存索引——首查预热（每分类一次 HTTP），TTL 天级。
  */
+import { externalFetch, type ExternalCallOptions } from '../external-call.ts'
+
 export const NBS_API_BASE = 'https://data.stats.gov.cn/dg/website/publicrelease/web/external'
 export const NBS_YEAR_DB = '3' // 年度数据（职业决策主口径）
 export const NBS_TREE_ROOT_CATALOG_ID = '884c062607104a91967b22742537f44f' // 年度数据根 _id（真机勘察值）
+
+/** NBS HTTP 调优（Provider Stability v0.1 接入：timeout/重试可注入——单测注短值/0，生产用常量） */
+export interface NbsHttpTuning {
+  timeoutMs?: number
+  retries?: number
+  retryBackoffMs?: number
+}
+
+/** NBS 重试间隔（对齐 600ms 节流真机安全值——重试不放大 WAF 触发） */
+export const NBS_RETRY_BACKOFF_MS = 600
+
+const NBS_HTTP_DEFAULTS: ExternalCallOptions = {
+  retryBackoffMs: NBS_RETRY_BACKOFF_MS,
+}
+
+/** 合并调优（boundary：值校验由调用方 fail fast——ExternalCallOptions 语义，非法值直接暴露） */
+function httpOpts(tuning: NbsHttpTuning | undefined, endpoint: string): ExternalCallOptions {
+  return {
+    ...NBS_HTTP_DEFAULTS,
+    ...(tuning?.timeoutMs !== undefined ? { timeoutMs: tuning.timeoutMs } : {}),
+    ...(tuning?.retries !== undefined ? { retries: tuning.retries } : {}),
+    ...(tuning?.retryBackoffMs !== undefined ? { retryBackoffMs: tuning.retryBackoffMs } : {}),
+    traceScope: 'nbs',
+    endpoint,
+  }
+}
 
 const HEADERS = {
   'User-Agent':
@@ -54,9 +82,8 @@ export interface NbsSeriesYear {
   values?: NbsSeriesValue[]
 }
 
-async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(`${NBS_API_BASE}${url}`, { headers: HEADERS })
-  if (!res.ok) throw new Error(`国家数据服务响应 ${res.status}`)
+async function getJson(url: string, endpoint: string, tuning?: NbsHttpTuning): Promise<unknown> {
+  const res = await externalFetch(`${NBS_API_BASE}${url}`, { headers: HEADERS }, httpOpts(tuning, endpoint))
   const text = await res.text()
   // WAF JS Challenge 页（连续快速请求触发）：返回 HTML 而非 JSON——识别并诚实报错（冷却后可恢复）
   if (text.trimStart().startsWith('<')) {
@@ -66,43 +93,51 @@ async function getJson(url: string): Promise<unknown> {
 }
 
 /** 指标树子节点（pid 空 = 根） */
-export async function fetchCatalogChildren(pid: string, code: string = NBS_YEAR_DB): Promise<NbsCatalogNode[]> {
-  const j = (await getJson(`/new/queryIndexTreeAsync?pid=${encodeURIComponent(pid)}&code=${code}`)) as {
+export async function fetchCatalogChildren(pid: string, code: string = NBS_YEAR_DB, tuning?: NbsHttpTuning): Promise<NbsCatalogNode[]> {
+  const j = (await getJson(`/new/queryIndexTreeAsync?pid=${encodeURIComponent(pid)}&code=${code}`, 'nbs:tree', tuning)) as {
     data?: NbsCatalogNode[]
   }
   return j.data ?? []
 }
 
 /** 分类指标列表（name 仅过滤当前分类；返回 0 = 该分类无直接指标） */
-export async function fetchIndicators(cid: string, name: string = ''): Promise<NbsIndicator[]> {
+export async function fetchIndicators(cid: string, name: string = '', tuning?: NbsHttpTuning): Promise<NbsIndicator[]> {
   const j = (await getJson(
     `/new/queryIndicatorsByCid?cid=${encodeURIComponent(cid)}&dt=&name=${encodeURIComponent(name)}`,
+    'nbs:indicators',
+    tuning,
   )) as { data?: { list?: NbsIndicator[]; total?: number } }
   return j.data?.list ?? []
 }
 
 /** 数据序列查询（das = [{text, value}]；dts = ['2021YY-2025YY'] 区间语义） */
-export async function fetchSeries(opts: {
-  cid: string
-  indicatorIds: string[]
-  das: Array<{ text: string; value: string }>
-  dts: string[]
-  rootId: string
-}): Promise<NbsSeriesYear[]> {
-  const res = await fetch(`${NBS_API_BASE}/stream/esData`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      cid: opts.cid,
-      indicatorIds: opts.indicatorIds,
-      daCatalogId: '',
-      das: opts.das,
-      showType: '1',
-      dts: opts.dts,
-      rootId: opts.rootId,
-    }),
-  })
-  if (!res.ok) throw new Error(`国家数据服务响应 ${res.status}`)
+export async function fetchSeries(
+  opts: {
+    cid: string
+    indicatorIds: string[]
+    das: Array<{ text: string; value: string }>
+    dts: string[]
+    rootId: string
+  },
+  tuning?: NbsHttpTuning,
+): Promise<NbsSeriesYear[]> {
+  const res = await externalFetch(
+    `${NBS_API_BASE}/stream/esData`,
+    {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cid: opts.cid,
+        indicatorIds: opts.indicatorIds,
+        daCatalogId: '',
+        das: opts.das,
+        showType: '1',
+        dts: opts.dts,
+        rootId: opts.rootId,
+      }),
+    },
+    httpOpts(tuning, 'nbs:esData'),
+  )
   const j = (await res.json()) as { success?: boolean; data?: NbsSeriesYear[] }
   if (j.success !== true) throw new Error('国家数据查询失败（success != true）')
   return j.data ?? []
@@ -123,10 +158,10 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 /** 预热：根 → 顶级分类（约 28 个）→ 各分类指标列表（节流逐请求；单分类失败跳过——
  *  索引部分可用优于整体失败；首查延迟约 20-30 秒，天级缓存摊销） */
-export async function buildIndicatorIndex(): Promise<NbsIndicatorIndex> {
-  const roots = await fetchCatalogChildren('')
+export async function buildIndicatorIndex(tuning?: NbsHttpTuning): Promise<NbsIndicatorIndex> {
+  const roots = await fetchCatalogChildren('', NBS_YEAR_DB, tuning)
   const rootId = roots[0]?._id ?? ''
-  const tops = rootId !== '' ? await fetchCatalogChildren(rootId) : []
+  const tops = rootId !== '' ? await fetchCatalogChildren(rootId, NBS_YEAR_DB, tuning) : []
   const entries: Array<{ name: string; id: string; cid: string }> = []
   for (const t of tops) {
     const cid = t._id ?? ''
@@ -134,7 +169,7 @@ export async function buildIndicatorIndex(): Promise<NbsIndicatorIndex> {
     await sleep(NBS_PREWARM_THROTTLE_MS)
     let list: NbsIndicator[] = []
     try {
-      list = await fetchIndicators(cid)
+      list = await fetchIndicators(cid, '', tuning)
     } catch {
       // 单分类失败跳过：WAF 限流/网络抖动不毁掉整个索引（fail-tolerant 预热）
       continue

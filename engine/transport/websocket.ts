@@ -97,6 +97,7 @@ import { scanJobLeads, upsertJobLeads, type JobLeadInput } from '../storage/job-
 import { scanSalaryBenchmarks, upsertSalaryBenchmarks, type SalaryBenchmarkInput } from '../storage/salary-benchmarks.ts'
 import { buildSalaryValuationCard } from '../ir/salary.ts'
 import { writeJDAnalysis } from '../storage/jd-analysis-writer.ts'
+import { externalFetch, ExternalCallError } from '../agent/tools/external-call.ts'
 import { validateJDAnalysisProposal } from '../runtime/jd-analysis-validator.ts'
 import { scanEvidence } from '../storage/evidence-watcher.ts'
 import { scanClaims } from '../storage/claim-watcher.ts'
@@ -1243,18 +1244,20 @@ async function listAvailableModels(
   const headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
   for (const url of candidates) {
     try {
-      const res = await fetch(url, { headers })
-      if (res.ok) {
-        const json = (await res.json()) as { data: { id: string }[] }
-        if (Array.isArray(json.data)) return { source: 'api', models: json.data.map((m) => m.id) }
-        return { source: 'api_error', models: [], error: 'no_endpoint' }
+      // Provider Stability v0.1：探测走统一封装（超时 10s——无超时 = 设置页验 key 挂死；重试 0——探测链自身多候选）
+      const res = await externalFetch(url, { headers }, { timeoutMs: 10_000, retries: 0 })
+      const json = (await res.json()) as { data: { id: string }[] }
+      if (Array.isArray(json.data)) return { source: 'api', models: json.data.map((m) => m.id) }
+      return { source: 'api_error', models: [], error: 'no_endpoint' }
+    } catch (err) {
+      if (err instanceof ExternalCallError && err.kind === 'http') {
+        const status = err.status ?? 0
+        if (status === 401 || status === 403) return { source: 'api_error', models: [], error: 'auth' }
+        if (status !== 404 && status !== 405) return { source: 'api_error', models: [], error: 'no_endpoint' }
+        // 404/405 = 该路径不存在 → 继续探测下一候选
+      } else {
+        return { source: 'api_error', models: [], error: 'network' }
       }
-      if (res.status === 401 || res.status === 403) return { source: 'api_error', models: [], error: 'auth' }
-      if (res.status !== 404 && res.status !== 405) {
-        return { source: 'api_error', models: [], error: 'no_endpoint' }
-      }
-    } catch {
-      return { source: 'api_error', models: [], error: 'network' }
     }
   }
   return { source: 'api_error', models: [], error: 'no_endpoint' }

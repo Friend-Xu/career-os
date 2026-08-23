@@ -30,7 +30,9 @@ import {
   fetchSeries,
   NBS_INDEX_TTL_MS,
   NBS_TREE_ROOT_CATALOG_ID,
+  NBS_YEAR_DB,
   type NbsCatalogNode,
+  type NbsHttpTuning,
   type NbsIndicator,
   type NbsIndicatorIndex,
 } from './api.ts'
@@ -85,6 +87,8 @@ export interface NbsConnectorOptions {
   indexBuilder?: () => Promise<NbsIndicatorIndex>
   /** 测试注入：resolver 树依赖（缺省 = 真连树 + 节点缓存） */
   treeDeps?: ResolverTreeDeps
+  /** HTTP 调优（Provider Stability v0.1：timeout/重试——单测注短值，生产缺省 = 常量） */
+  http?: NbsHttpTuning
 }
 
 export class NbsConnector {
@@ -104,7 +108,8 @@ export class NbsConnector {
   ensureIndex(): Promise<NbsIndicatorIndex | null> {
     if (this.index !== null && Date.now() - this.index.builtAt < NBS_INDEX_TTL_MS) return Promise.resolve(this.index)
     if (this.indexPromise === null) {
-      this.indexPromise = (this.opts.indexBuilder ?? buildIndicatorIndex)()
+      const build = this.opts.indexBuilder ?? (async (): Promise<NbsIndicatorIndex> => buildIndicatorIndex(this.opts.http))
+      this.indexPromise = build()
         .then((idx) => {
           this.index = idx
           this.opts.logger?.trace('nbs', { event: 'index_built', entryCount: idx.entries.length })
@@ -127,13 +132,13 @@ export class NbsConnector {
   private async childrenOfCached(cid: string): Promise<NbsCatalogNode[]> {
     const hit = this.nodeCache.get(cid)
     if (hit !== undefined && Date.now() - hit.at < NBS_INDEX_TTL_MS) return hit.kids
-    const kids = await fetchCatalogChildren(cid)
+    const kids = await fetchCatalogChildren(cid, NBS_YEAR_DB, this.opts.http)
     this.nodeCache.set(cid, { kids, at: Date.now() })
     return kids
   }
 
   private async indicatorsOfCached(cid: string): Promise<NbsIndicator[]> {
-    return fetchIndicators(cid)
+    return fetchIndicators(cid, '', this.opts.http)
   }
 
   /** resolver 树依赖（注入优先；否则缓存视图——resolver 内部节流纪律不破坏缓存命中） */
@@ -179,13 +184,16 @@ export class NbsConnector {
     regionName: string
     years: string[]
   }): Promise<{ year: string; value: string; unit: string; indicatorName: string }[]> {
-    const series = await fetchSeries({
-      cid: opts.cid,
-      indicatorIds: [opts.indicatorId],
-      das: [{ text: opts.regionName, value: opts.regionCode }],
-      dts: opts.years,
-      rootId: NBS_TREE_ROOT_CATALOG_ID,
-    })
+    const series = await fetchSeries(
+      {
+        cid: opts.cid,
+        indicatorIds: [opts.indicatorId],
+        das: [{ text: opts.regionName, value: opts.regionCode }],
+        dts: opts.years,
+        rootId: NBS_TREE_ROOT_CATALOG_ID,
+      },
+      this.opts.http,
+    )
     const out: { year: string; value: string; unit: string; indicatorName: string }[] = []
     for (const y of series) {
       for (const v of y.values ?? []) {
@@ -210,13 +218,16 @@ export class NbsConnector {
     regionName: string
     years: string[]
   }): Promise<ProfileRows[]> {
-    const series = await fetchSeries({
-      cid: opts.cid,
-      indicatorIds: opts.indicatorIds,
-      das: [{ text: opts.regionName, value: opts.regionCode }],
-      dts: opts.years,
-      rootId: NBS_TREE_ROOT_CATALOG_ID,
-    })
+    const series = await fetchSeries(
+      {
+        cid: opts.cid,
+        indicatorIds: opts.indicatorIds,
+        das: [{ text: opts.regionName, value: opts.regionCode }],
+        dts: opts.years,
+        rootId: NBS_TREE_ROOT_CATALOG_ID,
+      },
+      this.opts.http,
+    )
     const out: ProfileRows[] = []
     for (const y of series) {
       for (const v of y.values ?? []) {

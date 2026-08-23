@@ -15,6 +15,9 @@ const provider = {
   mode: 'responses' as const,
 }
 
+/** 文件级 fetch 还原锚（mockFetch 覆写全局；超时类用例自建 mock 后需还原） */
+const realFetch = globalThis.fetch
+
 function makeSession(extra: Partial<SearchSessionOptions> = {}): ReturnType<typeof createSearchSession> {
   return createSearchSession({ provider, budget: 8, cacheTtlMs: 30 * 60_000, ...extra })
 }
@@ -143,6 +146,23 @@ test('hostedSearch：请求打到 /responses（anthropic 后缀剥离）+ web_se
 test('hostedSearch：非 200 → 抛错含状态码', async () => {
   mockFetch('rate limited', 429)
   await assert.rejects(() => hostedSearch(provider, 'query'), /429/)
+})
+
+test('hostedSearch：超时 → 错误归一（timeout 消息，经 externalFetch）', async () => {
+  // mock 尊重 signal：真实 fetch 会因 AbortSignal.timeout 中止
+  globalThis.fetch = ((_url: unknown, init?: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal
+      if (signal != null) {
+        if (signal.aborted) reject(signal.reason)
+        signal.addEventListener('abort', () => reject(signal.reason))
+      }
+    })) as typeof fetch
+  try {
+    await assert.rejects(() => hostedSearch(provider, 'query', { timeoutMs: 50 }), /超时/)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })
 
 test('hostedSearch：无 output_text → 抛错（诚实失败，不回空文本冒充搜索）', async () => {

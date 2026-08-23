@@ -116,11 +116,12 @@ test('NbsConnector.querySeries：esData 响应 → 年份序列（值/单位/指
 
 // ─── NbsSession：治理面（预算/缓存/隐私/输出格式）──────────────────────────
 
-function makeConnector(treeDeps?: ResolverTreeDeps): NbsConnector {
+function makeConnector(treeDeps?: ResolverTreeDeps, http?: { timeoutMs?: number; retries?: number; retryBackoffMs?: number }): NbsConnector {
   // treeDeps 缺省 = 空树（单测不真连；curator 命中不依赖树）
   return new NbsConnector({
     logger: fakeLogger,
     indexBuilder: async () => idx,
+    ...(http !== undefined ? { http } : {}),
     treeDeps:
       treeDeps ?? {
         topCategories: async () => [],
@@ -240,12 +241,40 @@ test('工具错误语义：外部失败 → 错误文本回给模型（不抛穿
   const realFetch = globalThis.fetch
   globalThis.fetch = (async () => new Response('server error', { status: 500 })) as typeof fetch
   try {
-    const session = createNbsSession({ connector: makeConnector(), budget: 3, cacheTtlMs: 0 })
+    const session = createNbsSession({ connector: makeConnector(undefined, { retries: 0 }), budget: 3, cacheTtlMs: 0 })
     const tools = buildNbsTools(session)
     const exec = tools.QueryMacroStats.execute
     assert.ok(exec !== undefined)
     const out = await exec({ indicator: '工业增加值', region: '江苏' }, { toolCallId: 'x', messages: [] } as never)
     assert.ok(typeof out === 'string' && out.startsWith('QueryMacroStats 失败：'), `应返回错误文本，实际 ${out}`)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('超时归一：外部查询挂起 → 工具层错误文本含「超时」（不抛穿循环）', async () => {
+  const realFetch = globalThis.fetch
+  // mock 尊重 signal：真实 fetch 会因 AbortSignal.timeout 中止
+  globalThis.fetch = ((_url: unknown, init?: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal
+      if (signal != null) {
+        if (signal.aborted) reject(signal.reason)
+        signal.addEventListener('abort', () => reject(signal.reason))
+      }
+    })) as typeof fetch
+  try {
+    const session = createNbsSession({
+      connector: makeConnector(undefined, { timeoutMs: 80, retries: 0 }),
+      budget: 3,
+      cacheTtlMs: 0,
+    })
+    const tools = buildNbsTools(session)
+    const exec = tools.QueryMacroStats.execute
+    assert.ok(exec !== undefined)
+    const out = await exec({ indicator: '工业增加值', region: '江苏' }, { toolCallId: 'x', messages: [] } as never)
+    assert.ok(typeof out === 'string' && out.startsWith('QueryMacroStats 失败：'), `应返回错误文本，实际 ${out}`)
+    assert.match(out, /超时/, '错误归一消息含超时语义')
   } finally {
     globalThis.fetch = realFetch
   }

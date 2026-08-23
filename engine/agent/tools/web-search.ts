@@ -20,10 +20,16 @@ import { generateText, type Tool } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { PRIVACY_PATTERN } from './privacy-filter.ts'
+import { externalFetch } from './external-call.ts'
 import type { WebSearchMode } from '../providers/capabilities.ts'
 import type { Logger } from '../../logger.ts'
 import type { ToolEvidence } from '../../ir/schema.ts'
 import type { ToolRuntimeMeta } from './tool-assembly.ts'
+
+/** WebSearch 模型调用超时（实测 20-37s——20s 峰值常态，60s 留余量；超时走 fallback 链） */
+export const WEBSEARCH_MODEL_TIMEOUT_MS = 60_000
+/** WebSearch 降级路径超时（语义同上） */
+export const WEBSEARCH_HOSTED_TIMEOUT_MS = 60_000
 
 export interface WebSearchProvider {
   /** Responses API 根（如 https://api.deepseek.com；anthropic 通道 baseUrl 会剥 /anthropic 后缀） */
@@ -122,6 +128,10 @@ async function responsesSearch(provider: WebSearchProvider, query: string): Prom
     tools: { webSearch: openai.tools.webSearch({ searchContextSize: 'medium' }) },
     prompt: query,
     maxOutputTokens: 4000,
+    // Provider Stability v0.1：主路径显式超时（SDK fetch 无默认超时）+ 重试上限 1
+    // （重试 = 服务端搜索重算计费；超时/失败有 fallback 链兜底，压缩双成本）
+    abortSignal: AbortSignal.timeout(WEBSEARCH_MODEL_TIMEOUT_MS),
+    maxRetries: 1,
   })
   if (result.text.trim().length === 0) {
     throw new Error('搜索完成但无文本产出（官方适配器解析为空）')
@@ -142,6 +152,8 @@ async function googleSearch(provider: WebSearchProvider, query: string): Promise
     prompt: query,
     maxOutputTokens: 4000,
     tools: { webSearch: google.tools.googleSearch({ searchTypes: { webSearch: {} } }) },
+    abortSignal: AbortSignal.timeout(WEBSEARCH_MODEL_TIMEOUT_MS),
+    maxRetries: 1,
   })
   if (result.text.trim().length === 0) {
     throw new Error('搜索完成但无文本产出（Google 适配器解析为空）')
@@ -152,23 +164,29 @@ async function googleSearch(provider: WebSearchProvider, query: string): Promise
   return { text: result.text, sources: mergeSources(structured, result.text), cached: false }
 }
 
-/** 守卫降级路径（仅 'responses' 模式）：裸 fetch 薄封装（协议演进护栏；DeepSeek 正常响应 error:null——非空才是真错误） */
-export async function hostedSearch(provider: WebSearchProvider, query: string): Promise<SearchResult> {
-  const res = await fetch(`${responsesRoot(provider.baseUrl)}/responses`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
-    body: JSON.stringify({
-      model: provider.model,
-      instructions: SEARCH_INSTRUCTIONS,
-      input: query,
-      tools: [{ type: 'web_search', search_context_size: 'medium' }],
-      max_output_tokens: 4000,
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`搜索服务响应 ${res.status}${body.slice(0, 200) ? `：${body.slice(0, 200)}` : ''}`)
-  }
+/** 守卫降级路径（仅 'responses' 模式）：对外部 HTTP 经统一封装（Provider Stability v0.1）
+ *  ——retries=0：降级路径即恢复语义（主路径已重试 1 次），重试 = 计费搜索 ×2 且延迟放大 */
+export async function hostedSearch(
+  provider: WebSearchProvider,
+  query: string,
+  call?: { timeoutMs?: number },
+): Promise<SearchResult> {
+  const res = await externalFetch(
+    `${responsesRoot(provider.baseUrl)}/responses`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+      body: JSON.stringify({
+        model: provider.model,
+        instructions: SEARCH_INSTRUCTIONS,
+        input: query,
+        tools: [{ type: 'web_search', search_context_size: 'medium' }],
+        max_output_tokens: 4000,
+      }),
+    },
+    { timeoutMs: call?.timeoutMs ?? WEBSEARCH_HOSTED_TIMEOUT_MS, retries: 0, traceScope: 'web_search', endpoint: 'websearch:responses' },
+  )
+  // externalFetch 已保证 res.ok（错误归一抛 ExternalCallError）
   const j = (await res.json()) as { output?: unknown[]; error?: unknown }
   if (j.error != null) throw new Error(`搜索服务错误：${JSON.stringify(j.error).slice(0, 200)}`)
   const texts: string[] = []
@@ -215,8 +233,8 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
   let used = 0
   let fallbackLocked = false
   const evidenceBuf: ToolEvidence[] = []
-  const trace = (event: string): void => {
-    opts.logger?.trace('web_search', { event, budgetUsed: used, budgetTotal: opts.budget })
+  const trace = (event: string, extra?: Record<string, unknown>): void => {
+    opts.logger?.trace('web_search', { event, budgetUsed: used, budgetTotal: opts.budget, ...extra })
   }
   const recordEvidence = (sources: SearchSource[], at: number): void => {
     const citation = sources.map((s) => s.url).filter((u) => u !== '').join(' | ')
@@ -232,6 +250,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
 
   return {
     async execute(query) {
+      const startedAt = Date.now()
       if (PRIVACY_PATTERN.test(query)) {
         throw new SearchPolicyError(
           'privacy',
@@ -281,7 +300,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
           }
         }
       } catch (err) {
-        trace('search_error')
+        trace('search_error', { durationMs: Date.now() - startedAt })
         throw err
       }
       // 引用保障：文本缺来源段但提取到 URL → 追加结构化来源段（不重复模型自带引用）
@@ -291,6 +310,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
           text: `${result.text}\n\n${renderSources(result.sources)}`,
         }
       }
+      trace('search_ok', { durationMs: Date.now() - startedAt })
       recordEvidence(result.sources, Date.now())
       if (opts.cacheTtlMs > 0) cache.set(key, { result, at: Date.now() })
       return result

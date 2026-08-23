@@ -5,6 +5,7 @@
  * 4xx（key 无效/载荷非法）立即失败，不重试。
  */
 import { readFileSync } from 'node:fs'
+import { externalFetch, ExternalCallError } from '../../agent/tools/external-call.ts'
 
 export interface VisionProvider {
   analyzeImage(imagePath: string, prompt: string): Promise<string>
@@ -12,18 +13,18 @@ export interface VisionProvider {
 
 export const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
 
-/** 瞬时错误（429 限流 / 5xx 服务端）可重试；4xx 永久错误立即失败 */
-class VisionApiError extends Error {
-  readonly retryable: boolean
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.retryable = status === 429 || status >= 500
-  }
-}
+/** 视觉调用超时（视觉模型响应慢；无超时 = 上传流程挂死） */
+export const VISION_CALL_TIMEOUT_MS = 60_000
 
 const MAX_ATTEMPTS = 3
 const RETRY_DELAYS_MS = [0, 2000, 5000]
+
+/** 瞬时错误（429 限流 / 5xx / 超时 / 网络）可重试；4xx 永久错误立即失败——
+ *  判定统一走 ExternalCallError.retryable（Provider Stability v0.1 错误归一） */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof ExternalCallError) return err.retryable
+  return false
+}
 
 export class ZhipuVisionProvider implements VisionProvider {
   private readonly apiKey: string
@@ -45,45 +46,37 @@ export class ZhipuVisionProvider implements VisionProvider {
         return await this.callOnce(b64, prompt)
       } catch (err) {
         last = err
-        if (!(err instanceof VisionApiError) || !err.retryable) throw err
+        if (!isRetryable(err)) throw err
       }
     }
     throw last
   }
 
   private async callOnce(b64: string, prompt: string): Promise<string> {
-    const res = await fetch(this.baseUrl ?? ZHIPU_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
+    const res = await externalFetch(
+      this.baseUrl ?? ZHIPU_ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
+              ],
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
-            ],
-          },
-        ],
-      }),
-    })
-    if (!res.ok) {
-      // 错误体尽量透传（智谱：{ error: { code, message } }），用户能自诊断（如 1305 限流）
-      const raw = await res.text()
-      let detail = `HTTP ${res.status}`
-      try {
-        const body = JSON.parse(raw) as { error?: { code?: string | number; message?: string } }
-        const e = body.error
-        if (e) detail = `${detail} ${String(e.code ?? '')} ${e.message ?? ''}`.trim()
-      } catch {
-        detail = raw.trim() ? `${detail} ${raw.trim().slice(0, 120)}` : detail
-      }
-      throw new VisionApiError(res.status, `视觉模型调用失败 ${detail}`)
-    }
+      { timeoutMs: VISION_CALL_TIMEOUT_MS, retries: 0 },
+    )
+    // externalFetch 已保证 res.ok（错误归一抛 ExternalCallError——含状态码与错误体摘要，如智谱 1305 限流码）
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] }
     const text = data.choices?.[0]?.message?.content
     if (typeof text !== 'string' || !text.trim()) throw new Error('视觉模型返回空文本')
