@@ -1346,6 +1346,14 @@ export async function startServer(opts: {
   // intake（§1.6）：agent/start 时记录 directions/ 既有文件名快照；done 只消费快照外新文件——
   //   历史提案（含此前登记失败的）不被后续 done 自动重复消费。
   const stageTasks = new Map<string, { workflowId: string; stageId: StageId; personId: string; intake: string[] }>()
+  /** stage 任务反查（agent/answer 的 workflowId 定位）：UI 断连/刷新后 agentTasks（前端运行时映射）
+   *  丢失 → 无 taskId 可用；workflowId 是 UI 持久化的稳定锚点（workflow 卡/方向池都在）。 */
+  const findStageTaskId = (workflowId: string, stageId?: string): string | undefined => {
+    for (const [taskId, ref] of stageTasks) {
+      if (ref.workflowId === workflowId && (stageId === undefined || ref.stageId === stageId)) return taskId
+    }
+    return undefined
+  }
   /** 本次执行新产生的提案文件（§1.6 intake boundary：当前目录 - 启动时快照；目录缺失 → 空） */
   const currentDirectionFiles = (personId: string): string[] => {
     try {
@@ -1843,9 +1851,20 @@ export async function startServer(opts: {
       return listAvailableModels(p.apiKey ?? config.agent.apiKey, p.baseUrl ?? config.agent.baseUrl)
     },
     [METHODS.agentAnswer]: (params) => {
-      const taskId = taskIdParams(params) // 返回字符串，不可解构
       const p = params as Record<string, unknown>
       if (typeof p.text !== 'string' || p.text.length === 0) throw new Error('params.text 缺失（回答内容）')
+      let taskId = ''
+      if (typeof p.taskId === 'string' && p.taskId.length > 0) {
+        taskId = p.taskId
+      } else if (typeof p.workflowId === 'string' && p.workflowId.length > 0) {
+        // UI 断连/刷新恢复（agentTasks 丢失）→ 按 workflowId 反查进行中的 Stage 任务（稳定锚点）
+        taskId = findStageTaskId(p.workflowId, typeof p.stageId === 'string' ? p.stageId : undefined) ?? ''
+        if (taskId === '') {
+          throw new Error(`该工作流无进行中的 Stage 任务（${p.workflowId}）——任务可能已完成（回答不再需要）或已终止`)
+        }
+      } else {
+        throw new Error('params.taskId 或 params.workflowId 至少一个（回答定位）')
+      }
       agentRuntime.answer(taskId, p.text)
       return {}
     },

@@ -2108,17 +2108,26 @@ export const useAppStore = create<AppState>()(
       ),
     })
     // 真实 Agent 流：回答送达 Agent。
-    // 任务还活着 → answerAgent 即时通道；任务已结束（CLI 提问后立即放弃，实测常态）
-    // → resume 原会话续接发送回答（模型在恢复的上下文中看到回答）。
+    // 1) 任务还活着（agentTasks 运行时映射）→ taskId 即时通道；
+    // 2) 映射丢失（断连/刷新——提问卡消息持久化了 workflowId/stageId）→ workflowId 经引擎反查
+    //    进行中的 Stage 任务（稳定锚点；任务已完成则引擎拒绝并提示"回答不再需要"）；
+    // 3) 纯对话模式（无 workflow 关联）→ resume 原会话续接发送回答。
     const active = [...agentTasks.entries()].find(([, t]) => t.sessionId === currentSessionId)
     if (active) {
-      void engine?.answerAgent(active[0], answer)
+      void engine?.answerAgent({ taskId: active[0], text: answer })
+      return
+    }
+    const msg = get().sessions.find((s) => s.id === currentSessionId)?.messages.find((m) => m.id === messageId)
+    if (msg?.question?.workflowId !== undefined) {
+      void engine
+        ?.answerAgent({ workflowId: msg.question.workflowId, text: answer })
+        .catch((err) =>
+          useToastStore.getState().push('warning', `回答未送达：${err instanceof Error ? err.message : String(err)}`),
+        )
       return
     }
     const session = useAppStore.getState().sessions.find((s) => s.id === currentSessionId)
-    const question = sessions
-      .find((s) => s.id === currentSessionId)
-      ?.messages.find((m) => m.id === messageId)?.question?.question
+    const question = msg?.question?.question
     if (session?.sdkSessionId !== undefined && question !== undefined) {
       void runAgentTask(currentSessionId, `用户回答了你的问题「${question}」：${answer}。请确认收到并继续。`, session.sdkSessionId)
     }
@@ -2286,7 +2295,7 @@ export function getEngine(): EngineClient | null {
 // ─── 真实 Agent 流（engine agent.event 消费；sessions 已持久化，任务映射 sessionTasks 为运行时态随刷新清空）──
 
 /** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
-const agentTasks = new Map<string, { sessionId: string; messageId: string }>()
+const agentTasks = new Map<string, { sessionId: string; messageId: string; stageRef?: { workflowId: string; stageId: string } }>()
 
 /** 任务心跳：有任一会话任务时每秒 tick store.now（状态条/会话列表共用时间源）；全空自动停 */
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -2558,7 +2567,7 @@ async function runAgentTask(
       streaming: true, // 流式占位标记：持久化恢复时识别断流消息并收尾
       timestamp: new Date().toISOString(),
     })
-    agentTasks.set(taskId, { sessionId, messageId })
+    agentTasks.set(taskId, { sessionId, messageId, ...(stageRef ? { stageRef } : {}) })
     useAppStore.setState((s) => ({
       sessionTasks: {
         ...s.sessionTasks,
@@ -2685,7 +2694,10 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       })()
       break
     }
-    case 'question_request':
+    case 'question_request': {
+      // 回答定位锚点：stage 任务提问把 workflowId/stageId 与卡片一起持久化（断连/刷新后
+      // agentTasks 映射丢失 → answerQuestion 靠此经引擎反查；对话模式提问无 stageRef）
+      const taskMeta = agentTasks.get(taskId)
       appendToSession(sessionId, {
         id: `msg-${Date.now()}`,
         role: 'assistant',
@@ -2696,9 +2708,11 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
           question: ev.question.question,
           options: ev.question.options.map((o) => o.label),
           answered: false,
+          ...(taskMeta?.stageRef ? { workflowId: taskMeta.stageRef.workflowId, stageId: taskMeta.stageRef.stageId } : {}),
         },
       })
       break
+    }
     case 'session_id':
       useAppStore.setState((s) => ({
         sessions: s.sessions.map((sess) =>

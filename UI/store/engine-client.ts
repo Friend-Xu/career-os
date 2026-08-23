@@ -169,12 +169,21 @@ export class EngineClient {
   private open(): void {
     this.status = 'connecting'
     this.emit('status', this.status)
-    const ws = new WebSocket(this.url)
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(this.url)
+    } catch (err) {
+      // 构造失败（异常 url 等）→ 走失败路径（onclose 语义），不悬挂
+      console.warn(`[engine-client] WebSocket 构造失败：${err instanceof Error ? err.message : String(err)}`)
+      this.scheduleRetry()
+      return
+    }
     this.ws = ws
 
     ws.onopen = () => {
       this.status = 'connected'
       this.retryDelay = RETRY_BASE_MS
+      console.info(`[engine-client] 已连接（${this.url}）`)
       this.emit('status', this.status)
     }
     ws.onmessage = (ev) => {
@@ -207,12 +216,15 @@ export class EngineClient {
       if (!this.closedByUser) this.scheduleRetry()
     }
     ws.onerror = () => {
+      // 兜底：绝大多数环境 close 一定触发 onclose；个别环境只 error 不 close → 双保险重试调度
       ws.close()
+      if (ws.readyState !== WebSocket.CLOSED) this.scheduleRetry()
     }
   }
 
   private scheduleRetry(): void {
     if (this.retryTimer) return
+    console.info(`[engine-client] ${this.retryDelay}ms 后重连（指数退避）`)
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null
       this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS)
@@ -944,8 +956,12 @@ export class EngineClient {
     return this.rpc(METHODS.settingsModels, params)
   }
 
-  answerAgent(taskId: string, text: string): Promise<unknown> {
-    return this.rpc(METHODS.agentAnswer, { taskId, text })
+  /** 回答 Agent 提问：taskId（运行时映射存在）或 workflowId（断连/刷新恢复——引擎反查 stage 任务）至少其一 */
+  answerAgent(params: { taskId?: string; workflowId?: string; text: string }): Promise<unknown> {
+    const rpcParams: Record<string, unknown> = { text: params.text }
+    if (params.taskId !== undefined) rpcParams.taskId = params.taskId
+    if (params.workflowId !== undefined) rpcParams.workflowId = params.workflowId
+    return this.rpc(METHODS.agentAnswer, rpcParams)
   }
 
   cancelAgent(taskId: string): Promise<unknown> {

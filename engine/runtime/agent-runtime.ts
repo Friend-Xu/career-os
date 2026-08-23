@@ -332,6 +332,7 @@ export class AgentRuntime {
       for await (const ev of task.handle.events) {
         this.forward(taskId, ev)
       }
+      this.logger.info(`agent/${taskId} 事件流结束（任务完成或放弃）`)
     } catch (err) {
       this.logger.error(`agent/${taskId} 事件循环异常：${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -347,6 +348,7 @@ export class AgentRuntime {
       case 'permission_request':
         break
       case 'question_request':
+        this.logger.info(`agent/${taskId} question_request：${ev.question.question}（等待用户回答，任务挂起）`)
         this.emit(taskId, { type: 'question_request', question: ev.question })
         break
       case 'done':
@@ -367,7 +369,13 @@ export class AgentRuntime {
   }
 
   answer(taskId: string, text: string): void {
-    this.tasks.get(taskId)?.handle.answer(text)
+    const task = this.tasks.get(taskId)
+    if (!task) {
+      this.logger.warn(`agent/answer 未命中任务：${taskId}（任务已结束/映射丢失——回答被丢弃）`)
+      return
+    }
+    this.logger.info(`agent/answer：taskId=${taskId} 已送达（len=${text.length}）`)
+    task.handle.answer(text)
   }
 
   cancel(taskId: string): void {

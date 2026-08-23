@@ -305,6 +305,30 @@ test('read：非法/不存在 ID 返回 null', () => {
   assert.equal(readStageArtifact(ws, DIRECTION_SPEC, pid, '../evil'), null)
 })
 
+test('防御：Agent 直写伪登记文件（direction_ 前缀但缺 state 权威字段）→ 不投影（read null / list 不含）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  // 模拟 Agent 模仿系统命名直写（对照审计实录：缺 state/version/registered_by/evidence_refs）
+  ws.write(`persons/${pid}/directions/direction_20260821_00001.md`, [
+    '---',
+    `id: direction_20260821_00001`,
+    `created_at: 2026-08-21`,
+    `source_file: 00-方向候选清单.md`,
+    `artifact_type: direction_candidate`,
+    `workflow_id: ${WORKFLOW_ID}`,
+    `stage_id: ${STAGE_ID}`,
+    `person_id: ${pid}`,
+    '---',
+    '',
+    '## 方向主张',
+    '- 方向甲：值得考虑。',
+    '',
+  ].join('\n'))
+  assert.equal(readStageArtifact(ws, DIRECTION_SPEC, pid, 'direction_20260821_00001'), null, '缺 state 字段不得被投影')
+  assert.deepEqual(listStageArtifacts(ws, DIRECTION_SPEC, pid), [], '伪登记文件不得进方向池')
+  assert.equal(countStageArtifacts(ws, DIRECTION_SPEC, pid), 0)
+})
+
 // ─── resolve（§4.3：同动作幂等成功 / 反动作 ALREADY_RESOLVED / 终态不可逆）───
 
 function registerOne(ws: Workspace, pid: string) {

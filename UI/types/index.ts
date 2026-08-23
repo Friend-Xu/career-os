@@ -88,6 +88,10 @@ export interface QuestionCard {
   options: string[]
   answered: boolean
   answer?: string
+  /** 回答定位锚点（workflow-stage 任务提问）：断连/刷新后 agentTasks 运行时映射丢失，
+   *  以此 workflowId/stageId 经引擎反查进行中的 Stage 任务（稳定锚点；对话模式提问无此字段） */
+  workflowId?: string
+  stageId?: string
 }
 
 /** 挂起的权限请求（授权弹窗数据源；sessionId 保证审批结果写入所属会话） */

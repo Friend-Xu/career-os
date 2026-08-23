@@ -265,6 +265,10 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     boundaryLine,
     `Gate：${spec.gate ? `本阶段完成需通过 ${spec.gate}（由引擎裁决，用户确认）` : '本阶段无 Gate'}`,
     '不得自行推进下一 Stage。',
+    // 用户交互契约（BUG 审计修复）：用户确认/选择由系统 Gate 与方向池呈现（Human Action 归引擎裁决），
+    // Agent 不得以提问/请求确认收尾——完成本阶段产物后直接结束（done 由引擎登记 → Gate）。
+    '本阶段的用户确认由系统在阶段结束后呈现（Gate/方向池），你不得以提问或请求用户确认收尾：',
+    '完成本阶段产物后直接结束——不要向用户提问，不要请求确认，不要停留在对话等待。',
     ...(artifactContract ? ['', '【ARTIFACT_CONTRACT】', artifactContract, ''] : []),
   ].join('\n')
   return { workflow: w, envelope }
@@ -276,39 +280,44 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
 function buildArtifactContract(workflowId: string, personId: string, stageId: StageId): string | undefined {
   if (stageId === 'direction_exploration') {
     return [
-      `- 产出文件：persons/${personId}/directions/{文件名}.md（每个方向一个文件）`,
-      `- frontmatter（文件开头，必须，值照抄）：`,
+      `- 产出文件：persons/${personId}/directions/{文件名}.md（每个方向一个文件——不要写总览文件）`,
+      `- 文件名：{序号}-{描述}.md（如 01-通用机械结构工程师.md）；禁止使用 direction_/evaluation_ 前缀（系统命名由引擎登记后生成，Agent 不得占用）`,
+      `- frontmatter（文件开头，必须，值照抄；只允许以下三个字段）：`,
       `  ---`,
       `  person_id: ${personId}`,
       `  workflow_id: ${workflowId}`,
       `  stage_id: direction_exploration`,
       `  ---`,
-      `- 正文必须含段：## 方向主张（列表项 "- {方向名称}：{一句主张}"）与 ## 事实依据（每项 "- {引用来源}：依据说明"）`,
+      `- 禁止在 frontmatter 增加 id/source_file/artifact_type/state/version 等字段（引擎登记时生成）`,
+      `- 正文必须含段：段标题逐字照抄「## 方向主张」（写成「## 方向候选清单」等变体视为未完成；列表项 "- {方向名称}：{一句主张}"）与「## 事实依据」（每项 "- {引用来源}：依据说明"）`,
       `- 引用来源只允许 facts/ 或 snapshot/current/ 下的已有文件路径；无素材支撑的断言禁止写入；素材不足时标注"信息不足"`,
     ].join('\n')
   }
   if (stageId === 'direction_evaluation') {
     return [
-      `- 产出文件：persons/${personId}/evaluations/{文件名}.md（每个方向一个文件）`,
-      `- frontmatter（文件开头，必须，值照抄）：`,
+      `- 产出文件：persons/${personId}/evaluations/{文件名}.md（每个方向一个文件——不要写总览文件）`,
+      `- 文件名：{序号}-{描述}.md（如 01-通用机械结构工程师.md）；禁止使用 evaluation_/direction_ 前缀（系统命名由引擎登记后生成，Agent 不得占用）`,
+      `- frontmatter（文件开头，必须，值照抄；只允许以下三个字段）：`,
       `  ---`,
       `  person_id: ${personId}`,
       `  workflow_id: ${workflowId}`,
       `  stage_id: direction_evaluation`,
       `  ---`,
-      `- 正文必须含段：## 方向评估（列表项 "- {方向名称}：{匹配度评估一句话}"）与 ## 事实依据（每项 "- {引用来源}：依据说明"）`,
+      `- 禁止在 frontmatter 增加 id/source_file/artifact_type/state/version 等字段（引擎登记时生成）`,
+      `- 正文必须含段：段标题逐字照抄「## 方向评估」（写成变体视为未完成；列表项 "- {方向名称}：{匹配度评估一句话}"）与「## 事实依据」（每项 "- {引用来源}：依据说明"）`,
       `- 引用来源只允许 facts/、snapshot/current/ 或 persons/${personId}/directions/ 下的已有文件路径；无素材支撑的断言禁止写入`,
     ].join('\n')
   }
   if (stageId === 'recommendation') {
     return [
       `- 产出文件：decisions/{YYYY-MM-DD}-{主题}.md`,
-      `- frontmatter（文件开头，必须，值照抄）：`,
+      `- frontmatter（文件开头，必须，值照抄；只允许以下三个字段）：`,
       `  ---`,
       `  person_id: ${personId}`,
       `  workflow_id: ${workflowId}`,
       `  stage_id: recommendation`,
       `  ---`,
+      `- 禁止在 frontmatter 增加 id/source_file/artifact_type/state/version 等字段（引擎登记时生成）`,
       `- 正文必须以「## 分析摘要」两列表格开头（列协议：| 字段 | 值 |；字段名逐字照抄，值按括号内规则填）：`,
       `  | 字段 | 值 |`,
       `  |------|-----|`,

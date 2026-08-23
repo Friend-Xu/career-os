@@ -394,6 +394,45 @@ test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停�
   assert.ok(envelope.includes('不得自行推进下一 Stage'))
 })
 
+test('compileStageTask：Envelope 用户交互契约——不得提问收尾（确认归 Gate）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
+  assert.ok(envelope.includes('不得以提问或请求用户确认收尾'), '必须声明 Agent 不得提问收尾（双确认消除：确认归 Gate）')
+  assert.ok(envelope.includes('完成本阶段产物后直接结束'), '必须声明完成即结束、不停留等待')
+})
+
+test('compileStageTask：ARTIFACT_CONTRACT 刚性化——命名/frontmatter/marker（direction_exploration）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
+  assert.ok(envelope.includes('【ARTIFACT_CONTRACT】'))
+  assert.ok(envelope.includes('禁止使用 direction_/evaluation_ 前缀'), '系统命名前缀禁令（Agent 不得占用）')
+  assert.ok(envelope.includes('只允许以下三个字段'), 'frontmatter 字段白名单')
+  assert.ok(envelope.includes('字段（引擎登记时生成）'), '禁止添加 id/source_file/artifact_type/state/version 等字段')
+  assert.ok(envelope.includes('段标题逐字照抄「## 方向主张」'), 'marker 标题逐字照抄（变体视为未完成）')
+  assert.ok(envelope.includes('不要写总览文件'), '不产出总览文件（候选清单总览不是本阶段产物）')
+  assert.ok(envelope.includes('写成「## 方向候选清单」等变体视为未完成'), '变体禁令显式示例')
+})
+
+test('compileStageTask：ARTIFACT_CONTRACT 刚性化（direction_evaluation / recommendation）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  // Stage 3：evaluation 契约（前缀禁令 + 三字段白名单 + marker 逐字照抄）
+  const { workflowId } = advanceToEvaluation(ws, pid)
+  const env3 = compileStageTask(ws, workflowId, 'direction_evaluation').envelope
+  assert.ok(env3.includes('禁止使用 evaluation_/direction_ 前缀'), 'Stage3 系统命名前缀禁令')
+  assert.ok(env3.includes('只允许以下三个字段'), 'Stage3 frontmatter 三字段白名单')
+  assert.ok(env3.includes('段标题逐字照抄「## 方向评估」'), 'Stage3 marker 逐字照抄')
+  // Stage 4：recommendation 契约（三字段白名单 + 富字段禁令）
+  const workflowId4 = advanceToRecommendation(ws, pid)
+  const env4 = compileStageTask(ws, workflowId4, 'recommendation').envelope
+  assert.ok(env4.includes('只允许以下三个字段'), 'Stage4 frontmatter 三字段白名单')
+  assert.ok(env4.includes('字段（引擎登记时生成）'), 'Stage4 富字段禁令')
+})
+
 test('compileStageTask 校验：workflow 不存在 / 非 active / stage 不匹配 / 状态非 running → 拒绝', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
