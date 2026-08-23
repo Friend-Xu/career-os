@@ -13,6 +13,7 @@ import { initWorkspace } from '../storage/workspace.ts'
 import { buildToolSources, type AgentDefaults } from '../runtime/agent-runtime.ts'
 import { findRegionCode } from '../agent/tools/nbs/regions.ts'
 import { searchIndicator, type NbsIndicatorIndex } from '../agent/tools/nbs/api.ts'
+import type { ResolverTreeDeps } from '../agent/tools/nbs/resolver.ts'
 import {
   buildNbsTools,
   createNbsSession,
@@ -115,8 +116,18 @@ test('NbsConnector.querySeries：esData 响应 → 年份序列（值/单位/指
 
 // ─── NbsSession：治理面（预算/缓存/隐私/输出格式）──────────────────────────
 
-function makeConnector(): NbsConnector {
-  return new NbsConnector({ logger: fakeLogger, indexBuilder: async () => idx })
+function makeConnector(treeDeps?: ResolverTreeDeps): NbsConnector {
+  // treeDeps 缺省 = 空树（单测不真连；curator 命中不依赖树）
+  return new NbsConnector({
+    logger: fakeLogger,
+    indexBuilder: async () => idx,
+    treeDeps:
+      treeDeps ?? {
+        topCategories: async () => [],
+        childrenOf: async () => [],
+        indicatorsOf: async () => [],
+      },
+  })
 }
 
 const SERIES_BODY = {
@@ -126,7 +137,7 @@ const SERIES_BODY = {
   ],
 }
 
-test('会话全链：本地解析 → 外部查询 → 结构化输出（权威统计 + 来源标注）', async () => {
+test('会话全链：本地解析 → 外部查询 → 结构化输出（权威统计 + 指标路径 + 来源标注）', async () => {
   const realFetch = globalThis.fetch
   globalThis.fetch = (async () => new Response(JSON.stringify(SERIES_BODY), { status: 200 })) as typeof fetch
   try {
@@ -135,6 +146,7 @@ test('会话全链：本地解析 → 外部查询 → 结构化输出（权威�
     assert.ok(out.includes('【权威统计数据】'), '结构化块头')
     assert.ok(out.includes('规模以上工业增加值'), '指标名')
     assert.ok(out.includes('40123.5 亿元'), '数值+单位')
+    assert.ok(out.includes('指标路径'), '证据可追溯（指标路径行）')
     assert.ok(out.includes('国家统计局'), '来源标注')
   } finally {
     globalThis.fetch = realFetch
@@ -251,6 +263,71 @@ test('治理元数据保真：NBS_TOOL_META = data 源 / external 出境 / 预�
 
 test('session budget 校验：非正整数 → fail fast', () => {
   assert.throws(() => createNbsSession({ connector: makeConnector(), budget: 0, cacheTtlMs: 0 }), /budget 应为正整数/)
+})
+
+// ─── 批次 B：消歧闭环与候选语义 ────────────────────────────────────────────
+
+const AMBI_TREE = {
+  topCategories: async () => [{ _id: 'x1', _name: '工业', isLeaf: false }],
+  childrenOf: async () => [
+    { _id: 'x2', _name: '工业产品产量', isLeaf: true },
+    { _id: 'x3', _name: '工业销售产值', isLeaf: true },
+  ],
+  indicatorsOf: async (cid: string) =>
+    cid === 'x2' ? [{ _id: 'a1', i_showname: '工业产品产量 (万吨)' }] : [{ _id: 'a2', i_showname: '工业销售产值 (万元)' }],
+}
+
+test('B2 歧义显式化：多候选 → 候选列表文本（含 indicatorId），不自动查询', async () => {
+  const realFetch = globalThis.fetch
+  let external = 0
+  globalThis.fetch = (async () => {
+    external += 1
+    return new Response('{}', { status: 200 })
+  }) as typeof fetch
+  try {
+    const session = createNbsSession({ connector: makeConnector(AMBI_TREE), budget: 3, cacheTtlMs: 0 })
+    const out = await session.execute({ indicator: '工业', region: '江苏' })
+    assert.ok(out.includes('多个候选指标'), '歧义显式化')
+    assert.ok(out.includes('indicatorId'), '候选带 id 供指认')
+    assert.equal(external, 0, '歧义时不做外部查询')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('消歧闭环：indicatorId 指认 → 精确查询（esData body 携带该 id；跳过关键词解析）', async () => {
+  const bodies: Record<string, unknown>[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    return new Response(JSON.stringify(SERIES_BODY), { status: 200 })
+  }) as typeof fetch
+  try {
+    // curator 命中后 catalogOf 可查：用 curator 的 GDP id 指认
+    const session = createNbsSession({ connector: makeConnector(), budget: 3, cacheTtlMs: 0 })
+    const out = await session.execute({
+      indicator: 'GDP',
+      indicatorId: '7dc6a2ee6c614960b7059991e0cc4d96',
+      region: '江苏',
+    })
+    assert.ok(out.includes('40123.5'))
+    assert.deepEqual(bodies[0].indicatorIds, ['7dc6a2ee6c614960b7059991e0cc4d96'], 'esData 用指认 id')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('诚实边界：查询无数据 → 降级提示（含城市级口径提示）', async () => {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: [] }), { status: 200 })) as typeof fetch
+  try {
+    const session = createNbsSession({ connector: makeConnector(), budget: 3, cacheTtlMs: 0 })
+    const out = await session.execute({ indicator: '工业增加值', region: '苏州' })
+    assert.ok(out.includes('无统计值'), '无数据提示')
+    assert.ok(out.includes('GDP 无城市级口径'), '诚实口径提示（城市级 GDP 不存在于年度口径）')
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })
 
 // ─── buildToolSources：data 源组装 ─────────────────────────────────────────

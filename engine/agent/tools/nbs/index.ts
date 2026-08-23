@@ -24,12 +24,17 @@ import { PRIVACY_PATTERN } from '../privacy-filter.ts'
 import { findRegionCode } from './regions.ts'
 import {
   buildIndicatorIndex,
+  fetchCatalogChildren,
+  fetchIndicators,
   fetchSeries,
   NBS_INDEX_TTL_MS,
   NBS_TREE_ROOT_CATALOG_ID,
-  searchIndicator,
+  type NbsCatalogNode,
+  type NbsIndicator,
   type NbsIndicatorIndex,
 } from './api.ts'
+import { NBS_CURATOR } from './aliases.ts'
+import { resolveIndicator as resolveByResolver, type ResolveResult, type ResolverTreeDeps, type ResolvedIndicator } from './resolver.ts'
 import type { ToolRuntimeMeta } from '../tool-assembly.ts'
 
 export const NBS_SESSION_BUDGET = 3
@@ -56,11 +61,17 @@ export interface NbsConnectorOptions {
   logger?: Logger
   /** 测试注入：索引构建器（缺省 = 真连国家数据 API） */
   indexBuilder?: () => Promise<NbsIndicatorIndex>
+  /** 测试注入：resolver 树依赖（缺省 = 真连树 + 节点缓存） */
+  treeDeps?: ResolverTreeDeps
 }
 
 export class NbsConnector {
   private index: NbsIndicatorIndex | null = null
   private indexPromise: Promise<NbsIndicatorIndex | null> | null = null
+  /** 树节点缓存（cid → children；TTL 天级——resolver 定向下钻的请求去重） */
+  private nodeCache = new Map<string, { kids: NbsCatalogNode[]; at: number }>()
+  /** 指标 id → 分类 id 缓存（curator + 树搜索命中记录；indicatorId 消歧闭环用） */
+  private idCatalog = new Map<string, string>()
   private readonly opts: NbsConnectorOptions
 
   constructor(opts: NbsConnectorOptions = {}) {
@@ -89,11 +100,53 @@ export class NbsConnector {
     return this.indexPromise
   }
 
-  /** 关键词 → 指标（未预热/未命中 → undefined） */
-  async resolveIndicator(keyword: string): Promise<{ name: string; id: string; cid: string } | undefined> {
-    const idx = await this.ensureIndex()
-    if (idx === null) throw new Error('统计指标库不可用（索引预热失败），请稍后重试或改用搜索')
-    return searchIndicator(idx, keyword)
+  // ─── 树访问（resolver deps）：节点缓存 + 节流由 resolver 控制 ──────────────
+
+  private async childrenOfCached(cid: string): Promise<NbsCatalogNode[]> {
+    const hit = this.nodeCache.get(cid)
+    if (hit !== undefined && Date.now() - hit.at < NBS_INDEX_TTL_MS) return hit.kids
+    const kids = await fetchCatalogChildren(cid)
+    this.nodeCache.set(cid, { kids, at: Date.now() })
+    return kids
+  }
+
+  private async indicatorsOfCached(cid: string): Promise<NbsIndicator[]> {
+    return fetchIndicators(cid)
+  }
+
+  /** resolver 树依赖（注入优先；否则缓存视图——resolver 内部节流纪律不破坏缓存命中） */
+  resolverDeps(): ResolverTreeDeps {
+    if (this.opts.treeDeps !== undefined) return this.opts.treeDeps
+    return {
+      topCategories: async () => {
+        const roots = await this.childrenOfCached('')
+        const rootId = roots[0]?._id ?? ''
+        return rootId !== '' ? this.childrenOfCached(rootId) : []
+      },
+      childrenOf: (cid) => this.childrenOfCached(cid),
+      indicatorsOf: (cid) => this.indicatorsOfCached(cid),
+    }
+  }
+
+  /** 关键词 → 解析结果（curator 优先 + 树搜索兜底 + Ambiguity Gate）；树命中记录 id→catalog */
+  async resolveIndicator(keyword: string): Promise<ResolveResult> {
+    const result = await resolveByResolver(keyword, {
+      curator: NBS_CURATOR,
+      tree: this.resolverDeps(),
+      logger: this.opts.logger,
+    })
+    if (result.kind === 'resolved') this.idCatalog.set(result.indicator.indicatorId, result.indicator.catalogId)
+    if (result.kind === 'candidates') {
+      for (const o of result.options) this.idCatalog.set(o.indicatorId, o.catalogId)
+    }
+    return result
+  }
+
+  /** indicatorId → 分类 id（消歧闭环第二轮；curator 静态映射兜底） */
+  catalogOf(indicatorId: string): string | undefined {
+    const byCache = this.idCatalog.get(indicatorId)
+    if (byCache !== undefined) return byCache
+    return NBS_CURATOR.find((e) => e.indicatorId === indicatorId)?.catalogId
   }
 
   /** 数据序列查询（das 12 位区划码；dts 年份区间） */
@@ -150,6 +203,8 @@ export interface NbsQueryInput {
   indicator: string
   region: string
   year?: string
+  /** 消歧闭环：候选列表返回的指标 id（第二轮指认后精确查询，跳过解析） */
+  indicatorId?: string
 }
 
 export interface NbsSession {
@@ -187,19 +242,42 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
         }
         if (hit !== undefined) cache.delete(key)
       }
-      // 本地校验先行（不消耗外部预算）：地区解析 + 指标解析（索引为引擎级内存，本地操作）
+      // 本地校验先行（不消耗外部预算）：地区解析 + 指标解析（curator/树缓存为本地操作）
       const regionCode = findRegionCode(region)
       if (regionCode === undefined) {
         return `QueryMacroStats 失败：未识别地区「${region}」（支持省区市全称/简称与主要城市，如 苏州/江苏/全国）`
       }
-      let hit: { name: string; id: string; cid: string } | undefined
-      try {
-        hit = await opts.connector.resolveIndicator(input.indicator)
-      } catch (err) {
-        return `QueryMacroStats 失败：${err instanceof Error ? err.message : String(err)}`
-      }
-      if (hit === undefined) {
-        return `QueryMacroStats 失败：未找到指标「${input.indicator}」（年度口径；请用更精确的关键词，如 工业增加值/居民人均可支配收入）`
+      // 指标解析：indicatorId 指认优先（消歧闭环）→ 语义解析（resolved/candidates/miss）
+      let resolved: ResolvedIndicator | undefined
+      if (input.indicatorId !== undefined && input.indicatorId !== '') {
+        const cid = opts.connector.catalogOf(input.indicatorId)
+        if (cid !== undefined) {
+          resolved = { indicatorId: input.indicatorId, catalogId: cid, name: input.indicator, path: '（指标 id 指认）', confidence: 1 }
+        } else {
+          return `QueryMacroStats 失败：未识别指标 id「${input.indicatorId}」（候选列表的 id 才有效）`
+        }
+      } else {
+        let result: ResolveResult
+        try {
+          result = await opts.connector.resolveIndicator(input.indicator)
+        } catch (err) {
+          return `QueryMacroStats 失败：${err instanceof Error ? err.message : String(err)}`
+        }
+        if (result.kind === 'miss') {
+          return `QueryMacroStats 失败：未找到指标「${input.indicator}」（年度口径；请用更精确的关键词，如 工业增加值/居民人均可支配收入/GDP）`
+        }
+        if (result.kind === 'candidates') {
+          // Ambiguity Gate：歧义显式化——返回候选编号列表，不静默选（第二轮用 indicatorId 指认）
+          const lines = result.options.map(
+            (o, i) => `${i + 1}. ${o.name}（路径：${o.path}；indicatorId: ${o.indicatorId}）`,
+          )
+          return [
+            `QueryMacroStats 找到多个候选指标（歧义显式化，未自动选择）：`,
+            ...lines,
+            '请与用户确认选用哪个，然后用其 indicatorId 再次查询。',
+          ].join('\n')
+        }
+        resolved = result.indicator
       }
       if (used >= opts.budget) {
         trace('budget_exhausted')
@@ -213,25 +291,32 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
       try {
         const years = input.year !== undefined && input.year.trim() !== '' ? [`${input.year.trim()}YY`] : ['2021YY-2026YY']
         const rows = await opts.connector.querySeries({
-          cid: hit.cid,
-          indicatorId: hit.id,
+          cid: resolved.catalogId,
+          indicatorId: resolved.indicatorId,
           regionCode,
           regionName: region,
           years,
         })
         if (rows.length === 0) {
-          return `QueryMacroStats 完成但无数据：指标「${hit.name}」在「${region}」${years[0]} 无统计值（该地区/年份可能无此口径数据）`
+          return `QueryMacroStats 完成但无数据：指标「${resolved.name}」在「${region}」${years[0]} 无统计值（该地区/年份可能无此口径数据——部分指标如 GDP 无城市级口径，建议改用省级）`
         }
         const lines = rows.map((r) => `- ${r.year}：${r.value}${r.unit !== '' ? ` ${r.unit}` : ''}`)
         const text = [
           '【权威统计数据】',
-          `指标：${rows[0].indicatorName || hit.name}`,
+          `指标：${rows[0].indicatorName || resolved.name}`,
+          `指标路径：${resolved.path}`,
           `地区：${region}`,
           ...lines,
           '',
           '数据来源：国家统计局 · 国家数据（data.stats.gov.cn 年度数据）',
         ].join('\n')
-        trace('query_ok')
+        opts.logger?.trace('nbs', {
+          event: 'query_ok',
+          budgetUsed: used,
+          budgetTotal: opts.budget,
+          indicatorId: resolved.indicatorId,
+          confidence: resolved.confidence,
+        })
         if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
         return text
       } catch (err) {
@@ -248,11 +333,12 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
 export function buildNbsTools(session: NbsSession): Record<string, Tool<any, any>> {
   const queryMacroStats = tool({
     description:
-      '权威统计数据查询（国家统计体系·年度口径）：输入指标关键词与地区，返回官方数值、单位与年份序列。GDP/产值/工业增加值/居民收入等权威数字必须用本工具，不得用搜索新闻替代。注意：首次查询需预热指标库（数秒）；每任务有查询预算，请聚焦关键指标一次查清。',
+      '权威统计数据查询（国家统计体系·年度口径）：输入指标关键词与地区，返回官方数值、单位与年份序列。GDP/产值/工业增加值/居民收入等权威数字必须用本工具，不得用搜索新闻替代。若返回多个候选指标（歧义），请与用户确认后带 indicatorId 再次查询。注意：每任务有查询预算，请聚焦关键指标一次查清。',
     inputSchema: z.object({
-      indicator: z.string().min(1).max(50).describe('指标关键词（如：工业增加值 / 居民人均可支配收入 / 社会消费品零售总额）'),
+      indicator: z.string().min(1).max(50).describe('指标关键词（如：工业增加值 / 居民人均可支配收入 / GDP / 社会消费品零售总额）'),
       region: z.string().optional().describe('地区名（省区市全称/简称或主要城市，如 苏州/江苏；缺省 = 全国）'),
       year: z.string().optional().describe('年份（如 2024；缺省 = 近五年序列）'),
+      indicatorId: z.string().optional().describe('候选列表返回的指标 id（歧义指认时传，跳过关键词解析）'),
     }),
     execute: async (input) => {
       try {
@@ -260,6 +346,7 @@ export function buildNbsTools(session: NbsSession): Record<string, Tool<any, any
           indicator: typeof input.indicator === 'string' ? input.indicator : String(input.indicator ?? ''),
           region: typeof input.region === 'string' ? input.region : '',
           year: typeof input.year === 'string' ? input.year : undefined,
+          indicatorId: typeof input.indicatorId === 'string' && input.indicatorId !== '' ? input.indicatorId : undefined,
         })
       } catch (err) {
         if (err instanceof NbsPolicyError) return err.message

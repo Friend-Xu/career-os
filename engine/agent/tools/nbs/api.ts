@@ -35,6 +35,8 @@ export interface NbsIndicator {
   id?: string
   _name?: string
   name?: string
+  /** 展示名（通常带单位后缀，如「社会消费品零售总额 (亿元) 」——resolver 首选匹配源） */
+  i_showname?: string
   catalogid?: string
 }
 
