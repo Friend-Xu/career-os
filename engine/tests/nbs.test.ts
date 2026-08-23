@@ -344,7 +344,7 @@ test('证据：查询成功 → takeEvidence（data/nbs/citation=指标id/period
     assert.equal(evs[0].provider, 'nbs')
     assert.equal(evs[0].citation, '1e344d8fa0d040f88e80b5bf0b56dbac', 'citation = 指标 id')
     assert.equal(evs[0].period, '2024年', 'period = 最新数据年份')
-    assert.equal(evs[0].confidence, 1, 'confidence = curator 精确分')
+    assert.equal(evs[0].producerConfidence, 1, 'producerConfidence = curator 精确分（生产方解析置信，非事实可信度）')
     assert.equal(session.takeEvidence().length, 0, '取即清')
     // 缓存命中：证据复现（fetchedAt = 首次获取时刻，period/confidence 不丢）
     await session.execute({ indicator: '工业增加值', region: '江苏' })

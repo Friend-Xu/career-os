@@ -288,7 +288,7 @@ function buildNbsEvidence(resolved: ResolvedIndicator, rows: Array<{ year: strin
     citation: resolved.indicatorId,
     fetchedAt: new Date(at).toISOString(),
     ...(period !== undefined ? { period } : {}),
-    ...(resolved.confidence !== undefined ? { confidence: resolved.confidence } : {}),
+    ...(resolved.confidence !== undefined ? { producerConfidence: resolved.confidence } : {}),
   }
 }
 

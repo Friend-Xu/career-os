@@ -42,8 +42,9 @@ export interface ToolEvidence {
   fetchedAt: string
   /** 数据/内容时间（生产方给出；如 NBS 数据年份） */
   period?: string
-  /** 生产方置信（如 NBS 解析置信 0-1；检索类无 → 缺省） */
-  confidence?: number
+  /** 生产方解析/来源置信（如 NBS 指标解析置信 0-1；**非事实可信度**——Agent 不产生该值，
+   *  禁止任何"模型觉得可信"类评分写入；检索类无 → 缺省） */
+  producerConfidence?: number
 }
 
 export interface ToolCallInfo {
