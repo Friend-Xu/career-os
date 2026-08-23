@@ -169,7 +169,7 @@ async function googleSearch(provider: WebSearchProvider, query: string): Promise
 export async function hostedSearch(
   provider: WebSearchProvider,
   query: string,
-  call?: { timeoutMs?: number },
+  call?: { timeoutMs?: number; logger?: Logger },
 ): Promise<SearchResult> {
   const res = await externalFetch(
     `${responsesRoot(provider.baseUrl)}/responses`,
@@ -184,7 +184,13 @@ export async function hostedSearch(
         max_output_tokens: 4000,
       }),
     },
-    { timeoutMs: call?.timeoutMs ?? WEBSEARCH_HOSTED_TIMEOUT_MS, retries: 0, traceScope: 'web_search', endpoint: 'websearch:responses' },
+    {
+      timeoutMs: call?.timeoutMs ?? WEBSEARCH_HOSTED_TIMEOUT_MS,
+      retries: 0,
+      ...(call?.logger !== undefined ? { logger: call.logger } : {}),
+      traceScope: 'web_search',
+      endpoint: 'websearch:responses',
+    },
   )
   // externalFetch 已保证 res.ok（错误归一抛 ExternalCallError）
   const j = (await res.json()) as { output?: unknown[]; error?: unknown }
@@ -288,14 +294,14 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
           // Google grounding：无 Responses 兼容降级路径——失败即诚实报错（不当兼容）
           result = await googleSearch(opts.provider, query)
         } else if (fallbackLocked) {
-          result = await hostedSearch(opts.provider, query)
+          result = await hostedSearch(opts.provider, query, { logger: opts.logger })
         } else {
           try {
             result = await responsesSearch(opts.provider, query)
           } catch (err) {
             // 协议守卫：主路径失败 → 降级薄封装；降级成功即锁定本会话（防每次双请求）
             trace('fallback')
-            result = await hostedSearch(opts.provider, query)
+            result = await hostedSearch(opts.provider, query, { logger: opts.logger })
             fallbackLocked = true
           }
         }

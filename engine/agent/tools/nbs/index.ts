@@ -99,16 +99,19 @@ export class NbsConnector {
   /** 指标 id → 分类 id 缓存（curator + 树搜索命中记录；indicatorId 消歧闭环用） */
   private idCatalog = new Map<string, string>()
   private readonly opts: NbsConnectorOptions
+  /** HTTP 调优（合并 connector logger——http_call 事件透传通道，Provider Stability v0.1） */
+  private readonly http: NbsHttpTuning
 
   constructor(opts: NbsConnectorOptions = {}) {
     this.opts = opts
+    this.http = { ...(opts.http ?? {}), ...(opts.logger !== undefined ? { logger: opts.logger } : {}) }
   }
 
   /** 幂等索引预热：并发共享同一 promise；失败 → null（fail-safe，查询时报错文本） */
   ensureIndex(): Promise<NbsIndicatorIndex | null> {
     if (this.index !== null && Date.now() - this.index.builtAt < NBS_INDEX_TTL_MS) return Promise.resolve(this.index)
     if (this.indexPromise === null) {
-      const build = this.opts.indexBuilder ?? (async (): Promise<NbsIndicatorIndex> => buildIndicatorIndex(this.opts.http))
+      const build = this.opts.indexBuilder ?? (async (): Promise<NbsIndicatorIndex> => buildIndicatorIndex(this.http))
       this.indexPromise = build()
         .then((idx) => {
           this.index = idx
@@ -132,13 +135,13 @@ export class NbsConnector {
   private async childrenOfCached(cid: string): Promise<NbsCatalogNode[]> {
     const hit = this.nodeCache.get(cid)
     if (hit !== undefined && Date.now() - hit.at < NBS_INDEX_TTL_MS) return hit.kids
-    const kids = await fetchCatalogChildren(cid, NBS_YEAR_DB, this.opts.http)
+    const kids = await fetchCatalogChildren(cid, NBS_YEAR_DB, this.http)
     this.nodeCache.set(cid, { kids, at: Date.now() })
     return kids
   }
 
   private async indicatorsOfCached(cid: string): Promise<NbsIndicator[]> {
-    return fetchIndicators(cid, '', this.opts.http)
+    return fetchIndicators(cid, '', this.http)
   }
 
   /** resolver 树依赖（注入优先；否则缓存视图——resolver 内部节流纪律不破坏缓存命中） */
@@ -192,7 +195,7 @@ export class NbsConnector {
         dts: opts.years,
         rootId: NBS_TREE_ROOT_CATALOG_ID,
       },
-      this.opts.http,
+      this.http,
     )
     const out: { year: string; value: string; unit: string; indicatorName: string }[] = []
     for (const y of series) {
@@ -226,7 +229,7 @@ export class NbsConnector {
         dts: opts.years,
         rootId: NBS_TREE_ROOT_CATALOG_ID,
       },
-      this.opts.http,
+      this.http,
     )
     const out: ProfileRows[] = []
     for (const y of series) {

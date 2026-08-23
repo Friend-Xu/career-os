@@ -101,7 +101,9 @@ export async function externalFetch(url: string, init: RequestInit, opts: Extern
       }
     } catch (err) {
       if (isTimeout(err)) {
-        last = new ExternalCallError('timeout', `外部服务响应超时（${Math.round(timeoutMs / 1000)}s 无响应）`, {
+        const secs = Math.round(timeoutMs / 1000)
+        const label = secs >= 1 ? `${secs}s` : `${timeoutMs}ms`
+        last = new ExternalCallError('timeout', `外部服务响应超时（${label} 无响应）`, {
           attempts: attempt,
           durationMs: Date.now() - startedAt,
         })

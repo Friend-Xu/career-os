@@ -13,6 +13,7 @@
  * 指标搜索：顶级分类（约 28 个）指标列表内存索引——首查预热（每分类一次 HTTP），TTL 天级。
  */
 import { externalFetch, type ExternalCallOptions } from '../external-call.ts'
+import type { Logger } from '../../../logger.ts'
 
 export const NBS_API_BASE = 'https://data.stats.gov.cn/dg/website/publicrelease/web/external'
 export const NBS_YEAR_DB = '3' // 年度数据（职业决策主口径）
@@ -23,6 +24,8 @@ export interface NbsHttpTuning {
   timeoutMs?: number
   retries?: number
   retryBackoffMs?: number
+  /** trace 通道（http_call 事件生产者；由 NbsConnector 构造时合并——接入点透传） */
+  logger?: Logger
 }
 
 /** NBS 重试间隔（对齐 600ms 节流真机安全值——重试不放大 WAF 触发） */
@@ -39,6 +42,7 @@ function httpOpts(tuning: NbsHttpTuning | undefined, endpoint: string): External
     ...(tuning?.timeoutMs !== undefined ? { timeoutMs: tuning.timeoutMs } : {}),
     ...(tuning?.retries !== undefined ? { retries: tuning.retries } : {}),
     ...(tuning?.retryBackoffMs !== undefined ? { retryBackoffMs: tuning.retryBackoffMs } : {}),
+    ...(tuning?.logger !== undefined ? { logger: tuning.logger } : {}),
     traceScope: 'nbs',
     endpoint,
   }
