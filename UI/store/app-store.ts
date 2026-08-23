@@ -2653,7 +2653,10 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
         isThinking: false,
         toolCalls: m.toolCalls?.some((t) => t.name === ev.name)
           ? m.toolCalls
-          : [...(m.toolCalls ?? []), { name: ev.name, status: 'running' as const }],
+          : [
+              ...(m.toolCalls ?? []),
+              { name: ev.name, status: 'running' as const, ...(ev.source !== undefined ? { source: ev.source } : {}) },
+            ],
       }))
       break
     case 'tool_done':

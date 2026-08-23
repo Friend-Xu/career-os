@@ -34,10 +34,10 @@ export const EXA_TOOL_MAP = {
 
 export type ExaMcpToolName = keyof typeof EXA_TOOL_MAP
 
-/** 认知层描述：只写能力语义，不含 Exa/MCP 供应商标识（T1） */
+/** 认知层描述：只写能力语义与定位分工，不含 Exa/MCP 供应商标识（T1） */
 const EXA_TOOL_DESCRIPTIONS: Record<ExaMcpToolName, string> = {
   web_search_exa:
-    '深度联网检索（语义搜索）：返回干净、带来源引用的检索文本——适合公司研究/行业研究/岗位趋势等需要高质量结果的查询，与 WebSearch（快搜）互补。每任务有调用预算，请聚焦关键查询。',
+    '深入研究检索（深度调研专用）：语义搜索 + 干净内容抽取，返回带来源引用的高质量检索文本——适合公司研究/行业研究/岗位趋势等需要深度的查询，结果质量高于快速搜索。即时事实快查请用 WebSearch（快搜）。每任务有调用预算，请聚焦关键查询。',
   web_fetch_exa:
     '读取网页全文（转 markdown）：输入一个或多个 URL，返回页面正文——适合在检索命中后深入阅读来源页面。每任务有调用预算。',
 }

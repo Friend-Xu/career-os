@@ -296,7 +296,7 @@ export const WEB_SEARCH_TOOL_META: ToolRuntimeMeta = {
 export function buildWebSearchTool(session: SearchSession): Tool<any, any> {
   return tool({
     description:
-      '联网搜索事实数据（薪资水平/公司信息/行业数据等）。输入自然语言查询，返回带来源引用的检索结论。注意：本工具每任务有调用次数预算，请聚焦关键事实一次查清，避免低效重复搜索。',
+      '快速联网搜索（快搜）：即时事实查询（薪资水平/公司信息/行业数据等），输入自然语言查询，返回带来源引用的检索结论。需要深度研究/公司尽调时请改用 WebResearch（深入研究）。注意：本工具每任务有调用次数预算，请聚焦关键事实一次查清，避免低效重复搜索。',
     inputSchema: z.object({
       query: z.string().min(1).max(200).describe('自然语言检索查询（如：苏州 医疗器械结构设计工程师 平均薪资）'),
     }),

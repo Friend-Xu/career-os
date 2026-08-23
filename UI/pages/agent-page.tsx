@@ -373,7 +373,11 @@ function MessageBubble({
                     ? `${t.name} · 等待授权`
                     : t.status === 'denied'
                       ? `${t.name} · 已拒绝`
-                      : t.name
+                      : t.source === 'mcp'
+                        ? `${t.name} · MCP`
+                        : t.source === 'data'
+                          ? `${t.name} · 数据`
+                          : t.name
                 }
                 sx={{
                   height: 22,

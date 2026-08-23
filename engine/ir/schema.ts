@@ -29,6 +29,8 @@ export type ToolCallStatus = 'running' | 'done' | 'error'
 export interface ToolCallInfo {
   name: string
   status: ToolCallStatus
+  /** 工具来源（additive 可选；UI 审计面角标用——mcp → 「MCP」标识；认知面不受影响） */
+  source?: ToolSource
 }
 
 /** 人（角色 = 人，不是岗位）：profiles/{name}.md（旧）→ persons/{person_id}/（M6.5 新真相源） */
