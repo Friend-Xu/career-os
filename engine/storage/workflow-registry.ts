@@ -129,8 +129,14 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
     evaluatorParams: { artifactType: 'direction_candidate', min: 1 },
     gate: 'confirm_directions',
     task: {
-      objective: '方向探索：基于已确认的个人事实，执行 career-path 的 Step 1-3（三问定框架 / 方向画像卡 / Cross Off 排除 + IKIGAI）',
-      instructions: ['只消费已登记事实（facts/ 与快照投影）', '输出方向候选清单与画像卡对比（exploration_artifact）', '不要进入加权打分（下一阶段）'],
+      objective: '方向探索：基于已确认的个人事实，执行 career-path 的 Step 1-3（三问定框架 / 方向画像卡 / Cross Off 排除 + IKIGAI）；市场机会维度必须基于外部证据——行业/城市/岗位市场的真实信息，不得仅凭知识与盘点的推断',
+      instructions: [
+        '只消费已登记事实（facts/ 与快照投影）',
+        '输出方向候选清单与画像卡对比（exploration_artifact）',
+        '不要进入加权打分（下一阶段）',
+        '市场问（Step 1 三问的市场维度）：必须调用外部检索工具收集证据——QueryIndustryEvidence（行业证据）/ QueryMacroStats（权威统计）/ WebResearch / WebSearch 至少一次；每个候选方向的「市场机会」维度必须有可溯源依据（来源引用），不得无依据断言',
+        '素材不足时先执行检索动作再标注缺口：允许标注"信息不足"，但必须发生在检索尝试之后（不得跳过工具直接标注）；检索失败（来源不可用）时如实说明失败原因',
+      ],
       expectedOutputs: ['方向候选清单', '画像卡对比'],
       stopCondition: 'exploration_artifact 产出完成——停止，不进入加权打分',
       declaredBoundaries: { forbiddenStages: ['direction_evaluation', 'recommendation'] },

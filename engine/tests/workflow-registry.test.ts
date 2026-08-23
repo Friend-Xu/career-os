@@ -433,6 +433,19 @@ test('compileStageTask：ARTIFACT_CONTRACT 刚性化（direction_evaluation / re
   assert.ok(env4.includes('字段（引擎登记时生成）'), 'Stage4 富字段禁令')
 })
 
+test('compileStageTask（Stage 2）：市场检索强化——外部证据必须（BUG-4 回归）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
+  assert.ok(envelope.includes('必须调用外部检索工具收集证据'), '市场问必须调用外部工具（不得盘点替代探索）')
+  assert.ok(envelope.includes('QueryIndustryEvidence'), '行业证据工具点名')
+  assert.ok(envelope.includes('至少一次'), '检索下限明确')
+  assert.ok(envelope.includes('不得无依据断言'), '市场机会必须有来源（不得无依据断言）')
+  assert.ok(envelope.includes('检索尝试之后'), '信息不足标注必须在检索尝试之后（不得跳过工具）')
+  assert.ok(envelope.includes('不得仅凭知识与盘点的推断'), 'objective 禁止盘点式推断')
+})
+
 test('compileStageTask 校验：workflow 不存在 / 非 active / stage 不匹配 / 状态非 running → 拒绝', () => {
   const ws = testWorkspace()
   const pid = makePerson(ws)
