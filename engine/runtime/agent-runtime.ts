@@ -244,6 +244,8 @@ interface TaskState {
   abort: AbortController
   sessionId?: string
   pendingPermissions: Map<string, (ok: boolean) => void>
+  /** 本次任务已调用的工具名（tool_start 记录——完成钩子的合规检查证据面，如 BUG-4 市场检索） */
+  usedTools: Set<string>
 }
 
 export class AgentRuntime {
@@ -277,7 +279,7 @@ export class AgentRuntime {
   start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): string {
     const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const abort = new AbortController()
-    const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map() }
+    const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map(), usedTools: new Set() }
     const apiKey = params.apiKey ?? defaults.apiKey
     const baseUrl = params.baseUrl ?? defaults.baseUrl
     const model = params.model ?? defaults.model
@@ -330,6 +332,8 @@ export class AgentRuntime {
     if (!task) return
     try {
       for await (const ev of task.handle.events) {
+        // 工具使用证据面（完成钩子合规检查）：tool_start 即记录（done emit 时 tasks 仍存活，可查询）
+        if (ev.type === 'tool_start') task.usedTools.add(ev.name)
         this.forward(taskId, ev)
       }
       this.logger.info(`agent/${taskId} 事件流结束（任务完成或放弃）`)
@@ -376,6 +380,11 @@ export class AgentRuntime {
     }
     this.logger.info(`agent/answer：taskId=${taskId} 已送达（len=${text.length}）`)
     task.handle.answer(text)
+  }
+
+  /** 任务已调用工具清单（完成钩子合规检查；任务结束后返回空——done emit 时仍可查） */
+  toolUsage(taskId: string): string[] {
+    return [...(this.tasks.get(taskId)?.usedTools ?? [])]
   }
 
   cancel(taskId: string): void {

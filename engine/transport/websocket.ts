@@ -34,6 +34,7 @@ import {
   abortWorkflow,
   advanceWorkflow,
   compileStageTask,
+  failStage,
   getStageSpec,
   getWorkflow,
   onEvaluationDone,
@@ -58,6 +59,17 @@ function taskRejectedMessage(rejected: AgentTaskRejected): string {
   const refs = rejected.refs.map((r) => `${r.type} ${r.id || '(无)'} ${r.error}`).join('; ')
   return `TaskRejected: ${rejected.reason}${refs ? `: ${refs}` : ''}`
 }
+
+/** BUG-4 合规检查（引擎侧强制）：方向探索的市场检索证据面 = Stage 2 已声明的外部证据工具集；
+ *  WebFetch 单页抓取也算检索动作（工具痕迹即证据——不分辨检索成功/失败，失败说明由 Agent 正文承担） */
+const MARKET_EVIDENCE_TOOLS = new Set([
+  'WebSearch',
+  'WebResearch',
+  'WebFetch',
+  'QueryIndustryEvidence',
+  'QueryMacroStats',
+  'CompareRegionProfiles',
+])
 import { buildAggregates } from '../runtime/decision-aggregate.ts'
 import { computeGap } from '../runtime/gap-calculator.ts'
 import { parseJdConstraint } from '../runtime/jd-constraint.ts'
@@ -1412,6 +1424,21 @@ export async function startServer(opts: {
             broadcast({ event: EVENTS.workflowChanged })
           }
         } else if (ref.stageId === 'direction_exploration') {
+          // BUG-4 合规检查（引擎侧强制）：方向探索必须执行市场检索（外部证据工具 ≥1 次）——
+          // Standard 文本对模型不约束（实测两次零外部调用），此处以工具使用证据面把关：
+          // 无市场检索 → 阶段强制失败（候选不登记，restage 出口 + LAST_FAILURE 注入指导重跑）。
+          const usedTools = agentRuntime.toolUsage(taskId)
+          const marketUsed = usedTools.some((n) => MARKET_EVIDENCE_TOOLS.has(n))
+          if (!marketUsed) {
+            const reason = `本阶段未执行市场检索（外部证据工具未使用——使用工具：${usedTools.length > 0 ? usedTools.join('、') : '无'}）`
+            const failed = failStage(workspace, ref.workflowId, ref.stageId, reason)
+            if (failed && failed.status === 'active') {
+              logger.warn(`Stage 合规检查：${ref.workflowId} 未执行市场检索 → 阶段失败（Agent 任务 ${taskId} done；可用重跑出口 restage）`)
+              broadcast({ event: EVENTS.workflowChanged })
+              broadcast({ event: EVENTS.engineError, data: { message: '方向探索未执行市场检索（外部证据缺失）——本阶段的候选未登记，已标记阶段失败，请「重新探索」' } })
+            }
+            return
+          }
           const result = onExplorationDone(workspace, ref.workflowId, freshIntakeFiles(currentDirectionFiles(ref.personId), ref.intake))
           if (result.workflow) {
             // §1.5：登记拒绝 → logger.error + error.engine（管线错误用户可见；提案保留原样）

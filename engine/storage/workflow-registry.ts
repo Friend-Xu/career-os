@@ -42,6 +42,8 @@ export interface WorkflowStageState {
   /** 本 Stage 产出的 Artifact 引用（completed 时非空；Engine 登记） */
   artifacts?: string[]
   gate?: WorkflowGate
+  /** 强制失败原因（BUG-4 升级：引擎侧合规检查失败时记录——restage 后注入 Envelope，指导重跑） */
+  failReason?: string
 }
 
 export interface WorkflowState {
@@ -244,6 +246,17 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     }
   }
   const artifactContract = buildArtifactContract(w.id, w.personId, stageId)
+  // 上次失败原因注入（BUG-4 升级：restage 后 Agent 知道为什么重跑——指导调整而非重复失败路径）
+  let lastFailureNote = ''
+  const lastStage = w.stages.find((s) => s.id === stageId)
+  if (lastStage?.failReason) {
+    lastFailureNote = [
+      '【LAST_FAILURE】',
+      `上次本阶段执行失败：${lastStage.failReason}`,
+      '请针对该原因调整执行方式后重试；不要重复导致上次失败的路径。',
+      '',
+    ].join('\n')
+  }
   const envelope = [
     '【WORKFLOW_STAGE】',
     `workflow_id: ${w.id}`,
@@ -267,6 +280,7 @@ export function compileStageTask(ws: Workspace, workflowId: string, stageId: Sta
     spec.task.stopCondition,
     '',
     ...(directionPoolState ? [directionPoolState] : []),
+    ...(lastFailureNote ? [lastFailureNote] : []),
     '【STAGE_BOUNDARY】',
     boundaryLine,
     `Gate：${spec.gate ? `本阶段完成需通过 ${spec.gate}（由引擎裁决，用户确认）` : '本阶段无 Gate'}`,
@@ -398,10 +412,10 @@ function serialize(w: WorkflowState): string {
     '',
     '## 阶段',
     '',
-    '| stage | status | started_at | completed_at | gate | artifacts |',
-    '|-------|--------|-----------|--------------|------|-----------|',
+    '| stage | status | started_at | completed_at | gate | artifacts | fail_reason |',
+    '|-------|--------|-----------|--------------|------|-----------|-------------|',
     ...w.stages.map((s) => [
-      `| ${s.id} | ${s.status} | ${s.startedAt ?? '-'} | ${s.completedAt ?? '-'} | ${s.gate ? `${s.gate.id}/${s.gate.status}${s.gate.confirmedAt ? `/${s.gate.confirmedAt}` : ''}` : '-'} | ${(s.artifacts ?? []).join('、') || '-'} |`,
+      `| ${s.id} | ${s.status} | ${s.startedAt ?? '-'} | ${s.completedAt ?? '-'} | ${s.gate ? `${s.gate.id}/${s.gate.status}${s.gate.confirmedAt ? `/${s.gate.confirmedAt}` : ''}` : '-'} | ${(s.artifacts ?? []).join('、') || '-'} | ${s.failReason ?? '-'} |`,
     ]),
     '',
   ].join('\n')
@@ -425,10 +439,15 @@ function parseWorkflowMarkdown(md: string): WorkflowState | null {
   const totalStages = totalStagesRaw && /^\d+$/.test(totalStagesRaw) ? parseInt(totalStagesRaw, 10) : CAREER_DIRECTION_STAGES.length
   const stages: WorkflowStageState[] = []
   for (const line of md.split('\n')) {
-    const m = line.match(/^\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/)
-    if (!m || m[1] === 'stage') continue
+    // 阶段表 7 列（v0.4 + fail_reason）；存量 6 列兼容（failReason 缺省）——两格式分别匹配
+    const m7 = line.match(/^\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/)
+    const m6 = line.match(/^\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/)
+    const m = m7 ?? m6
+    if (!m) continue
+    if (m[1] === 'stage') continue
     if (!CAREER_DIRECTION_STAGES.some((s) => s.id === m[1])) continue
     const [st, started, completed, gateRaw, artifactsRaw] = [m[2], m[3]?.trim(), m[4]?.trim(), m[5]?.trim(), m[6]?.trim()]
+    const failReason = m7?.[7]?.trim()
     stages.push({
       id: m[1] as StageId,
       status: st as StageStatus,
@@ -447,6 +466,7 @@ function parseWorkflowMarkdown(md: string): WorkflowState | null {
           })()
         : {}),
       artifacts: artifactsRaw && artifactsRaw !== '-' ? artifactsRaw.split('、').filter(Boolean) : [],
+      ...(failReason && failReason !== '-' ? { failReason } : {}),
     })
   }
   if (stages.length === 0) return null
@@ -818,6 +838,35 @@ export function advanceWorkflow(ws: Workspace, workflowId: string, gateId?: stri
 }
 
 // ─── workflow/abort ────────────────────────────────────────────────────────
+
+/**
+ * Stage 强制失败（BUG-4 升级：引擎侧合规检查——方向探索无市场检索证据时调用）。
+ * - 只作用于 running 的当前阶段；失败原因记录进阶段行（restage 后注入 Envelope 指导重跑）；
+ *   候选文件不登记（Agent 产物保留原样——下次执行 intake 只消费新文件，旧暂存静置不投影）。
+ * - 幂等：非 running 阶段不处理（返回 null）。
+ */
+export function failStage(
+  ws: Workspace,
+  workflowId: string,
+  stageId: StageId,
+  reason: string,
+  now: Date = new Date(),
+): WorkflowState | null {
+  const w = getWorkflow(ws, workflowId)
+  if (!w || w.status !== 'active') return null
+  const stage = w.stages.find((s) => s.id === stageId)
+  if (!stage || stage.status !== 'running') return null
+  const ts = now.toISOString()
+  const next: WorkflowState = {
+    ...w,
+    updatedAt: ts,
+    stages: w.stages.map((s) =>
+      s.id === stageId ? { ...s, status: 'failed' as StageStatus, failReason: reason } : s,
+    ),
+  }
+  writeWorkflow(ws, next, now)
+  return next
+}
 
 export function abortWorkflow(ws: Workspace, workflowId: string, now: Date = new Date()): WorkflowState {
   const w = getWorkflow(ws, workflowId)

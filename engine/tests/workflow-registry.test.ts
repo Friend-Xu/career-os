@@ -25,7 +25,7 @@ import { KNOWN_TOOL_NAMES } from '../agent/tools/tool-assembly.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { freshIntakeFiles } from '../transport/websocket.ts'
 import { createPersonSession, scanPersons, setManifestInitState } from '../storage/person-watcher.ts'
-import { compileStageTask, getStageSpec } from '../storage/workflow-registry.ts'
+import { compileStageTask, failStage, getStageSpec } from '../storage/workflow-registry.ts'
 
 let wsSeq = 0
 function testWorkspace(): Workspace {
@@ -444,6 +444,40 @@ test('compileStageTask（Stage 2）：市场检索强化——外部证据必须
   assert.ok(envelope.includes('不得无依据断言'), '市场机会必须有来源（不得无依据断言）')
   assert.ok(envelope.includes('检索尝试之后'), '信息不足标注必须在检索尝试之后（不得跳过工具）')
   assert.ok(envelope.includes('不得仅凭知识与盘点的推断'), 'objective 禁止盘点式推断')
+})
+
+test('failStage：running 阶段 → failed + failReason；非 running / 非 active → null（幂等）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  // running → failed + reason
+  const f = failStage(ws, workflow.id, 'direction_exploration', '未执行市场检索')
+  assert.ok(f)
+  if (!f) return
+  const stage = f.stages.find((s) => s.id === 'direction_exploration')
+  assert.equal(stage?.status, 'failed')
+  assert.equal(stage?.failReason, '未执行市场检索')
+  // 幂等：已 failed 再 fail → null
+  assert.equal(failStage(ws, workflow.id, 'direction_exploration', '再试'), null)
+  // 非 active（abort）→ null
+  const ws2 = testWorkspace()
+  const pid2 = makePerson(ws2)
+  const wb = startWorkflow(ws2, { type: 'career_direction', personId: pid2, statement: GOAL })
+  abortWorkflow(ws2, wb.workflow.id)
+  assert.equal(failStage(ws2, wb.workflow.id, 'direction_exploration', 'x'), null)
+})
+
+test('compileStageTask：LAST_FAILURE 注入——失败原因传入 Envelope（restage 指导）', () => {
+  const ws = testWorkspace()
+  const pid = makePerson(ws)
+  const { workflow } = startWorkflow(ws, { type: 'career_direction', personId: pid, statement: GOAL })
+  failStage(ws, workflow.id, 'direction_exploration', '未执行市场检索')
+  // failed → restage → running（failReason 保留在阶段行）
+  restageWorkflow(ws, workflow.id)
+  const { envelope } = compileStageTask(ws, workflow.id, 'direction_exploration')
+  assert.ok(envelope.includes('【LAST_FAILURE】'), '失败原因段注入')
+  assert.ok(envelope.includes('未执行市场检索'), '失败原因原文')
+  assert.ok(envelope.includes('不要重复导致上次失败的路径'), '指导语')
 })
 
 test('compileStageTask 校验：workflow 不存在 / 非 active / stage 不匹配 / 状态非 running → 拒绝', () => {
