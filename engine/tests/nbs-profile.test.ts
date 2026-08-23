@@ -251,7 +251,7 @@ test('治理元数据保真：NBS_PROFILE_TOOL_META = data 源 / external / 预�
 
 test('KNOWN_TOOL_NAMES 含 CompareRegionProfiles（装配注册表同步）', () => {
   assert.ok(KNOWN_TOOL_NAMES.includes('CompareRegionProfiles'))
-  assert.equal(KNOWN_TOOL_NAMES.length, 10)
+  assert.equal(KNOWN_TOOL_NAMES.length, 11)
 })
 
 // ─── 地区解析（canonical + 复合地名文档化语义）─────────────────────────────

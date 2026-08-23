@@ -232,9 +232,10 @@ test('buildToolSources：Exa 连接就绪 → 3 源（builtin + hosted + mcp）�
   assert.deepEqual(Object.keys(sources[0].tools).sort(), ['Edit', 'Glob', 'Grep', 'Read', 'Write'])
   assert.deepEqual(Object.keys(sources[1].tools), ['WebSearch'])
   const mcp = sources[2]
-  assert.deepEqual(Object.keys(mcp.tools).sort(), ['WebFetch', 'WebResearch'], 'mcp 源 = 语义工具名')
+  assert.deepEqual(Object.keys(mcp.tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'], 'mcp 源 = 语义工具名（含行业模板）')
   assert.equal(mcp.meta.WebResearch.source, 'mcp')
   assert.equal(mcp.meta.WebResearch.egress, 'external')
+  assert.equal(mcp.meta.QueryIndustryEvidence.traceScope, 'exa_industry')
 })
 
 test('buildToolSources：Exa 未连接/未启用 → 不注入 mcp 源（fail-safe，主链路照常）', async () => {
@@ -256,7 +257,7 @@ test('buildToolSources：无 baseUrl → 仅 builtin（WebSearch 与 mcp 均不�
   await c.connect()
   const sources = buildToolSources(sourcesOpts(c))
   assert.equal(sources.length, 2, 'builtin + mcp（无 provider 不注册 WebSearch）')
-  assert.deepEqual(Object.keys(sources[1].tools).sort(), ['WebFetch', 'WebResearch'])
+  assert.deepEqual(Object.keys(sources[1].tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'])
 })
 
 // ─── Tool Evidence Contract（Phase 3C）─────────────────────────────────────

@@ -17,6 +17,7 @@ import { createMCPClient } from '@ai-sdk/mcp'
 import type { MCPClient } from '@ai-sdk/mcp'
 import { tool } from 'ai'
 import type { Tool } from 'ai'
+import { z } from 'zod'
 import type { Logger } from '../../logger.ts'
 import type { ToolEvidence } from '../../ir/schema.ts'
 import { extractSourceUrls, renderSources } from './web-search.ts'
@@ -166,6 +167,8 @@ export interface ExaSessionOptions {
   cacheTtlMs: number
   /** 共享缓存（引擎级单例——跨任务复用检索结果；缺省 = 会话私有，测试友好） */
   cache?: Map<string, ExaCacheEntry>
+  /** 证据分桶标签覆盖（缺省 = EXA_TOOL_MAP；行业模板工具用独立标签，避免与 WebResearch 串桶） */
+  evidenceLabels?: Partial<Record<ExaMcpToolName, string>>
   logger?: Logger
 }
 
@@ -183,6 +186,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
   const cache = opts.cache ?? new Map<string, ExaCacheEntry>()
   let used = 0
   const evidenceBuf = new Map<string, ToolEvidence[]>()
+  const labelOf = (toolName: ExaMcpToolName): string => opts.evidenceLabels?.[toolName] ?? EXA_TOOL_MAP[toolName]
   const trace = (event: string): void => {
     opts.logger?.trace('exa', { event, budgetUsed: used, budgetTotal: opts.budget })
   }
@@ -215,7 +219,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
         const hit = cache.get(key)
         if (hit !== undefined && Date.now() - hit.at < opts.cacheTtlMs) {
           trace('cache_hit')
-          recordEvidence(EXA_TOOL_MAP[toolName], hit.text, hit.at)
+          recordEvidence(labelOf(toolName), hit.text, hit.at)
           const at = new Date(hit.at).toISOString().slice(0, 16)
           return `${hit.text}\n\n（本结果为检索缓存，首次检索时间 ${at}——如需要最新数据请换查询角度）`
         }
@@ -242,7 +246,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
       if (urls.length > 0 && !text.includes('数据来源')) {
         text = `${text}\n\n${renderSources(urls)}`
       }
-      recordEvidence(EXA_TOOL_MAP[toolName], text, Date.now())
+      recordEvidence(labelOf(toolName), text, Date.now())
       if (opts.cacheTtlMs > 0) cache.set(key, { text, at: Date.now() })
       return text
     },
@@ -281,4 +285,55 @@ export function buildExaTools(connector: ExaConnector, session: ExaSession): Rec
     })
   }
   return tools
+}
+
+// ─── 行业证据模板工具（Phase 3D：Engine 提供确定性检索配方，Agent 只消费事实）────
+
+/**
+ * 行业证据检索模板（Engine 侧确定性配方——查询词不由 Agent 自由发挥；
+ * 仅区域 + 行业两个受控输入。空输入 → 空串（工具层转错误文本））。
+ */
+export function buildIndustrySearchQuery(region: string, industry: string): string {
+  const r = region.trim()
+  const i = industry.trim()
+  if (r === '' || i === '') return ''
+  return `${r} ${i} 产业集群 龙头企业 政策文件 园区规划 就业环境 产业规模`
+}
+
+/** QueryIndustryEvidence 治理元数据：mcp 源（Exa），独立会话预算/缓存（不挤占 WebResearch） */
+export const INDUSTRY_EVIDENCE_TOOL_META: Record<string, ToolRuntimeMeta> = {
+  QueryIndustryEvidence: {
+    source: 'mcp',
+    egress: 'external',
+    budget: EXA_SESSION_BUDGET,
+    traceScope: 'exa_industry',
+    provider: 'exa',
+  },
+}
+
+/** 行业证据检索工具（T1 认知面隔离：无供应商标识 + 诚实边界——统计口径值不在本工具）；
+ *  返回 Record（与 buildNbsTools/buildExaTools 同形态，装配层 spread） */
+export function buildIndustryEvidenceTool(session: ExaSession): Record<string, Tool<any, any>> {
+  return {
+    QueryIndustryEvidence: tool({
+      description:
+        '行业证据检索（深度研究专用）：输入区域与行业，检索产业集群/龙头企业/政策文件/园区规划/就业环境等资料，返回带来源引用的检索文本。统计口径值（企业数量/营收/利润等）不在本工具——权威数字请用权威统计工具（CompareRegionProfiles/QueryMacroStats）。注意：本工具每任务有调用预算，请聚焦关键检索。',
+      inputSchema: z.object({
+        region: z.string().min(1).max(20).describe('区域（省区市全称/简称或主要城市，如 苏州/江苏）'),
+        industry: z.string().min(1).max(30).describe('行业（如 医疗器械/新能源/机器人）'),
+      }),
+      execute: async (input) => {
+        const region = typeof input.region === 'string' ? input.region : ''
+        const industry = typeof input.industry === 'string' ? input.industry : ''
+        const query = buildIndustrySearchQuery(region, industry)
+        if (query === '') return 'QueryIndustryEvidence 失败：区域与行业不能为空'
+        try {
+          return await session.execute('web_search_exa', { query })
+        } catch (err) {
+          if (err instanceof ExaPolicyError) return err.message
+          return `QueryIndustryEvidence 失败：${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+  }
 }

@@ -17,10 +17,12 @@ import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { buildWebSearchTool, createSearchSession, WEB_SEARCH_TOOL_META, type CacheEntry } from '../agent/tools/web-search.ts'
 import {
   buildExaTools,
+  buildIndustryEvidenceTool,
   createExaSession,
   EXA_CACHE_TTL_MINUTES,
   EXA_SESSION_BUDGET,
   EXA_TOOL_META,
+  INDUSTRY_EVIDENCE_TOOL_META,
   ExaConnector,
   type ExaCacheEntry,
 } from '../agent/tools/exa.ts'
@@ -84,9 +86,20 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
     cache: opts.searchCache,
     logger: opts.logger,
   })
-  // Exa（mcp）：证据按认知层工具名分桶（WebResearch/WebFetch 各自归属）
+  // Exa（mcp）：证据按认知层工具名分桶（WebResearch/WebFetch 各自归属）；
+  // 行业证据模板（QueryIndustryEvidence）独立会话（预算/缓存互不挤占，证据独立标签）
   const exaSession = opts.exaConnector?.ready === true
     ? createExaSession({ connector: opts.exaConnector, budget: EXA_SESSION_BUDGET, cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000, cache: opts.exaCache, logger: opts.logger })
+    : null
+  const industrySession = opts.exaConnector?.ready === true
+    ? createExaSession({
+        connector: opts.exaConnector,
+        budget: EXA_SESSION_BUDGET,
+        cacheTtlMs: EXA_CACHE_TTL_MINUTES * 60_000,
+        cache: opts.exaCache,
+        logger: opts.logger,
+        evidenceLabels: { web_search_exa: 'QueryIndustryEvidence', web_fetch_exa: 'WebFetch' },
+      })
     : null
   // NBS（data）：两个治理会话（单查询/画像），共用连接器；证据各自归属
   const nbsTools = opts.nbsConnector === undefined ? null : {
@@ -125,11 +138,15 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
     ...(exaSession !== null
       ? [
           {
-            tools: buildExaTools(opts.exaConnector as ExaConnector, exaSession),
-            meta: EXA_TOOL_META,
+            tools: {
+              ...buildExaTools(opts.exaConnector as ExaConnector, exaSession),
+              ...buildIndustryEvidenceTool(industrySession as NonNullable<typeof industrySession>),
+            },
+            meta: { ...EXA_TOOL_META, ...INDUSTRY_EVIDENCE_TOOL_META },
             evidence: {
               WebResearch: () => exaSession.takeEvidence('WebResearch'),
               WebFetch: () => exaSession.takeEvidence('WebFetch'),
+              QueryIndustryEvidence: () => (industrySession as NonNullable<typeof industrySession>).takeEvidence('QueryIndustryEvidence'),
             },
           },
         ]
