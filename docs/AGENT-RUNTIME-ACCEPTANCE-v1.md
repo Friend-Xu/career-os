@@ -206,8 +206,15 @@ regression oracle**——它不再需要运行，但历史必须留。顺序：
 1. **全功能从零验收（开发区进程内，scratch workspace）**：
    `node tests/accept-full-chain.mjs` → A.5 隔离 + B JD 提取 + Path A 交互式建档 + D/E 全链
    ——全绿即「从零初始化」链成立；**日常实例不重启、不 sync、不换代码**
-2. **F**：`node tests\bench-extract.mjs`（需 CLI 侧可用；标尺见上——≈ 即 PASS）
-3. **H**：F 通过后按上节双提交流程（锚点 tag 已就位）
+2. **F → deferred（2026-08-23 裁定）**：执行契约已变（直连唯一路径 + Artifact=Memory），
+   A/B 不再构成等价性裁定；D/E + Quality Gate（信息稀疏/诱导幻觉/冲突三对抗 case 全过）
+   即替代证据，无需 CLI 基准。原 `tests/bench-extract.mjs` 已随 H 删除（历史锚点
+   tag `pre-provider-decoupling`）。
+3. **H → 完成（2026-08-23）**：两个提交——`refactor(agent): 生产运行时与 claude adapter
+   彻底解耦`（类型真源上移 ir/agent-event.ts）+ `chore(agent): 移除 claude-agent-sdk 依赖与
+   legacy 保留位`（保留位按 A 方案删除：adapter/bench/smokes/regen-companies，历史以
+   tag `pre-provider-decoupling` 为锚点）；`runtime-dependency-audit.mjs` 复跑
+   175 文件 CLI 痕迹全零、无豁免位；全量测试 + tsc 0。**生产运行时与 Claude SDK/CLI 零耦合**。
 
 ### 后续方向（不阻塞收尾，记档）
 
@@ -238,8 +245,9 @@ Agent Runtime              ★★★★★
 Provider Decoupling        ★★★★★
 真实模型行为               ★★★★★（含信息稀疏/诱导幻觉/冲突三对抗 case 全过）
 Artifact Memory 架构        ★★★★★（E 评估/推荐 = 无会话续接，Artifact Graph + Evidence Graph 承担状态）
-Production Readiness        ★★☆☆☆（P0 阻塞：Phase 0 Onboarding 未通过——新用户首闭环断裂，
-                            见 P0-1/P0-2/P1 与 I. User Journey Acceptance；A-H 跑通不豁免此判定）
+Production Readiness        ★★★★☆（2026-08-23 更新：P0-1 已修复（PR-1/PR-2/PR-3 + UI 接线，
+                            person_001/002 真机全链）+ I-1/I-2/I-3/I-4 PASS；剩余 Hardening v2
+                            （长跑/并发/Provider 稳定性）与 Provider Stability v0.1 见「后续方向」）
 ```
 
 ### Stage Policy（本轮落地，ADR-030 收尾项）
