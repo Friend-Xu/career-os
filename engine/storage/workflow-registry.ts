@@ -116,6 +116,9 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       stopCondition: '用户疑问澄清 + 候选确认引导完成——停止；初始化完成判定由引擎门禁（快照三件齐备）裁决',
       declaredBoundaries: { forbiddenStages: ['direction_exploration', 'direction_evaluation', 'recommendation'] },
       outputBudget: 8192, // Interview 无产物文件名，档位居中（回笼元数据；不以 8192 为锚点扩大）
+      // 渐进披露（Phase 4A）：访谈只读——「不自行写候选文件/快照/档案」从能力面杜绝（无 Write/Edit）；
+      // 无外部工具（访谈不采外部事实——事实登记走确定性通道）。ask_user_question 恒可用，不在声明。
+      tools: ['Read', 'Grep', 'Glob'],
     },
   },
   {
@@ -132,6 +135,13 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       stopCondition: 'exploration_artifact 产出完成——停止，不进入加权打分',
       declaredBoundaries: { forbiddenStages: ['direction_evaluation', 'recommendation'] },
       outputBudget: 16384, // 2026-08-22 真机复测：flash 长叙述 + 多文件写入一轮输出；8192 在"准备写入处"截断（4/4 失败）→ 提档
+      // 渐进披露（Phase 4A）：方向探索 = 外部世界事实采集唯一入口（行业/城市研究需要真实信息）
+      // + 产物写入（exploration_artifact）——全信息工具集；其余阶段无外部取证职责。
+      tools: [
+        'Read', 'Grep', 'Glob', 'Write', 'Edit',
+        'WebSearch', 'WebResearch', 'WebFetch',
+        'QueryIndustryEvidence', 'QueryMacroStats', 'CompareRegionProfiles',
+      ],
     },
   },
   {
@@ -147,6 +157,9 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       stopCondition: 'evaluation_artifact 产出完成——停止，不输出最终推荐',
       declaredBoundaries: { forbiddenStages: ['recommendation'] },
       outputBudget: 16384, // 与探索同档（2026-08-22 真机测量指向长叙述 + 多文件写入一轮输出）
+      // 渐进披露（Phase 4A）：evaluation = 消费探索产物的加权打分——不新增外部证据
+      //（Evidence Contract 纪律：事实在探索阶段采集，评估阶段只推理）。
+      tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit'],
     },
   },
   {
@@ -165,6 +178,8 @@ export const CAREER_DIRECTION_STAGES: StageSpec[] = [
       stopCondition: '决策报告产出完成——停止，等待 review_recommendation Gate',
       declaredBoundaries: { forbiddenStages: [] },
       outputBudget: 16384, // 2026-08-22 真机复测：4096 两次 45-57s 空输出（工具调用 JSON 截断态，0 决策）→ 与探索/评估同档提档
+      // 渐进披露（Phase 4A）：recommendation = 基于评估明细出决策报告——写入 decisions/，无外部取证。
+      tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit'],
     },
   },
 ]

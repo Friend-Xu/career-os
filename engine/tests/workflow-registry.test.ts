@@ -21,6 +21,7 @@ import {
 } from '../storage/workflow-registry.ts'
 import { countStageArtifacts, registerStageArtifact, resolveStageArtifact } from '../storage/stage-artifact-registry.ts'
 import { DIRECTION_SPEC } from '../storage/artifact-type-registry.ts'
+import { KNOWN_TOOL_NAMES } from '../agent/tools/tool-assembly.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 import { freshIntakeFiles } from '../transport/websocket.ts'
 import { createPersonSession, scanPersons, setManifestInitState } from '../storage/person-watcher.ts'
@@ -351,13 +352,28 @@ test('Stage Policy：每阶段声明输出预算（正整数）；getStageSpec �
   assert.equal(getStageSpec('fact_collection')?.task.outputBudget, 8192)
 })
 
-test('Stage 工具声明（Tool Runtime 第二阶段）：存量 4 阶段不声明 = 继承全局白名单（机制先行、策略后调）', () => {
-  // 声明机制已落地（StageSpec.task.tools 可选），存量阶段行为不变——若未来收窄（如
-  // fact_collection 禁 WebSearch），此处改断言并连带真机验收。
+test('Stage 工具声明（Phase 4A 渐进披露）：声明名 ∈ KNOWN_TOOL_NAMES；语义不变量（只收窄不扩大）', () => {
+  // 阶段策略（2026-08-23 落地）：
+  // - fact_collection：访谈只读（无 Write/Edit——「不自行写候选文件」从能力面杜绝）；无外部工具
+  // - direction_exploration：外部世界事实采集唯一入口（WebSearch/WebResearch/Exa/NBS 全量）+ 产物写入
+  // - direction_evaluation / recommendation：消费探索产物推理（无外部取证——Evidence Contract 纪律）
+  // 调整声明 = 连带真机复测（与 Stage Policy 调档同一纪律）。
   for (const s of CAREER_DIRECTION_STAGES) {
-    assert.equal(s.task.tools, undefined, `${s.id} 不应声明 tools（策略后调）`)
-    assert.equal(getStageSpec(s.id)?.task.tools, undefined)
+    const tools = s.task.tools
+    assert.ok(tools !== undefined && Array.isArray(tools) && tools.length > 0, `${s.id} 应声明工具集（渐进披露）`)
+    for (const t of tools) {
+      assert.ok(KNOWN_TOOL_NAMES.includes(t), `${s.id} 声明了引擎未知工具 ${t}`)
+    }
+    assert.equal(getStageSpec(s.id)?.task.tools, s.task.tools, `${s.id} getStageSpec 与定义表不一致`)
   }
+  const exploration = CAREER_DIRECTION_STAGES.find((s) => s.id === 'direction_exploration')!
+  assert.ok(exploration.task.tools!.includes('WebResearch'), '探索阶段应可深入检索')
+  assert.ok(exploration.task.tools!.includes('QueryMacroStats'), '探索阶段应可查权威统计')
+  for (const id of ['fact_collection', 'direction_evaluation', 'recommendation'] as const) {
+    const s = CAREER_DIRECTION_STAGES.find((x) => x.id === id)!
+    assert.ok(!s.task.tools!.some((t) => t === 'WebSearch' || t === 'WebResearch' || t === 'QueryMacroStats' || t === 'QueryIndustryEvidence' || t === 'CompareRegionProfiles'), `${id} 不应有外部取证工具（证据契约）`)
+  }
+  assert.ok(!CAREER_DIRECTION_STAGES[0]!.task.tools!.includes('Write') && !CAREER_DIRECTION_STAGES[0]!.task.tools!.includes('Edit'), 'fact_collection 无写工具（不自行写候选文件）')
 })
 
 test('compileStageTask：running Stage 编译 Envelope（含边界声明 + 停止条件，不自行推进）', () => {
