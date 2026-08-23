@@ -23,24 +23,13 @@ import type {
   SDKUserMessage,
   SettingSource,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentError, AgentQuestion, ToolEvidence, ToolSource } from '../../ir/schema.ts'
+import type { AgentError, AgentQuestion } from '../../ir/schema.ts'
+import type { AgentEvent, AgentHandle } from '../../ir/agent-event.ts'
 import type { Logger } from '../../logger.ts'
 
-// ─── 归一化事件（编排层/前端只消费这些）──────────────────────────────────────
+// ─── 归一化事件（类型真源 = ir/agent-event.ts；本文件为 legacy 保留位，re-export 兼容）──
 
-export type { AgentQuestion }
-
-export type AgentEvent =
-  | { type: 'text_delta'; text: string }
-  | { type: 'tool_start'; name: string; source?: ToolSource }
-  | { type: 'tool_done'; name: string; source?: ToolSource; evidence?: ToolEvidence[] }
-  | { type: 'thinking_start' }
-  | { type: 'thinking_delta'; text: string }
-  | { type: 'thinking_stop' }
-  | { type: 'permission_request'; tool: string; canUseTool: () => Promise<boolean> }
-  | { type: 'question_request'; question: AgentQuestion }
-  | { type: 'done'; result: string }
-  | { type: 'error'; error: AgentError }
+export type { AgentQuestion, AgentEvent, AgentHandle }
 
 export interface QueryOptions {
   task: string // 任务指令（task-planner 产出）
@@ -121,12 +110,6 @@ interface PendingPermission {
   tool: string
   promise: Promise<boolean> // 决策结果（SDK 回调与事件消费方共同 await）
   resolve: (ok: boolean) => void
-}
-
-export interface AgentHandle {
-  events: AsyncIterable<AgentEvent>
-  /** 回答 AskUserQuestion（实测 2026-08-03：streamInput yield 文本 user 消息即被 CLI 当作回答） */
-  answer(text: string): void
 }
 
 /** 提取 AskUserQuestion 形状（SDK 0.3.220：user 消息的 tool_use_result.questions[]） */

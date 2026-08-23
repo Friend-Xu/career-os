@@ -15,7 +15,7 @@ import { z } from 'zod'
 import type { LanguageModel, Tool } from 'ai'
 import type { AgentError, AgentQuestion, ToolEvidence } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
-import type { AgentEvent, AgentHandle } from '../adapter/claude.ts'
+import type { AgentEvent, AgentHandle } from '../../ir/agent-event.ts'
 import { assembleTools, type ToolRuntimeMeta, type ToolSourceDef } from '../tools/tool-assembly.ts'
 
 export interface AgentRunnerOptions {

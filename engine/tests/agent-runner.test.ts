@@ -7,7 +7,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { initWorkspace } from '../storage/workspace.ts'
-import type { AgentEvent } from '../agent/adapter/claude.ts'
+import type { AgentEvent } from '../ir/agent-event.ts'
 import { startFakeAnthropicServer, textTurn, toolUseTurn } from './agent/fake-anthropic-server.ts'
 
 function tmpWorkspace() {

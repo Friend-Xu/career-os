@@ -11,7 +11,8 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig, resolveAgentConnection, REPO_ROOT } from '../config.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
-import { extractJdFields, extractJdFieldsDirect } from '../runtime/jd-extract.ts'
+import { extractJdFieldsDirect } from '../runtime/jd-extract.ts'
+import { extractJdFields } from './cli-jd-extract.ts'
 
 const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'agent', 'fixtures', 'synthetic', 'jd')
 const REPORT_PATH = resolve(REPO_ROOT, '.local', 'bench-extract-report.md')

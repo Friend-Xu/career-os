@@ -39,7 +39,7 @@ import {
 } from '../agent/tools/nbs/index.ts'
 import type { ToolSourceDef } from '../agent/tools/tool-assembly.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
-import type { AgentHandle, AgentEvent } from '../agent/adapter/claude.ts'
+import type { AgentHandle, AgentEvent } from '../ir/agent-event.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
