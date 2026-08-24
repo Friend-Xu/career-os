@@ -1,11 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  ExecutionRegistry,
-  isTerminalExecutionStatus,
-  type Execution,
-  type ExecutionEvent,
-} from '../runtime/execution-registry.ts'
+import { ExecutionRegistry } from '../runtime/execution-registry.ts'
+import { isTerminalExecutionStatus, type Execution, type ExecutionEvent } from '../ir/execution.ts'
 import type { Logger } from '../logger.ts'
 
 function makeLogger(): Logger {

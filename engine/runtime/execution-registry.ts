@@ -15,33 +15,21 @@
  *     AgentRuntime 是唯一调用方，运行时真实竞态（cancel 后流剩余事件）由调用方守卫）。
  */
 import type { Logger } from '../logger.ts'
+import {
+  isTerminalExecutionStatus,
+  type Execution,
+  type ExecutionEvent,
+  type ExecutionQuery,
+  type ExecutionStatus,
+} from '../ir/execution.ts'
 
-/** ADR-034 §2.1：五态（无 created——start 语义即 running） */
-export type ExecutionStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
-
-export const TERMINAL_EXECUTION_STATUS: readonly ExecutionStatus[] = ['completed', 'failed', 'cancelled']
-
-export function isTerminalExecutionStatus(status: ExecutionStatus): boolean {
-  return TERMINAL_EXECUTION_STATUS.includes(status)
-}
-
-/** ADR-034 §2.1 身份字段（冻结版；不得扩展业务字段） */
-export interface Execution {
-  /** public identity：execution_{ts}_{rand}（ADR-034 §2.1） */
-  id: string
-  /** Interaction provenance（ADR-034 §1.6；UI 对话触发才有；可无——非必然父级） */
-  sessionId?: string
-  /** Domain provenance（Stage 执行；§1.5–§1.6，非第二套执行模型） */
-  workflowId?: string
-  /** Domain provenance（Stage 执行；§1.5–§1.6） */
-  stageId?: string
-  /** 内部实现 ID（迁移期兼容，ADR-034 §2.2——taskId 不再是一等身份） */
-  taskId: string
-  status: ExecutionStatus
-  createdAt: string
-  startedAt: string
-  finishedAt?: string
-}
+export type {
+  ExecutionStatus,
+  Execution,
+  ExecutionEvent,
+  ExecutionQuery,
+} from '../ir/execution.ts'
+export { isTerminalExecutionStatus } from '../ir/execution.ts'
 
 /** create 入参：身份字段来自调用方（AgentRuntime.start）；id 由 Registry 生成 */
 export interface CreateExecutionInput {
@@ -50,33 +38,6 @@ export interface CreateExecutionInput {
   workflowId?: string
   stageId?: string
 }
-
-/** query 过滤维度 = Runtime 事实（ADR-034 §3.2：status/sessionId/workflowId；personId 不入） */
-export interface ExecutionQuery {
-  status?: ExecutionStatus
-  sessionId?: string
-  workflowId?: string
-}
-
-/** Execution 事件（增量事实；events() 供 Phase 2 agent/executions/events 与 UI 重连消费） */
-export type ExecutionEvent =
-  | {
-      type: 'execution.created'
-      executionId: string
-      taskId: string
-      status: ExecutionStatus
-      at: string
-      sessionId?: string
-      workflowId?: string
-      stageId?: string
-    }
-  | {
-      type: 'execution.status_changed'
-      executionId: string
-      from: ExecutionStatus
-      to: ExecutionStatus
-      at: string
-    }
 
 /** 迁移表（ADR-034 §2.1 五态；create 直接进入 running） */
 const ALLOWED_TRANSITIONS: Record<ExecutionStatus, readonly ExecutionStatus[]> = {
