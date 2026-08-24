@@ -65,10 +65,18 @@ export interface ExecutionQuery {
   workflowId?: string
 }
 
-/** Execution 事件（增量事实；引擎广播 execution.event，executionId 为路由键） */
+/** 事件输入形态（无 eventId——由 Registry/EventLog 生成；union 的 distributive Omit） */
+export type ExecutionEventInput =
+  | Omit<Extract<ExecutionEvent, { type: 'execution.created' }>, 'eventId'>
+  | Omit<Extract<ExecutionEvent, { type: 'execution.status_changed' }>, 'eventId'>
+
+/** Execution 事件（增量事实；引擎广播 execution.event，executionId 为路由键）。
+ *  eventId = 事件唯一 ID（事件日志审计/去重/诊断）；note 仅限 Runtime/Infrastructure 语义
+ *  （如 process_restart——不得演化成业务原因字段，保持 Execution 不被 Domain 污染）。 */
 export type ExecutionEvent =
   | {
       type: 'execution.created'
+      eventId: string
       executionId: string
       taskId: string
       status: ExecutionStatus
@@ -79,10 +87,13 @@ export type ExecutionEvent =
     }
   | {
       type: 'execution.status_changed'
+      eventId: string
       executionId: string
       from: ExecutionStatus
       to: ExecutionStatus
       at: string
       /** 该刻已产生的确定性产物引用（完成时快照——在线客户端无需补拉 get） */
       resultRefs?: string[]
+      /** Runtime/Infrastructure 原因（仅允许 process_restart 等——非业务字段） */
+      note?: string
     }

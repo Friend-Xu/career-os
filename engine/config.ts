@@ -152,6 +152,9 @@ export interface EngineConfig {
     skills: string
     logs: string
     db: string
+    /** Execution 事件日志（Phase 3：append-only JSONL——Registry 的持久化实现；
+     *  引擎实例级状态，**不随 workspace 切换**（执行历史 = 引擎服务历史，非用户数据）） */
+    executions: string
   }
   watcher: {
     enabled: boolean
@@ -218,6 +221,8 @@ export function defaultConfig(): EngineConfig {
       skills: resolve(REPO_ROOT, 'skills', 'career-advisor'),
       logs: resolve(REPO_ROOT, 'logs'),
       db: resolve(workspace, '.career-os.db'),
+      // Execution 事件日志：runtime/state/（gitignore 先例——机器相关不入库）；引擎实例级不随 workspace
+      executions: resolve(REPO_ROOT, 'runtime', 'state', 'executions.jsonl'),
     },
     watcher: { enabled: true },
     map: { provider: 'amap' },
@@ -626,6 +631,8 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.paths.skills !== undefined) config.paths.skills = resolvePath(file.paths.skills, 'config.json')
       if (file.paths.logs !== undefined) config.paths.logs = resolvePath(file.paths.logs, 'config.json')
       if (file.paths.db !== undefined) config.paths.db = resolvePath(file.paths.db, 'config.json')
+      // executions 可覆盖；不随 workspace 联动（引擎实例级——执行历史与 workspace 无绑定）
+      if (file.paths.executions !== undefined) config.paths.executions = resolvePath(file.paths.executions, 'config.json')
     }
     if (file.watcher && file.watcher.enabled !== undefined) {
       config.watcher.enabled = assertEnabled(file.watcher.enabled, 'config.json')

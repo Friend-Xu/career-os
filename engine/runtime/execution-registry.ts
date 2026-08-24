@@ -19,10 +19,12 @@ import {
   isTerminalExecutionStatus,
   type Execution,
   type ExecutionEvent,
+  type ExecutionEventInput,
   type ExecutionQuery,
   type ExecutionStatus,
   type PendingInteraction,
 } from '../ir/execution.ts'
+import { ExecutionEventLog } from './execution-event-log.ts'
 
 export type {
   ExecutionStatus,
@@ -57,9 +59,28 @@ export class ExecutionRegistry {
   private eventLog: ExecutionEvent[] = []
   private listeners = new Set<(ev: ExecutionEvent) => void>()
   private logger: Logger
+  /** Persistence Adapter（Phase 3：append-only JSONL event log——注入时启动 replay 重建；
+   *  不注入 = 纯内存（测试/无持久化实例）） */
+  private adapter?: ExecutionEventLog
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, adapter?: ExecutionEventLog) {
     this.logger = logger
+    this.adapter = adapter
+    if (adapter !== undefined) this.replayEvents(adapter.all())
+  }
+
+  /**
+   * 启动调和（Phase 3.3）：非终态（running/waiting）→ failed（note=process_restart）。
+   * 进程重启后 TaskState/AbortController/runLoop 不存在——执行不可能继续；
+   * failed 与 runLoop 异常映射同语义；不复活任务、不新增第六态（ADR 五态冻结）、
+   * 不恢复 pendingInteraction（Runtime 已死——避免幽灵交互）。
+   */
+  reconcileAfterStartup(): Execution[] {
+    const nonTerminal = [...this.executions.values()].filter((e) => !isTerminalExecutionStatus(e.status))
+    if (nonTerminal.length === 0) return []
+    for (const e of nonTerminal) this.transition(e.id, 'failed', 'process_restart')
+    this.logger.info(`启动调和：${nonTerminal.length} 个非终态执行 → failed（process_restart）`)
+    return nonTerminal.map((e) => this.executions.get(e.id)!)
   }
 
   /** 创建 Execution（status=running，startedAt=createdAt——start 语义即运行）；记录 created 事件 */
@@ -116,9 +137,9 @@ export class ExecutionRegistry {
   /**
    * 状态迁移（唯一正面入口——AgentRuntime runLoop/cancel 驱动；非法迁移 throw）。
    * 终点态设置 finishedAt 并清除 pendingInteraction（终态无等待交互——Runtime 事实守恒）；
-   * 记录 status_changed 事件并通知订阅者。
+   * 记录 status_changed 事件（note 仅限 Runtime/Infrastructure 语义，如 process_restart）并通知订阅者。
    */
-  transition(executionId: string, to: ExecutionStatus): Execution {
+  transition(executionId: string, to: ExecutionStatus, note?: string): Execution {
     const execution = this.executions.get(executionId)
     if (execution === undefined) throw new Error(`execution/${executionId} 不存在——无法迁移到 ${to}`)
     const allowed = ALLOWED_TRANSITIONS[execution.status]
@@ -139,8 +160,9 @@ export class ExecutionRegistry {
       to,
       at,
       ...(execution.resultRefs !== undefined ? { resultRefs: execution.resultRefs } : {}),
+      ...(note !== undefined ? { note } : {}),
     })
-    this.logger.info(`execution/${executionId} ${from} → ${to}`)
+    this.logger.info(`execution/${executionId} ${from} → ${to}${note !== undefined ? `（${note}）` : ''}`)
     return execution
   }
 
@@ -190,8 +212,55 @@ export class ExecutionRegistry {
     return () => this.listeners.delete(listener)
   }
 
-  private append(ev: ExecutionEvent): void {
-    this.eventLog.push(ev)
-    for (const listener of this.listeners) listener(ev)
+  /** 事件写入（唯一出口）：构造 eventId → 内存 journal → Persistence Adapter（双写——Adapter=实现非备份，
+   *  JSONL 是唯一的跨进程事实；单线程同步执行无一致性窗口）→ 通知订阅者 */
+  private append(ev: ExecutionEventInput): ExecutionEvent {
+    const event = {
+      ...ev,
+      eventId: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    } as ExecutionEvent
+    this.eventLog.push(event)
+    this.adapter?.append(event)
+    for (const listener of this.listeners) listener(event)
+    return event
+  }
+
+  /** 启动 replay（Adapter 注入时）：事件日志是唯一 SoT——逐条重建内存 index（不 notify、不双写文件）。
+   *  容错（用户裁定②）：合法事件 apply；非法（状态机不允许）→ corruption warning + 跳过（不静默丢历史）。 */
+  private replayEvents(entries: ExecutionEvent[]): void {
+    for (const entry of entries) {
+      if (entry.type === 'execution.created') {
+        this.executions.set(entry.executionId, {
+          id: entry.executionId,
+          taskId: entry.taskId,
+          status: entry.status,
+          createdAt: entry.at,
+          startedAt: entry.at,
+          ...(entry.sessionId !== undefined ? { sessionId: entry.sessionId } : {}),
+          ...(entry.workflowId !== undefined ? { workflowId: entry.workflowId } : {}),
+          ...(entry.stageId !== undefined ? { stageId: entry.stageId } : {}),
+        })
+        this.byTaskId.set(entry.taskId, entry.executionId)
+        this.eventLog.push(entry)
+        continue
+      }
+      // status_changed
+      const execution = this.executions.get(entry.executionId)
+      if (execution === undefined) continue // created 缺失（文件手工编辑/异常）——跳过该变更事件
+      const allowed = ALLOWED_TRANSITIONS[execution.status]
+      if (!allowed.includes(entry.to)) {
+        this.logger.warn(
+          `executions.jsonl replay 跳过非法事件：execution/${entry.executionId} ${execution.status} → ${entry.to}（eventId=${entry.eventId}）`,
+        )
+        continue
+      }
+      execution.status = entry.to
+      if (isTerminalExecutionStatus(entry.to)) {
+        execution.finishedAt = entry.at
+        delete execution.pendingInteraction
+      }
+      if (entry.resultRefs !== undefined) execution.resultRefs = entry.resultRefs
+      this.eventLog.push(entry)
+    }
   }
 }

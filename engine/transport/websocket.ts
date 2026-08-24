@@ -17,6 +17,7 @@ import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRec
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { ExecutionRegistry } from '../runtime/execution-registry.ts'
+import { ExecutionEventLog } from '../runtime/execution-event-log.ts'
 import type { ExecutionQuery } from '../ir/execution.ts'
 import { webSearchModeOf } from '../agent/providers/capabilities.ts'
 import { ExaConnector } from '../agent/tools/exa.ts'
@@ -1480,8 +1481,10 @@ export async function startServer(opts: {
       })
     : undefined
   // ADR-034 §3.1：Execution Registry = Runtime Execution SoT（engine 侧唯一事实源；
-  // UI/CLI/Probe 都是投影）。AgentRuntime 是写入方；Phase 2 的 agent/executions* 查询经此。
-  const executionRegistry = new ExecutionRegistry(logger)
+  // UI/CLI/Probe 都是投影）。Phase 3：Registry 注入 JSONL Event Log Adapter（跨进程生命周期存在：
+  // 启动 replay 重建 → 非终态 reconciliation → failed(process_restart)）；AgentRuntime 是写入方。
+  const executionRegistry = new ExecutionRegistry(logger, new ExecutionEventLog({ filePath: config.paths.executions, logger }))
+  executionRegistry.reconcileAfterStartup()
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
