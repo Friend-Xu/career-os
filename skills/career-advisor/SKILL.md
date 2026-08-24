@@ -5,12 +5,21 @@ description: >
   当用户提到"转行""选方向""去哪个城市""分析JD""写简历""面试准备""出结论"时自动触发。
   Use when user wants career planning, job transition analysis, city selection,
   company research, or JD analysis.
-allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, WebSearch, WebFetch]
 ---
 
 # career-advisor
 
 **职业决策分析系统。一个入口，七个子流程，从方向探索到简历撰写。**
+
+---
+
+## 工具能力边界（本文件不声明工具）
+
+工具能力由 CareerOS Engine Runtime 根据 Capability Manifest、Stage 声明与
+Execution Governance 装配。
+
+本技能文档不声明、不授权工具能力。
+实际可用工具以当前 Execution Runtime 注入的能力面为准。
 
 ---
 
@@ -27,15 +36,9 @@ Agent 任务若带 `【WORKFLOW_STAGE】` Envelope（引擎经 agent/start conte
 - 满足 STOP_CONDITION 即停止，等待 Gate——**不得自行推进下一 Stage**（推进由引擎 advance 裁决，用户确认）
 - 声明边界（STAGE_BOUNDARY）与普通 Skill 路由冲突时，Stage 优先
 
-### 1. 首次运行检查
+### 1. 工作区初始化状态（引擎注入）
 
-```
-Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
-→ 不存在 → "首次使用 career-advisor。需要初始化工作目录 workspace/career-advisor/。"
-  → 用户同意 → 复制 assets/templates/ 到 workspace/career-advisor/
-  → 用户不同意 → 仅给出当前建议，不持久化
-→ 存在 → 继续
-```
+工作区初始化状态由引擎注入（首次运行/已初始化分别注入对应指令），Agent **不自行检查、不自行初始化**。
 
 ### 2. 错误恢复
 
@@ -120,7 +123,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 
 用户画像技能的唯一事实源 = `persons/{person_id}/snapshot/current/skill_inventory.md`（引擎据此派生 Person.skills；缺此文件 = 画像技能空白，不视为「用户没有技能」）。
 
-- **Content Producer**: Engine 快照投影器（用户确认技能候选 → 引擎登记并投影生成；Agent **不写此文件**——Agent 只产出技能候选（候选标记协议带结构化载荷 `技能=…；级别=…；场景=…`），确认权在用户，写入权在引擎）
+- **Content Producer**: Engine 快照投影器（用户确认技能候选 → 引擎登记并投影生成；Agent **不写此文件**——候选生产已由确定性 Runtime 通道接管，Agent 不产出候选协议）
 - **Registration Owner**: 引擎 person snapshot parser（解析登记；Agent 不创建 person 归属字段）
 - **Artifact**: `persons/{person_id}/snapshot/current/skill_inventory.md`（frontmatter `id` 继承 person_id；`status: v1` 起）
 - **Required**: `| skill_id | 技能 | level | usage_context |` 表格行；level 只许 `applied-professional` / `applied-intermediate` / `applied` / `applied-basic`（引擎映射 4/3/3/2，其他词不识别，语言能力等非专业技能不进清单）
@@ -131,13 +134,7 @@ Glob ${CLAUDE_PROJECT_DIR}/workspace/career-advisor/INDEX.md
 
 用户偏好与目标岗位的唯一事实源 = 引擎投影的两件快照（`preference_constraints.md` 偏好约束 / `career_profile.md` 目标岗位）；缺文件 = 未采集，**不视为「用户没有偏好/目标」**。
 
-- **Content Producer**: Engine 快照投影器（用户确认约束/兴趣候选 → 引擎登记并投影生成；Agent **不写此文件**——Agent 只产出候选，确认权在用户，写入权在引擎）
-- **候选标记协议（约束/兴趣类目，Agent 提案时必须带结构化载荷）**：
-  `意向岗位=…；优先级=high|medium|low（可选）；薪资=…；城市=…；现居=…`
-  - 载荷按 `；` 分隔的 `键=值` 段；无载荷的约束/兴趣候选**只能进原文列表**（人有读、引擎无机器值）——画像「偏好/城市/目标岗位」不显示，这是确认候选时**要避免**的形态
-  - `意向岗位=`（或 `目标岗位=`）→ `career_profile.md` User Career Intent 表（source=user，画像「目标岗位」维度数据源）
-  - `薪资=/城市=/现居=` → `preference_constraints.md` 分析摘要规范键（画像「偏好/城市」维度数据源）
-  - `优先级=` 仅 high/medium/low 被识别；未识别 → 投影按 medium 中性档（引擎不猜高/低语义）
+- **Content Producer**: Engine 快照投影器（用户确认约束/兴趣候选 → 引擎登记并投影生成；Agent **不写此文件**——候选生产已由确定性 Runtime 通道接管，Agent 不产出候选协议）。候选事实由 Candidate Generator 基于 Resume Facts Artifact 确定性生成；Agent 不再生成「候选标记」协议行，不得输出 `技能=…；级别=…；意向岗位=…` 等候选生产载荷。
 - **Registration Owner**: 引擎 person snapshot parser（解析登记；Agent 不创建 person 归属字段）
 - **Artifact**: `persons/{person_id}/snapshot/current/preference_constraints.md`（`## 分析摘要` 表 salary_range/city/location + `## 偏好约束` 原文列表）与 `persons/{person_id}/snapshot/current/career_profile.md`（`## User Career Intent` 表 `target_role | priority | source`，source=user 行才是 targetRoles；契约 references/career-profile-contract.md）
 - **红线**: career_profile.md 只承载**用户明确意向**——推荐/决策结论禁止写入（归 decisions/）；「推荐」≠「目标」
@@ -245,4 +242,4 @@ career-advisor/
 └── assets/templates/                  ← 空白模板
 ```
 
-**运行时数据**：`${CLAUDE_PROJECT_DIR}/workspace/career-advisor/`（首次运行自动创建）
+**运行时数据**：工作区由引擎初始化与管理（`paths.workspace`，见引擎配置；技能文件位于工作区外）。
