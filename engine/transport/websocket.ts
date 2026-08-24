@@ -1967,6 +1967,20 @@ export async function startServer(opts: {
       return {}
     },
     [METHODS.agentPermission]: (params) => {
+      const p = params as Record<string, unknown>
+      // ADR-034 §6.1：executionId 通道（刷新恢复——requestId 是引擎内存表键，刷新即丢；
+      // 无 requestId 时按「唯一挂起授权」决策——一个执行同时至多一个挂起，不猜测）
+      if (typeof p.executionId === 'string' && p.executionId.length > 0) {
+        if (typeof p.allow !== 'boolean') throw new Error('params.allow 应为 boolean')
+        if (typeof p.requestId === 'string' && p.requestId.length > 0) {
+          const execution = executionRegistry.get(p.executionId)
+          if (execution === undefined) throw new Error(`execution/${p.executionId} 不存在——授权不再需要`)
+          agentRuntime.permission(execution.taskId, p.requestId, p.allow)
+        } else {
+          agentRuntime.permissionByExecution(p.executionId, p.allow)
+        }
+        return {}
+      }
       const { taskId, requestId, allow } = permissionParams(params)
       agentRuntime.permission(taskId, requestId, allow)
       return {}

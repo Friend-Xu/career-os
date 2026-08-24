@@ -21,7 +21,19 @@ export function isTerminalExecutionStatus(status: ExecutionStatus): boolean {
   return TERMINAL_EXECUTION_STATUS.includes(status)
 }
 
-/** ADR-034 §2.1 身份字段（冻结版；不得扩展业务字段） */
+/** 等待外部输入的交互（waiting 状态的载荷——Runtime 事实，非业务字段：
+ *  question=提问卡片、permission=工具授权；一个执行同时至多一个挂起（流式串行）） */
+export interface PendingInteraction {
+  type: 'question' | 'permission'
+  /** 交互内容最小面（UI 恢复弹窗/卡片所需）：permission=tool 名；question=问题文本+选项 */
+  tool?: string
+  question?: string
+  options?: string[]
+}
+
+/** ADR-034 §2.1 身份字段（冻结版；不得扩展业务字段）。
+ *  pendingInteraction 是 §1.4 语义在 §2.1 之外的 Runtime 事实承载（waiting=暂停等待外部输入，
+ *  interaction=对应的交互事件事实；终态时 Registry 自动清除——Execution 不持业务真相）。 */
 export interface Execution {
   /** public identity：execution_{ts}_{rand}（§2.1；taskId 退居内部实现 ID） */
   id: string
@@ -34,6 +46,8 @@ export interface Execution {
   /** 内部实现 ID（迁移期兼容，§2.2） */
   taskId: string
   status: ExecutionStatus
+  /** waiting 时挂起的交互（question/permission）；非终态才可能有值，终态由 Registry 清除 */
+  pendingInteraction?: PendingInteraction
   createdAt: string
   startedAt: string
   finishedAt?: string

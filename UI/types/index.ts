@@ -94,11 +94,16 @@ export interface QuestionCard {
   stageId?: string
 }
 
-/** 挂起的权限请求（授权弹窗数据源；sessionId 保证审批结果写入所属会话） */
+/** 挂起的权限请求（授权弹窗数据源；sessionId 保证审批结果写入所属会话）。
+ *  executionId/taskId/requestId 为授权送达锚点：在线通道 = taskId+requestId；
+ *  刷新恢复（ADR-034 §6.1）= executionId + 引擎唯一挂起语义（requestId 是引擎内存表键，刷新即丢） */
 export interface PendingPermission {
   toolName: string
   description: string
   sessionId: string
+  executionId?: string
+  taskId?: string
+  requestId?: string
 }
 
 /** 简历 AI 改写任务状态（浮层状态机；running 事件流由 handleAgentEvent 分叉路由） */

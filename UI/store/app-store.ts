@@ -414,7 +414,7 @@ interface AppState {
   /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings */
   setAgentModel: (model: string) => void;
   /** 权限消费入口（真实 Agent 流 + 演示共用）：会话内已批量放行 → 立即放行；否则挂起弹窗等待决策 */
-  requestPermission: (toolName: string, description: string) => Promise<boolean>;
+  requestPermission: (toolName: string, description: string, anchor?: { executionId?: string; taskId?: string; requestId?: string }) => Promise<boolean>;
   approvePermission: () => void;
   denyPermission: () => void;
   approveAllPermissions: () => void;
@@ -2000,7 +2000,7 @@ export const useAppStore = create<AppState>()(
   /** 选中简历版本（M3.5.5：切到历史空间并定位） */
   selectResume: (id) => set({ selectedResumeId: id, resumeWorkspaceView: 'history' }),
 
-  requestPermission: (toolName, description) => {
+  requestPermission: (toolName: string, description: string, anchor?: { executionId?: string; taskId?: string; requestId?: string }) => {
     const sessionId = get().currentSessionId
     // 会话内已批量放行（'*' 通配 = 本次会话全部工具）或已放行该工具 → 不弹窗，直接放行并反馈
     const approved = get().approvedTools[sessionId]
@@ -2008,7 +2008,16 @@ export const useAppStore = create<AppState>()(
       appendSystemMessage(sessionId, `已自动放行工具「${toolName}」（会话内已授权）`)
       return Promise.resolve(true)
     }
-    set({ pendingPermission: { toolName, description, sessionId } })
+    set({
+      pendingPermission: {
+        toolName,
+        description,
+        sessionId,
+        ...(anchor?.executionId !== undefined ? { executionId: anchor.executionId } : {}),
+        ...(anchor?.taskId !== undefined ? { taskId: anchor.taskId } : {}),
+        ...(anchor?.requestId !== undefined ? { requestId: anchor.requestId } : {}),
+      },
+    })
     return new Promise<boolean>((resolve) => {
       resolvePending = resolve
     })
@@ -2024,6 +2033,7 @@ export const useAppStore = create<AppState>()(
       sessions: patchToolCallStatus(get().sessions, pending, 'done'),
     })
     appendSystemMessage(pending.sessionId, `已放行工具「${pending.toolName}」`)
+    sendPermissionDecision(pending, true)
   },
 
   denyPermission: () => {
@@ -2037,6 +2047,7 @@ export const useAppStore = create<AppState>()(
     })
     // permission_denied 不是错误：提示换一种问法，不渲染红色错误
     appendSystemMessage(pending.sessionId, `已拒绝工具「${pending.toolName}」，可换一种问法`)
+    sendPermissionDecision(pending, false)
   },
 
   approveAllPermissions: () => {
@@ -2682,7 +2693,7 @@ function handleExecutionEvent(executionId: string, ev: ExecutionEvent): void {
       },
     }
   })
-  // 终点态：收敛内容流路由（agent.event 帧不再需要路由到占位消息；幂等）
+  // 终点态：收敛内容流路由（agent.event 帧不再需要路由到占位消息；幂等）+ 清理残留授权弹窗
   if (isTerminalExecutionStatus(ev.to)) {
     for (const [taskId, route] of agentTasks) {
       if (route.executionId === executionId) {
@@ -2690,6 +2701,26 @@ function handleExecutionEvent(executionId: string, ev: ExecutionEvent): void {
         break
       }
     }
+    const pending = useAppStore.getState().pendingPermission
+    if (pending?.executionId === executionId) {
+      resolvePending?.(false)
+      resolvePending = null
+      useAppStore.setState({ pendingPermission: null })
+    }
+  }
+}
+
+/** 授权决策送达引擎（审批统一出口——在线与刷新恢复共用单点）：
+ *  在线 = executionId+requestId（完整定位）；刷新恢复 = executionId 仅（requestId 是引擎内存表键，
+ *  丢失时引擎按「唯一挂起授权」决策——ADR-034 §6.1）；无 executionId = 旧 taskId 通道 */
+function sendPermissionDecision(pending: PendingPermission, allow: boolean): void {
+  if (!engine) return
+  if (pending.executionId !== undefined && pending.requestId !== undefined) {
+    void engine.permissionAgent({ executionId: pending.executionId, taskId: '', requestId: pending.requestId, allow })
+  } else if (pending.executionId !== undefined) {
+    void engine.permissionAgent({ executionId: pending.executionId, taskId: '', allow })
+  } else if (pending.taskId !== undefined && pending.requestId !== undefined) {
+    void engine.permissionAgent({ taskId: pending.taskId, requestId: pending.requestId, allow })
   }
 }
 
@@ -2778,7 +2809,8 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       }))
       break
     case 'permission_request': {
-      // chip 置等待授权 + 弹窗决策（requestPermission 复用批量放行）→ 决策回传引擎
+      // chip 置等待授权 + 弹窗决策（requestPermission 复用批量放行）→ 审批统一由
+      // approvePermission/denyPermission 经 sendPermissionDecision 回传（在线=executionId+requestId）
       patchStreamingMessage(sessionId, messageId, (m) => ({
         ...m,
         toolCalls: m.toolCalls?.map((t) =>
@@ -2787,10 +2819,13 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
             : t,
         ),
       }))
-      void (async () => {
-        const allow = await useAppStore.getState().requestPermission(ev.tool, `工具「${ev.tool}」请求执行`)
-        void engine?.permissionAgent(taskId, ev.requestId, allow)
-      })()
+      const route = agentTasks.get(taskId)
+      // promise 挂起到 s 审批（resolvePending）；审批出口 sendPermissionDecision 统一发引擎
+      void useAppStore.getState().requestPermission(ev.tool, `工具「${ev.tool}」请求执行`, {
+        executionId: route?.executionId,
+        taskId,
+        requestId: ev.requestId,
+      })
       break
     }
     case 'question_request': {
@@ -2912,6 +2947,15 @@ async function pullExecutions(): Promise<void> {
         isThinking: true,
         content: m.content === '（连接中断）' ? '' : m.content.replace(/\n\n（连接中断）$/, ''),
       }))
+      // 等待授权交互恢复（ADR-034 §6.1：pendingInteraction 是 Registry 事实——刷新后重新弹窗；
+      // 幂等：重复刷新覆盖同值；审批后 Registry 清除交互 → 不再恢复；question 卡片已在会话消息中持久化）
+      if (execution.pendingInteraction?.type === 'permission') {
+        void useAppStore.getState().requestPermission(
+          execution.pendingInteraction.tool ?? '未知工具',
+          `工具「${execution.pendingInteraction.tool ?? '未知'}」请求执行（权限弹窗已恢复）`,
+          { executionId: execution.id },
+        )
+      }
     }
     useAppStore.setState({ executions: Object.fromEntries(list.map((e) => [e.id, e])) })
   } catch {

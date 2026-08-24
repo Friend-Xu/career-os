@@ -21,6 +21,7 @@ import {
   type ExecutionEvent,
   type ExecutionQuery,
   type ExecutionStatus,
+  type PendingInteraction,
 } from '../ir/execution.ts'
 
 export type {
@@ -28,6 +29,7 @@ export type {
   Execution,
   ExecutionEvent,
   ExecutionQuery,
+  PendingInteraction,
 } from '../ir/execution.ts'
 export { isTerminalExecutionStatus } from '../ir/execution.ts'
 
@@ -113,7 +115,8 @@ export class ExecutionRegistry {
 
   /**
    * 状态迁移（唯一正面入口——AgentRuntime runLoop/cancel 驱动；非法迁移 throw）。
-   * 终点态设置 finishedAt；记录 status_changed 事件并通知订阅者。
+   * 终点态设置 finishedAt 并清除 pendingInteraction（终态无等待交互——Runtime 事实守恒）；
+   * 记录 status_changed 事件并通知订阅者。
    */
   transition(executionId: string, to: ExecutionStatus): Execution {
     const execution = this.executions.get(executionId)
@@ -125,9 +128,22 @@ export class ExecutionRegistry {
     const from = execution.status
     const at = new Date().toISOString()
     execution.status = to
-    if (isTerminalExecutionStatus(to)) execution.finishedAt = at
+    if (isTerminalExecutionStatus(to)) {
+      execution.finishedAt = at
+      delete execution.pendingInteraction
+    }
     this.append({ type: 'execution.status_changed', executionId, from, to, at })
     this.logger.info(`execution/${executionId} ${from} → ${to}`)
+    return execution
+  }
+
+  /** 设置/清除等待交互（waiting=暂停等待外部输入的事实载荷；非终态才有效，终态由 transition 清除）。
+   *  Atomic：交互事实与状态由 AgentRuntime 在挂起/恢复时成对更新——Registry 只存储与查询。 */
+  setPendingInteraction(executionId: string, interaction: PendingInteraction | undefined): Execution {
+    const execution = this.executions.get(executionId)
+    if (execution === undefined) throw new Error(`execution/${executionId} 不存在——无法设置交互`)
+    if (interaction === undefined) delete execution.pendingInteraction
+    else execution.pendingInteraction = interaction
     return execution
   }
 

@@ -990,8 +990,14 @@ export class EngineClient {
     return this.rpc(METHODS.rewriteFeedback, params)
   }
 
-  permissionAgent(taskId: string, requestId: string, allow: boolean): Promise<unknown> {
-    return this.rpc(METHODS.agentPermission, { taskId, requestId, allow })
+  /** 工具授权决策：executionId 通道（ADR-034 §6.1 刷新恢复——requestId 丢失时引擎按唯一挂起决策）
+   *  或旧通道（executionId 无时 taskId+requestId 完整定位） */
+  permissionAgent(params: { executionId?: string; taskId: string; requestId?: string; allow: boolean }): Promise<unknown> {
+    const rpcParams: Record<string, unknown> = { allow: params.allow }
+    if (params.executionId !== undefined) rpcParams.executionId = params.executionId
+    if (params.requestId !== undefined) rpcParams.requestId = params.requestId
+    if (params.executionId === undefined) rpcParams.taskId = params.taskId
+    return this.rpc(METHODS.agentPermission, rpcParams)
   }
 
   /** 订阅 Agent 流式事件（帧 = { taskId, ...AgentRuntimeEvent }） */

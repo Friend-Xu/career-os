@@ -13,8 +13,36 @@ function statusChanged(ev: ExecutionEvent): ev is Extract<ExecutionEvent, { type
   return ev.type === 'execution.status_changed'
 }
 
-/** ADR-034 §2.1 红线守卫：Execution 身份字段清单（冻结版——不得扩展业务字段） */
+/** ADR-034 §2.1 红线守卫：Execution 身份字段基线（冻结版——不得扩展业务字段；
+ *  pendingInteraction 是 Runtime 交互事实（waiting 载荷），仅在挂起交互时存在） */
 const ADR034_IDENTITY_FIELDS = ['createdAt', 'id', 'startedAt', 'status', 'taskId']
+
+test('setPendingInteraction：waiting 载荷设置/清除 + 终态自动清除（ADR-034 waiting=暂停等外部输入）', () => {
+  const registry = new ExecutionRegistry(makeLogger())
+  const execution = registry.create({ taskId: 't-110', sessionId: 's-x' })
+
+  // 无交互：无 pendingInteraction 字段
+  assert.equal(registry.get(execution.id)?.pendingInteraction, undefined)
+
+  // 设置（权限挂起）
+  registry.setPendingInteraction(execution.id, { type: 'permission', tool: 'Write' })
+  assert.deepEqual(registry.get(execution.id)?.pendingInteraction, { type: 'permission', tool: 'Write' })
+
+  // 覆盖（幂等）
+  registry.setPendingInteraction(execution.id, { type: 'question', question: '目标城市？', options: ['苏州'] })
+  assert.deepEqual(registry.get(execution.id)?.pendingInteraction, { type: 'question', question: '目标城市？', options: ['苏州'] })
+
+  // 显式清除
+  registry.setPendingInteraction(execution.id, undefined)
+  assert.equal(registry.get(execution.id)?.pendingInteraction, undefined)
+
+  // 终态自动清除（transition 终点态）
+  registry.setPendingInteraction(execution.id, { type: 'permission', tool: 'Edit' })
+  registry.cancel(execution.id)
+  assert.equal(registry.get(execution.id)?.pendingInteraction, undefined)
+
+  assert.throws(() => registry.setPendingInteraction('execution_nonexistent', { type: 'permission', tool: 'Write' }), /不存在/)
+})
 
 test('create：身份生成 + 状态 running + startedAt=createdAt（ADR-034 §2.1/§2.2）', () => {
   const registry = new ExecutionRegistry(makeLogger())

@@ -45,7 +45,7 @@ import type { AgentHandle, AgentEvent } from '../ir/agent-event.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
-import { ExecutionRegistry, isTerminalExecutionStatus } from './execution-registry.ts'
+import { ExecutionRegistry, isTerminalExecutionStatus, type PendingInteraction } from './execution-registry.ts'
 /** Agent Task & Context（ADR-020，ir 共享契约）——taskType/contextRefs/outputTarget/trigger */
 import type {
   AgentTaskType,
@@ -251,6 +251,8 @@ interface TaskState {
   usedTools: Set<string>
   /** Execution 关联（ADR-034 §2.2：executionId = public identity；taskId 仍是 tasks 索引） */
   executionId: string
+  /** 等待外部输入的交互（waiting 状态的载荷——与 Registry.pendingInteraction 同步；答案/授权后清除） */
+  pendingInteraction?: PendingInteraction
 }
 
 export class AgentRuntime {
@@ -327,6 +329,15 @@ export class AgentRuntime {
         new Promise<boolean>((resolve) => {
           const requestId = `p-${++this.permissionSeq}`
           task.pendingPermissions.set(requestId, resolve)
+          // 权限挂起 = Runtime 暂停等待外部输入（waiting + 交互事实；ADR-034「waiting 不是普通 UI 态」）。
+          // 在回调内同步迁移（permission_request 不依赖流内事件——向前兼容双通道）。问答（question）由
+          // applyExecutionLifecycle 事件驱动迁移——两者最终状态语义一致（Question 卡片/权限弹窗）。
+          const current = this.registry.get(task.executionId)
+          if (current !== undefined && current.status === 'running') {
+            task.pendingInteraction = { type: 'permission', tool }
+            this.registry.setPendingInteraction(task.executionId, task.pendingInteraction)
+            this.registry.transition(task.executionId, 'waiting')
+          }
           this.emit(taskId, { type: 'permission_request', tool, requestId })
         }),
     })
@@ -371,7 +382,8 @@ export class AgentRuntime {
 
   /**
    * Execution 生命周期（ADR-034 §1/§5.1）：运行时事件 → Registry 状态迁移。
-   * question_request = 挂起等用户（waiting）；done = completed；error = failed。
+   * question_request = 挂起等用户（waiting + 交互事实）；done = completed；error = failed。
+   * permission_request 的挂起在 onPermissionRequest 回调内同步迁移（不依赖流内事件——向前兼容）。
    * 终点态守卫：cancel 后流仍可能到达剩余事件（abort 竞态）——不再迁移。
    */
   private applyExecutionLifecycle(executionId: string, ev: AgentEvent): void {
@@ -379,7 +391,13 @@ export class AgentRuntime {
     if (execution === undefined || isTerminalExecutionStatus(execution.status)) return
     switch (ev.type) {
       case 'question_request':
+        // 交互载荷（问题文本+选项——UI 刷新后按此恢复提问卡片，模型与 permission 统一）
         this.registry.transition(executionId, 'waiting')
+        this.registry.setPendingInteraction(executionId, {
+          type: 'question',
+          question: ev.question.question,
+          options: ev.question.options.map((o) => o.label),
+        })
         break
       case 'done':
         this.registry.transition(executionId, 'completed')
@@ -428,6 +446,8 @@ export class AgentRuntime {
     task.handle.answer(text)
     // 提问挂起（waiting）被回答 → 回到运行（ADR-034 状态机；answer 是 waiting→running 的驱动，
     // 与事件驱动（question_request/done/error）互补——否则回答后执行状态失真停在 waiting）
+    task.pendingInteraction = undefined
+    this.registry.setPendingInteraction(task.executionId, undefined)
     const execution = this.registry.get(task.executionId)
     if (execution !== undefined && execution.status === 'waiting') {
       this.registry.transition(task.executionId, 'running')
@@ -458,6 +478,29 @@ export class AgentRuntime {
     if (resolve === undefined) return // 未知 requestId（已决策/任务结束）→ 忽略
     task.pendingPermissions.delete(requestId)
     resolve(allow)
+    // 授权/拒绝完成 → 清除交互并回运行（waiting→running；与 answer 语义对称）
+    task.pendingInteraction = undefined
+    this.registry.setPendingInteraction(task.executionId, undefined)
+    const execution = this.registry.get(task.executionId)
+    if (execution !== undefined && execution.status === 'waiting') {
+      this.registry.transition(task.executionId, 'running')
+    }
+  }
+
+  /** ADR-034 §6.1：executionId 授权通道（刷新恢复——requestId 是引擎内存表键，刷新即丢）。
+   *  一个执行同时至多一个挂起授权（流式串行）；无/多挂起 → 拒绝（不猜测，避免误授权）。 */
+  permissionByExecution(executionId: string, allow: boolean): void {
+    for (const [taskId, task] of this.tasks) {
+      if (task.executionId !== executionId) continue
+      const keys = [...task.pendingPermissions.keys()]
+      if (keys.length !== 1) {
+        this.logger.warn(`agent/permission 唯一挂起校验失败：execution=${executionId} 挂起数=${keys.length}——授权被拒绝`)
+        return
+      }
+      this.permission(taskId, keys[0]!, allow)
+      return
+    }
+    this.logger.warn(`agent/permission 未命中执行：${executionId}（任务已结束/映射丢失——授权被忽略）`)
   }
 
   /** 优雅关闭：中止所有活跃任务（abort → SDK close → CLI 子进程终止）+ 关闭外部 MCP 连接 */
