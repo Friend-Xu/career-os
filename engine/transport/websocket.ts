@@ -1940,7 +1940,15 @@ export async function startServer(opts: {
       const p = params as Record<string, unknown>
       if (typeof p.text !== 'string' || p.text.length === 0) throw new Error('params.text 缺失（回答内容）')
       let taskId = ''
-      if (typeof p.taskId === 'string' && p.taskId.length > 0) {
+      if (typeof p.executionId === 'string' && p.executionId.length > 0) {
+        // ADR-034 §6.1：刷新/断连恢复——executionId 是 public identity（UI 任务映射丢失时的稳定锚点，
+        // 经 Registry 反查 taskId；执行不存在 = 回答不再需要，拒绝并提示）
+        const execution = executionRegistry.get(p.executionId)
+        if (execution === undefined) {
+          throw new Error(`execution/${p.executionId} 不存在——任务未运行或已结束（回答不再需要）`)
+        }
+        taskId = execution.taskId
+      } else if (typeof p.taskId === 'string' && p.taskId.length > 0) {
         taskId = p.taskId
       } else if (typeof p.workflowId === 'string' && p.workflowId.length > 0) {
         // UI 断连/刷新恢复（agentTasks 丢失）→ 按 workflowId 反查进行中的 Stage 任务（稳定锚点）
@@ -1949,7 +1957,7 @@ export async function startServer(opts: {
           throw new Error(`该工作流无进行中的 Stage 任务（${p.workflowId}）——任务可能已完成（回答不再需要）或已终止`)
         }
       } else {
-        throw new Error('params.taskId 或 params.workflowId 至少一个（回答定位）')
+        throw new Error('params.executionId 或 params.taskId 或 params.workflowId 至少一个（回答定位）')
       }
       agentRuntime.answer(taskId, p.text)
       return {}

@@ -966,9 +966,11 @@ export class EngineClient {
     return this.rpc(METHODS.settingsModels, params)
   }
 
-  /** 回答 Agent 提问：taskId（运行时映射存在）或 workflowId（断连/刷新恢复——引擎反查 stage 任务）至少其一 */
-  answerAgent(params: { taskId?: string; workflowId?: string; text: string }): Promise<unknown> {
+  /** 回答 Agent 提问：executionId（ADR-034 §6.1 public identity——刷新/断连恢复的稳定锚点）
+   *  或 taskId（运行时映射存在）或 workflowId（Stage 反查）至少其一 */
+  answerAgent(params: { executionId?: string; taskId?: string; workflowId?: string; text: string }): Promise<unknown> {
     const rpcParams: Record<string, unknown> = { text: params.text }
+    if (params.executionId !== undefined) rpcParams.executionId = params.executionId
     if (params.taskId !== undefined) rpcParams.taskId = params.taskId
     if (params.workflowId !== undefined) rpcParams.workflowId = params.workflowId
     return this.rpc(METHODS.agentAnswer, rpcParams)

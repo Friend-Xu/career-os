@@ -2111,13 +2111,22 @@ export const useAppStore = create<AppState>()(
       ),
     })
     // 真实 Agent 流：回答送达 Agent。
-    // 1) 任务还活着（agentTasks 运行时映射）→ taskId 即时通道；
-    // 2) 映射丢失（断连/刷新——提问卡消息持久化了 workflowId/stageId）→ workflowId 经引擎反查
-    //    进行中的 Stage 任务（稳定锚点；任务已完成则引擎拒绝并提示"回答不再需要"）；
-    // 3) 纯对话模式（无 workflow 关联）→ resume 原会话续接发送回答。
+    // 1) 任务还活着（agentTasks 运行时映射，含断连刷新后 pullExecutions 重建的路由）→ taskId 即时通道；
+    // 2) 刷新/断连恢复：executions 投影中的等待回答执行 → executionId 稳定锚点（ADR-034 §6.1）；
+    // 3) 提问卡持久化了 workflowId/stageId → workflowId 经引擎反查进行中的 Stage 任务；
+    // 4) 纯对话模式（无执行关联）→ resume 原会话续接发送回答。
     const active = [...agentTasks.entries()].find(([, t]) => t.sessionId === currentSessionId)
     if (active) {
       void engine?.answerAgent({ taskId: active[0], text: answer })
+      return
+    }
+    const activeExecution = activeExecutionOf(get().executions, currentSessionId)
+    if (activeExecution !== undefined && activeExecution.status === 'waiting') {
+      void engine
+        ?.answerAgent({ executionId: activeExecution.id, text: answer })
+        .catch((err) =>
+          useToastStore.getState().push('warning', `回答未送达：${err instanceof Error ? err.message : String(err)}`),
+        )
       return
     }
     const msg = get().sessions.find((s) => s.id === currentSessionId)?.messages.find((m) => m.id === messageId)
@@ -2541,8 +2550,19 @@ async function runAgentTask(
   if (!engine) return
   // 会话内单任务互斥：已有运行中执行则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，
   // 此处是并发边界校验——事实来自 Execution 投影，刷新后经 query 重建仍生效）
-  if (activeExecutionOf(useAppStore.getState().executions, sessionId)) {
+  const active = activeExecutionOf(useAppStore.getState().executions, sessionId)
+  if (active !== undefined && active.status !== 'waiting') {
     useToastStore.getState().push('warning', '当前会话已有任务运行中，请等待完成或先停止')
+    return
+  }
+  // 等待用户回答的执行（ADR-034 §6.1 刷新恢复）：输入 = 回答走 answer 通道（executionId 锚点），
+  // 不是新任务——任务流续传路由已由 pullExecutions 重建；用户消息已由 sendAgentMessage 写入对话
+  if (active?.status === 'waiting') {
+    void engine
+      .answerAgent({ executionId: active.id, text: content })
+      .catch((err) =>
+        useToastStore.getState().push('warning', `回答未送达：${err instanceof Error ? err.message : String(err)}`),
+      )
     return
   }
   try {
@@ -2864,11 +2884,35 @@ async function pullDecisions(): Promise<void> {
 }
 
 /** Execution 投影快照重建（ADR-034 §6.1：重连/刷新 = query 快照 → 重建投影 → 订阅后续事件；
- *  整表替换——Registry 是 Runtime SoT，query 返回全量事实，与引擎内存一致） */
+ *  整表替换——Registry 是 Runtime SoT，query 返回全量事实，与引擎内存一致）。
+ *  同时重建内容流路由（非终态执行 → 该会话流式占位消息）：agent.event 继续按 taskId 累积到占位，
+ *  并清除「（连接中断）」死标记——刷新后任务不再“看起来死了”（消息未断，任务还活着）。 */
 async function pullExecutions(): Promise<void> {
   if (!engine) return
   try {
     const list = await engine.listExecutions({})
+    const state = useAppStore.getState()
+    for (const execution of list) {
+      if (isTerminalExecutionStatus(execution.status) || execution.sessionId === undefined) continue
+      const session = state.sessions.find((s) => s.id === execution.sessionId)
+      if (!session) continue
+      // 流式占位消息：最后一条 assistant 且带断流/空内容/流式标记（任务内容载体；提问卡是独立消息不匹配）
+      const placeholder = [...session.messages].reverse().find(
+        (m) => m.role === 'assistant' && (m.streaming || m.content === '' || m.content === '（连接中断）'),
+      )
+      if (!placeholder) continue
+      agentTasks.set(execution.taskId, {
+        sessionId: execution.sessionId,
+        messageId: placeholder.id,
+        executionId: execution.id,
+      })
+      patchStreamingMessage(execution.sessionId, placeholder.id, (m) => ({
+        ...m,
+        streaming: true,
+        isThinking: true,
+        content: m.content === '（连接中断）' ? '' : m.content.replace(/\n\n（连接中断）$/, ''),
+      }))
+    }
     useAppStore.setState({ executions: Object.fromEntries(list.map((e) => [e.id, e])) })
   } catch {
     // offline：保持现有数据

@@ -426,6 +426,12 @@ export class AgentRuntime {
     }
     this.logger.info(`agent/answer：taskId=${taskId} 已送达（len=${text.length}）`)
     task.handle.answer(text)
+    // 提问挂起（waiting）被回答 → 回到运行（ADR-034 状态机；answer 是 waiting→running 的驱动，
+    // 与事件驱动（question_request/done/error）互补——否则回答后执行状态失真停在 waiting）
+    const execution = this.registry.get(task.executionId)
+    if (execution !== undefined && execution.status === 'waiting') {
+      this.registry.transition(task.executionId, 'running')
+    }
   }
 
   /** 任务已调用工具清单（完成钩子合规检查；任务结束后返回空——done emit 时仍可查） */
