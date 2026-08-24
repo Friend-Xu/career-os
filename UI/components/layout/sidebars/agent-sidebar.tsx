@@ -9,7 +9,7 @@ import UnarchiveIcon from '@mui/icons-material/Unarchive'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import { useAppStore, activeExecutionOf } from '../../../store/app-store'
-import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../../store/agent-phase'
+import { executionPhaseOf, formatElapsed, lastContentSegmentOf, PHASE_META } from '../../../store/agent-phase'
 import type { StreamPhase } from '../../../store/agent-phase'
 import { alpha, COLORS } from '../../../data/constants'
 
@@ -29,14 +29,12 @@ export function AgentSidebar() {
   // 存量迁移产物：无法可靠考证归属的会话（显式未知，不混入任何人的列表）
   const unassigned = sessions.filter((s) => s.personId === 'unassigned' && !s.archived)
 
-  /** 会话行当前阶段：任务运行中由最后一条消息推导（提问挂起 → 等待你的回答） */
+  /** 会话行当前阶段（ADR-034 UI Contract：Execution 驱动——有非终态执行即显示；
+   *  waiting→waiting_input（Registry 事实）；running→最后内容段投影字段细分） */
   const rowPhase = (s: (typeof list)[number]): StreamPhase | undefined => {
     const task = activeExecutionOf(executions, s.id)
     if (!task) return undefined
-    const last = s.messages.at(-1)
-    if (last?.question && !last.question.answered) return 'waiting_input'
-    if (last) return deriveAgentPhase(last)
-    return 'running'
+    return executionPhaseOf(task, lastContentSegmentOf(s.messages))
   }
 
   return (

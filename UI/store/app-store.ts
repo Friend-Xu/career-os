@@ -2329,9 +2329,13 @@ export function hasActiveExecution(executions: Record<string, Execution>): boole
   return Object.values(executions).some((e) => !isTerminalExecutionStatus(e.status))
 }
 
-/** 内容流路由投影：taskId → 所属会话 + 流式占位消息 + Execution 关联（agent.event 按 taskId 路由；
- *  executionId 关联使终态事件可反查路由，与 Engine Registry 的 taskId 兼容索引一致） */
-const agentTasks = new Map<string, { sessionId: string; messageId: string; executionId: string; type?: string; stageRef?: { workflowId: string; stageId: string } }>()
+/** 内容流路由投影：taskId → 所属会话 + 当前 active segment 消息 + Execution 关联。
+ *  agent.event 按 taskId 路由；executionId 关联使终态事件可反查路由。
+ *  ADR-034 UI Contract（Interaction Boundary）：一个 Execution 可有多个 assistant continuation
+ *  segment——question/answer 是 Execution 内的 interaction boundary，切分 UI message segment
+ *  但不切分 Execution。sealed = 当前 segment 已封存（提问卡片已 append，段内容完整），
+ *  下一个内容事件（text_delta / thinking_* / tool_* 事件）到达时 lazy-create 新 segment。 */
+const agentTasks = new Map<string, { sessionId: string; messageId: string; executionId: string; type?: string; stageRef?: { workflowId: string; stageId: string }; sealed?: boolean }>()
 
 /** 任务心跳：有活跃 Execution 时每秒 tick store.now（状态条/会话列表共用时间源）；全空自动停 */
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -2771,7 +2775,7 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
     return
   }
 
-  const task = agentTasks.get(taskId)
+  let task = agentTasks.get(taskId)
   if (!task) {
     // 后台任务（非会话簿记——CLI 桥类如机会提案/优势总结）：无占位消息可路由，
     // 但 done/error 必须清理 backgroundTasks（否则运行态卡片永不消失）
@@ -2783,6 +2787,24 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       })
     }
     return
+  }
+  // ── Continuation Segment（interaction boundary 后 lazy-create）──────────────
+  // 提问卡片已 append、旧段已封存（sealed）：回答后引擎 resume 同一 Execution 流，
+  // 第一个内容事件到达时才创建新 segment（回答后直接 done = 无段、不产生空消息）。
+  // permission 不切分（工具 chip 生命周期属当前段——授权/拒绝后同一段继续）。
+  if (task.sealed && (ev.type === 'text_delta' || ev.type === 'thinking_start' || ev.type === 'thinking_delta' || ev.type === 'thinking_stop' || ev.type === 'tool_start' || ev.type === 'tool_done')) {
+    const newMessageId = `msg-${Date.now()}`
+    appendToSession(task.sessionId, {
+      id: newMessageId,
+      role: 'assistant',
+      content: '',
+      isThinking: ev.type === 'thinking_start' || ev.type === 'thinking_delta',
+      streaming: true,
+      timestamp: new Date().toISOString(),
+    })
+    // 路由指向新 segment，sealed 清位（后续内容事件直接写入本段）
+    agentTasks.set(taskId, { ...task, messageId: newMessageId, sealed: false })
+    task = agentTasks.get(taskId)!
   }
   const { sessionId, messageId } = task
   switch (ev.type) {
@@ -2845,6 +2867,18 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       // 回答定位锚点：stage 任务提问把 workflowId/stageId 与卡片一起持久化（断连/刷新后
       // agentTasks 映射丢失 → answerQuestion 靠此经引擎反查；对话模式提问无 stageRef）
       const taskMeta = agentTasks.get(taskId)
+      // 封存当前 segment：内容已完整（提问前的 delta 全量 flush 落段）；streaming 标记熄灭
+      // ——后续内容事件将 lazy-create 新 segment（interaction boundary 切分，Execution 不变）
+      if (taskMeta) {
+        flushDeltaBuffer()
+        flushThinkingBuffer()
+        patchStreamingMessage(taskMeta.sessionId, taskMeta.messageId, (m) => ({
+          ...m,
+          isThinking: false,
+          streaming: false,
+        }))
+        agentTasks.set(taskId, { ...taskMeta, sealed: true })
+      }
       appendToSession(sessionId, {
         id: `msg-${Date.now()}`,
         role: 'assistant',
@@ -2933,8 +2967,11 @@ async function pullDecisions(): Promise<void> {
 
 /** Execution 投影快照重建（ADR-034 §6.1：重连/刷新 = query 快照 → 重建投影 → 订阅后续事件；
  *  整表替换——Registry 是 Runtime SoT，query 返回全量事实，与引擎内存一致）。
- *  同时重建内容流路由（非终态执行 → 该会话流式占位消息）：agent.event 继续按 taskId 累积到占位，
- *  并清除「（连接中断）」死标记——刷新后任务不再“看起来死了”（消息未断，任务还活着）。 */
+ *  同时重建内容流路由（非终态执行）：
+ *  - 常规流/断流恢复 → 该执行最后一条 assistant 内容段（sealed=false，续写/清「（连接中断）」标记）；
+ *  - interaction boundary（提问卡片在最后内容段之后）→ 重建 sealed=true（下个内容事件 lazy-create 新段）。
+ *  不变量：最后 active segment = 该会话中位于最后一条 question 卡片之后（或全程无卡片）的
+ *  最后一条 assistant 内容消息；恢复不依赖「最后一条消息」猜测——那是 interaction 后的 user 回答。 */
 async function pullExecutions(): Promise<void> {
   if (!engine) return
   try {
@@ -2944,22 +2981,31 @@ async function pullExecutions(): Promise<void> {
       if (isTerminalExecutionStatus(execution.status) || execution.sessionId === undefined) continue
       const session = state.sessions.find((s) => s.id === execution.sessionId)
       if (!session) continue
-      // 流式占位消息：最后一条 assistant 且带断流/空内容/流式标记（任务内容载体；提问卡是独立消息不匹配）
-      const placeholder = [...session.messages].reverse().find(
-        (m) => m.role === 'assistant' && (m.streaming || m.content === '' || m.content === '（连接中断）'),
-      )
-      if (!placeholder) continue
+      const msgs = session.messages
+      // 最后 active segment：最后一条 assistant 内容消息（提问卡片带 question 字段，非内容段）
+      const idx = [...msgs].reverse().findIndex((m) => m.role === 'assistant' && m.question === undefined)
+      if (idx === -1) continue // 无内容段（异常状态：执行存在但消息流无内容——不猜测，跳过）
+      const segment = msgs[msgs.length - 1 - idx]
+      // sealed 判定：存在最后内容段之后的提问卡片（ANSWER 消息是 user，不切段）——
+      // 卡片意味着 interaction boundary：在回答后第一个内容事件到达前，本段不再接收内容
+      const hasCardAfter = msgs.slice(msgs.length - idx).some((m) => m.question !== undefined)
       agentTasks.set(execution.taskId, {
         sessionId: execution.sessionId,
-        messageId: placeholder.id,
+        messageId: segment.id,
         executionId: execution.id,
+        ...(hasCardAfter ? { sealed: true } : {}),
       })
-      patchStreamingMessage(execution.sessionId, placeholder.id, (m) => ({
-        ...m,
-        streaming: true,
-        isThinking: true,
-        content: m.content === '（连接中断）' ? '' : m.content.replace(/\n\n（连接中断）$/, ''),
-      }))
+      if (!hasCardAfter) {
+        // 常规续写恢复：仅当段带断流/空内容/流式标记才重置标记（无标记 = 段完整，无需动）
+        if (segment.streaming || segment.content === '' || segment.content.endsWith('（连接中断）')) {
+          patchStreamingMessage(execution.sessionId, segment.id, (m) => ({
+            ...m,
+            streaming: true,
+            isThinking: true,
+            content: m.content === '（连接中断）' ? '' : m.content.replace(/\n\n（连接中断）$/, ''),
+          }))
+        }
+      }
       // 等待授权交互恢复（ADR-034 §6.1：pendingInteraction 是 Registry 事实——刷新后重新弹窗；
       // 幂等：重复刷新覆盖同值；审批后 Registry 清除交互 → 不再恢复；question 卡片已在会话消息中持久化）
       if (execution.pendingInteraction?.type === 'permission') {

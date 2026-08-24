@@ -18,7 +18,7 @@ import { useEffect, useRef } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore, activeExecutionOf } from '../../store/app-store'
 import { useToastStore } from '../../store/toast-store'
-import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../store/agent-phase'
+import { executionPhaseOf, formatElapsed, lastContentSegmentOf, PHASE_META } from '../../store/agent-phase'
 import type { StreamPhase } from '../../store/agent-phase'
 import { COLORS, EASE, LAYOUT, RISK_COLOR, alpha } from '../../data/constants'
 import { MarkdownView } from '../markdown-view'
@@ -65,21 +65,17 @@ export function AgentPanel() {
   const taskRunning = activeTask !== undefined
   /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（发送前拦截） */
   const inputLocked = person.initStatus === 'pending' && currentSessionId !== initSessionId
-  /** 流式消息（任务运行时 = 会话最后一条 assistant 消息；提问挂起时是未答卡片） */
-  const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
-  const streamPhase: StreamPhase | undefined =
-    streamMsg?.role === 'assistant' && activeTask
-      ? streamMsg.question && !streamMsg.question.answered
-        ? 'waiting_input'
-        : deriveAgentPhase(streamMsg)
-      : undefined
+  /** 流式消息相位（ADR-034 UI Contract：Execution 驱动——存在非终态执行即显示；
+   *  thinking/tool/generating 是最后内容段的本地投影字段，不反推 Runtime fact） */
+  const lastContentSegment = lastContentSegmentOf(session?.messages ?? [])
+  const streamPhase: StreamPhase | undefined = executionPhaseOf(activeExecution, lastContentSegment)
   /** streamPhase 非 undefined 时 activeTask 必非 null——提前取值供 JSX 引用 */
   const taskStartedAt = activeTask?.startedAt ?? 0
   /** 会话滚动：打开/切会话滚到底；流式近底跟随、远底阅读保护（滚动位置是 View 层状态） */
   const { containerRef: scrollRef, scrollToLatest, hasNewContent, newCount } = useSessionScroll({
     sessionId: currentSessionId,
     messageCount: session?.messages.length ?? 0,
-    contentTick: streamMsg?.content.length ?? 0,
+    contentTick: lastContentSegment?.content.length ?? 0,
     streaming: taskRunning,
     open,
   })
@@ -275,7 +271,7 @@ export function AgentPanel() {
                         {msg.error.message}
                       </Typography>
                     </Box>
-                  ) : streamMsg && msg.id === streamMsg.id && streamPhase ? (
+                  ) : lastContentSegment && msg.id === lastContentSegment.id && streamPhase ? (
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
                       <Box
                         sx={{

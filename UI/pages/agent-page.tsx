@@ -29,7 +29,7 @@ import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { useAppStore, activeExecutionOf } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
-import { deriveAgentPhase, formatElapsed, PHASE_META } from '../store/agent-phase'
+import { executionPhaseOf, formatElapsed, lastContentSegmentOf, PHASE_META } from '../store/agent-phase'
 import type { StreamPhase } from '../store/agent-phase'
 import { ModelSelect } from '../components/model-select'
 import { MarkdownView } from '../components/markdown-view'
@@ -695,18 +695,17 @@ export function AgentPage() {
     .filter((p) => p.enabled)
     .flatMap((p) => p.models ?? [])
 
-  /** 任务运行中 = 会话最后一条 assistant 消息承载流式状态（提问挂起时是未答卡片） */
-  const streamMsg = taskRunning ? session?.messages.at(-1) : undefined
+  /** 任务运行中 = 该会话存在非终态 Execution（ADR-034 §3.1：Runtime fact，不从消息反推）。
+   *  phase 由 Execution.status 驱动；thinking/tool/generating 是内容段的本地投影字段。 */
+  const lastContentSegment = lastContentSegmentOf(session?.messages ?? [])
+  const streamPhase = executionPhaseOf(activeExecution, lastContentSegment)
   const stream: { startedAt: number; now: number; phase: StreamPhase; taskType?: string } | undefined =
-    streamMsg?.role === 'assistant' && activeTask
+    streamPhase !== undefined && activeTask
       ? {
           startedAt: activeTask.startedAt,
           now,
           taskType: executionMeta[activeTask.executionId]?.type,
-          phase:
-            streamMsg.question && !streamMsg.question.answered
-              ? 'waiting_input'
-              : deriveAgentPhase(streamMsg),
+          phase: streamPhase,
         }
       : undefined
 
@@ -714,7 +713,7 @@ export function AgentPage() {
   const { containerRef: scrollRef, scrollToLatest, hasNewContent, newCount } = useSessionScroll({
     sessionId: currentSessionId,
     messageCount: session?.messages.length ?? 0,
-    contentTick: streamMsg?.content.length ?? 0,
+    contentTick: lastContentSegment?.content.length ?? 0,
     streaming: taskRunning,
   })
 
@@ -895,7 +894,7 @@ export function AgentPage() {
                 <MessageBubble
                   key={m.id}
                   msg={m}
-                  stream={m.id === streamMsg?.id ? stream : undefined}
+                  stream={m.id === lastContentSegment?.id ? stream : undefined}
                 />
               ))
             )}
