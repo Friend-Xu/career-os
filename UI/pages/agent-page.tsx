@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  Link,
   Menu,
   MenuItem,
   Stack,
@@ -37,6 +38,7 @@ import { QuestionCardView } from '../components/agent/question-card-view'
 import { useSessionScroll } from '../hooks/use-session-scroll'
 import { belongsToPerson } from '../utils/ownership'
 import { decisionMatchesJob } from '../utils/decision-job-link'
+import { collectEvidence, evidenceDisplay, evidenceGroupLabel } from '../store/evidence-projection'
 import { alpha, COLORS, RISK_COLOR, RISK_LABEL } from '../data/constants'
 import type { ChatMessage, DecisionRecord } from '../types'
 
@@ -256,6 +258,60 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   'decision-reassessment': '重新评估',
 }
 
+/** Evidence 投影 v1：依据来源折叠区（默认收起——「依据来源 · N」；点击展开 citation 列表）。
+ *  纯格式化（collectEvidence 聚合去重 + evidenceGroupLabel 分组 + evidenceDisplay 截断），
+ *  citation 原样保真、可点击打开；不做 hostname→机构名映射（Evidence Interpretation Layer 不建）。 */
+function EvidenceSources({ toolCalls }: { toolCalls: ChatMessage['toolCalls'] }) {
+  const [open, setOpen] = useState(false)
+  const items = collectEvidence(toolCalls)
+  if (items.length === 0) return null
+  // source 分组（保持首次出现顺序；组内按出现序）
+  const groups: { label: string; items: typeof items }[] = []
+  for (const it of items) {
+    const label = evidenceGroupLabel(it.source)
+    let g = groups.find((x) => x.label === label)
+    if (g === undefined) {
+      g = { label, items: [] }
+      groups.push(g)
+    }
+    g.items.push(it)
+  }
+  return (
+    <Box sx={{ mb: 0.75 }}>
+      <Button
+        size="small"
+        onClick={() => setOpen((v) => !v)}
+        endIcon={open ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+        sx={{ fontSize: 12.5, color: COLORS.textSecondary, minWidth: 0, px: 1, py: 0.25 }}
+      >
+        依据来源 · {items.length}
+      </Button>
+      <Collapse in={open}>
+        <Stack spacing={1} sx={{ pl: 1, pr: 1, py: 0.75 }}>
+          {groups.map((g) => (
+            <Box key={g.label}>
+              <Typography sx={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, mb: 0.25 }}>
+                {g.label}
+              </Typography>
+              {g.items.map((it) => (
+                <Typography key={it.key} sx={{ fontSize: 11.5, fontFamily: COLORS.mono, color: COLORS.textSecondary, lineHeight: 1.7, wordBreak: 'break-all' }}>
+                  {it.host !== undefined ? (
+                    <Link href={it.citation} target="_blank" rel="noreferrer" underline="hover" sx={{ color: COLORS.accent, fontSize: 'inherit', fontFamily: 'inherit' }}>
+                      {evidenceDisplay(it.citation, it.host, 80)}
+                    </Link>
+                  ) : (
+                    evidenceDisplay(it.citation, undefined, 120)
+                  )}
+                </Typography>
+              ))}
+            </Box>
+          ))}
+        </Stack>
+      </Collapse>
+    </Box>
+  )
+}
+
 /** 流式消息的任务状态条：绑定 activeTask（与停止按钮同源），任务结束前持续显示不闪灭 */
 function MessageBubble({
   msg,
@@ -360,6 +416,10 @@ function MessageBubble({
             </Collapse>
           </Box>
         )}
+
+        {/* Evidence 投影 v1（依据来源——比 Tool Calls 更靠近正文；纯格式化：聚合→去重→source
+            分组→hostname/截断；不做来源语义解释，不建 Interpretation Layer） */}
+        <EvidenceSources toolCalls={msg.toolCalls} />
 
         {msg.toolCalls && msg.toolCalls.length > 0 && (
           <Stack direction="row" spacing={0.75} sx={{ mb: 0.75, flexWrap: 'wrap', gap: 0.5 }}>
