@@ -132,7 +132,14 @@ export class ExecutionRegistry {
       execution.finishedAt = at
       delete execution.pendingInteraction
     }
-    this.append({ type: 'execution.status_changed', executionId, from, to, at })
+    this.append({
+      type: 'execution.status_changed',
+      executionId,
+      from,
+      to,
+      at,
+      ...(execution.resultRefs !== undefined ? { resultRefs: execution.resultRefs } : {}),
+    })
     this.logger.info(`execution/${executionId} ${from} → ${to}`)
     return execution
   }
@@ -144,6 +151,19 @@ export class ExecutionRegistry {
     if (execution === undefined) throw new Error(`execution/${executionId} 不存在——无法设置交互`)
     if (interaction === undefined) delete execution.pendingInteraction
     else execution.pendingInteraction = interaction
+    return execution
+  }
+
+  /**
+   * 设置产物引用（ADR-034 §3.1：Execution 知道「产生了哪个 Artifact」——引用非内容、非路径、非推断）。
+   * 替换语义（done 钩子一次性写入；终态保留——引用是持久事实，与 pendingInteraction 的终态清除不同）。
+   * v1 仅由 websocket Stage done 钩子（registered StageArtifact → artifact_id）调用。
+   */
+  setResultRefs(executionId: string, refs: string[]): Execution {
+    const execution = this.executions.get(executionId)
+    if (execution === undefined) throw new Error(`execution/${executionId} 不存在——无法设置结果引用`)
+    if (refs.length === 0) delete execution.resultRefs
+    else execution.resultRefs = refs
     return execution
   }
 

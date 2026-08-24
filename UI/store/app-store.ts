@@ -2678,7 +2678,8 @@ function handleExecutionEvent(executionId: string, ev: ExecutionEvent): void {
     }))
     return
   }
-  // status_changed：更新投影（未知执行 = query 重建前的迟到事件 → 忽略，快照会带来事实）
+  // status_changed：更新投影（未知执行 = query 重建前的迟到事件 → 忽略，快照会带来事实）；
+  // 事件携带该刻快照字段（resultRefs——确定性产物引用，完成时与状态同帧）
   useAppStore.setState((s) => {
     const current = s.executions[executionId]
     if (current === undefined) return s
@@ -2689,12 +2690,24 @@ function handleExecutionEvent(executionId: string, ev: ExecutionEvent): void {
           ...current,
           status: ev.to,
           finishedAt: isTerminalExecutionStatus(ev.to) ? ev.at : current.finishedAt,
+          ...(ev.resultRefs !== undefined ? { resultRefs: ev.resultRefs } : {}),
         },
       },
     }
   })
   // 终点态：收敛内容流路由（agent.event 帧不再需要路由到占位消息；幂等）+ 清理残留授权弹窗
   if (isTerminalExecutionStatus(ev.to)) {
+    // Phase 2.2-B：完成执行的结果引用展示（确定性 Artifact 身份引用——非内容/路径/推断；
+    // 跳转 Domain 视图 v1.5：待 Artifact 详情 UI 稳定入口；引用数据经 executions 投影可达）
+    if (ev.to === 'completed' && ev.resultRefs !== undefined && ev.resultRefs.length > 0) {
+      const route = [...agentTasks.entries()].find(([, r]) => r.executionId === executionId)?.[1]
+      if (route !== undefined) {
+        patchStreamingMessage(route.sessionId, route.messageId, (m) => ({
+          ...m,
+          content: `${m.content}\n\n📦 本任务产出 Artifact：${ev.resultRefs!.join('、')}`,
+        }))
+      }
+    }
     for (const [taskId, route] of agentTasks) {
       if (route.executionId === executionId) {
         agentTasks.delete(taskId)

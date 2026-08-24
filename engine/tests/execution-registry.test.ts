@@ -219,6 +219,38 @@ test('isTerminalExecutionStatus：终点态判定', () => {
   assert.equal(isTerminalExecutionStatus('cancelled'), true)
 })
 
+test('setResultRefs：确定性 Artifact 身份引用——替换语义/终态保留/查询带出/空=无引用', () => {
+  const registry = new ExecutionRegistry(makeLogger())
+  const execution = registry.create({ taskId: 't-120', workflowId: 'workflow_20260824_00001', stageId: 'direction_exploration' })
+
+  // 无产物执行：无 resultRefs 字段（合法——不造空 Result/不强制）
+  assert.equal(execution.resultRefs, undefined)
+
+  // 引用写入（done 钩子：registered → artifact_id）
+  registry.setResultRefs(execution.id, ['DIR-20260824_00001', 'DIR-20260824_00002'])
+  assert.deepEqual(registry.get(execution.id)?.resultRefs, ['DIR-20260824_00001', 'DIR-20260824_00002'])
+  // query 快照带出（重连恢复面）
+  assert.deepEqual(registry.query({ workflowId: 'workflow_20260824_00001' })[0]?.resultRefs, [
+    'DIR-20260824_00001',
+    'DIR-20260824_00002',
+  ])
+
+  // 替换语义（consolidated 重写）
+  registry.setResultRefs(execution.id, ['DIR-20260824_00003'])
+  assert.deepEqual(registry.get(execution.id)?.resultRefs, ['DIR-20260824_00003'])
+
+  // 终态保留（引用是持久审计事实——与 pendingInteraction 的终态清除不同）
+  registry.transition(execution.id, 'completed')
+  assert.equal(registry.get(execution.id)?.status, 'completed')
+  assert.deepEqual(registry.get(execution.id)?.resultRefs, ['DIR-20260824_00003'])
+
+  // 空数组 = 清除引用（无产物语义）
+  registry.setResultRefs(execution.id, [])
+  assert.equal(registry.get(execution.id)?.resultRefs, undefined)
+
+  assert.throws(() => registry.setResultRefs('execution_nonexistent', ['X']), /不存在/)
+})
+
 test('红线：Execution 不携带业务字段（personId/companyId/score/recommendation/artifactContent）', () => {
   const registry = new ExecutionRegistry(makeLogger())
   const execution: Execution = registry.create({

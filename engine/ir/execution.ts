@@ -48,6 +48,11 @@ export interface Execution {
   status: ExecutionStatus
   /** waiting 时挂起的交互（question/permission）；非终态才可能有值，终态由 Registry 清除 */
   pendingInteraction?: PendingInteraction
+  /** 本执行确定产生的 Domain Artifact 身份引用（§3.1：Registry 知道产生了哪个 Artifact，
+   *  但不拥有其真相——**Artifact IDs only**：非内容、非文件路径、非推断（目录 diff/工具埋点 v1 不做）。
+   *  v1 仅接 StageArtifactRegistry 确定性产出链（done 钩子 registered → artifact_id）；
+   *  无产物的执行（纯对话/改写/分析）合法为 undefined。 */
+  resultRefs?: string[]
   createdAt: string
   startedAt: string
   finishedAt?: string
@@ -78,4 +83,6 @@ export type ExecutionEvent =
       from: ExecutionStatus
       to: ExecutionStatus
       at: string
+      /** 该刻已产生的确定性产物引用（完成时快照——在线客户端无需补拉 get） */
+      resultRefs?: string[]
     }

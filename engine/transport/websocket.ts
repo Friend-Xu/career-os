@@ -194,7 +194,13 @@ import {
 } from '../storage/application-registry.ts'
 import type { CreateApplicationRequest } from '../ir/schema.ts'
 import { METHODS, EVENTS, type RpcRequest, type RpcResponse, type ServerEvent } from './protocol.ts'
-import { listStageArtifacts, readStageArtifact, resolveStageArtifact, type StageArtifactRejection } from '../storage/stage-artifact-registry.ts'
+import {
+  listStageArtifacts,
+  readStageArtifact,
+  resolveStageArtifact,
+  type StageArtifactRejection,
+} from '../storage/stage-artifact-registry.ts'
+import type { StageArtifact } from '../ir/schema.ts'
 import { DIRECTION_SPEC, EVALUATION_SPEC } from '../storage/artifact-type-registry.ts'
 import { registerDecisionIdentity } from '../storage/decision-registry.ts'
 
@@ -1416,6 +1422,18 @@ export async function startServer(opts: {
     }
     return undefined
   }
+  /**
+   * Phase 2.2-B：把 Stage done 钩子的**确定性产物**挂到 Execution（ADR-034 §3.1——执行产生/关联了
+   * 哪个 Artifact，但 Registry 不拥有 Artifact 真相）。引用 = registered StageArtifact 的 artifact_id
+   * （身份引用，非内容/路径/推断）。v1 仅方向探索/评估两个有 StageArtifact 产物的 stage。
+   */
+  const attachStageResultRefs = (taskId: string, artifacts: StageArtifact[], stageId: string): void => {
+    if (artifacts.length === 0) return
+    const execution = executionRegistry.getByTaskId(taskId)
+    if (execution === undefined) return // 理论不达（done 前 execution 必已注册）；不抛——钩子可靠性语义
+    executionRegistry.setResultRefs(execution.id, artifacts.map((a) => a.artifact_id))
+    logger.info(`execution/${execution.id} resultRefs ← [${artifacts.map((a) => a.artifact_id).join(', ')}]（${stageId} done）`)
+  }
   /** 本次执行新产生的提案文件（§1.6 intake boundary：当前目录 - 启动时快照；目录缺失 → 空） */
   const currentDirectionFiles = (personId: string): string[] => {
     try {
@@ -1502,6 +1520,7 @@ export async function startServer(opts: {
             }
             const status = result.workflow.stages.find((s) => s.id === 'direction_exploration')?.status
             logger.info(`Stage 完成钩子：${ref.workflowId} direction_exploration → ${status}（登记 ${result.registered.length} 条，拒绝 ${result.rejected.length} 条；Agent 任务 ${taskId} done）`)
+            attachStageResultRefs(taskId, result.registered, ref.stageId)
             broadcast({ event: EVENTS.workflowChanged })
           }
         } else if (ref.stageId === 'direction_evaluation') {
@@ -1514,6 +1533,7 @@ export async function startServer(opts: {
             }
             const status = result.workflow.stages.find((s) => s.id === 'direction_evaluation')?.status
             logger.info(`Stage 完成钩子：${ref.workflowId} direction_evaluation → ${status}（登记 ${result.registered.length} 条，拒绝 ${result.rejected.length} 条；Agent 任务 ${taskId} done）`)
+            attachStageResultRefs(taskId, result.registered, ref.stageId)
             broadcast({ event: EVENTS.workflowChanged })
           }
         } else if (ref.stageId === 'recommendation') {
