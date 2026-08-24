@@ -16,7 +16,7 @@ import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
-import { ExecutionRegistry } from '../runtime/execution-registry.ts'
+import { ExecutionRegistry, type ExecutionQuery } from '../runtime/execution-registry.ts'
 import { webSearchModeOf } from '../agent/providers/capabilities.ts'
 import { ExaConnector } from '../agent/tools/exa.ts'
 import { NbsConnector } from '../agent/tools/nbs/index.ts'
@@ -1300,6 +1300,47 @@ function permissionParams(v: unknown): { taskId: string; requestId: string; allo
   return { taskId, requestId: p.requestId, allow: p.allow }
 }
 
+/** agent/executions 过滤参数（ADR-034 §3.2：过滤维度 = Runtime 事实；personId 不入——Domain 语义） */
+function executionsQueryParams(v: unknown): ExecutionQuery {
+  if (v === undefined || v === null) return {}
+  if (typeof v !== 'object') throw new Error('agent/executions 参数应为对象')
+  const p = v as Record<string, unknown>
+  const out: ExecutionQuery = {}
+  if (p.status !== undefined) {
+    if (!['running', 'waiting', 'completed', 'failed', 'cancelled'].includes(p.status as string)) {
+      throw new Error('params.status 非法（合法：running/waiting/completed/failed/cancelled）')
+    }
+    out.status = p.status as ExecutionQuery['status']
+  }
+  if (p.sessionId !== undefined) {
+    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) throw new Error('params.sessionId 应为非空字符串')
+    out.sessionId = p.sessionId
+  }
+  if (p.workflowId !== undefined) {
+    if (typeof p.workflowId !== 'string' || p.workflowId.length === 0) throw new Error('params.workflowId 应为非空字符串')
+    out.workflowId = p.workflowId
+  }
+  return out
+}
+
+/** agent/executions/get|cancel 的 executionId 提取（RPC 边界） */
+function executionIdParams(v: unknown): string {
+  if (typeof v !== 'object' || v === null || typeof (v as Record<string, unknown>).executionId !== 'string') {
+    throw new Error('params.executionId 缺失')
+  }
+  return (v as Record<string, unknown>).executionId as string
+}
+
+/** agent/executions/events 参数（executionId 可选：缺省 = 全局事件日志，重连补漏用） */
+function executionEventsParams(v: unknown): { executionId?: string } {
+  if (v === undefined || v === null) return {}
+  if (typeof v !== 'object') throw new Error('agent/executions/events 参数应为对象')
+  const p = v as Record<string, unknown>
+  if (p.executionId === undefined) return {}
+  if (typeof p.executionId !== 'string' || p.executionId.length === 0) throw new Error('params.executionId 应为非空字符串')
+  return { executionId: p.executionId }
+}
+
 /**
  * Agent 技能身份注入：任务启动前引导 Agent 阅读技能文件（人设 + 协议来源）。
  * 不注入时模型仅凭 cwd 猜身份（曾出现把自己当成"公司分析助手"的开场白）。
@@ -1487,6 +1528,9 @@ export async function startServer(opts: {
       }
     }
   }, executionRegistry, exaConnector, nbsConnector)
+  // ADR-034 §6.1 步 3：Execution 事件流增量推送（executionId 路由键）。Query=当前快照、
+  // Events=后续变化——UI 重连 = query 快照 → 重建投影 → 订阅本广播继续观察（§6.1 组合，不以 Events 替代 Query）。
+  executionRegistry.subscribe((ev) => broadcast({ event: EVENTS.executionEvent, executionId: ev.executionId, data: ev }))
 
   const handlers: Record<string, (params?: unknown) => unknown> = {
     [METHODS.init]: () => store.init(),
@@ -1918,6 +1962,20 @@ export async function startServer(opts: {
       agentRuntime.permission(taskId, requestId, allow)
       return {}
     },
+    // ADR-034 §3.2 Execution State API（v1）：Registry 只读查询 + 取消——UI/CLI/Probe 投影层入口
+    [METHODS.agentExecutions]: (params) => executionRegistry.query(executionsQueryParams(params)),
+    [METHODS.agentExecutionGet]: (params) => {
+      const executionId = executionIdParams(params)
+      const execution = executionRegistry.get(executionId)
+      if (execution === undefined) throw new Error(`execution/${executionId} 不存在`)
+      return execution
+    },
+    [METHODS.agentExecutionCancel]: (params) => {
+      // cancel = Execution 语义（ADR-034 §5.1）；已终点态幂等返回（RPC 重试安全），未知 id 抛错
+      executionRegistry.cancel(executionIdParams(params))
+      return {}
+    },
+    [METHODS.agentExecutionEvents]: (params) => executionRegistry.events(executionEventsParams(params)),
     [METHODS.rewriteFeedback]: (params) => {
       recordRewriteFeedback(join(config.paths.logs, 'feedback'), params)
       return {}

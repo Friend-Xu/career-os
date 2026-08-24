@@ -21,10 +21,12 @@ export interface RpcResponse {
   error?: { code: string; message: string }
 }
 
-/** 服务端 → 客户端：单向事件（数据变更信号）；agent.event 帧带 taskId 标识任务归属 */
+/** 服务端 → 客户端：单向事件（数据变更信号）；agent.event 帧带 taskId 标识任务归属，
+ *  execution.event 帧带 executionId（ADR-034 §6.1：Execution 生命周期事件路由键） */
 export interface ServerEvent {
   event: string
   taskId?: string
+  executionId?: string
   data?: unknown
 }
 
@@ -138,10 +140,21 @@ export const METHODS = {
   agentStart: 'agent/start',
   /** 回答 AskUserQuestion（params: { taskId, text }） */
   agentAnswer: 'agent/answer',
-  /** 取消 Agent 任务（params: { taskId } → AbortController） */
+  /** Agent 任务消取（params: { taskId } → AbortController） */
   agentCancel: 'agent/cancel',
   /** 工具权限决策（params: { taskId, requestId, allow } → 引擎 resolve 挂起的 canUseTool） */
   agentPermission: 'agent/permission',
+  /** Execution 列表（ADR-034 §3.2：params { status?, sessionId?, workflowId? } → Execution[]；
+   *  过滤维度 = Runtime 事实（personId 不入——Domain 语义经 Workflow/Stage 间接关联） */
+  agentExecutions: 'agent/executions',
+  /** Execution 单查（params { executionId } → Execution；重连后投影重建的 Query 粒度） */
+  agentExecutionGet: 'agent/executions/get',
+  /** Execution 取消（params { executionId } → {}；ADR-034 §5.1 cancel 语义；
+   *  已终点态幂等返回；旧 agent/cancel(taskId) 保留为 alias（同一实现）） */
+  agentExecutionCancel: 'agent/executions/cancel',
+  /** Execution 事件日志（params { executionId? } → ExecutionEvent[] 存量快照；
+   *  后续变化经 execution.event 广播——Query 快照 + 事件订阅组合，不以 Events 替代 Query（§6.1）） */
+  agentExecutionEvents: 'agent/executions/events',
   /** 简历改写用户决策事件（params: { requestId, action, reason?, standardUsed?, selectedTextHash } → 追加 logs/feedback/rewrite-feedback.jsonl；契约 Resume-Feedback-Contract-v1，只记录不学习） */
   rewriteFeedback: 'rewrite/feedback',
   /** 新建岗位（params: { company, title, location?, salary?, jdSource?, requirements?, jdText? } → 写 jobs/{日期}-{公司}-{岗位}.md → JobRecord；M1 只有 create，修正走版本化写入后续） */
@@ -397,6 +410,9 @@ export const EVENTS = {
   engineError: 'error.engine',
   /** Agent 流式事件（data = { taskId, ...AgentEvent }；permission_request 已换为 requestId 形态） */
   agentEvent: 'agent.event',
+  /** Execution 生命周期事件增量推送（data = ExecutionEvent；executionId 路由键——ADR-034 §6.1 步 3：
+   *  UI 重连 = executions query 快照 → 重建投影 → 订阅后续事件继续观察，不以 Events 替代 Query） */
+  executionEvent: 'execution.event',
 } as const
 
 export interface InitResult {
