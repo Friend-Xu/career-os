@@ -27,7 +27,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import LockIcon from '@mui/icons-material/Lock'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
-import { useAppStore } from '../store/app-store'
+import { useAppStore, activeExecutionOf } from '../store/app-store'
 import { useToastStore } from '../store/toast-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../store/agent-phase'
 import type { StreamPhase } from '../store/agent-phase'
@@ -666,7 +666,13 @@ export function AgentPage() {
   const startInitializationSession = useAppStore((s) => s.startInitializationSession)
   const simulatePermissionRequest = useAppStore((s) => s.simulatePermissionRequest)
   const simulateQuestionRequest = useAppStore((s) => s.simulateQuestionRequest)
-  const activeTask = useAppStore((s) => s.sessionTasks[currentSessionId])
+  // Execution 投影派生：当前会话活跃执行（ADR-034 §3.1——事实在引擎 Registry，此处只消费快照/事件）。
+  // selector 返回 Execution 对象引用（stable）——对象字面量会导致 zustand 无限重渲染
+  const activeExecution = useAppStore((s) => activeExecutionOf(s.executions, s.currentSessionId))
+  const activeTask = activeExecution
+    ? { taskId: activeExecution.taskId, executionId: activeExecution.id, startedAt: new Date(activeExecution.startedAt).getTime() }
+    : undefined
+  const executionMeta = useAppStore((s) => s.executionMeta)
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
   const agentSettings = useAppStore((s) => s.agentSettings)
   const setAgentModel = useAppStore((s) => s.setAgentModel)
@@ -696,7 +702,7 @@ export function AgentPage() {
       ? {
           startedAt: activeTask.startedAt,
           now,
-          taskType: activeTask.type,
+          taskType: executionMeta[activeTask.executionId]?.type,
           phase:
             streamMsg.question && !streamMsg.question.answered
               ? 'waiting_input'

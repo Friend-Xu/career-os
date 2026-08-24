@@ -40,6 +40,7 @@ import type { OpportunityProposal } from '../../engine/storage/opportunity-propo
 import type { StrengthProposal } from '../../engine/storage/strength-proposal-registry.ts'
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
 import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead, SalaryBenchmarkEntry, PersonHealth, PromotionEvent } from '../../engine/ir/schema.ts'
+import type { Execution, ExecutionEvent } from '../../engine/ir/execution.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -143,6 +144,8 @@ interface RpcResponse {
 interface ServerEvent {
   event: string
   taskId?: string
+  /** execution.event 帧路由键（ADR-034 §6.1：Execution 生命周期事件归属） */
+  executionId?: string
   data?: unknown
 }
 
@@ -197,6 +200,11 @@ export class EngineClient {
         // agent.event 帧的 taskId 在帧顶层：合并进 data（事件路由按 taskId 归属任务）
         if (msg.event === EVENTS.agentEvent && typeof msg.taskId === 'string' && msg.data !== undefined) {
           this.emit(msg.event, { taskId: msg.taskId, ...(msg.data as object) })
+        } else if (
+          // execution.event 帧的 executionId 在帧顶层：合并进 data（ADR-034 §6.1：Execution 事件路由键）
+          msg.event === EVENTS.executionEvent && typeof msg.executionId === 'string' && msg.data !== undefined
+        ) {
+          this.emit(msg.event, { executionId: msg.executionId, ...(msg.data as object) })
         } else {
           this.emit(msg.event, msg.data)
         }
@@ -990,6 +998,37 @@ export class EngineClient {
       const frame = data as { taskId?: string } & Record<string, unknown>
       if (typeof frame.taskId !== 'string') return
       cb(frame.taskId, frame as unknown as AgentRuntimeEvent)
+    })
+  }
+
+  // ─── Execution State API（ADR-034 §3.2：Registry 是 Runtime SoT，UI 消费投影）───────────
+
+  /** Execution 列表（params { status?, sessionId?, workflowId? }——过滤维度 = Runtime 事实） */
+  listExecutions(filter: { status?: string; sessionId?: string; workflowId?: string } = {}): Promise<Execution[]> {
+    return this.rpc<Execution[]>(METHODS.agentExecutions, filter)
+  }
+
+  /** Execution 单查（重连后投影重建粒度） */
+  getExecution(executionId: string): Promise<Execution> {
+    return this.rpc<Execution>(METHODS.agentExecutionGet, { executionId })
+  }
+
+  /** 取消 Execution（ADR-034 §5.1：cancel 是 Execution 语义；已终点态幂等） */
+  cancelExecution(executionId: string): Promise<unknown> {
+    return this.rpc(METHODS.agentExecutionCancel, { executionId })
+  }
+
+  /** Execution 事件日志（存量；增量经 execution.event 广播订阅） */
+  getExecutionEvents(executionId?: string): Promise<ExecutionEvent[]> {
+    return this.rpc<ExecutionEvent[]>(METHODS.agentExecutionEvents, executionId !== undefined ? { executionId } : {})
+  }
+
+  /** 订阅 Execution 生命周期事件（帧 = { executionId, ...ExecutionEvent }） */
+  onExecutionEvent(cb: (executionId: string, ev: ExecutionEvent) => void): () => void {
+    return this.on(EVENTS.executionEvent, (data) => {
+      const frame = data as { executionId?: string } & Record<string, unknown>
+      if (typeof frame.executionId !== 'string') return
+      cb(frame.executionId, frame as unknown as ExecutionEvent)
     })
   }
 }

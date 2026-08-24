@@ -8,7 +8,7 @@ import LockIcon from '@mui/icons-material/Lock'
 import UnarchiveIcon from '@mui/icons-material/Unarchive'
 import dayjs from 'dayjs'
 import { useState } from 'react'
-import { useAppStore } from '../../../store/app-store'
+import { useAppStore, activeExecutionOf } from '../../../store/app-store'
 import { deriveAgentPhase, formatElapsed, PHASE_META } from '../../../store/agent-phase'
 import type { StreamPhase } from '../../../store/agent-phase'
 import { alpha, COLORS } from '../../../data/constants'
@@ -18,7 +18,7 @@ export function AgentSidebar() {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const createSession = useAppStore((s) => s.createSession)
-  const sessionTasks = useAppStore((s) => s.sessionTasks)
+  const executions = useAppStore((s) => s.executions)
   const now = useAppStore((s) => s.now)
   const initSessionId = useAppStore((s) => s.initSessionId)
   const person = useAppStore((s) => s.currentPerson())
@@ -31,7 +31,7 @@ export function AgentSidebar() {
 
   /** 会话行当前阶段：任务运行中由最后一条消息推导（提问挂起 → 等待你的回答） */
   const rowPhase = (s: (typeof list)[number]): StreamPhase | undefined => {
-    const task = sessionTasks[s.id]
+    const task = activeExecutionOf(executions, s.id)
     if (!task) return undefined
     const last = s.messages.at(-1)
     if (last?.question && !last.question.answered) return 'waiting_input'
@@ -91,7 +91,7 @@ export function AgentSidebar() {
             /** 当前人初始化中：非初始化采集会话被能力门控锁定（历史可看，不能产生新消息） */
             const locked = person.initStatus === 'pending' && s.id !== initSessionId
             const phase = rowPhase(s)
-            const task = sessionTasks[s.id]
+            const task = activeExecutionOf(executions, s.id)
             return (
               <Stack
                 key={s.id}
@@ -147,7 +147,7 @@ export function AgentSidebar() {
                     >
                       {phase === 'waiting_input'
                         ? '等待你的回答'
-                        : `${PHASE_META[phase]} ${formatElapsed(now - task.startedAt)}`}
+                        : `${PHASE_META[phase]} ${formatElapsed(now - new Date(task.startedAt).getTime())}`}
                     </Typography>
                   </Stack>
                 ) : (

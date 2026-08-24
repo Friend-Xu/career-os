@@ -1,14 +1,14 @@
 import { Box, Tooltip, Typography } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
-import { useAppStore } from '../../store/app-store'
+import { useAppStore, hasActiveExecution } from '../../store/app-store'
 import { COLORS, LAYOUT } from '../../data/constants'
 
 /** AI 面板收起态把手：44px 右侧竖条（图标 + AI + ⌘B 提示），点击呼出面板。
  *  Agent 任务进行中显示状态点——AI 始终存在，只等呼出。 */
 export function AgentPanelTab() {
   const toggle = useAppStore((s) => s.toggleAgentPanel)
-  const busy = useAppStore((s) => Object.keys(s.sessionTasks).length > 0)
+  const busy = useAppStore((s) => hasActiveExecution(s.executions))
 
   return (
     <Tooltip title="呼出 AI 面板（⌘B）" placement="left">

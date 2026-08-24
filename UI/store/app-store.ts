@@ -32,6 +32,7 @@ import {
   STAGES,
 } from '../data/mock-data'
 import type { AgentRuntimeEvent, CareerClaim, ClaimCoverageRow, CandidatePoolEntry, ConstraintMatchRow, DecisionAggregate, DecisionHistory, EvidenceItem, GapResult, InitCandidate, JDAnalysisProposal, JobLead, JobRecord, Role, SalaryBenchmarkEntry, Skill, Validation, PersonHealth, PromotionEvent } from '../../engine/ir/schema.ts'
+import { isTerminalExecutionStatus, type Execution, type ExecutionEvent } from '../../engine/ir/execution.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ResumeDocument, ResumeStatus, ResumeExportRecord, ResumeProposal } from '../../engine/ir/resume.ts'
 import type { WorkingCopy } from '../../engine/ir/resume.ts'
@@ -163,8 +164,12 @@ interface AppState {
   currentSessionId: string;
   /** 当前人初始化采集会话 id（startInitializationSession 创建时记录；person 完成/reset 后失效） */
   initSessionId: string | null;
-  /** 各会话运行中的 Agent 任务（归属 session：同会话单任务互斥，跨会话并行）——状态条/停止按钮的驱动源 */
-  sessionTasks: Record<string, { taskId: string; messageId: string; startedAt: number; type?: string }>;
+  /** Execution Registry 客户端投影（ADR-034 §3.1：Runtime SoT 在引擎 Registry——这里是
+   *  projection/cache，不是任务事实；运行时态不持久化，重连/刷新后经 agent/executions
+   *  query 重建 + execution.event 增量订阅。executionId = public identity，taskId 是内部实现 ID） */
+  executions: Record<string, Execution>;
+  /** UI 侧执行元数据（非 Registry 事实：任务类型标签等交互层展示语义，随投影同生命周期） */
+  executionMeta: Record<string, { type?: string }>;
   /** 后台 agent 任务（非会话簿记——CLI 桥类任务：机会提案/优势总结；done/error 时清除） */
   backgroundTasks: Record<string, { type: string; startedAt: number }>;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
@@ -570,7 +575,8 @@ export const useAppStore = create<AppState>()(
       sessions: SESSIONS,
       currentSessionId: 's-current',
       initSessionId: null,
-      sessionTasks: {},
+      executions: {},
+      executionMeta: {},
       backgroundTasks: {},
       now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
@@ -1303,26 +1309,23 @@ export const useAppStore = create<AppState>()(
   },
 
   cancelCurrentTask: () => {
-    const { currentSessionId, sessionTasks } = get()
-    const task = sessionTasks[currentSessionId]
-    if (!task) return
-    void engine?.cancelAgent(task.taskId)
-    const route = agentTasks.get(task.taskId)
+    const { currentSessionId, executions } = get()
+    const active = activeExecutionOf(executions, currentSessionId)
+    if (!active) return
+    // ADR-034 §5.1：cancel 是 Execution 语义——UI 只发 RPC（引擎 Registry → cancelled + 广播），
+    // 投影由 execution.event 收敛，不再「删指针当取消」（旧缺陷：指针删除 ≠ 引擎任务取消）。
+    void engine?.cancelExecution(active.id)
+    // 占位消息收尾（内容流不再到达；路由随终态清理，幂等）
+    const route = agentTasks.get(active.taskId)
     if (route) {
-      // 占位消息标记停止（内容为空 → 「已停止」；已有流式内容 → 追加停止标记）
       patchStreamingMessage(route.sessionId, route.messageId, (m) => ({
         ...m,
         isThinking: false,
         streaming: false,
         content: m.content === '' ? '（已停止）' : `${m.content}\n\n（已停止）`,
       }))
-      agentTasks.delete(task.taskId)
+      agentTasks.delete(active.taskId)
     }
-    set((state) => {
-      const next = { ...state.sessionTasks }
-      delete next[currentSessionId]
-      return { sessionTasks: next }
-    })
   },
 
   loadAgentSettings: async () => {
@@ -2292,18 +2295,30 @@ export function getEngine(): EngineClient | null {
   return engine
 }
 
-// ─── 真实 Agent 流（engine agent.event 消费；sessions 已持久化，任务映射 sessionTasks 为运行时态随刷新清空）──
+// ─── 真实 Agent 流（engine agent.event 消费；sessions 已持久化，Execution 投影为运行时态随刷新重建）──
 
-/** 活跃任务：taskId → 所属会话 + 流式占位消息（一次一任务；done/error 清理） */
-const agentTasks = new Map<string, { sessionId: string; messageId: string; stageRef?: { workflowId: string; stageId: string } }>()
+/** 会话活跃执行（投影派生）：session 归属 + 非终点态——任务事实在引擎 Registry，此处只是缓存查询 */
+export function activeExecutionOf(executions: Record<string, Execution>, sessionId: string): Execution | undefined {
+  return Object.values(executions).find(
+    (e) => e.sessionId === sessionId && !isTerminalExecutionStatus(e.status),
+  )
+}
 
-/** 任务心跳：有任一会话任务时每秒 tick store.now（状态条/会话列表共用时间源）；全空自动停 */
+/** 任意活跃执行（含无会话归属的 CLI 桥类任务——动作面板忙碌判定） */
+export function hasActiveExecution(executions: Record<string, Execution>): boolean {
+  return Object.values(executions).some((e) => !isTerminalExecutionStatus(e.status))
+}
+
+/** 内容流路由投影：taskId → 所属会话 + 流式占位消息 + Execution 关联（agent.event 按 taskId 路由；
+ *  executionId 关联使终态事件可反查路由，与 Engine Registry 的 taskId 兼容索引一致） */
+const agentTasks = new Map<string, { sessionId: string; messageId: string; executionId: string; type?: string; stageRef?: { workflowId: string; stageId: string } }>()
+
+/** 任务心跳：有活跃 Execution 时每秒 tick store.now（状态条/会话列表共用时间源）；全空自动停 */
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 function ensureHeartbeat(): void {
   if (heartbeatTimer !== null) return
   heartbeatTimer = setInterval(() => {
-    const st = useAppStore.getState().sessionTasks
-    if (Object.keys(st).length === 0) {
+    if (!hasActiveExecution(useAppStore.getState().executions)) {
       clearInterval(heartbeatTimer!)
       heartbeatTimer = null
       return
@@ -2524,8 +2539,9 @@ async function runAgentTask(
   allowedTools?: string[],
 ): Promise<void> {
   if (!engine) return
-  // 会话内单任务互斥：已有运行中任务则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，此处是并发边界校验）
-  if (useAppStore.getState().sessionTasks[sessionId]) {
+  // 会话内单任务互斥：已有运行中执行则拒绝（同 SDK session 双流会串上下文；UI 输入框已禁用，
+  // 此处是并发边界校验——事实来自 Execution 投影，刷新后经 query 重建仍生效）
+  if (activeExecutionOf(useAppStore.getState().executions, sessionId)) {
     useToastStore.getState().push('warning', '当前会话已有任务运行中，请等待完成或先停止')
     return
   }
@@ -2558,7 +2574,7 @@ async function runAgentTask(
         ),
       }))
     }
-    const taskId = res.taskId
+    const { taskId, executionId } = res
     const messageId = `msg-${Date.now()}`
     appendToSession(sessionId, {
       id: messageId,
@@ -2568,11 +2584,25 @@ async function runAgentTask(
       streaming: true, // 流式占位标记：持久化恢复时识别断流消息并收尾
       timestamp: new Date().toISOString(),
     })
-    agentTasks.set(taskId, { sessionId, messageId, ...(stageRef ? { stageRef } : {}) })
+    // 内容流路由投影（taskId → 会话/消息/Execution 关联；execution.event 终态时反查清理）
+    agentTasks.set(taskId, { sessionId, messageId, executionId, ...(taskType !== undefined ? { type: taskType } : {}), ...(stageRef ? { stageRef } : {}) })
+    // Execution 投影（cache 先行：created 事件到达后以引擎值为准 upsert，值一致）
+    const nowIso = new Date().toISOString()
     useAppStore.setState((s) => ({
-      sessionTasks: {
-        ...s.sessionTasks,
-        [sessionId]: { taskId, messageId, startedAt: Date.now(), type: taskType },
+      executions: {
+        ...s.executions,
+        [executionId]: {
+          id: executionId,
+          taskId,
+          sessionId,
+          status: 'running',
+          createdAt: nowIso,
+          startedAt: nowIso,
+        },
+      },
+      executionMeta: {
+        ...s.executionMeta,
+        [executionId]: { ...(taskType !== undefined ? { type: taskType } : {}) },
       },
     }))
     ensureHeartbeat()
@@ -2592,6 +2622,54 @@ async function runAgentTask(
       timestamp: new Date().toISOString(),
       error: { code: 'unknown', message, retryable: true },
     })
+  }
+}
+
+/** Execution 事件（connectEngine 注册一次）：Registry 事实 → 客户端投影收敛。
+ *  单一事实流：初始快照由 pullExecutions（query）建立，此后所有变更经本函数增量更新；
+ *  终态同时收敛内容流路由（done/error 已删则幂等无操作）。 */
+function handleExecutionEvent(executionId: string, ev: ExecutionEvent): void {
+  if (ev.type === 'execution.created') {
+    useAppStore.setState((s) => ({
+      executions: {
+        ...s.executions,
+        [executionId]: {
+          id: executionId,
+          taskId: ev.taskId,
+          status: ev.status,
+          createdAt: ev.at,
+          startedAt: ev.at,
+          ...(ev.sessionId !== undefined ? { sessionId: ev.sessionId } : {}),
+          ...(ev.workflowId !== undefined ? { workflowId: ev.workflowId } : {}),
+          ...(ev.stageId !== undefined ? { stageId: ev.stageId } : {}),
+        },
+      },
+    }))
+    return
+  }
+  // status_changed：更新投影（未知执行 = query 重建前的迟到事件 → 忽略，快照会带来事实）
+  useAppStore.setState((s) => {
+    const current = s.executions[executionId]
+    if (current === undefined) return s
+    return {
+      executions: {
+        ...s.executions,
+        [executionId]: {
+          ...current,
+          status: ev.to,
+          finishedAt: isTerminalExecutionStatus(ev.to) ? ev.at : current.finishedAt,
+        },
+      },
+    }
+  })
+  // 终点态：收敛内容流路由（agent.event 帧不再需要路由到占位消息；幂等）
+  if (isTerminalExecutionStatus(ev.to)) {
+    for (const [taskId, route] of agentTasks) {
+      if (route.executionId === executionId) {
+        agentTasks.delete(taskId)
+        break
+      }
+    }
   }
 }
 
@@ -2746,12 +2824,12 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
       flushStreamBuffers()
       agentTasks.delete(taskId)
+      // 会话任务事实由 Execution 投影承载（execution.event status_changed→completed 收敛）；
+      // 此处只清理非会话后台任务簿记（幂等：error/done 只来一次）
       useAppStore.setState((s) => {
-        const next = { ...s.sessionTasks }
-        if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
         const bg = { ...s.backgroundTasks }
         delete bg[taskId]
-        return { sessionTasks: next, backgroundTasks: bg }
+        return { backgroundTasks: bg }
       })
       break
     }
@@ -2767,11 +2845,9 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       })
       agentTasks.delete(taskId)
       useAppStore.setState((s) => {
-        const next = { ...s.sessionTasks }
-        if (next[task.sessionId]?.taskId === taskId) delete next[task.sessionId]
         const bg = { ...s.backgroundTasks }
         delete bg[taskId]
-        return { sessionTasks: next, backgroundTasks: bg }
+        return { backgroundTasks: bg }
       })
       break
   }
@@ -2782,6 +2858,18 @@ async function pullDecisions(): Promise<void> {
   try {
     const list = await engine.listDecisions()
     useAppStore.setState({ decisions: list })
+  } catch {
+    // offline：保持现有数据
+  }
+}
+
+/** Execution 投影快照重建（ADR-034 §6.1：重连/刷新 = query 快照 → 重建投影 → 订阅后续事件；
+ *  整表替换——Registry 是 Runtime SoT，query 返回全量事实，与引擎内存一致） */
+async function pullExecutions(): Promise<void> {
+  if (!engine) return
+  try {
+    const list = await engine.listExecutions({})
+    useAppStore.setState({ executions: Object.fromEntries(list.map((e) => [e.id, e])) })
   } catch {
     // offline：保持现有数据
   }
@@ -3276,6 +3364,9 @@ export function connectEngine(): void {
     }
     if (s === 'connected') {
       void pullDecisions()
+      // ADR-034 §6.1：Execution 投影重建（query 快照 → 后续 execution.event 增量继续观察）——
+      // 刷新/重连后任务不再失联（旧缺陷：sessionTasks 运行时态丢失 = 投影丢失，任务仍在引擎跑）
+      void pullExecutions()
       void pullPersons().then(() => {
         void pullValuationCard()
         syncCurrentPersonHealth()
@@ -3413,5 +3504,6 @@ export function connectEngine(): void {
   })
   engine.on(EVENTS.poolChanged, () => void pullGraph())
   engine.onAgentEvent(handleAgentEvent)
+  engine.onExecutionEvent(handleExecutionEvent)
   engine.connect()
 }
