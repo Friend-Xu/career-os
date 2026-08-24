@@ -851,6 +851,8 @@ export class EngineClient {
     resumeSessionId?: string
     /** 当前分析对象——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
     personId?: string
+    /** ADR-034 §1.6 Interaction provenance：本会话 id——Execution 记录会话归属 */
+    sessionId?: string
     /** Workflow Stage Boundary Token：成对传递，引擎校验后编译 Stage Envelope 注入 */
     workflowId?: string
     stageId?: string
@@ -860,8 +862,8 @@ export class EngineClient {
     model?: string
     apiKey?: string
     baseUrl?: string
-  }): Promise<{ taskId: string; contextBundle?: AgentContextBundle }> {
-    return this.rpc<{ taskId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
+  }): Promise<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }> {
+    return this.rpc<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
   }
 
   // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写，UI 只投影 + Human Action）──

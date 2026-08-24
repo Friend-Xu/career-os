@@ -2532,6 +2532,7 @@ async function runAgentTask(
   try {
     const res = await engine.startAgent({
       task: content,
+      sessionId,
       ...(taskRequest ? { taskType: taskRequest.taskType, contextRefs: taskRequest.contextRefs, outputTarget: taskRequest.outputTarget } : {}),
       ...(useAppStore.getState().currentPerson().personId
         ? { personId: useAppStore.getState().currentPerson().personId }

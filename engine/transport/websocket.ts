@@ -16,6 +16,7 @@ import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
+import { ExecutionRegistry } from '../runtime/execution-registry.ts'
 import { webSearchModeOf } from '../agent/providers/capabilities.ts'
 import { ExaConnector } from '../agent/tools/exa.ts'
 import { NbsConnector } from '../agent/tools/nbs/index.ts'
@@ -1021,6 +1022,13 @@ function agentStartParams(v: unknown): AgentStartParams {
     }
     out.taskType = p.taskType as AgentTaskType
   }
+  // ADR-034 §1.6 Interaction provenance：UI 对话/会话触发才有（引擎不校验 UI 内部 id 格式，非空即可）
+  if (p.sessionId !== undefined) {
+    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+      throw new Error('params.sessionId 应为非空字符串')
+    }
+    out.sessionId = p.sessionId
+  }
   if (p.contextRefs !== undefined) {
     if (!Array.isArray(p.contextRefs)) throw new Error('params.contextRefs 应为数组')
     out.contextRefs = (p.contextRefs as unknown[]).map((ref) => {
@@ -1411,6 +1419,9 @@ export async function startServer(opts: {
           : {}),
       })
     : undefined
+  // ADR-034 §3.1：Execution Registry = Runtime Execution SoT（engine 侧唯一事实源；
+  // UI/CLI/Probe 都是投影）。AgentRuntime 是写入方；Phase 2 的 agent/executions* 查询经此。
+  const executionRegistry = new ExecutionRegistry(logger)
   const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
@@ -1475,7 +1486,7 @@ export async function startServer(opts: {
         }
       }
     }
-  }, exaConnector, nbsConnector)
+  }, executionRegistry, exaConnector, nbsConnector)
 
   const handlers: Record<string, (params?: unknown) => unknown> = {
     [METHODS.init]: () => store.init(),
@@ -1746,7 +1757,7 @@ export async function startServer(opts: {
       if (!conn) throw new Error('未配置已启用的服务商——请在设置页添加并启用服务商后再试')
       const taskModel = resolveTaskModel(conn, config, 'career_analysis')
       const taskConn = { ...conn, model: taskModel }
-      const taskId = agentRuntime.start(
+      const { taskId, executionId } = agentRuntime.start(
         {
           ...p,
           model: resolveModel(taskConn, p.model),
@@ -1806,7 +1817,10 @@ export async function startServer(opts: {
           intake,
         })
       }
+      // ADR-034 §6.1 步 1（兼容期）：返回 { executionId, taskId }——executionId = public identity，
+      // taskId 保留供旧客户端兼容（终点态：只返回 executionId，见 ADR §2.2）
       return {
+        executionId,
         taskId,
         ...(bundle ? { contextBundle: bundle } : {}),
       }

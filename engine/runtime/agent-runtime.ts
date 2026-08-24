@@ -45,6 +45,7 @@ import type { AgentHandle, AgentEvent } from '../ir/agent-event.ts'
 import type { AgentRuntimeEvent } from '../ir/schema.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
+import { ExecutionRegistry, isTerminalExecutionStatus } from './execution-registry.ts'
 /** Agent Task & Context（ADR-020，ir 共享契约）——taskType/contextRefs/outputTarget/trigger */
 import type {
   AgentTaskType,
@@ -189,6 +190,8 @@ export interface AgentStartParams {
   resumeSessionId?: string
   /** 当前分析对象——系统事实，注入任务上下文；决策产物继承此归属（ADR-014） */
   personId?: string
+  /** Interaction provenance（ADR-034 §1.6）：UI 对话/会话触发才有；Workflow 触发可无 */
+  sessionId?: string
   /** Workflow Stage Boundary Token（Agent Execution Boundary Repair P0-C）：与 stageId 成对，
    *  引擎校验 workflow active + stage == current + status == running 后编译 Stage Envelope 注入 */
   workflowId?: string
@@ -246,6 +249,8 @@ interface TaskState {
   pendingPermissions: Map<string, (ok: boolean) => void>
   /** 本次任务已调用的工具名（tool_start 记录——完成钩子的合规检查证据面，如 BUG-4 市场检索） */
   usedTools: Set<string>
+  /** Execution 关联（ADR-034 §2.2：executionId = public identity；taskId 仍是 tasks 索引） */
+  executionId: string
 }
 
 export class AgentRuntime {
@@ -253,6 +258,8 @@ export class AgentRuntime {
   private permissionSeq = 0
   private logger: Logger
   private emit: (taskId: string, ev: AgentRuntimeEvent) => void
+  /** Execution Registry（ADR-034 §3.1：Runtime Execution SoT——AgentRuntime 是其唯一写入方） */
+  private registry: ExecutionRegistry
   /** WebSearch 检索缓存（引擎级单例：跨任务共享，进程存续——引擎重启即失效，可接受） */
   private searchCache = new Map<string, CacheEntry>()
   /** Exa 检索缓存（引擎级单例：跨任务共享；与 WebSearch 缓存独立命名空间） */
@@ -267,19 +274,21 @@ export class AgentRuntime {
   constructor(
     logger: Logger,
     emit: (taskId: string, ev: AgentRuntimeEvent) => void,
+    registry: ExecutionRegistry,
     exaConnector?: ExaConnector,
     nbsConnector?: NbsConnector,
   ) {
     this.logger = logger
     this.emit = emit
+    this.registry = registry
     this.exaConnector = exaConnector
     this.nbsConnector = nbsConnector
   }
 
-  start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): string {
+  start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): { taskId: string; executionId: string } {
     const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const abort = new AbortController()
-    const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map(), usedTools: new Set() }
+    const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map(), usedTools: new Set(), executionId: '' }
     const apiKey = params.apiKey ?? defaults.apiKey
     const baseUrl = params.baseUrl ?? defaults.baseUrl
     const model = params.model ?? defaults.model
@@ -322,9 +331,19 @@ export class AgentRuntime {
         }),
     })
     task.handle = handle
+    // Execution Registry（ADR-034 §6.1 步 1）：start 即创建 Execution（status=running），
+    // taskId → executionId 关联（taskId 保持内部实现 ID + 兼容层索引）。
+    // 放在所有 fail-fast/构造之后：抛错路径不产生孤儿 Execution（任务未启动 = 无执行事实）。
+    const execution = this.registry.create({
+      taskId,
+      sessionId: params.sessionId,
+      workflowId: params.workflowId,
+      stageId: params.stageId,
+    })
+    task.executionId = execution.id
     this.tasks.set(taskId, task)
     void this.runLoop(taskId)
-    return taskId
+    return { taskId, executionId: execution.id }
   }
 
   private async runLoop(taskId: string): Promise<void> {
@@ -335,12 +354,39 @@ export class AgentRuntime {
         // 工具使用证据面（完成钩子合规检查）：tool_start 即记录（done emit 时 tasks 仍存活，可查询）
         if (ev.type === 'tool_start') task.usedTools.add(ev.name)
         this.forward(taskId, ev)
+        this.applyExecutionLifecycle(task.executionId, ev)
       }
       this.logger.info(`agent/${taskId} 事件流结束（任务完成或放弃）`)
     } catch (err) {
       this.logger.error(`agent/${taskId} 事件循环异常：${err instanceof Error ? err.message : String(err)}`)
+      // ADR-034：Execution 生命周期由 Registry 承载——异常 = 执行失败（终点态；cancel 竞态已终态则不改写）
+      const execution = this.registry.get(task.executionId)
+      if (execution !== undefined && !isTerminalExecutionStatus(execution.status)) {
+        this.registry.transition(task.executionId, 'failed')
+      }
     } finally {
       this.tasks.delete(taskId)
+    }
+  }
+
+  /**
+   * Execution 生命周期（ADR-034 §1/§5.1）：运行时事件 → Registry 状态迁移。
+   * question_request = 挂起等用户（waiting）；done = completed；error = failed。
+   * 终点态守卫：cancel 后流仍可能到达剩余事件（abort 竞态）——不再迁移。
+   */
+  private applyExecutionLifecycle(executionId: string, ev: AgentEvent): void {
+    const execution = this.registry.get(executionId)
+    if (execution === undefined || isTerminalExecutionStatus(execution.status)) return
+    switch (ev.type) {
+      case 'question_request':
+        this.registry.transition(executionId, 'waiting')
+        break
+      case 'done':
+        this.registry.transition(executionId, 'completed')
+        break
+      case 'error':
+        this.registry.transition(executionId, 'failed')
+        break
     }
   }
 
@@ -390,6 +436,9 @@ export class AgentRuntime {
   cancel(taskId: string): void {
     const task = this.tasks.get(taskId)
     if (!task) return
+    // ADR-034 §5.1：cancel 是 Execution 语义（Registry → cancelled 终点态），AbortController 只是实现机制。
+    // 幂等：任务已终态（done 竞态）→ Registry.cancel 直接返回现状，不产生新事件。
+    this.registry.cancel(task.executionId)
     task.abort.abort()
     // 挂起中的权限决策视为拒绝（解挂 SDK 回调）
     for (const resolve of task.pendingPermissions.values()) resolve(false)
