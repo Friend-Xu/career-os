@@ -48,6 +48,8 @@ import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../conf
 import type { AgentHandle, AgentEvent } from '../ir/agent-event.ts'
 import type { AgentRuntimeEvent, SufficiencyValidationSummary } from '../ir/schema.ts'
 import { validateEvidenceSufficiency } from './evidence-sufficiency-validator.ts'
+import { SessionContextStore } from './session-context-store.ts'
+import type { SessionFocusRef } from '../ir/session-context.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import { ExecutionRegistry, isTerminalExecutionStatus, type PendingInteraction } from './execution-registry.ts'
@@ -238,6 +240,9 @@ export interface AgentStartParams {
   apiKey?: string
   /** API 端点根地址覆盖（缺省用引擎 config.agent.baseUrl；空 = 官方） */
   baseUrl?: string
+  /** 本轮显式引用的解析投影（websocket 层 resolveContextRefs 后注入；ADR-036 Frame focus 更新源。
+   *  Agent 不感知——仅 Context Compiler（引擎）消费，与 task 的引用装配正交） */
+  resolvedFocus?: SessionFocusRef[]
 }
 
 /** config.agent 默认值（start 时合并；前端不传则用引擎配置） */
@@ -274,6 +279,18 @@ interface TaskState {
   handle: AgentHandle
   abort: AbortController
   sessionId?: string
+  /** conversation 判定（ADR-036：workflow/stage 控制平面任务不参与 Frame——契约 §A） */
+  workflowId?: string
+  stageId?: string
+  personId?: string
+  /** 本轮显式引用投影（Focus 更新源；空 = 无显式引用 → focus 保留） */
+  frameRefs?: SessionFocusRef[]
+  /** 本轮用户输入（recentTurns 的 user 记录源） */
+  userText?: string
+  /** done 的最终回答（recentTurns 的 assistant 记录源；仅 done 有） */
+  finalResult?: string
+  /** 终点类型（先到先得——cancel 竞态下剩余事件不改写；契约 §D） */
+  terminalKind?: 'done' | 'error' | 'cancelled'
   pendingPermissions: Map<string, (ok: boolean) => void>
   /** 本次任务已调用的工具名（tool_start 记录——完成钩子的合规检查证据面，如 BUG-4 市场检索） */
   usedTools: Set<string>
@@ -304,6 +321,8 @@ export class AgentRuntime {
   private exaConnector?: ExaConnector
   /** NBS 数据连接器（Tool Runtime P3；缺省 = 不注册该源——未启用即不注入） */
   private nbsConnector?: NbsConnector
+  /** Session Context Store（ADR-036 Phase 2；缺省 = 不启用 Frame——测试/未接线实例零行为侵入） */
+  private frames?: SessionContextStore
 
   constructor(
     logger: Logger,
@@ -311,18 +330,26 @@ export class AgentRuntime {
     registry: ExecutionRegistry,
     exaConnector?: ExaConnector,
     nbsConnector?: NbsConnector,
+    frames?: SessionContextStore,
   ) {
     this.logger = logger
     this.emit = emit
     this.registry = registry
     this.exaConnector = exaConnector
     this.nbsConnector = nbsConnector
+    this.frames = frames
   }
 
   start(params: AgentStartParams, defaults: AgentDefaults, workspace: Workspace): { taskId: string; executionId: string } {
     const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const abort = new AbortController()
     const task: TaskState = { handle: undefined as unknown as AgentHandle, abort, pendingPermissions: new Map(), usedTools: new Set(), executionId: '' }
+    task.sessionId = params.sessionId
+    task.workflowId = params.workflowId
+    task.stageId = params.stageId
+    task.personId = params.personId
+    task.frameRefs = params.resolvedFocus
+    task.userText = params.task
     const apiKey = params.apiKey ?? defaults.apiKey
     const baseUrl = params.baseUrl ?? defaults.baseUrl
     const model = params.model ?? defaults.model
@@ -412,11 +439,35 @@ export class AgentRuntime {
     } catch (err) {
       this.logger.error(`agent/${taskId} 事件循环异常：${err instanceof Error ? err.message : String(err)}`)
       // ADR-034：Execution 生命周期由 Registry 承载——异常 = 执行失败（终点态；cancel 竞态已终态则不改写）
+      task.terminalKind ??= 'error'
       const execution = this.registry.get(task.executionId)
       if (execution !== undefined && !isTerminalExecutionStatus(execution.status)) {
         this.registry.transition(task.executionId, 'failed')
       }
     } finally {
+      // ADR-036 Phase 2：conversation 任务（sessionId 归属且非控制平面）终点 → Frame 更新。
+      // 契约 §F：焦点更新只认显式引用（refs 空 → 保留）；error/cancelled 只记 user turn。
+      const isConversation =
+        this.frames !== undefined &&
+        task.sessionId !== undefined &&
+        task.workflowId === undefined &&
+        task.stageId === undefined &&
+        task.terminalKind !== undefined
+      if (isConversation) {
+        try {
+          this.frames!.updateOnExecutionTerminal({
+            executionId: task.executionId,
+            sessionId: task.sessionId!,
+            personId: task.personId,
+            refs: task.frameRefs,
+            userText: task.userText,
+            assistantText: task.terminalKind === 'done' ? task.finalResult : undefined,
+          })
+        } catch (err) {
+          // Frame 是会话增强而非执行事实——更新失败不阻断任务收尾（记录，不重抛）
+          this.logger.warn(`agent/${taskId} Session Frame 更新失败：${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
       this.tasks.delete(taskId)
     }
   }
@@ -494,12 +545,21 @@ export class AgentRuntime {
       case 'done': {
         // ADR-035 完成语义：company_research → 契约 §I 全量机械校验 + 摘要载荷（done 事件 additive）
         const sufficiency = this.sufficiencyOf(taskId, ev.result)
+        // ADR-036：终点事实（先到先得——cancel 竞态后到达的 done 不改写 terminalKind；契约 §D）
+        const task = this.tasks.get(taskId)
+        if (task !== undefined) {
+          task.finalResult = ev.result
+          task.terminalKind ??= 'done'
+        }
         this.emit(taskId, { type: 'done', result: ev.result, ...(sufficiency !== undefined ? { sufficiency } : {}) })
         break
       }
-      case 'error':
+      case 'error': {
+        const task = this.tasks.get(taskId)
+        if (task !== undefined) task.terminalKind ??= 'error'
         this.emit(taskId, { type: 'error', error: ev.error })
         break
+      }
       case 'text_delta':
       case 'tool_start':
       case 'tool_done':
@@ -539,6 +599,8 @@ export class AgentRuntime {
     if (!task) return
     // ADR-034 §5.1：cancel 是 Execution 语义（Registry → cancelled 终点态），AbortController 只是实现机制。
     // 幂等：任务已终态（done 竞态）→ Registry.cancel 直接返回现状，不产生新事件。
+    // ADR-036 §D：cancel 终点只记 user turn（focus 不变）；先到先得，后续流事件不改写。
+    task.terminalKind ??= 'cancelled'
     this.registry.cancel(task.executionId)
     task.abort.abort()
     // 挂起中的权限决策视为拒绝（解挂 SDK 回调）

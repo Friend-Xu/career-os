@@ -17,6 +17,7 @@ import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRec
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { ExecutionRegistry } from '../runtime/execution-registry.ts'
+import { SessionContextStore } from '../runtime/session-context-store.ts'
 import { ExecutionEventLog } from '../runtime/execution-event-log.ts'
 import type { ExecutionQuery } from '../ir/execution.ts'
 import { webSearchModeOf } from '../agent/providers/capabilities.ts'
@@ -1486,7 +1487,11 @@ export async function startServer(opts: {
   // 启动 replay 重建 → 非终态 reconciliation → failed(process_restart)）；AgentRuntime 是写入方。
   const executionRegistry = new ExecutionRegistry(logger, new ExecutionEventLog({ filePath: config.paths.executions, logger }))
   executionRegistry.reconcileAfterStartup()
-  const agentRuntime = new AgentRuntime(logger, (taskId, ev) => {
+  // ADR-036 Phase 2：Session Context Frame 引擎侧存储（conversation 连续性；单写方 = Context Compiler）
+  const sessionFrameStore = new SessionContextStore(workspace)
+  const agentRuntime = new AgentRuntime(
+    logger,
+    (taskId, ev) => {
     broadcast({ event: EVENTS.agentEvent, taskId, data: ev })
     if (ev.type === 'done') {
       const ref = stageTasks.get(taskId)
@@ -1552,7 +1557,7 @@ export async function startServer(opts: {
         }
       }
     }
-  }, executionRegistry, exaConnector, nbsConnector)
+  }, executionRegistry, exaConnector, nbsConnector, sessionFrameStore)
   // ADR-034 §6.1 步 3：Execution 事件流增量推送（executionId 路由键）。Query=当前快照、
   // Events=后续变化——UI 重连 = query 快照 → 重建投影 → 订阅本广播继续观察（§6.1 组合，不以 Events 替代 Query）。
   executionRegistry.subscribe((ev) => broadcast({ event: EVENTS.executionEvent, executionId: ev.executionId, data: ev }))
@@ -1840,6 +1845,8 @@ export async function startServer(opts: {
       const { taskId, executionId } = agentRuntime.start(
         {
           ...p,
+          // ADR-036：本轮显式引用的解析投影 → Frame focus 更新源（仅引擎消费，Agent 不感知）
+          resolvedFocus: bundle?.references.map((r) => ({ type: r.type, id: r.id, label: r.label ?? r.id })),
           model: resolveModel(taskConn, p.model),
           // 输出预算：Stage 任务按 StageSpec（客户端不可设）；非 Stage 聚合任务提档
           // （16384——8/22 真机：flash 长叙述 + 多工具调用 8192 截断、16384 达标）；
