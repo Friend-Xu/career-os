@@ -264,3 +264,22 @@ test('I.11 交叉一致：limitation=uncertainty 但无 UNCERTAIN 维度 → 违
   const a = assessment({ limitations: [{ type: 'uncertainty', note: 'x' }] })
   assert.ok(validate(a).issues.some((i) => i.includes('I.11')), validate(a).issues.join('; '))
 })
+
+test('I.11 回归（Golden-D 真机发现）：非关键维度 UNCERTAIN 不触发再查、不阻止 finalize', () => {
+  // 真机场景：financing（非关键）UNCERTAIN + career_development（关键）UNCERTAIN retries=1 → finalize 合法
+  const a = assessment({
+    state: 'UNCERTAIN',
+    dims: {
+      financing: { status: 'UNCERTAIN', note: '轮次命名口径未统一，金额未披露' },
+      career_development: { status: 'UNCERTAIN', retries: 1, note: '缺员工口碑一手佐证' },
+    },
+    limitations: [
+      { type: 'budget_exhausted', channel: 'web_search', note: '快搜额度用尽' },
+      { type: 'uncertainty', note: '融资轮次口径未明' },
+      { type: 'uncertainty', note: '职业发展样本不足' },
+    ],
+    nextAction: 'finalize',
+  })
+  const r = validate(a, { enabledChannels: ['web_search', 'exa', 'nbs'], exhaustedChannels: ['web_search'] })
+  assert.equal(r.valid, true, r.issues.join('; '))
+})

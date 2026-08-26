@@ -95,6 +95,7 @@ function companyResearchProtocol(companyId?: string): string {
     '下一动作（确定性判定）：SUFFICIENT→stop；GAP/CONFLICTED/UNCERTAIN→存在该状态的关键维度且其适用通道可用（已注册且预算未耗尽）且该维度 retries=0→continue；否则→finalize。',
     '有界再查（每关键维度至多 1 次——不要无谓小步搜索）：UNCOVERED→目标来源直接尝试 1 次；UNCERTAIN→更高质量来源 1 次（按该维度适用通道优先序）；CONFLICTED→至多 1 个新独立来源域。非关键维度不触发再查（记录 note/conflicts 即可）。',
     '预算：检索被拒（预算用尽）后不得再调用该通道，该通道视为不可用；被拒事实记入 limitations。',
+    'limitations 类型语义（按契约 §H）：budget_exhausted=通道被拒的事实记录（channel 必填）；gap=存在 UNCOVERED 的关键维度（无来源）时才用；uncertainty=有来源但样本/口径/时效不足（含非关键维度的不确定性）；conflict=存在未消解冲突。',
     '纪律：',
     '- 工具调用前后不输出过程叙述（无 "Let me..."/"Now..."），全部输出中文；',
     '- 每维度结论标注来源：正文给出引用（URL 级）；SUFFICIENCY_STATE 的 sources 只填主域+tier，不要粘贴长引文（URL/原文由检索 trace 记录）；',

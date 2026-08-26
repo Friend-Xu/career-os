@@ -217,7 +217,7 @@ Agent 最终回答的**最后一段**：
 | `dimensions[].note` | string | 口径/时效/缺口说明（UNCOVERED 必须说明「未获取什么/为什么」） |
 | `conflicts[].dimension` | string | 必须对应 status=CONFLICTED 的维度（§I.7） |
 | `conflicts[].note` | string | 冲突实质（各来源结论 + 差异点） |
-| `limitations[]` | enum + 字段 | 见 §G（type: budget_exhausted / gap / conflict / uncertainty） |
+| `limitations[]` | enum + 字段 | 见 §G（type: budget_exhausted / gap / conflict / uncertainty；**语义**：budget_exhausted=通道被拒事实；gap=存在 UNCOVERED 关键维度；uncertainty=有来源但样本/口径/时效不足（含非关键维度）；conflict=存在未消解冲突——v0.3 澄清，Golden-D 真机发现误用） |
 | `nextAction` | enum | stop / continue / finalize（§D 判定函数） |
 
 - 正文纪律（中文、无过程叙述）沿用 task protocol；SUFFICIENCY_STATE 是**结构化声明**，
@@ -297,3 +297,7 @@ Agent 最终回答的**最后一段**：
   各 ≤1，§E）；retries 声明值域 {0,1} 且与 trace 调用不逐次核对（诚实边界）；④ nextAction
   升级为确定性判定函数 `derive(...)`（§D）；⑤ 附录 A 增补 E 样本（无关通道耗尽不阻止 SUFFICIENT）；
   ⑥ SUFFICIENCY_STATE 明确不是 Evidence Trace 替代品（§H）。
+- v0.3（2026-08-26，Golden-D 真机发现驱动）：limitations[].type 语义澄清（§H 字段定义）——
+  `gap` 仅当存在 UNCOVERED 的关键维度时使用；样本/口径/时效不足一律 `uncertainty`（含非关键维度）；
+  §I.11 的 uncertainty 交叉一致性规则只检验**关键** UNCERTAIN 维度（非关键维度不触发再查、不阻止
+  finalize——§E 已裁定，不得反向适用），并同步补回归测试（Golden-D 场景）。

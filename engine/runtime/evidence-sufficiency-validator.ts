@@ -248,10 +248,17 @@ export function validateEvidenceSufficiency(input: SufficiencyValidatorInput): S
       issues.push('I.11 交叉一致：limitation=conflict 但 conflicts 为空')
     }
     if (l.type === 'uncertainty') {
-      const dim = a.dimensions.find((d) => d.status === 'UNCERTAIN')
-      if (!dim) issues.push('I.11 交叉一致：limitation=uncertainty 但无 UNCERTAIN 维度')
-      else if (retriesOf(a, dim.key) < 1 && !channelsUnavailable(dim.key, conf)) {
-        issues.push(`I.11 交叉一致：维度 ${dim.key} UNCERTAIN 未耗尽再查配额且通道可用，不应 finalize`)
+      const uncertain = a.dimensions.filter((d) => d.status === 'UNCERTAIN')
+      if (uncertain.length === 0) issues.push('I.11 交叉一致：limitation=uncertainty 但无 UNCERTAIN 维度')
+      // 只对关键维度的 UNCERTAIN 适用「再查配额已耗尽或通道不可用」——非关键维度不触发再查
+      // 也不阻止 finalize（契约 §E），不得因 financing 之类非关键维度的 UNCERTAIN 判违规（Golden-D 真机发现）
+      const criticalUncertain = uncertain.filter((d) =>
+        COMPANY_RESEARCH_DIMENSIONS.some((x) => x.critical && x.key === d.key),
+      )
+      for (const d of criticalUncertain) {
+        if (retriesOf(a, d.key) < 1 && !channelsUnavailable(d.key, conf)) {
+          issues.push(`I.11 交叉一致：关键维度 ${d.key} UNCERTAIN 未耗尽再查配额且通道可用，不应 finalize`)
+        }
       }
     }
     if (l.type === 'gap' && !a.dimensions.some((d) => d.status === 'UNCOVERED')) {
