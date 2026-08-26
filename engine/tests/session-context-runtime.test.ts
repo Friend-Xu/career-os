@@ -119,3 +119,102 @@ test('控制平面（sessionId + workflowId/stageId）→ 不读不写 Frame（�
   await server.close()
   assert.equal(store.get('sess-2'), undefined)
 })
+
+test('编译注入：预置 Frame + 无显式引用 → system 含焦点继承 + 原始对话（契约 §C.1）', async () => {
+  // 第一轮：写入 Frame（显式引用 → focus；对话 → recentTurns）
+  const server = await startFakeAnthropicServer([textTurn('第一轮完成')])
+  const ws = initWorkspace(mkdtempSync(join(tmpdir(), 'cos-rt-')))
+  const { rt, store, events } = harness(ws)
+  rt.start(
+    {
+      task: '帮我看看这家公司',
+      sessionId: 'sess-3',
+      resolvedFocus: [{ type: 'company', id: 'c1', label: 'Company-A' }],
+      apiKey: 'fake-key',
+      model: 'fake-model',
+      baseUrl: `${server.url}/anthropic`,
+    },
+    DEFAULTS,
+    ws,
+  )
+  await waitFor(() => store.get('sess-3') !== undefined)
+  const server2 = await startFakeAnthropicServer([textTurn('第二轮完成')])
+  rt.start(
+    {
+      task: '那怎么回复 HR？',
+      sessionId: 'sess-3',
+      apiKey: 'fake-key',
+      model: 'fake-model',
+      baseUrl: `${server2.url}/anthropic`,
+    },
+    DEFAULTS,
+    ws,
+  )
+  await waitFor(() => events.filter((e) => e.type === 'done').length >= 2)
+  await server.close()
+  await server2.close()
+  const body = JSON.stringify(server2.requests[0])
+  assert.ok(body.includes('会话上下文（引擎装配）'), 'system 应含会话上下文段')
+  assert.ok(body.includes('继承自会话'), '无显式引用时应继承 focus')
+  assert.ok(body.includes('Company-A'), 'focus 继承应带对象名')
+  assert.ok(body.includes('User: 帮我看看这家公司'), '原始对话应注入')
+})
+
+test('编译注入：有显式引用 → 不继承 focus（权威优先），原始对话仍注入（契约 §C.1）', async () => {
+  const server = await startFakeAnthropicServer([textTurn('第一轮完成')])
+  const ws = initWorkspace(mkdtempSync(join(tmpdir(), 'cos-rt-')))
+  const { rt, store, events } = harness(ws)
+  rt.start(
+    {
+      task: '分析 Company-A',
+      sessionId: 'sess-4',
+      resolvedFocus: [{ type: 'company', id: 'c1', label: 'Company-A' }],
+      apiKey: 'fake-key',
+      model: 'fake-model',
+      baseUrl: `${server.url}/anthropic`,
+    },
+    DEFAULTS,
+    ws,
+  )
+  await waitFor(() => store.get('sess-4') !== undefined)
+  const server2 = await startFakeAnthropicServer([textTurn('完成')])
+  rt.start(
+    {
+      task: '换成 Company-B 再来一次',
+      sessionId: 'sess-4',
+      resolvedFocus: [{ type: 'company', id: 'c2', label: 'Company-B' }],
+      apiKey: 'fake-key',
+      model: 'fake-model',
+      baseUrl: `${server2.url}/anthropic`,
+    },
+    DEFAULTS,
+    ws,
+  )
+  await waitFor(() => events.filter((e) => e.type === 'done').length >= 2)
+  await server.close()
+  await server2.close()
+  const body = JSON.stringify(server2.requests[0])
+  assert.ok(body.includes('会话上下文（引擎装配）'))
+  assert.ok(!body.includes('继承自会话'), '有显式引用时不得继承 focus')
+  assert.ok(body.includes('User: 分析 Company-A'), '原始对话仍注入')
+})
+
+test('编译注入：无 Frame → 不注入会话段（零风险路径）', async () => {
+  const server = await startFakeAnthropicServer([textTurn('你好')])
+  const ws = initWorkspace(mkdtempSync(join(tmpdir(), 'cos-rt-')))
+  const { rt, events } = harness(ws)
+  rt.start(
+    {
+      task: '全新的会话',
+      sessionId: 'sess-5',
+      apiKey: 'fake-key',
+      model: 'fake-model',
+      baseUrl: `${server.url}/anthropic`,
+    },
+    DEFAULTS,
+    ws,
+  )
+  await waitFor(() => events.some((e) => e.type === 'done'))
+  await server.close()
+  assert.ok(!JSON.stringify(server.requests[0]).includes('会话上下文（引擎装配）'))
+})

@@ -50,6 +50,7 @@ import type { AgentRuntimeEvent, SufficiencyValidationSummary } from '../ir/sche
 import { validateEvidenceSufficiency } from './evidence-sufficiency-validator.ts'
 import { SessionContextStore } from './session-context-store.ts'
 import type { SessionFocusRef } from '../ir/session-context.ts'
+import { buildSessionContextSection } from '../agent/context/session-context-compiler.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import { ExecutionRegistry, isTerminalExecutionStatus, type PendingInteraction } from './execution-registry.ts'
@@ -375,11 +376,24 @@ export class AgentRuntime {
     const sources = built.sources
     task.taskType = params.taskType
     task.sessions = built.sessions
+    // ADR-036 Phase 3（契约 §C）：conversation 任务编译会话上下文——
+    // 有显式引用 → 只注入 recentTurns（权威优先，focus 不继承）；无 → 继承 focus + recentTurns；
+    // 无 Frame（/控制平面/无 sessionId）→ ''（零风险路径，行为与现状一致）
+    const sessionSection =
+      this.frames !== undefined &&
+      params.sessionId !== undefined &&
+      params.workflowId === undefined &&
+      params.stageId === undefined
+        ? buildSessionContextSection({
+            frame: this.frames.get(params.sessionId),
+            inheritFocus: (params.resolvedFocus?.length ?? 0) === 0,
+          })
+        : ''
     const handle = createAgentRunner({
       task: params.task,
       context: params.context,
-      // 系统协议段（身份/Stage Envelope/任务协议）→ AI SDK system 通道
-      system: params.system,
+      // 系统协议段（身份/Stage Envelope/任务协议/会话上下文）→ AI SDK system 通道
+      system: [params.system, sessionSection].filter(Boolean).join('\n\n'),
       model: resolveLanguageModel({ apiKey, baseUrl, model, validModels: [model], credentialSource: 'config' }).model,
       sources,
       allowedTools: params.allowedTools ?? defaults.allowedTools,
