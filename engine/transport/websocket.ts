@@ -56,6 +56,7 @@ import { validateContextPolicy } from '../agent/context/validator.ts'
 import { resolveContextRefs, type RegistryStore } from '../agent/context/resolver.ts'
 import { assembleContextBundle } from '../agent/context/assembler.ts'
 import { buildContextSystemPrompt } from '../agent/context/prompt.ts'
+import { aggregateTaskBudget, buildTaskProtocol } from '../agent/context/task-protocol.ts'
 
 /** TaskRejected → RPC error message（RPC 通道仅 code+message——reason/refs 编码进 message，UI 按前缀识别） */
 function taskRejectedMessage(rejected: AgentTaskRejected): string {
@@ -1805,6 +1806,17 @@ export async function startServer(opts: {
         person ? { name: person.name, personId: person.personId ?? p.personId! } : undefined,
       )
       const taskContext = bundle ? buildContextSystemPrompt(p.taskType!, bundle) : ''
+      // Task Protocol（任务级协议面）：聚合任务（job_analysis/company_research/interview_preparation）
+      // 不经 Workflow Stage——无 Stage Envelope；此前仅弱身份节选，flash 模型无协议约束时输出
+      // 英文过程叙述、不收敛产出（2026-08-26 真机定位）。注入 taskType 专属协议（system 通道）。
+      // jobId/companyId 从显式引用解析（submit_jd_analysis 提交目标 / 公司档案读取目标）。
+      const taskProtocol =
+        p.taskType !== undefined
+          ? buildTaskProtocol(p.taskType, {
+              jobId: (p.contextRefs ?? []).find((r) => r.type === 'job')?.id,
+              companyId: (p.contextRefs ?? []).find((r) => r.type === 'company')?.id,
+            })
+          : ''
       // Workflow Stage Envelope（P0-C）：workflowId+stageId → 引擎 Stage Boundary 三重校验 →
       // 编译 Envelope 注入（系统级边界，与用户消息分离；校验失败 throw = Agent 启动被拒）
       let stageEnvelope = ''
@@ -1829,9 +1841,15 @@ export async function startServer(opts: {
         {
           ...p,
           model: resolveModel(taskConn, p.model),
-          outputBudget: stageBudget,
+          // 输出预算：Stage 任务按 StageSpec（客户端不可设）；非 Stage 聚合任务提档
+          // （16384——8/22 真机：flash 长叙述 + 多工具调用 8192 截断、16384 达标）；
+          // 普通过话 undefined → runner 8K 默认。
+          outputBudget: stageBudget ?? aggregateTaskBudget(p.taskType),
           stageTools,
-          context: [identity, stageEnvelope, taskContext, p.context].filter(Boolean).join('\n\n'),
+          // 系统协议段（身份/Stage Envelope/任务协议）→ AI SDK system 通道（v0.1 拼接在
+          // user 尾部被长任务稀释——协议面必须与用户任务分离）；user 通道只留任务 + 附加上下文。
+          system: [identity, stageEnvelope, taskProtocol, taskContext].filter(Boolean).join('\n\n'),
+          context: p.context ?? undefined,
         },
         {
           permissionMode: config.agent.permissionMode,
