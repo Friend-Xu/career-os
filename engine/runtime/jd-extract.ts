@@ -34,7 +34,8 @@ const EXTRACT_SYSTEM =
   '① 品牌/型号/标准号/参数（如 PLC（西门子/三菱）、GMP、ISO 13485、SolidWorks、3年以上）必须保留在对应要求条目内；' +
   '② 可选替代"或/至少/优先"保留原样，"或"两端拆成独立条目；' +
   '③ 一条 JD 语句可拆多条要求，但不得合并删除语义；' +
-  '④ requirements 逐条用原文表述，完整保留限定词，宁多勿少。'
+  '④ requirements 逐条用原文表述，完整保留限定词，宁多勿少。\n' +
+  '输出格式：只输出 JSON 对象（{"company":...,"title":...,"location":...,"salary":...,"requirements":[...]}），不要 markdown 围栏、不要说明文字。'
 
 /** 解析提取结果 JSON（容错：剥离 markdown 围栏与前后杂质；字段级降级） */
 export function parseJdJson(text: string): JdExtractResult {
@@ -56,13 +57,16 @@ export function parseJdJson(text: string): JdExtractResult {
   }
 }
 
-/** 直连结构化提取（运行时唯一路径：generateObject；75s 超时防慢端点拖住建档流程） */
+/** 直连结构化提取（运行时唯一路径：generateText + 严格 JSON + 重试；75s 超时防慢端点拖住建档流程） */
 export async function extractJdFieldsDirect(jdText: string, model: LanguageModel, logger: Logger): Promise<JdExtractResult> {
   const extractor = createStructuredExtractor(model)
   const result = await extractor.extract<JdExtractResult>(
-    { text: jdText.slice(0, 6000), system: EXTRACT_SYSTEM, timeoutMs: 75_000, maxRetries: 3, maxOutputTokens: 2_048 },
+    // v0.2 预算提档（2048 → 4096）：长 JD（职责+硬性+优先条件×20+ 条）requirements 保真输出
+    // 实测 ~1.3K tokens，2048 在更长 JD 有截断风险；4096 余量（文本路径无工具循环，成本低）
+    { text: jdText.slice(0, 6000), system: EXTRACT_SYSTEM, timeoutMs: 75_000, maxRetries: 3, maxOutputTokens: 4_096 },
     JdSchema,
   )
+  if (result.title.trim() === '') throw new Error('No object generated: 未提取到岗位名称（title）')
   logger.info(`jd-extract(direct) 解析：company=${result.company} title=${result.title} req=${result.requirements.length} loc=${result.location ?? '-'} salary=${result.salary ?? '-'}`)
   return {
     company: result.company.trim(),
