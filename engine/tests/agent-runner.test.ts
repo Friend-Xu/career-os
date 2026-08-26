@@ -4,6 +4,8 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { tool } from 'ai'
+import { z } from 'zod'
 import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { initWorkspace } from '../storage/workspace.ts'
@@ -193,4 +195,41 @@ test('Tool Evidence Contract：tool_done 携带装配层生产方证据（eviden
     assert.equal(done.evidence[0].citation, 'ev://write-1')
     assert.equal(done.evidence[0].source, 'builtin')
   }
+})
+
+test('system 协议段：走 AI SDK system 通道（请求体 system 字段）', async () => {
+  const server = await startFakeAnthropicServer([textTurn('OK')])
+  const ws = tmpWorkspace()
+  const handle = createAgentRunner(runnerOpts(server, ws, { system: '你是系统协议' }))
+  await collect(handle)
+  await server.close()
+  const body = server.requests[0] as Record<string, unknown>
+  // Anthropic 协议：system 为数组格式 [{ type: 'text', text }]
+  assert.deepEqual(body.system, [{ type: 'text', text: '你是系统协议' }])
+})
+
+test('任务协议工具：taskTools 注入（白名单外亦可调用）+ 审计透传', async () => {
+  const server = await startFakeAnthropicServer([
+    toolUseTurn('report_done', { text: 'ok' }),
+    textTurn('完成'),
+  ])
+  const ws = tmpWorkspace()
+  const handle = createAgentRunner(
+    runnerOpts(server, ws, {
+      taskTools: {
+        report_done: tool({
+          description: '报告完成（任务协议工具）',
+          inputSchema: z.object({ text: z.string() }),
+          execute: async (i) => `received:${i.text}`,
+        }),
+      },
+    }),
+  )
+  const events = await collect(handle)
+  await server.close()
+  const start = events.find((e) => e.type === 'tool_start' && e.name === 'report_done')
+  assert.ok(start !== undefined, '白名单外任务工具应可调用')
+  // 审计面：任务协议工具挂 builtin 源 + task 命名空间
+  assert.equal(start !== undefined && start.type === 'tool_start' ? start.source : 'x', 'builtin')
+  assert.equal(server.requests.length, 2, '工具结果回合已回传')
 })

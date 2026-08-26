@@ -21,6 +21,8 @@ import { assembleTools, type ToolRuntimeMeta, type ToolSourceDef } from '../tool
 export interface AgentRunnerOptions {
   task: string
   context?: string
+  /** 系统协议段（技能身份/Stage Envelope/任务协议——引擎注入，与用户任务分离；AI SDK system 通道） */
+  system?: string
   model: LanguageModel
   /** 工具来源（AgentRuntime 组装：builtin 文件工具 / hosted WebSearch / 后续 mcp·data） */
   sources: ToolSourceDef[]
@@ -28,6 +30,9 @@ export interface AgentRunnerOptions {
   allowedTools: string[]
   /** Stage 级工具声明（StageSpec.task.tools；缺省 = 不收窄；引擎单方决定，客户端不可设） */
   stageTools?: string[]
+  /** 任务协议工具（引擎按 taskType 注入：如 job_analysis 的 submit_jd_analysis——与
+   *  白名单正交（引擎单方管理，客户端不可设），与 ask_user_question 同级恒可用 */
+  taskTools?: Record<string, Tool<any, any>>
   permissionMode: 'acceptEdits' | 'ask' | 'bypassPermissions'
   maxTurns?: number
   /** 单步输出预算（token；Control Plane 按 Stage Policy 下发——见 workflow-registry StageSpec.task.outputBudget）。
@@ -123,9 +128,15 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
     allowedTools: opts.allowedTools,
     stageTools: opts.stageTools,
   })
-  const tools: Record<string, Tool<any, any>> = assembled.tools
-  const meta: Record<string, ToolRuntimeMeta> = assembled.meta
-  const evidenceOf: Record<string, () => ToolEvidence[] | undefined> = assembled.evidence
+  const tools: Record<string, Tool<any, any>> = { ...assembled.tools }
+  const meta: Record<string, ToolRuntimeMeta> = { ...assembled.meta }
+  const evidenceOf: Record<string, () => ToolEvidence[] | undefined> = { ...assembled.evidence }
+  // 任务协议工具（引擎单方；不属任何 source——治理元数据挂 builtin，trace 面按 task 命名空间）
+  for (const [name, t] of Object.entries(opts.taskTools ?? {})) {
+    if (tools[name] !== undefined) throw new Error(`任务工具注册冲突：${name}（与已装配工具同名）`)
+    tools[name] = t
+    meta[name] = { source: 'builtin', egress: 'local', traceScope: 'task' }
+  }
   const askUserQuestion = tool({
     description: '向用户提问（多选项卡片；await 用户选择后返回答案文本）',
     inputSchema: z.object({
@@ -211,6 +222,9 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
       const stream = streamText({
         model: opts.model,
         prompt,
+        // 系统协议段（身份/Stage Envelope/任务协议）——AI SDK system 通道：与用户任务分离，
+        // 模型感知优先级最高（v0.1 曾拼入 user 消息尾部——协议面被长任务上下文稀释，行为漂移）
+        ...(opts.system !== undefined && opts.system !== '' ? { system: opts.system } : {}),
         tools: wrappedTools,
         // 显式输出上限：@ai-sdk/anthropic 对未知模型走兼容模式时默认 4096（实测会截断长任务——
         // 工具调用 JSON 被切断 → 任务看似 done 实则未写产物）。DeepSeek 支持 8K 输出。

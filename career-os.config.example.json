@@ -5,40 +5,86 @@
   },
   "agent": {
     "permissionMode": "acceptEdits",
-    "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob"],
-    "model": "",
-    "enabled": false,
+    "allowedTools": [
+      "Read",
+      "Write",
+      "Edit",
+      "Grep",
+      "Glob",
+      "WebSearch",
+      "WebResearch",
+      "WebFetch",
+      "QueryIndustryEvidence",
+      "QueryMacroStats",
+      "CompareRegionProfiles"
+    ],
+    "model": "deepseek-v4-flash",
+    "enabled": true,
     "providers": [
       {
-        "id": "example",
-        "label": "示例服务商",
-        "baseUrl": "https://api.example.com",
+        "id": "deepseek",
+        "label": "DeepSeek",
+        "baseUrl": "https://api.deepseek.com/anthropic",
+        "apiKey": "",
+        "enabled": true,
+        "models": [
+          "deepseek-v4-flash",
+          "deepseek-v4-pro",
+          "deepseek-v4-flash-vision-exp"
+        ],
+        "capabilities": {
+          "webSearch": "auto"
+        }
+      }
+    ],
+    "taskModels": {
+      "jd_extract": "deepseek-v4-flash",
+      "career_analysis": "deepseek-v4-pro",
+      "resume_extract": "deepseek-v4-flash"
+    },
+    "search": {
+      "budgetPerTask": 8,
+      "cacheTtlMinutes": 30
+    },
+    "toolSources": {
+      "exa": {
         "apiKey": "",
         "enabled": false,
-        "models": []
+        "budgetPerTask": 5,
+        "cacheTtlMinutes": 30,
+        "callTimeoutMs": 60000
+      },
+      "nbs": {
+        "enabled": false,
+        "budgetPerTask": 3,
+        "cacheTtlMinutes": 1440,
+        "profileBudgetPerTask": 12,
+        "timeoutMs": 15000,
+        "retries": 1
       }
-    ]
+    }
   },
   "paths": {
     "workspace": "workspace/career-advisor",
     "skills": "skills/career-advisor",
     "logs": "logs",
-    "db": "workspace/career-advisor/.career-os.db"
+    "db": "workspace/career-advisor/.career-os.db",
+    "executions": "runtime/state/executions.jsonl"
   },
+  "watcher": {
+    "enabled": true
+  },
+  "map": {
+    "provider": "amap",
+    "apiKey": "",
+    "securityJsCode": ""
+  },
+  "prefCities": [],
   "document": {
     "vision": {
       "provider": "zhipu",
       "model": "glm-4.6v-flash",
       "apiKey": ""
     }
-  },
-  "watcher": {
-    "enabled": true
-  },
-  "prefCities": [],
-  "map": {
-    "provider": "amap",
-    "apiKey": "",
-    "securityJsCode": ""
   }
 }

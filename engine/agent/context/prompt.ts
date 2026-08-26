@@ -1,6 +1,7 @@
 /**
- * Context Bundle → Agent prompt 段（ADR-020 §6.3：Prompt 注入形式——v0.1 最小）。
- * - 输出拼入 AgentStartParams.context（与 buildSkillIdentity 同一字符串通道，不新增 SYSTEM 块）
+ * Context Bundle → Agent prompt 段（ADR-020 §6.3：Prompt 注入形式）。
+ * - 输出经 AgentStartParams.system 通道注入（v0.2 通道修正：协议面与用户任务分离——
+ *   v0.1 曾与 buildSkillIdentity 同拼 user 尾部，长任务下被稀释产生行为漂移）
  * - 空 bundle（references: []）不注入——污染普通对话（开放探索任务无需显式上下文段）
  * - 措辞区分显式上下文 vs 自读：Explicit task context 是确认依据，自读不属于依据清单
  */

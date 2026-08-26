@@ -232,12 +232,15 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const cRows = constraintRows[job.id] ?? null
 
   const analyze = (): void => {
-    startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），评估与画像的匹配度与差距，输出决策摘要表`, {
+    // 任务明文=提取导向（契约 v0.1 §1：Agent 只提取，不做画像匹配/投递判断）——
+    // 匹配度与差距由引擎基于岗位智能段计算（JD 匹配区）；决策摘要表由「生成决策记录」（引擎组装）产出。
+    // 若让 Agent「评估与画像的匹配度」「输出决策摘要表」：越权读画像判断 + 诱导直写 decisions/*（引擎单方注册）——双轨伪造。
+    startAnalysis(`请分析岗位「${job.company} · ${job.title}」的 JD：拆解核心要求（必须/加分/隐含），提交岗位能力模型（岗位智能段）`, {
       taskType: 'job_analysis',
       contextRefs: [{ type: 'job', id: job.id }],
       outputTarget: 'decision',
     })
-    push('info', '已预置「JD 分析」上下文')
+    push('info', '已预置「JD 分析」上下文；分析完成后匹配度与差距将在「JD 匹配」区展示')
   }
   const dueDiligence = (): void => {
     startAnalysis(`请对「${job.company}」开展公司尽调：规模/市占率/业务构成/风险/入职建议，输出公司档案`, {

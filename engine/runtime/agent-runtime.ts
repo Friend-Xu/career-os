@@ -14,6 +14,7 @@ import { createAgentRunner } from '../agent/capability/agent-runner.ts'
 import { resolveLanguageModel } from '../agent/providers/model.ts'
 import type { WebSearchMode } from '../agent/providers/capabilities.ts'
 import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
+import { createSubmitJdAnalysisTool } from '../agent/tools/jd-proposal-tool.ts'
 import { buildWebSearchTool, createSearchSession, WEB_SEARCH_TOOL_META, type CacheEntry } from '../agent/tools/web-search.ts'
 import {
   buildExaTools,
@@ -187,6 +188,8 @@ export interface AgentStartParams {
   /** v0.1 仅 'user_action' */
   trigger?: TaskTrigger
   context?: string
+  /** 系统协议段（引擎单方组装：identity/Stage Envelope/任务协议——put into AI SDK system channel） */
+  system?: string
   resumeSessionId?: string
   /** 当前分析对象——系统事实，注入任务上下文；决策产物继承此归属（ADR-014） */
   personId?: string
@@ -316,10 +319,16 @@ export class AgentRuntime {
     const handle = createAgentRunner({
       task: params.task,
       context: params.context,
+      // 系统协议段（身份/Stage Envelope/任务协议）→ AI SDK system 通道
+      system: params.system,
       model: resolveLanguageModel({ apiKey, baseUrl, model, validModels: [model], credentialSource: 'config' }).model,
       sources,
       allowedTools: params.allowedTools ?? defaults.allowedTools,
       stageTools: params.stageTools,
+      // 任务协议工具（按 taskType 引擎单方注入；submit_jd_analysis = job_analysis 的 Proposal 通道——
+      // 契约 v0.1 方案 B：Agent 无 Artifact 写权限，提交经 Validator+Writer 写档）
+      taskTools:
+        params.taskType === 'job_analysis' ? { submit_jd_analysis: createSubmitJdAnalysisTool(workspace) } : undefined,
       permissionMode: params.permissionMode ?? defaults.permissionMode,
       maxTurns: params.maxTurns ?? defaults.maxTurns,
       outputBudget: params.outputBudget,
