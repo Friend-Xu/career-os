@@ -781,10 +781,6 @@ export function AgentPage() {
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const taskRunning = activeTask !== undefined
-  // ADR-036 Phase 4：会话切换 → 刷新焦点投影（引擎 Frame 只读；done 后由 store 事件侧刷新）
-  useEffect(() => {
-    useAppStore.getState().refreshSessionFocus()
-  }, [currentSessionId])
   /** 心跳时间源（store 每秒 tick；消息内状态条/顶部状态条/会话列表共用） */
   const now = useAppStore((s) => s.now)
   /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（历史可看，发送前拦截） */
@@ -832,6 +828,11 @@ export function AgentPage() {
       void useAppStore.getState().loadInitCandidates(person.personId)
     }
   }, [initMode, person.personId, engineStatus])
+  // ADR-036 Phase 4：会话切换 / 引擎重连 → 刷新焦点投影（引擎 Frame 只读；done 后由 store 事件侧刷新；
+  // 必须依赖 engineStatus——刷新页面时引擎可能晚于组件 mount 连上，否则焦点胶囊不会出现）
+  useEffect(() => {
+    if (engineStatus === 'connected') useAppStore.getState().refreshSessionFocus()
+  }, [currentSessionId, engineStatus])
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
