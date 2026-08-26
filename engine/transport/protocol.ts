@@ -135,8 +135,9 @@ export const METHODS = {
   toolStats: 'system/tool-stats',
   /** 简历导出 PDF（params: { html } → { pdf: base64, fileName }；spawn 系统 Edge headless --print-to-pdf） */
   resumeExport: 'resume/export',
-  /** 发起 Agent 任务（params: { task, context?, resumeSessionId?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送。
-   *  注意：Stage 任务的输出预算（outputBudget）由引擎按 Stage Policy 注入（StageSpec.task.outputBudget），客户端不可设） */
+  /** 发起 Agent 任务（params: { task, context?, permissionMode?, allowedTools?, maxTurns? } → { taskId }；流式事件经 agent.event 推送。
+   *  注意：Stage 任务的输出预算（outputBudget）由引擎按 Stage Policy 注入（StageSpec.task.outputBudget），客户端不可设。
+   *  ADR-036：会话连续性由引擎 Session Context Frame 承载——resumeSessionId 已废弃（直连模式不消费，不传）） */
   agentStart: 'agent/start',
   /** 回答 AskUserQuestion（params: { taskId, text }） */
   agentAnswer: 'agent/answer',
@@ -155,6 +156,9 @@ export const METHODS = {
   /** Execution 事件日志（params { executionId? } → ExecutionEvent[] 存量快照；
    *  后续变化经 execution.event 广播——Query 快照 + 事件订阅组合，不以 Events 替代 Query（§6.1）） */
   agentExecutionEvents: 'agent/executions/events',
+  /** Session Context Frame 读取（ADR-036：params { sessionId } → SessionContextFrame | null；
+   *  引擎单写方的只读投影——UI 焦点展示；不存在 = null（无 Frame = 无会话连续性）） */
+  sessionFrame: 'session/frame',
   /** 简历改写用户决策事件（params: { requestId, action, reason?, standardUsed?, selectedTextHash } → 追加 logs/feedback/rewrite-feedback.jsonl；契约 Resume-Feedback-Contract-v1，只记录不学习） */
   rewriteFeedback: 'rewrite/feedback',
   /** 新建岗位（params: { company, title, location?, salary?, jdSource?, requirements?, jdText? } → 写 jobs/{日期}-{公司}-{岗位}.md → JobRecord；M1 只有 create，修正走版本化写入后续） */

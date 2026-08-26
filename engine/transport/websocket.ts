@@ -1085,10 +1085,6 @@ function agentStartParams(v: unknown): AgentStartParams {
     }
     out.stageId = p.stageId as StageId
   }
-  if (p.resumeSessionId !== undefined) {
-    if (typeof p.resumeSessionId !== 'string') throw new Error('params.resumeSessionId 应为字符串')
-    out.resumeSessionId = p.resumeSessionId
-  }
   if (p.permissionMode !== undefined) {
     if (!['acceptEdits', 'ask', 'bypassPermissions'].includes(p.permissionMode as string)) {
       throw new Error('params.permissionMode 应为 acceptEdits/ask/bypassPermissions')
@@ -2047,6 +2043,12 @@ export async function startServer(opts: {
       return {}
     },
     [METHODS.agentExecutionEvents]: (params) => executionRegistry.events(executionEventsParams(params)),
+    // ADR-036 Phase 4：Session Context Frame 只读投影（引擎单写方；UI 焦点展示；不存在 = null）
+    [METHODS.sessionFrame]: (params) => {
+      const sid = (params as { sessionId?: unknown })?.sessionId
+      if (typeof sid !== 'string' || sid.length === 0) throw new Error('params.sessionId 应为非空字符串')
+      return sessionFrameStore.get(sid) ?? null
+    },
     [METHODS.rewriteFeedback]: (params) => {
       recordRewriteFeedback(join(config.paths.logs, 'feedback'), params)
       return {}

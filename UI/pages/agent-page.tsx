@@ -45,6 +45,7 @@ import type { ChatMessage, DecisionRecord } from '../types'
 function ContextCapsule() {
   const person = useAppStore((s) => s.currentPerson())
   const decisions = useAppStore((s) => s.decisions)
+  const sessionFocus = useAppStore((s) => s.sessionFocus)
 
   // ADR-008：探索记录（决策链语义降级）——该人决策总数，非阶段推进
   const exploreCount = decisions.filter((d) => belongsToPerson(d, person)).length
@@ -73,6 +74,14 @@ function ContextCapsule() {
         label={`探索记录 ${exploreCount}`}
         sx={{ height: 22, fontSize: 12, bgcolor: COLORS.accentMuted, color: COLORS.accent }}
       />
+      {/* ADR-036：会话焦点（引擎 Frame 只读投影——「Agent 此刻在看哪个对象」的透明化） */}
+      {sessionFocus !== null && sessionFocus.focus.length > 0 && (
+        <Chip
+          size="small"
+          label={`会话焦点 · ${sessionFocus.focus.map((f) => f.label).join(' / ')}`}
+          sx={{ height: 22, fontSize: 12, bgcolor: COLORS.bgHover, border: `1px solid ${COLORS.border}` }}
+        />
+      )}
     </Stack>
   )
 }
@@ -772,6 +781,10 @@ export function AgentPage() {
 
   const session = sessions.find((s) => s.id === currentSessionId)
   const taskRunning = activeTask !== undefined
+  // ADR-036 Phase 4：会话切换 → 刷新焦点投影（引擎 Frame 只读；done 后由 store 事件侧刷新）
+  useEffect(() => {
+    useAppStore.getState().refreshSessionFocus()
+  }, [currentSessionId])
   /** 心跳时间源（store 每秒 tick；消息内状态条/顶部状态条/会话列表共用） */
   const now = useAppStore((s) => s.now)
   /** Person Capability Gate：当前人初始化中且非初始化会话 → 输入锁定（历史可看，发送前拦截） */

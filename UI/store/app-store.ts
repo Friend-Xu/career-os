@@ -51,6 +51,7 @@ import type { WorkflowState } from '../../engine/storage/workflow-registry.ts'
 import type { StageArtifact } from '../../engine/ir/schema.ts'
 import type { CareerContext } from '../../engine/ir/context.ts'
 import type { AgentTaskRequest } from '../../engine/ir/agent-task.ts'
+import type { SessionContextFrame } from '../../engine/ir/session-context.ts'
 import type { ResponsibilityCoverage } from '../../engine/runtime/evidence-coverage.ts'
 import type { ResponsibilityCandidates } from '../../engine/runtime/claim-selector.ts'
 import type { ResumeAlignmentProjection } from '../../engine/runtime/resume-alignment.ts'
@@ -172,6 +173,8 @@ interface AppState {
   executionMeta: Record<string, { type?: string }>;
   /** 后台 agent 任务（非会话簿记——CLI 桥类任务：机会提案/优势总结；done/error 时清除） */
   backgroundTasks: Record<string, { type: string; startedAt: number }>;
+  /** 当前会话焦点投影（ADR-036：引擎 Session Context Frame 只读——UI 只展示不解释；不持久化） */
+  sessionFocus: SessionContextFrame | null;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
@@ -344,6 +347,8 @@ interface AppState {
    *  executionContext 双平面（BUG-010 裁决）：conversation=用户主动对话（受 Person Capability Gate）；
    *  workflow_stage=Workflow Stage 执行（控制平面任务，授权来源=用户创建 workflow——只受 Stage evaluator/gate 约束，不经过对话能力门禁） */
   sendAgentMessage: (content: string, opts?: { silent?: boolean; taskType?: string; taskRequest?: AgentTaskRequest; stageRef?: { workflowId: string; stageId: string }; executionContext?: 'conversation' | 'workflow_stage'; allowedTools?: string[] }) => void;
+  /** 刷新当前会话焦点投影（ADR-036：引擎/session/frame 只读；无 Frame/断连 → null） */
+  refreshSessionFocus: () => void;
   /** 初始化会话：Agent 主动进入初始化助手角色（内部指令不外显，输入框保持干净） */
   startInitializationSession: (ctx: {
     personName: string
@@ -578,6 +583,8 @@ export const useAppStore = create<AppState>()(
       executions: {},
       executionMeta: {},
       backgroundTasks: {},
+      /** 当前会话焦点投影（ADR-036 Phase 4：引擎 Frame 只读——UI 展示胶囊；不持久化） */
+      sessionFocus: null,
       now: Date.now(),
       agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
@@ -1234,13 +1241,13 @@ export const useAppStore = create<AppState>()(
     }
 
     // 真实 Agent 流（引擎在线）：task 直接发 prompt，Agent 在 workspace 根自读信息池；
-    // conversation 平面有 SDK 会话凭据则 resume 续接（会话连续性）；
-    // workflow_stage 控制平面任务不续接（Artifact=Memory：阶段上下文 = Stage Envelope + 工作区，
-    // 续接旧对话会把历史阶段长文灌入上下文 → 输出截断/行为漂移——2026-08-22 方向探索 3/3 失败定位）
+    // 会话连续性 = 引擎 Session Context Frame（ADR-036——每轮 start 由 Context Compiler 编译注入
+    // focus/recentTurns，见 contract §C；UI 不传会话凭据，直连模式无 resume）；
+    // workflow_stage 控制平面任务不参与 Frame（Artifact=Memory：阶段上下文 = Stage Envelope + 工作区，
+    // 2026-08-22 方向探索 3/3 失败定位——历史长文灌入导致输出截断/行为漂移）
     // 单会话单任务：运行中禁止发送由 UI 层保证（输入框禁用），store 不做兜底
     if (engineStatus === 'connected') {
-      const session = sessions.find((s) => s.id === sessionId)
-      void runAgentTask(sessionId, content, isWorkflowStage ? undefined : session?.sdkSessionId, opts?.taskType, taskRequest, opts?.stageRef, opts?.allowedTools)
+      void runAgentTask(sessionId, content, opts?.taskType, taskRequest, opts?.stageRef, opts?.allowedTools)
       // 初始化会话落盘：用户真实消息追加（silent 的内部指令不落盘）
       const pid = pendingInitPersonId()
       if (pid && !opts?.silent) {
@@ -2121,11 +2128,11 @@ export const useAppStore = create<AppState>()(
           : s,
       ),
     })
-    // 真实 Agent 流：回答送达 Agent。
+    // 真实 Agent 流：回答送达 Agent（直连模式提问卡在任务内挂起——answer 必命中以下之一）：
     // 1) 任务还活着（agentTasks 运行时映射，含断连刷新后 pullExecutions 重建的路由）→ taskId 即时通道；
     // 2) 刷新/断连恢复：executions 投影中的等待回答执行 → executionId 稳定锚点（ADR-034 §6.1）；
-    // 3) 提问卡持久化了 workflowId/stageId → workflowId 经引擎反查进行中的 Stage 任务；
-    // 4) 纯对话模式（无执行关联）→ resume 原会话续接发送回答。
+    // 3) 提问卡持久化了 workflowId/stageId → workflowId 经引擎反查进行中的 Stage 任务。
+    //    （无 CLI resume 通道——直连模式无会话续接（ADR-036）；三者皆无 = 卡片已失效，回答丢弃）
     const active = [...agentTasks.entries()].find(([, t]) => t.sessionId === currentSessionId)
     if (active) {
       void engine?.answerAgent({ taskId: active[0], text: answer })
@@ -2149,11 +2156,24 @@ export const useAppStore = create<AppState>()(
         )
       return
     }
-    const session = useAppStore.getState().sessions.find((s) => s.id === currentSessionId)
-    const question = msg?.question?.question
-    if (session?.sdkSessionId !== undefined && question !== undefined) {
-      void runAgentTask(currentSessionId, `用户回答了你的问题「${question}」：${answer}。请确认收到并继续。`, session.sdkSessionId)
+    // 无 CLI resume 通道（直连模式无会话续接，ADR-036）：三者皆无 = 提问卡已失效，回答丢弃
+  },
+
+  refreshSessionFocus: () => {
+    const sid = get().currentSessionId
+    if (!engine || get().engineStatus !== 'connected' || !sid) {
+      set({ sessionFocus: null })
+      return
     }
+    void engine
+      .sessionFrame(sid)
+      .then((frame) => {
+        // 会话可能已切换——只更新仍指向当前会话的值
+        if (get().currentSessionId === sid) set({ sessionFocus: frame })
+      })
+      .catch(() => {
+        // Frame 是增强投影：拉取失败保持现状（不打断会话）
+      })
   },
 
   startRewrite: async (text, instruction, jdContext) => {
@@ -2204,7 +2224,8 @@ export const useAppStore = create<AppState>()(
   },
     }),
     // ─── 会话持久化（sessions/currentSessionId/initSessionId 进 partialize）─────────────
-    // 刷新恢复语义：sdkSessionId 随会话保存 → 继续发送时 agent/start resume 续接 CLI 上下文。
+    // 刷新恢复：会话消息/标题本地保留；会话连续性 = 引擎 Session Context Frame（ADR-036，
+    // 引擎侧持久化 workspace/sessions/——刷新后由引擎重建，UI 只展示焦点投影）。
     // streaming 占位消息（流式中断）恢复时收尾为「连接中断」——重连后引擎任务可能已在后台完成并落盘产物。
     {
       name: 'career-os',
@@ -2552,11 +2573,11 @@ async function submitJDAnalysis(proposal: JDAnalysisProposal): Promise<void> {
   }
 }
 
-/** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息 */
+/** 发起真实 Agent 任务：startAgent → 占位消息 → 事件流按 taskId 路由到占位消息。
+ *  会话连续性由引擎 Session Context Frame 承载（ADR-036，UI 无会话凭据直连） */
 async function runAgentTask(
   sessionId: string,
   content: string,
-  resumeSessionId?: string,
   taskType?: string,
   taskRequest?: AgentTaskRequest,
   stageRef?: { workflowId: string; stageId: string },
@@ -2588,7 +2609,6 @@ async function runAgentTask(
       ...(useAppStore.getState().currentPerson().personId
         ? { personId: useAppStore.getState().currentPerson().personId }
         : {}),
-      ...(resumeSessionId !== undefined ? { resumeSessionId } : {}),
       ...(stageRef ? { workflowId: stageRef.workflowId, stageId: stageRef.stageId } : {}),
       ...(allowedTools !== undefined ? { allowedTools } : {}),
       ...(useAppStore.getState().agentSettings.model
@@ -2894,13 +2914,8 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       })
       break
     }
-    case 'session_id':
-      useAppStore.setState((s) => ({
-        sessions: s.sessions.map((sess) =>
-          sess.id === sessionId ? { ...sess, sdkSessionId: ev.sessionId } : sess,
-        ),
-      }))
-      break
+    // 无 session_id 事件：直连模式无 SDK 会话凭据流（ADR-036——会话连续性 = 引擎 Frame，
+    // 见 session/frame）；旧 CLI 管道模式的 handler 已移除
     case 'done': {
       // 初始化会话落盘：assistant 完整回复追加（delete 前取任务映射）
       const doneTask = agentTasks.get(taskId)
@@ -2932,6 +2947,8 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
       }))
       flushStreamBuffers()
       agentTasks.delete(taskId)
+      // ADR-036：执行完成 → 引擎已更新 Session Frame → 刷新焦点投影（UI 只展示）
+      useAppStore.getState().refreshSessionFocus()
       // 会话任务事实由 Execution 投影承载（execution.event status_changed→completed 收敛）；
       // 此处只清理非会话后台任务簿记（幂等：error/done 只来一次）
       useAppStore.setState((s) => {

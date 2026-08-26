@@ -41,6 +41,7 @@ import type { StrengthProposal } from '../../engine/storage/strength-proposal-re
 import type { DerivationProposal } from '../../engine/storage/derivation-proposal-registry.ts'
 import type { CareerClaim, ClaimCoverageRow, CandidatePoolEntry, JobLead, SalaryBenchmarkEntry, PersonHealth, PromotionEvent } from '../../engine/ir/schema.ts'
 import type { Execution, ExecutionEvent } from '../../engine/ir/execution.ts'
+import type { SessionContextFrame } from '../../engine/ir/session-context.ts'
 import type { SalaryValuationCard } from '../../engine/ir/salary.ts'
 import type { ClaimProposal, ClaimProposalInput } from '../../engine/storage/claim-proposal-registry.ts'
 import type { WorkingCopyInput } from '../../engine/storage/working-copy-registry.ts'
@@ -856,7 +857,6 @@ export class EngineClient {
     contextRefs?: ContextReference[]
     outputTarget?: OutputTarget
     context?: string
-    resumeSessionId?: string
     /** 当前分析对象——引擎注入任务上下文，决策产物继承此归属（ADR-014） */
     personId?: string
     /** ADR-034 §1.6 Interaction provenance：本会话 id——Execution 记录会话归属 */
@@ -872,6 +872,11 @@ export class EngineClient {
     baseUrl?: string
   }): Promise<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }> {
     return this.rpc<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
+  }
+
+  /** Session Context Frame 只读投影（ADR-036：引擎单写方——UI 只展示；不存在 = null） */
+  sessionFrame(sessionId: string): Promise<SessionContextFrame | null> {
+    return this.rpc<SessionContextFrame | null>(METHODS.sessionFrame, { sessionId })
   }
 
   // ─── Workflow Control Plane（Career Workflow Contract v0.1：Engine 单方写，UI 只投影 + Human Action）──

@@ -149,8 +149,9 @@ export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
 
 /**
  * UI 扩展 Session：messages 使用 UI ChatMessage（会话持久化于本地，刷新可恢复）；
- * sdkSessionId = SDK 会话凭据（resume 用）；contextBundle = ADR-020 显式上下文
- * （执行期快照，随执行记录存活——UI 只投影不解释）；status = 最近一次任务的异常
+ * sdkSessionId = 遗留字段（CLI 管道模式 resume 凭据——直连模式不再使用，保留兼容 persist 数据）；
+ * contextBundle = ADR-020 显式上下文（执行期快照——UI 只投影不解释）；会话连续性（语义层）
+ * = 引擎 Session Context Frame（ADR-036，见 session/frame）；status = 最近一次任务的异常
  * 终止标记（rejected/failed——正常流程不写，避免与 sessionTasks 双轨）
  */
 export type Session = Omit<EngineSession, 'messages'> & {

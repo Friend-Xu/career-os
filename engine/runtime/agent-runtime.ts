@@ -218,7 +218,6 @@ export interface AgentStartParams {
   context?: string
   /** 系统协议段（引擎单方组装：identity/Stage Envelope/任务协议——put into AI SDK system channel） */
   system?: string
-  resumeSessionId?: string
   /** 当前分析对象——系统事实，注入任务上下文；决策产物继承此归属（ADR-014） */
   personId?: string
   /** Interaction provenance（ADR-034 §1.6）：UI 对话/会话触发才有；Workflow 触发可无 */
