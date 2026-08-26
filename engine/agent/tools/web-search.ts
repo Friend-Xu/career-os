@@ -233,6 +233,8 @@ export interface SearchSession {
   execute(query: string): Promise<SearchResult>
   /** 证据引用（Tool Evidence Contract 生产方：检索成功的来源引用；取即清——runner 在 tool_done 取） */
   takeEvidence(): ToolEvidence[]
+  /** 预算被拒是否已发生（budget_exhausted 事实——ADR-035 完成语义校验输入） */
+  isBudgetExhausted(): boolean
 }
 
 export function createSearchSession(opts: SearchSessionOptions): SearchSession {
@@ -241,6 +243,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
   }
   const cache = opts.cache ?? new Map<string, CacheEntry>()
   let used = 0
+  let exhausted = false
   let fallbackLocked = false
   const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string, extra?: Record<string, unknown>): void => {
@@ -284,6 +287,7 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
         if (hit !== undefined) cache.delete(key) // 过期即失效
       }
       if (used >= opts.budget) {
+        exhausted = true
         trace('budget_exhausted')
         throw new SearchPolicyError(
           'budget_exhausted',
@@ -329,6 +333,9 @@ export function createSearchSession(opts: SearchSessionOptions): SearchSession {
       const out = [...evidenceBuf]
       evidenceBuf.length = 0
       return out
+    },
+    isBudgetExhausted() {
+      return exhausted
     },
   }
 }

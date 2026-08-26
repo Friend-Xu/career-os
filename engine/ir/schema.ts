@@ -1041,6 +1041,16 @@ export type ToolSource = 'builtin' | 'hosted' | 'mcp' | 'data'
  * tool_start/tool_done 的 source = 工具来源，tool_done 的 evidence = 证据引用
  * （均 additive 可选，v2.9 存量事件无此字段仍合法；evidence 生产方写入——Tool Evidence Contract）
  */
+/** Evidence Sufficiency 声明校验摘要（ADR-035——done 事件 additive 载荷：company_research
+ * 完成时携带；维度/状态值域见 evidence-sufficiency-contract-v0.1；本类型只承载投影形状，校验逻辑在
+ * runtime/evidence-sufficiency-validator.ts（ir 不反向依赖 runtime——单向依赖纪律）） */
+export interface SufficiencyValidationSummary {
+  valid: boolean
+  issues: string[]
+  state: string
+  nextAction: string
+}
+
 export type AgentRuntimeEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string; source?: ToolSource }
@@ -1051,7 +1061,7 @@ export type AgentRuntimeEvent =
   | { type: 'permission_request'; tool: string; requestId: string }
   | { type: 'question_request'; question: AgentQuestion }
   | { type: 'session_id'; sessionId: string }
-  | { type: 'done'; result: string }
+  | { type: 'done'; result: string; sufficiency?: SufficiencyValidationSummary }
   | { type: 'error'; error: AgentError }
 
 /** 健康投影（HealthReport 契约 v1，docs/contracts/HealthReport-contract-v1.md；CLI --doctor 与 UI 共用单一计算源） */

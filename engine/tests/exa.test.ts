@@ -267,10 +267,10 @@ test('buildToolSources：Exa 连接就绪 → 3 源（builtin + hosted + mcp）�
   const c = connectorWith(async () => fake.client)
   await c.connect()
   const sources = buildToolSources(sourcesOpts(c, 'https://api.deepseek.com/anthropic'))
-  assert.equal(sources.length, 3)
-  assert.deepEqual(Object.keys(sources[0].tools).sort(), ['Edit', 'Glob', 'Grep', 'Read', 'Write'])
-  assert.deepEqual(Object.keys(sources[1].tools), ['WebSearch'])
-  const mcp = sources[2]
+  assert.equal(sources.sources.length, 3)
+  assert.deepEqual(Object.keys(sources.sources[0]!.tools).sort(), ['Edit', 'Glob', 'Grep', 'Read', 'Write'])
+  assert.deepEqual(Object.keys(sources.sources[1]!.tools), ['WebSearch'])
+  const mcp = sources.sources[2]!
   assert.deepEqual(Object.keys(mcp.tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'], 'mcp 源 = 语义工具名（含行业模板）')
   assert.equal(mcp.meta.WebResearch.source, 'mcp')
   assert.equal(mcp.meta.WebResearch.egress, 'external')
@@ -283,11 +283,11 @@ test('buildToolSources：Exa 未连接/未启用 → 不注入 mcp 源（fail-sa
   // 未 connect：ready=false
   assert.equal(c.ready, false)
   const sources = buildToolSources(sourcesOpts(c, 'https://api.deepseek.com/anthropic'))
-  assert.equal(sources.length, 2, '仅 builtin + hosted')
-  assert.deepEqual(Object.keys(sources[1].tools), ['WebSearch'])
+  assert.equal(sources.sources.length, 2, '仅 builtin + hosted')
+  assert.deepEqual(Object.keys(sources.sources[1]!.tools), ['WebSearch'])
   // 无 connector（未启用）
   const sources2 = buildToolSources(sourcesOpts(undefined, 'https://api.deepseek.com/anthropic'))
-  assert.equal(sources2.length, 2)
+  assert.equal(sources2.sources.length, 2)
 })
 
 test('buildToolSources：无 baseUrl → 仅 builtin（WebSearch 与 mcp 均不注入）', async () => {
@@ -295,8 +295,8 @@ test('buildToolSources：无 baseUrl → 仅 builtin（WebSearch 与 mcp 均不�
   const c = connectorWith(async () => fake.client)
   await c.connect()
   const sources = buildToolSources(sourcesOpts(c))
-  assert.equal(sources.length, 2, 'builtin + mcp（无 provider 不注册 WebSearch）')
-  assert.deepEqual(Object.keys(sources[1].tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'])
+  assert.equal(sources.sources.length, 2, 'builtin + mcp（无 provider 不注册 WebSearch）')
+  assert.deepEqual(Object.keys(sources.sources[1]!.tools).sort(), ['QueryIndustryEvidence', 'WebFetch', 'WebResearch'])
 })
 
 test('Phase 4C：defaults 治理旋钮透传（exaBudget → 会话 trace budgetTotal；缓存 TTL 命中不重发）', async () => {
@@ -309,7 +309,7 @@ test('Phase 4C：defaults 治理旋钮透传（exaBudget → 会话 trace budget
   opts.logger = logger
   opts.defaults = { ...opts.defaults, exaBudget: 7, exaCacheTtlMinutes: 90 }
   const sources = buildToolSources(opts)
-  const mcp = sources.find((s) => s.meta.WebResearch !== undefined)
+  const mcp = sources.sources.find((s) => s.meta.WebResearch !== undefined)
   assert.ok(mcp !== undefined, 'mcp 源注入')
   const exec = mcp.tools.WebResearch.execute
   assert.ok(exec !== undefined)

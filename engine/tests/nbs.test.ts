@@ -406,12 +406,16 @@ test('buildToolSources：NBS 启用 → data 源注入（QueryMacroStats + 元�
     model: 'fake-model',
   }
   const withNbs = buildToolSources({ ...base, nbsConnector: makeConnector() })
-  assert.equal(withNbs.length, 2, 'builtin + data')
-  assert.deepEqual(Object.keys(withNbs[1].tools), ['QueryMacroStats', 'CompareRegionProfiles'], 'data 源双工具')
-  assert.equal(withNbs[1].meta.QueryMacroStats.source, 'data')
-  assert.equal(withNbs[1].meta.QueryMacroStats.provider, 'nbs')
-  assert.equal(withNbs[1].meta.CompareRegionProfiles.source, 'data')
-  assert.equal(withNbs[1].meta.CompareRegionProfiles.traceScope, 'nbs_profile')
+  assert.equal(withNbs.sources.length, 2, 'builtin + data')
+  assert.deepEqual(Object.keys(withNbs.sources[1]!.tools), ['QueryMacroStats', 'CompareRegionProfiles'], 'data 源双工具')
+  assert.equal(withNbs.sources[1]!.meta.QueryMacroStats.source, 'data')
+  assert.equal(withNbs.sources[1]!.meta.QueryMacroStats.provider, 'nbs')
+  assert.equal(withNbs.sources[1]!.meta.CompareRegionProfiles.source, 'data')
+  assert.equal(withNbs.sources[1]!.meta.CompareRegionProfiles.traceScope, 'nbs_profile')
+  // ADR-035：会话引用（done 预算事实来源）；nbs 启用 → nbs + nbsProfile 会话存在
+  assert.equal(withNbs.sessions.nbs?.isBudgetExhausted(), false)
+  assert.equal(withNbs.sessions.nbsProfile !== undefined, true)
   const withoutNbs = buildToolSources(base)
-  assert.equal(withoutNbs.length, 1, '仅 builtin')
+  assert.equal(withoutNbs.sources.length, 1, '仅 builtin')
+  assert.equal(withoutNbs.sessions.nbs, undefined, '未启用 → 无 nbs 会话')
 })

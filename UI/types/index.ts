@@ -30,6 +30,7 @@ import type {
   ToolStatEntry,
   ToolSource,
   ToolEvidence,
+  SufficiencyValidationSummary,
 } from '../../engine/ir/schema.ts';
 import type { ResumeDocument, ResumeBullet, ResumeSection, ResumeIdentityEntry } from '../../engine/ir/resume.ts';
 import type { AgentContextBundle } from '../../engine/ir/agent-task.ts';
@@ -138,6 +139,8 @@ export type ChatMessage = Omit<EngineChatMessage, 'toolCalls'> & {
   question?: QuestionCard
   /** Agent 运行错误（引擎 agent.event error；页面渲染错误卡） */
   error?: AgentError
+  /** 证据充分性校验摘要（ADR-035——company_research 完成时 done 事件携带；UI 只投影不解释） */
+  sufficiency?: SufficiencyValidationSummary
   /** 思考中指示（引擎 thinking_start 后、thinking 文本或回复未达前；首条 text_delta/tool_start 熄灭） */
   isThinking?: boolean
   /** 流式占位中（占位创建至 done/error/cancel 收尾；持久化恢复时据此识别断流消息） */

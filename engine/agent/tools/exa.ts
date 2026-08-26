@@ -203,6 +203,8 @@ export interface ExaSession {
   execute(toolName: ExaMcpToolName, args: Record<string, unknown>): Promise<string>
   /** 证据引用（Tool Evidence Contract 生产方：检索成功的来源 URL；按认知层工具名分桶，取即清） */
   takeEvidence(displayName: string): ToolEvidence[]
+  /** 预算被拒是否已发生（budget_exhausted 事实——ADR-035 完成语义校验输入） */
+  isBudgetExhausted(): boolean
 }
 
 export function createExaSession(opts: ExaSessionOptions): ExaSession {
@@ -211,6 +213,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
   }
   const cache = opts.cache ?? new Map<string, ExaCacheEntry>()
   let used = 0
+  let exhausted = false
   const evidenceBuf = new Map<string, ToolEvidence[]>()
   const labelOf = (toolName: ExaMcpToolName): string => opts.evidenceLabels?.[toolName] ?? EXA_TOOL_MAP[toolName]
   const trace = (event: string): void => {
@@ -252,6 +255,7 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
         if (hit !== undefined) cache.delete(key) // 过期即失效
       }
       if (used >= opts.budget) {
+        exhausted = true
         trace('budget_exhausted')
         throw new ExaPolicyError(
           'budget_exhausted',
@@ -280,6 +284,9 @@ export function createExaSession(opts: ExaSessionOptions): ExaSession {
       const out = evidenceBuf.get(displayName) ?? []
       evidenceBuf.delete(displayName)
       return out
+    },
+    isBudgetExhausted() {
+      return exhausted
     },
   }
 }

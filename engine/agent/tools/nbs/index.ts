@@ -281,6 +281,8 @@ export interface NbsSession {
   execute(input: NbsQueryInput): Promise<string>
   /** 证据引用（Tool Evidence Contract 生产方：成功查询的指标证据；取即清——runner 在 tool_done 取） */
   takeEvidence(): ToolEvidence[]
+  /** 预算被拒是否已发生（budget_exhausted 事实——ADR-035 完成语义校验输入） */
+  isBudgetExhausted(): boolean
 }
 
 /** 证据 period = 最新数据年份（rows 年份文本如「2024年」→ 取最大；无 → undefined） */
@@ -312,6 +314,7 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
   }
   const cache = opts.cache ?? new Map<string, NbsCacheEntry>()
   let used = 0
+  let exhausted = false
   const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string): void => {
     opts.logger?.trace('nbs', { event, budgetUsed: used, budgetTotal: opts.budget })
@@ -376,6 +379,7 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
         resolved = result.indicator
       }
       if (used >= opts.budget) {
+        exhausted = true
         trace('budget_exhausted')
         throw new NbsPolicyError(
           'budget_exhausted',
@@ -427,6 +431,9 @@ export function createNbsSession(opts: NbsSessionOptions): NbsSession {
       evidenceBuf.length = 0
       return out
     },
+    isBudgetExhausted() {
+      return exhausted
+    },
   }
 }
 
@@ -450,6 +457,8 @@ export interface NbsProfileSession {
   execute(regions: string[]): Promise<string>
   /** 证据引用（Tool Evidence Contract 生产方：画像矩阵证据；取即清） */
   takeEvidence(): ToolEvidence[]
+  /** 预算被拒是否已发生（budget_exhausted 事实——ADR-035 完成语义校验输入） */
+  isBudgetExhausted(): boolean
 }
 
 export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProfileSession {
@@ -458,6 +467,7 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
   }
   const cache = opts.cache ?? new Map<string, NbsCacheEntry>()
   let used = 0
+  let exhausted = false
   const evidenceBuf: ToolEvidence[] = []
   const trace = (event: string, extra?: Record<string, unknown>): void => {
     opts.logger?.trace('nbs_profile', { event, budgetUsed: used, budgetTotal: opts.budget, ...extra })
@@ -467,6 +477,7 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
     resolveIndicator: (keyword) => opts.connector.resolveIndicator(keyword),
     querySeriesBatch: async (q) => {
       if (used >= opts.budget) {
+        exhausted = true
         trace('budget_exhausted')
         throw new NbsPolicyError(
           'budget_exhausted',
@@ -526,6 +537,9 @@ export function createNbsProfileSession(opts: NbsProfileSessionOptions): NbsProf
       const out = [...evidenceBuf]
       evidenceBuf.length = 0
       return out
+    },
+    isBudgetExhausted() {
+      return exhausted
     },
   }
 }

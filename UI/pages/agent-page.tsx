@@ -421,6 +421,32 @@ function MessageBubble({
             分组→hostname/截断；不做来源语义解释，不建 Interpretation Layer） */}
         <EvidenceSources toolCalls={msg.toolCalls} />
 
+        {/* ADR-035：证据充分性声明校验（done 事件载荷——违规则明示编号，UI 只投影不解释） */}
+        {msg.sufficiency && (
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 1,
+              px: 1,
+              py: 0.25,
+              mb: 0.75,
+              borderRadius: '6px',
+              bgcolor: COLORS.bgHover,
+              border: `1px solid ${msg.sufficiency.valid ? COLORS.border : RISK_COLOR.medium}`,
+            }}
+          >
+            <Typography sx={{ fontSize: 11.5, color: msg.sufficiency.valid ? COLORS.textSecondary : COLORS.text }}>
+              证据充分性：{msg.sufficiency.state || '—'} · {msg.sufficiency.valid ? '校验通过' : '校验违规'}
+            </Typography>
+            {!msg.sufficiency.valid && msg.sufficiency.issues.length > 0 && (
+              <Typography sx={{ fontSize: 11, color: RISK_COLOR.medium }}>
+                {msg.sufficiency.issues.join('；')}
+              </Typography>
+            )}
+          </Box>
+        )}
+
         {msg.toolCalls && msg.toolCalls.length > 0 && (
           <Stack direction="row" spacing={0.75} sx={{ mb: 0.75, flexWrap: 'wrap', gap: 0.5 }}>
             {msg.toolCalls.map((t) => (

@@ -41,9 +41,13 @@ import {
   type NbsCacheEntry,
 } from '../agent/tools/nbs/index.ts'
 import type { ToolSourceDef } from '../agent/tools/tool-assembly.ts'
+import type { SearchSession } from '../agent/tools/web-search.ts'
+import type { ExaSession } from '../agent/tools/exa.ts'
+import type { NbsProfileSession, NbsSession } from '../agent/tools/nbs/index.ts'
 import { DEFAULT_SEARCH_BUDGET, DEFAULT_SEARCH_CACHE_TTL_MINUTES } from '../config.ts'
 import type { AgentHandle, AgentEvent } from '../ir/agent-event.ts'
-import type { AgentRuntimeEvent } from '../ir/schema.ts'
+import type { AgentRuntimeEvent, SufficiencyValidationSummary } from '../ir/schema.ts'
+import { validateEvidenceSufficiency } from './evidence-sufficiency-validator.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import { ExecutionRegistry, isTerminalExecutionStatus, type PendingInteraction } from './execution-registry.ts'
@@ -77,8 +81,20 @@ export interface BuildSourcesOptions {
  * 工具来源组装（Tool Assembly Layer 的 source 侧）：builtin 文件工具恒在；hosted WebSearch 按
  * 现有条件注入（无 provider/off 模式 → 不注册——装配层交集自然排除）；mcp 源（Exa）在连接
  * 已就绪时注入；data 源（NBS）在启用时注入（未启用 → 不注入，fail-safe）。
+ * 返回同时带会话引用——ADR-035 完成语义：done 时读取 budget_exhausted 事实（预算拒绝计数）。
  */
-export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
+export interface BuiltToolSources {
+  sources: ToolSourceDef[]
+  /** 已启用通道的治理会话（缺失 = 通道未启用） */
+  sessions: {
+    web_search?: SearchSession
+    exa?: ExaSession
+    nbs?: NbsSession
+    nbsProfile?: NbsProfileSession
+  }
+}
+
+export function buildToolSources(opts: BuildSourcesOptions): BuiltToolSources {
   const { defaults } = opts
   // 托管检索（hosted）：预算/缓存/证据会话（证据 = Tool Evidence Contract 生产方）
   const searchSession = createSearchSession({
@@ -125,56 +141,65 @@ export function buildToolSources(opts: BuildSourcesOptions): ToolSourceDef[] {
     }),
     connector: opts.nbsConnector,
   }
-  return [
-    { tools: buildFsTools(opts.workspace), meta: FS_TOOL_META },
-    ...(opts.baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
-      ? [
-          {
-            tools: { WebSearch: buildWebSearchTool(searchSession) },
-            meta: {
-              WebSearch: {
-                ...WEB_SEARCH_TOOL_META,
-                budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+  return {
+    sources: [
+      { tools: buildFsTools(opts.workspace), meta: FS_TOOL_META },
+      ...(opts.baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
+        ? [
+            {
+              tools: { WebSearch: buildWebSearchTool(searchSession) },
+              meta: {
+                WebSearch: {
+                  ...WEB_SEARCH_TOOL_META,
+                  budget: defaults.searchBudget ?? DEFAULT_SEARCH_BUDGET,
+                },
+              },
+              evidence: { WebSearch: () => searchSession.takeEvidence() },
+            },
+          ]
+        : []),
+      ...(exaSession !== null
+        ? [
+            {
+              tools: {
+                ...buildExaTools(opts.exaConnector as ExaConnector, exaSession),
+                ...buildIndustryEvidenceTool(industrySession as NonNullable<typeof industrySession>),
+              },
+              meta: { ...EXA_TOOL_META, ...INDUSTRY_EVIDENCE_TOOL_META },
+              evidence: {
+                WebResearch: () => exaSession.takeEvidence('WebResearch'),
+                WebFetch: () => exaSession.takeEvidence('WebFetch'),
+                QueryIndustryEvidence: () => (industrySession as NonNullable<typeof industrySession>).takeEvidence('QueryIndustryEvidence'),
               },
             },
-            evidence: { WebSearch: () => searchSession.takeEvidence() },
-          },
-        ]
-      : []),
-    ...(exaSession !== null
-      ? [
-          {
-            tools: {
-              ...buildExaTools(opts.exaConnector as ExaConnector, exaSession),
-              ...buildIndustryEvidenceTool(industrySession as NonNullable<typeof industrySession>),
+          ]
+        : []),
+      ...(nbsTools !== null
+        ? [
+            {
+              // data 源双工具：单查询（QueryMacroStats）+ 区域画像矩阵（CompareRegionProfiles）——
+              // 共用同一 NbsConnector（指标索引/树缓存/解析器），治理会话各自独立（预算互不挤占）
+              tools: {
+                ...buildNbsTools(nbsTools.session),
+                ...buildNbsProfileTools(nbsTools.profileSession),
+              },
+              meta: { ...NBS_TOOL_META, ...NBS_PROFILE_TOOL_META },
+              evidence: {
+                QueryMacroStats: () => nbsTools.session.takeEvidence(),
+                CompareRegionProfiles: () => nbsTools.profileSession.takeEvidence(),
+              },
             },
-            meta: { ...EXA_TOOL_META, ...INDUSTRY_EVIDENCE_TOOL_META },
-            evidence: {
-              WebResearch: () => exaSession.takeEvidence('WebResearch'),
-              WebFetch: () => exaSession.takeEvidence('WebFetch'),
-              QueryIndustryEvidence: () => (industrySession as NonNullable<typeof industrySession>).takeEvidence('QueryIndustryEvidence'),
-            },
-          },
-        ]
-      : []),
-    ...(nbsTools !== null
-      ? [
-          {
-            // data 源双工具：单查询（QueryMacroStats）+ 区域画像矩阵（CompareRegionProfiles）——
-            // 共用同一 NbsConnector（指标索引/树缓存/解析器），治理会话各自独立（预算互不挤占）
-            tools: {
-              ...buildNbsTools(nbsTools.session),
-              ...buildNbsProfileTools(nbsTools.profileSession),
-            },
-            meta: { ...NBS_TOOL_META, ...NBS_PROFILE_TOOL_META },
-            evidence: {
-              QueryMacroStats: () => nbsTools.session.takeEvidence(),
-              CompareRegionProfiles: () => nbsTools.profileSession.takeEvidence(),
-            },
-          },
-        ]
-      : []),
-  ]
+          ]
+        : []),
+    ],
+    sessions: {
+      ...(opts.baseUrl !== undefined && (defaults.webSearchMode ?? 'responses') !== 'off'
+        ? { web_search: searchSession }
+        : {}),
+      ...(exaSession !== null ? { exa: exaSession } : {}),
+      ...(nbsTools !== null ? { nbs: nbsTools.session, nbsProfile: nbsTools.profileSession } : {}),
+    },
+  }
 }
 
 export interface AgentStartParams {
@@ -256,6 +281,10 @@ interface TaskState {
   executionId: string
   /** 等待外部输入的交互（waiting 状态的载荷——与 Registry.pendingInteraction 同步；答案/授权后清除） */
   pendingInteraction?: PendingInteraction
+  /** ADR-020 任务类型（ADR-035 完成语义：company_research → 充分性校验） */
+  taskType?: AgentTaskType
+  /** 证据通道治理会话（ADR-035 done 时读预算事实） */
+  sessions?: BuiltToolSources['sessions']
 }
 
 export class AgentRuntime {
@@ -303,7 +332,7 @@ export class AgentRuntime {
 
     // 工具来源组装（Tool Assembly Layer）：独立函数 buildToolSources（单测覆盖源组合；
     // websocket → AgentRuntime 的 connector 传参属接线层，真机验收覆盖）
-    const sources = buildToolSources({
+    const built = buildToolSources({
       workspace,
       defaults,
       exaConnector: this.exaConnector,
@@ -316,6 +345,9 @@ export class AgentRuntime {
       apiKey,
       model,
     })
+    const sources = built.sources
+    task.taskType = params.taskType
+    task.sessions = built.sessions
     const handle = createAgentRunner({
       task: params.task,
       context: params.context,
@@ -389,6 +421,37 @@ export class AgentRuntime {
     }
   }
 
+  /** ADR-035 完成语义：company_research done → 契约 §I 全量机械校验（无 LLM 判断），
+   *  环境输入 = 已启用通道（会话存在性）+ 预算拒绝事实（isBudgetExhausted） */
+  private sufficiencyOf(taskId: string, result: string): SufficiencyValidationSummary | undefined {
+    const task = this.tasks.get(taskId)
+    if (task?.taskType !== 'company_research' || task.sessions === undefined) return undefined
+    const s = task.sessions
+    const enabled: string[] = []
+    const exhausted: string[] = []
+    if (s.web_search !== undefined) {
+      enabled.push('web_search')
+      if (s.web_search.isBudgetExhausted()) exhausted.push('web_search')
+    }
+    if (s.exa !== undefined) {
+      enabled.push('exa')
+      if (s.exa.isBudgetExhausted()) exhausted.push('exa')
+    }
+    if (s.nbs !== undefined || s.nbsProfile !== undefined) {
+      enabled.push('nbs')
+      if ((s.nbs?.isBudgetExhausted() ?? false) || (s.nbsProfile?.isBudgetExhausted() ?? false)) {
+        exhausted.push('nbs')
+      }
+    }
+    const r = validateEvidenceSufficiency({ text: result, enabledChannels: enabled, exhaustedChannels: exhausted })
+    return {
+      valid: r.valid,
+      issues: r.issues,
+      state: r.assessment?.state ?? '',
+      nextAction: r.assessment?.nextAction ?? '',
+    }
+  }
+
   /**
    * Execution 生命周期（ADR-034 §1/§5.1）：运行时事件 → Registry 状态迁移。
    * question_request = 挂起等用户（waiting + 交互事实）；done = completed；error = failed。
@@ -428,9 +491,12 @@ export class AgentRuntime {
         this.logger.info(`agent/${taskId} question_request：${ev.question.question}（等待用户回答，任务挂起）`)
         this.emit(taskId, { type: 'question_request', question: ev.question })
         break
-      case 'done':
-        this.emit(taskId, { type: 'done', result: ev.result })
+      case 'done': {
+        // ADR-035 完成语义：company_research → 契约 §I 全量机械校验 + 摘要载荷（done 事件 additive）
+        const sufficiency = this.sufficiencyOf(taskId, ev.result)
+        this.emit(taskId, { type: 'done', result: ev.result, ...(sufficiency !== undefined ? { sufficiency } : {}) })
         break
+      }
       case 'error':
         this.emit(taskId, { type: 'error', error: ev.error })
         break

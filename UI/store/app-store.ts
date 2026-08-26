@@ -2923,7 +2923,13 @@ function handleAgentEvent(taskId: string, ev: AgentRuntimeEvent): void {
           }
         }
       }
-      patchStreamingMessage(sessionId, messageId, (m) => ({ ...m, isThinking: false, streaming: false }))
+      patchStreamingMessage(sessionId, messageId, (m) => ({
+        ...m,
+        isThinking: false,
+        streaming: false,
+        // ADR-035 完成语义：company_research done 携带充分性校验摘要（UI 只投影不解释）
+        ...(ev.sufficiency !== undefined ? { sufficiency: ev.sufficiency } : {}),
+      }))
       flushStreamBuffers()
       agentTasks.delete(taskId)
       // 会话任务事实由 Execution 投影承载（execution.event status_changed→completed 收敛）；
