@@ -63,13 +63,19 @@ export function SettingsPage() {
   /** Document Extraction 视觉模型保存（config.json document.vision；provider 缺省按模型名推断） */
   const saveDocumentVision = async () => {
     try {
+      // 模型框残留旧服务商默认值 → 视为「未改模型」：留空由引擎按 provider 补默认（防 glm↔Exp 错配）
+      const staleDefault =
+        (docProvider === 'deepseek' && docModel.trim() === 'glm-4.6v-flash') ||
+        (docProvider === 'deepseek' && docModel.trim() === 'glm-4v-flash')
       await saveAgentSettings({
         documentVision: {
           provider: docProvider,
-          model: docModel.trim() || undefined,
+          model: staleDefault ? undefined : docModel.trim() || undefined,
           apiKey: docKey.trim(),
         },
       })
+      // 本地立即反映（引擎按 provider 补默认）；staleDefault 时同步清空模型框
+      if (staleDefault) setDocModel('')
       push('success', docKey.trim() ? '文档提取设置已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
     } catch (err) {
       push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
