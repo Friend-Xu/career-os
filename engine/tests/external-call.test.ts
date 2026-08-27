@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { Logger } from '../logger.ts'
 import { externalFetch, ExternalCallError } from '../agent/tools/external-call.ts'
 import { fetchCatalogChildren } from '../agent/tools/nbs/api.ts'
-import { ZhipuVisionProvider } from '../runtime/document/vision-provider.ts'
+import { ZhipuVisionProvider, createVisionProvider } from '../runtime/document/vision-provider.ts'
 
 interface TraceRec {
   scope: string
@@ -248,6 +248,65 @@ test('ZhipuVisionProvider：401（4xx 永久错误）→ 不重试立即抛', as
   try {
     await assert.rejects(() => new ZhipuVisionProvider({ apiKey: 'bad', model: 'm' }).analyzeImage(img, '提取'))
     assert.equal(calls, 1, '4xx 不重试')
+  } finally {
+    restoreFetch()
+  }
+})
+
+// ─── 接入点：createVisionProvider（provider 分流端点/默认模型；DeepSeek 多模态 Exp）──
+
+test('createVisionProvider：deepseek → DeepSeek 端点 + 默认模型 deepseek-v4-flash-vision-exp', async () => {
+  let captured: { url: string; body: { model: string } } | null = null
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { url: String(input), body: JSON.parse(String(init?.body)) as { model: string } }
+    return new Response(JSON.stringify({ choices: [{ message: { content: '识别结果' } }] }), { status: 200 })
+  }) as typeof fetch
+  const dir = mkdtempSync(join(tmpdir(), 'cos-vision-'))
+  const img = join(dir, 'page.png')
+  writeFileSync(img, 'fake-png-bytes')
+  try {
+    const p = createVisionProvider({ provider: 'deepseek', apiKey: 'k' })
+    assert.equal(await p.analyzeImage(img, '提取文本'), '识别结果')
+    assert.ok(captured, '捕获到请求')
+    assert.equal(captured!.url, 'https://api.deepseek.com/chat/completions', 'DeepSeek 端点')
+    assert.equal(captured!.body.model, 'deepseek-v4-flash-vision-exp', '默认模型 = Exp')
+  } finally {
+    restoreFetch()
+  }
+})
+
+test('createVisionProvider：deepseek + 显式 model → 用显式模型', async () => {
+  let captured: { body: { model: string } } | null = null
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { body: JSON.parse(String(init?.body)) as { model: string } }
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 })
+  }) as typeof fetch
+  const dir = mkdtempSync(join(tmpdir(), 'cos-vision-'))
+  const img = join(dir, 'page.png')
+  writeFileSync(img, 'fake-png-bytes')
+  try {
+    const p = createVisionProvider({ provider: 'deepseek', apiKey: 'k', model: 'deepseek-v4-flash-vision-exp-20260821' })
+    await p.analyzeImage(img, '提取')
+    assert.equal(captured!.body.model, 'deepseek-v4-flash-vision-exp-20260821')
+  } finally {
+    restoreFetch()
+  }
+})
+
+test('createVisionProvider：zhipu（缺省）→ 智谱端点 + glm-4.6v-flash', async () => {
+  let captured: { url: string; body: { model: string } } | null = null
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { url: String(input), body: JSON.parse(String(init?.body)) as { model: string } }
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 })
+  }) as typeof fetch
+  const dir = mkdtempSync(join(tmpdir(), 'cos-vision-'))
+  const img = join(dir, 'page.png')
+  writeFileSync(img, 'fake-png-bytes')
+  try {
+    const p = createVisionProvider({ provider: 'zhipu', apiKey: 'k' })
+    await p.analyzeImage(img, '提取')
+    assert.equal(captured!.url, 'https://open.bigmodel.cn/api/paas/v4/chat/completions', '智谱端点')
+    assert.equal(captured!.body.model, 'glm-4.6v-flash', '默认模型 = glm 免费')
   } finally {
     restoreFetch()
   }

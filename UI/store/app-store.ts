@@ -178,7 +178,7 @@ interface AppState {
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
-  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { model: string; apiKey: string }; permissionMode: string };
+  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { provider: 'zhipu' | 'deepseek'; model: string; apiKey: string }; permissionMode: string };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   /** 投递记录视图（ADR-019：用户行动事实资产，引擎 applications/list 实时派生，不持久化——Engine Registry 是唯一事实源；allowedTransitions 随 RPC 返回） */
@@ -412,7 +412,7 @@ interface AppState {
     providers?: AgentProviderView[]
     map?: { apiKey?: string; securityJsCode?: string }
     /** Document Extraction 视觉模型（PDF 图片型提取；写 config.json document.vision） */
-    documentVision?: { model?: string; apiKey?: string }
+    documentVision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string }
     /** 工具授权模式：bypassPermissions = 自动授权所有工具；ask = 逐个询问 */
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
   }) => Promise<void>;
@@ -586,7 +586,7 @@ export const useAppStore = create<AppState>()(
       /** 当前会话焦点投影（ADR-036 Phase 4：引擎 Frame 只读——UI 展示胶囊；不持久化） */
       sessionFocus: null,
       now: Date.now(),
-      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { provider: 'zhipu', model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
       applications: [],
       deletedAppJobIds: [],
@@ -1348,6 +1348,7 @@ export const useAppStore = create<AppState>()(
           providers: s.providers ?? [],
           map: s.map ?? { provider: 'amap' },
           documentVision: {
+            provider: s.document?.vision?.provider ?? 'zhipu',
             model: s.document?.vision?.model ?? 'glm-4.6v-flash',
             apiKey: s.document?.vision?.apiKey ?? '',
           },
@@ -1380,7 +1381,7 @@ export const useAppStore = create<AppState>()(
       map: patch.map,
       permissionMode: patch.permissionMode,
       ...(patch.documentVision !== undefined
-        ? { document: { vision: { provider: 'zhipu' as const, ...patch.documentVision } } }
+        ? { document: { vision: { provider: 'zhipu', ...patch.documentVision } } }
         : {}),
     })
     set((s) => ({

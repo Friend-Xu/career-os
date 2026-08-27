@@ -10,6 +10,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -50,18 +51,24 @@ export function SettingsPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
   const documentVision = useAppStore((s) => s.agentSettings.documentVision)
+  const [docProvider, setDocProvider] = useState<'zhipu' | 'deepseek'>(documentVision.provider)
   const [docKey, setDocKey] = useState(documentVision.apiKey)
   const [docModel, setDocModel] = useState(documentVision.model)
   useEffect(() => {
+    setDocProvider(documentVision.provider)
     setDocKey(documentVision.apiKey)
     setDocModel(documentVision.model)
   }, [documentVision])
 
-  /** Document Extraction 视觉模型保存（config.json document.vision） */
+  /** Document Extraction 视觉模型保存（config.json document.vision；provider 缺省按模型名推断） */
   const saveDocumentVision = async () => {
     try {
       await saveAgentSettings({
-        documentVision: { model: docModel.trim() || 'glm-4.6v-flash', apiKey: docKey.trim() },
+        documentVision: {
+          provider: docProvider,
+          model: docModel.trim() || undefined,
+          apiKey: docKey.trim(),
+        },
       })
       push('success', docKey.trim() ? '文档提取设置已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
     } catch (err) {
@@ -356,33 +363,45 @@ export function SettingsPage() {
         <Section title="文档提取">
           <Stack spacing={1.5}>
             <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-              PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由免费视觉模型（glm-4.6v-flash）逐页识别。
+              PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由视觉模型逐页识别。
+              免费模型 glm-4.6v-flash（智谱）或 deepseek-v4-flash-vision-exp（DeepSeek 多模态）可选。
             </Typography>
             <Box sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
                 <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>视觉模型</Typography>
                 <Chip
                   size="small"
-                  label={docKey.trim() ? `✓ 已连接 ${docModel.trim() || 'glm-4.6v-flash'}` : '⚠ 未配置'}
+                  label={docKey.trim() ? `✓ 已连接 ${docProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : docModel.trim() || 'glm-4.6v-flash'}` : '⚠ 未配置'}
                   sx={{ height: 20, fontSize: 11 }}
                   color={docKey.trim() ? 'success' : 'default'}
                 />
               </Stack>
               <Stack direction="row" spacing={1}>
                 <TextField
+                  select
+                  size="small"
+                  label="服务商"
+                  value={docProvider}
+                  onChange={(e) => setDocProvider(e.target.value as 'zhipu' | 'deepseek')}
+                  sx={{ width: 120, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
+                >
+                  <MenuItem value="zhipu">智谱（免费）</MenuItem>
+                  <MenuItem value="deepseek">DeepSeek（Exp）</MenuItem>
+                </TextField>
+                <TextField
                   size="small"
                   type="password"
-                  placeholder="API Key（智谱开放平台，glm-4.6v-flash 免费）"
+                  placeholder={`API Key（${docProvider === 'deepseek' ? 'DeepSeek 开放平台' : '智谱开放平台'}）`}
                   value={docKey}
                   onChange={(e) => setDocKey(e.target.value)}
                   sx={{ flex: 1, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
                 />
                 <TextField
                   size="small"
-                  placeholder="模型"
+                  placeholder="模型（留空 = 默认）"
                   value={docModel}
                   onChange={(e) => setDocModel(e.target.value)}
-                  sx={{ width: 150, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
+                  sx={{ width: 170, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
                 />
                 <Button size="small" variant="contained" onClick={() => void saveDocumentVision()} sx={{ fontSize: 12.5 }}>
                   保存

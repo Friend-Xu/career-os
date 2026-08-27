@@ -99,7 +99,7 @@ import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSe
 import { projectPersonSnapshots } from '../storage/person-snapshot-projection.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 import { extractLocalText, extractVisionPages } from '../runtime/document/pdf-import.ts'
-import { ZhipuVisionProvider } from '../runtime/document/vision-provider.ts'
+import { createVisionProvider } from '../runtime/document/vision-provider.ts'
 import { archiveCurrentSnapshot, listSnapshotVersions } from '../storage/snapshot-archive.ts'
 import { buildCandidates, type CandidateTrigger } from '../runtime/ledger-candidate.ts'
 import { commitLedgerEvent, readLedgerEvents, commitDecisionLedgerEvent } from '../storage/ledger-writer.ts'
@@ -1717,9 +1717,10 @@ export async function startServer(opts: {
       // 双通道：pdfBase64 → 本地文本层（免费离线）；pages → 逐页视觉（UI 已渲染多页图）
       if (p.pages) {
         const vision = config.document.vision?.apiKey
-          ? new ZhipuVisionProvider({
+          ? createVisionProvider({
+              provider: config.document.vision.provider,
               apiKey: config.document.vision.apiKey,
-              model: config.document.vision.model ?? 'glm-4.6v-flash',
+              model: config.document.vision.model,
             })
           : null
         if (!vision) {
@@ -1732,7 +1733,12 @@ export async function startServer(opts: {
     [METHODS.saveResumeOriginal]: (params) => {
       const p = saveResumeOriginalParams(params)
       if (p.extraction?.method === 'vision' && !p.extraction.model) {
-        p.extraction = { ...p.extraction, model: config.document.vision?.model ?? 'glm-4.6v-flash' }
+        p.extraction = {
+          ...p.extraction,
+          model:
+            config.document.vision?.model ??
+            (config.document.vision?.provider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'glm-4.6v-flash'),
+        }
       }
       return createResumeArtifact(workspace, p)
     },

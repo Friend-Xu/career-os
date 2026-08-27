@@ -1,6 +1,7 @@
 /**
  * VisionProvider：Document Runtime 的视觉通道（与 Agent Provider 平行，不复用语义）。
- * 第一版最小接口：image → text（Zhipu GLM OpenAI 兼容 /chat/completions）。
+ * 支持 provider：zhipu（glm-4.6v-flash 免费）与 deepseek（deepseek-v4-flash-vision-exp 多模态）——
+ * 均为 OpenAI 兼容 /chat/completions（content: text + image_url base64），请求结构完全一致，仅端点不同。
  * 免费模型高峰限流（HTTP 429 / 5xx）是已实测的真实边界条件——对瞬时错误带退避重试；
  * 4xx（key 无效/载荷非法）立即失败，不重试。
  */
@@ -12,6 +13,7 @@ export interface VisionProvider {
 }
 
 export const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions'
 
 /** 视觉调用超时（视觉模型响应慢；无超时 = 上传流程挂死） */
 export const VISION_CALL_TIMEOUT_MS = 60_000
@@ -82,6 +84,27 @@ export class ZhipuVisionProvider implements VisionProvider {
     if (typeof text !== 'string' || !text.trim()) throw new Error('视觉模型返回空文本')
     return text.trim()
   }
+}
+
+/** 按 provider 创建视觉通道（端点/默认模型分流；请求结构与 Zhipu 一致——DeepSeek OpenAI 兼容） */
+export function createVisionProvider(opts: {
+  provider: 'zhipu' | 'deepseek'
+  apiKey: string
+  model?: string
+}): VisionProvider {
+  const baseUrl =
+    opts.provider === 'deepseek'
+      ? DEEPSEEK_ENDPOINT
+      : opts.provider === 'zhipu'
+        ? ZHIPU_ENDPOINT
+        : undefined
+  return new ZhipuVisionProvider({
+    apiKey: opts.apiKey,
+    model:
+      opts.model ??
+      (opts.provider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'glm-4.6v-flash'),
+    baseUrl,
+  })
 }
 
 function sleep(ms: number): Promise<void> {

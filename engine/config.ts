@@ -176,9 +176,9 @@ export interface EngineConfig {
   document: {
     /** 视觉模型连接（图片型 PDF 提取；未配置 → 仅文本型 PDF 可用） */
     vision?: {
-      /** 视觉服务商（当前仅 zhipu，OpenAI 兼容 /chat/completions） */
-      provider: 'zhipu'
-      /** 视觉模型（默认 glm-4.6v-flash 免费） */
+      /** 视觉服务商（zhipu = glm-4.6v-flash 免费；deepseek = deepseek-v4-flash-vision-exp 多模态）——均 OpenAI 兼容 /chat/completions */
+      provider: 'zhipu' | 'deepseek'
+      /** 视觉模型（缺省按 provider 取默认：zhipu=glm-4.6v-flash；deepseek=deepseek-v4-flash-vision-exp） */
       model?: string
       /** 视觉 API key（与 agent.apiKey 同保护：career-os.config.json gitignored） */
       apiKey?: string
@@ -516,7 +516,7 @@ function assertPrefCities(v: unknown, source: ConfigSource): string[] | undefine
 }
 
 /** document 段校验（config.json 边界：直接编辑也可）；vision 可选，缺失字段回退默认 */
-function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider: 'zhipu'; model?: string; apiKey?: string } } {
+function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } } {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) {
     throw new ConfigError('document', v, '对象 { vision? }', source)
   }
@@ -526,8 +526,8 @@ function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider
     throw new ConfigError('document.vision', d.vision, '对象 { provider?, model?, apiKey? }', source)
   }
   const v2 = d.vision as Record<string, unknown>
-  if (v2.provider !== undefined && v2.provider !== 'zhipu') {
-    throw new ConfigError('document.vision.provider', v2.provider, "'zhipu'", source)
+  if (v2.provider !== undefined && v2.provider !== 'zhipu' && v2.provider !== 'deepseek') {
+    throw new ConfigError('document.vision.provider', v2.provider, "'zhipu' | 'deepseek'", source)
   }
   if (v2.model !== undefined && typeof v2.model !== 'string') {
     throw new ConfigError('document.vision.model', v2.model, '字符串', source)
@@ -537,7 +537,7 @@ function assertDocument(v: unknown, source: ConfigSource): { vision?: { provider
   }
   return {
     vision: {
-      provider: 'zhipu',
+      provider: (v2.provider as 'zhipu' | 'deepseek') ?? 'zhipu',
       ...(v2.model ? { model: v2.model } : {}),
       ...(v2.apiKey ? { apiKey: v2.apiKey } : {}),
     },

@@ -943,7 +943,7 @@ export class EngineClient {
     allowedTools?: string[]
     maxTurns?: number
     map?: MapSettings
-    document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
+    document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
   }> {
     return this.rpc(METHODS.settingsGet)  }
 
@@ -956,7 +956,7 @@ export class EngineClient {
     providers?: AgentProviderView[]
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
     map?: { apiKey?: string; securityJsCode?: string }
-    document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
+    document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
   }): Promise<unknown> {
     return this.rpc(METHODS.settingsUpdate, patch)
   }
