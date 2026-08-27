@@ -586,7 +586,7 @@ export const useAppStore = create<AppState>()(
       /** 当前会话焦点投影（ADR-036 Phase 4：引擎 Frame 只读——UI 展示胶囊；不持久化） */
       sessionFocus: null,
       now: Date.now(),
-      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { provider: 'zhipu', model: 'glm-4.6v-flash', apiKey: '' }, permissionMode: 'bypassPermissions' },
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp', apiKey: '' }, permissionMode: 'bypassPermissions' },
       availableModels: { source: 'cli', models: [] },
       applications: [],
       deletedAppJobIds: [],
@@ -1348,8 +1348,8 @@ export const useAppStore = create<AppState>()(
           providers: s.providers ?? [],
           map: s.map ?? { provider: 'amap' },
           documentVision: {
-            provider: s.document?.vision?.provider ?? 'zhipu',
-            model: s.document?.vision?.model ?? 'glm-4.6v-flash',
+            provider: s.document?.vision?.provider ?? 'deepseek',
+            model: s.document?.vision?.model ?? 'deepseek-v4-flash-vision-exp',
             apiKey: s.document?.vision?.apiKey ?? '',
           },
           permissionMode: s.permissionMode ?? 'bypassPermissions',

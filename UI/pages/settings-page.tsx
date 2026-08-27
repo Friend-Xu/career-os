@@ -60,22 +60,27 @@ export function SettingsPage() {
     setDocModel(documentVision.model)
   }, [documentVision])
 
+  /** 服务商 → 默认模型（切换联动：模型名随服务商一起变；留空 = 引擎按 provider 补默认） */
+  const VISION_DEFAULT_MODEL: Record<'zhipu' | 'deepseek', string> = {
+    zhipu: 'glm-4.6v-flash',
+    deepseek: 'deepseek-v4-flash-vision-exp',
+  }
+  /** 切换服务商：模型名自动跟随为对应默认（不再出现「DeepSeek + glm」错配） */
+  const handleDocProviderChange = (v: 'zhipu' | 'deepseek'): void => {
+    setDocProvider(v)
+    setDocModel(VISION_DEFAULT_MODEL[v])
+  }
+
   /** Document Extraction 视觉模型保存（config.json document.vision；provider 缺省按模型名推断） */
   const saveDocumentVision = async () => {
     try {
-      // 模型框残留旧服务商默认值 → 视为「未改模型」：留空由引擎按 provider 补默认（防 glm↔Exp 错配）
-      const staleDefault =
-        (docProvider === 'deepseek' && docModel.trim() === 'glm-4.6v-flash') ||
-        (docProvider === 'deepseek' && docModel.trim() === 'glm-4v-flash')
       await saveAgentSettings({
         documentVision: {
           provider: docProvider,
-          model: staleDefault ? undefined : docModel.trim() || undefined,
+          model: docModel.trim() || undefined,
           apiKey: docKey.trim(),
         },
       })
-      // 本地立即反映（引擎按 provider 补默认）；staleDefault 时同步清空模型框
-      if (staleDefault) setDocModel('')
       push('success', docKey.trim() ? '文档提取设置已保存' : '已清除视觉模型配置（图片型 PDF 提取不可用）')
     } catch (err) {
       push('warning', `保存失败：${err instanceof Error ? err.message : String(err)}`)
@@ -370,14 +375,14 @@ export function SettingsPage() {
           <Stack spacing={1.5}>
             <Typography sx={{ fontSize: 12.5, color: COLORS.textSecondary, lineHeight: 1.6 }}>
               PDF 简历智能解析——文本型 PDF 本地解析（免费）；图片型/扫描 PDF 渲染多页后由视觉模型逐页识别。
-              免费模型 glm-4.6v-flash（智谱）或 deepseek-v4-flash-vision-exp（DeepSeek 多模态）可选。
+              默认 deepseek-v4-flash-vision-exp（DeepSeek 多模态）；可切换智谱免费模型 glm-4.6v-flash。
             </Typography>
             <Box sx={{ p: 1.25, borderRadius: '8px', border: `1px solid ${alpha(COLORS.border, 0.8)}`, boxShadow: COLORS.cardShadow, bgcolor: COLORS.bgElevated }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
                 <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>视觉模型</Typography>
                 <Chip
                   size="small"
-                  label={docKey.trim() ? `✓ 已连接 ${docProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : docModel.trim() || 'glm-4.6v-flash'}` : '⚠ 未配置'}
+                  label={docKey.trim() ? `✓ 已连接 ${docProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : docModel.trim() || 'glm-4.6v-flash'}` : `⚠ 未配置（默认 ${docProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'glm-4.6v-flash'}）`}
                   sx={{ height: 20, fontSize: 11 }}
                   color={docKey.trim() ? 'success' : 'default'}
                 />
@@ -388,7 +393,7 @@ export function SettingsPage() {
                   size="small"
                   label="服务商"
                   value={docProvider}
-                  onChange={(e) => setDocProvider(e.target.value as 'zhipu' | 'deepseek')}
+                  onChange={(e) => handleDocProviderChange(e.target.value as 'zhipu' | 'deepseek')}
                   sx={{ width: 120, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
                 >
                   <MenuItem value="zhipu">智谱（免费）</MenuItem>

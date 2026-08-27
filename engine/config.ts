@@ -227,7 +227,7 @@ export function defaultConfig(): EngineConfig {
     watcher: { enabled: true },
     map: { provider: 'amap' },
     prefCities: [],
-    document: { vision: { provider: 'zhipu', model: 'glm-4.6v-flash' } },
+    document: { vision: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' } },
   }
 }
 
