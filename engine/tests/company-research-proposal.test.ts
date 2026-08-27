@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
 import { ensureCompanyPlaceholder } from '../storage/job-watcher.ts'
 import { createSubmitCompanyResearchTool } from '../agent/tools/company-research-proposal-tool.ts'
-import { validateCompanyResearchProposal, COMPANY_FACT_VALUES } from '../runtime/company-research-validator.ts'
+import { COMPANY_FACT_VALUES } from '../runtime/company-research-validator.ts'
 
 const companyId = 'Company-B 电子科技'
 

@@ -53,7 +53,7 @@ export function GapAnalysisSection({ companyName }: { companyName: string }) {
   if (knowledge.status !== 'ready') {
     body = <EmptyNote text="知识层未就绪（引擎未连接或未实现 knowledge RPC）" />
   } else if (!role) {
-    body = <EmptyNote text="该公司暂无岗位条目——Agent 完成 JD 分析/公司尽调后，岗位档案（knowledge/roles.md）自动入库" />
+    body = <EmptyNote text="该公司暂无岗位条目——Agent 完成 JD 分析后，岗位档案（knowledge/roles.md）自动入库" />
   } else if (status === 'idle' || status === 'loading') {
     body = (
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>

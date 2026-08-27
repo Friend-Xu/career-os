@@ -40,6 +40,7 @@ import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext,
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
 import { registerPendingRoleProposals, submitRoleProposal, watchRoleProposals, type RoleProposalInput } from './storage/role-proposal-registry.ts'
+import { backfillRoleProposalsFromJobs } from './storage/role-derivation.ts'
 import { watchWorkflows } from './storage/workflow-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
 import { readFileSync } from 'node:fs'
@@ -99,6 +100,11 @@ async function main(args: string[]): Promise<void> {
     // ─── Role 补登（roles-contract v0.2）：引擎离线期间 Agent 手工写入的 registered 提案 → 投影 roles.md（幂等）
     const roleRegistered = registerPendingRoleProposals(ws).registered
     if (roleRegistered > 0) logger.info(`Role 提案投影：${roleRegistered} 个 registered 提案并入 knowledge/roles.md`)
+    // ─── 岗位入库补登（角色自动派生链）：引擎离线期间 JD 分析已落盘但未登记角色提案 → 派生补登（幂等，已登记跳过）
+    const roleBackfill = backfillRoleProposalsFromJobs(ws)
+    if (roleBackfill.derived > 0) {
+      logger.info(`岗位入库补登：${roleBackfill.derived} 个已分析岗位派生登记入 knowledge/roles.md（已登记跳过 ${roleBackfill.skipped} 个）`)
+    }
 
     if (args.includes('--scan-decisions')) {
       const parsed = scanDecisions(ws)

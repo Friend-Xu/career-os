@@ -5,6 +5,7 @@
  */
 import type { JDAnalysisProposal, JDAnalysisValidationIssue } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
+import { ensureRoleFromJob } from './role-derivation.ts'
 
 const CONTEXT_DIM_LABEL: Record<string, string> = {
   workMode: 'work_mode',
@@ -105,6 +106,10 @@ export function writeJDAnalysis(
   const existing = stripAnalysisSections(ws.read(rel))
   const next = sections.length > 0 ? `${existing}\n\n${sections.join('\n\n')}\n` : `${existing}\n`
   ws.write(rel, next)
+  if (sections.length > 0) {
+    // 岗位入库自动链（roles-contract v0.2）：智能段落盘 → 自动派生角色提案 → roles.md 投影（幂等覆盖）
+    ensureRoleFromJob(ws, proposal.jobId)
+  }
   return {
     written: sections.length > 0,
     skipped: [...rejected],

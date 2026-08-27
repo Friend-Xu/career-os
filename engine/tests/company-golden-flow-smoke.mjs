@@ -22,6 +22,8 @@ import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { startServer } from '../transport/websocket.ts'
 import { METHODS, EVENTS } from '../transport/protocol.ts'
 import { createSubmitCompanyResearchTool } from '../agent/tools/company-research-proposal-tool.ts'
+import { createSubmitJdAnalysisTool } from '../agent/tools/jd-proposal-tool.ts'
+import { backfillRoleProposalsFromJobs, ensureRoleFromJob } from '../storage/role-derivation.ts'
 import { createJobFile, ensureCompanyPlaceholder } from '../storage/job-watcher.ts'
 
 const PORT = 5297
@@ -156,6 +158,67 @@ const md2 = ws.read('companies/Company-G-test.md')
 check('重复尽调无重复摘要表段', (md2.match(/## 分析摘要/g) ?? []).length === 1, '摘要表重复')
 check('再次尽调覆盖 match_score', md2.includes('| match_score | 80% |'), '未覆盖')
 check('再次尽调 contacted=是', md2.includes('| contacted | 是 |'), '未更新 contacted')
+
+// ─── Step 6: JD 分析 Proposal → 岗位自动入库（roles.md 投影 + 知识层可见）──
+console.log('── Step 6: JD 分析落盘 → 岗位档案自动入库 ──')
+const jdTool = createSubmitJdAnalysisTool(ws)
+const jdOut = await jdTool.execute(
+  {
+    jobId,
+    artifactVersion: 2,
+    context: {
+      workMode: [{ value: '产品结构设计', source: '岗位职责 1', confidence: 'high' }],
+      careerPath: [{ value: '结构工程师 → 主管', source: '岗位职责 2', confidence: 'medium' }],
+      industry: [{ value: '医疗器械', source: '企业简介', confidence: 'high' }],
+    },
+    constraints: {
+      education: { values: ['本科'], source: '任职要求 1', confidence: 'high' },
+      major: { values: ['机械'], source: '任职要求 1', confidence: 'high' },
+    },
+    capabilities: [
+      {
+        responsibility: '结构方案设计',
+        priority: 'must',
+        category: 'hard',
+        capabilities: ['结构设计', 'SolidWorks'],
+        evidencePatterns: ['method', 'validation'],
+        questions: ['请举例结构设计案例'],
+      },
+      {
+        responsibility: '跨部门协作',
+        priority: 'nice',
+        category: 'soft',
+        capabilities: ['跨部门协作'],
+        evidencePatterns: ['scope'],
+        questions: ['你协作过的部门'],
+      },
+    ],
+    generatedAt: '2026-08-27T12:00:00Z',
+  },
+  { toolCallId: 'jd1', messages: [], context: {} },
+)
+check('JD 分析提案提交成功', JSON.parse(String(jdOut)).written === true, String(jdOut))
+check('岗位自动入库：role-proposals/ 出现提案', ws.listMarkdown('role-proposals').length === 1, ws.listMarkdown('role-proposals').join(','))
+const rolesMd1 = ws.exists('knowledge/roles.md') ? ws.read('knowledge/roles.md') : ''
+check('岗位自动入库：roles.md 含条目', rolesMd1.includes('机械工程师（Company-G-test）'), 'roles.md 缺条目')
+check('岗位自动入库：来源可回溯', rolesMd1.includes('来源: JD-Company-G-test-2026-08-27'), rolesMd1)
+check(
+  '岗位自动入库：技能项（essential/nice-to-have）',
+  rolesMd1.includes('- essential: SolidWorks') && rolesMd1.includes('- nice-to-have: 跨部门协作'),
+  rolesMd1,
+)
+
+// ─── Step 7: 知识层可见（差距分析消费端 = knowledge/graph) ────────────────
+console.log('── Step 7: 知识层可见（knowledge/graph）──')
+const knowledge = await rpc(METHODS.knowledgeGraph)
+const roleInGraph = (knowledge.roles ?? []).some((r) => r.name === '机械工程师' && r.company === 'Company-G-test')
+check('knowledge/graph 含岗位条目', roleInGraph, JSON.stringify(knowledge.roles))
+
+// ─── Step 8: 对账补登幂等（已有登记 → 跳过不重建）──────────────────────────
+console.log('── Step 8: 对账补登幂等 ──')
+const backfill1 = backfillRoleProposalsFromJobs(ws)
+check('backfill 跳过已登记（derived=0）', backfill1.derived === 0, JSON.stringify(backfill1))
+check('backfill skipped=1（已登记岗位）', backfill1.skipped === 1, JSON.stringify(backfill1))
 
 // ─── 收尾 ────────────────────────────────────────────────────────────────
 await client.close()

@@ -27,8 +27,8 @@ function cell(v: string | undefined): string {
   return (v ?? '').replace(/\|/g, '\\|')
 }
 
-/** 摘要表行（reject 字段跳过 → 原值保留/占位；字段缺失既有档案保留原值，新建占位填 -） */
-function buildSummarySection(existing: string | null, p: CompanyResearchProposal, rejected: Set<string>): string {
+/** 摘要表行（reject 字段跳过 → 原值保留/占位；字段缺失新建占位填 -） */
+function buildSummarySection(p: CompanyResearchProposal, rejected: Set<string>): string {
   const rows: string[] = [
     '## 分析摘要',
     '',
@@ -70,16 +70,6 @@ function buildFactsSection(p: CompanyResearchProposal, rejected: Set<string>): s
   return ['', '## 公司事实', '', '| 类型 | 内容 | 来源 | 链接 |', '|------|------|------|------|', ...rows].join('\n')
 }
 
-/** 从既有档案 md 中移除旧三件套段（替换语义：新尽调覆盖旧尽调——同段替换，避免重复段） */
-function stripExistingSections(md: string): string {
-  return md
-    .replace(/\n?##\s*分析摘要\s*\n((?:\|[^\n]*\|\n)+)/, '\n')
-    .replace(/\n?##\s*尽调详情\s*\n[\s\S]*?(?=\n##\s|\n*$)/, '')
-    .replace(/\n?##\s*公司事实\s*\n[\s\S]*?(?=\n##\s|\n*$)/, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 /** 尽调产物写入：companies/{companyId}.md（写入所有权归 Engine；reject 字段跳过；占位升级不新建） */
 export function writeCompanyResearch(
   ws: Workspace,
@@ -87,18 +77,17 @@ export function writeCompanyResearch(
   issues: CompanyResearchValidationIssue[],
 ): { written: boolean; skipped: string[] } {
   const rel = `companies/${proposal.companyId}.md`
-  const existing = ws.exists(rel) ? ws.read(rel) : null
   const rejected = rejectedPaths(issues)
 
   const header = `# ${proposal.companyId}`
-  const summary = buildSummarySection(existing, proposal, rejected)
+  const summary = buildSummarySection(proposal, rejected)
   const detail = buildDetailSection(proposal)
   const facts = buildFactsSection(proposal, rejected)
   const sections = [summary, detail, facts].filter(Boolean)
   const next = [header, '', ...sections, ''].join('\n')
 
-  if (existing) ws.write(rel, next)
-  else ws.write(rel, next) // 无档案（理论不达）：按契约新建（JD 建档通常已占位）
+  // 占位档案（JD 建档自动创建）→ 升级为完整档案（同一文件名，禁止新建第二份——身份分裂事故）
+  ws.write(rel, next)
 
   return {
     written: sections.length > 0,

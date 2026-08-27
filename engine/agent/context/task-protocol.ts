@@ -63,7 +63,7 @@ function jobAnalysisProtocol(jobId?: string): string {
     '步骤顺序：',
     `1) Read 读岗位文件（jobId=${jobId ?? '见任务上下文'}，含 JD 原文与既有「岗位智能」段），确认依据；`,
     '2) 组织 Proposal：岗位理解（work_mode/career_path/industry）、岗位门槛（education/major/experience）、岗位智能（责任单元+Priority must/nice+Category hard/soft/preference+能力词+证据模式+追问）；',
-    '3) 调用 submit_jd_analysis 提交（引擎校验并写入岗位档案——禁止用 Edit/Write 直接改岗位文件）；',
+    '3) 调用 submit_jd_analysis 提交（引擎校验并写入岗位档案——禁止用 Edit/Write 直接改岗位文件）；提交落盘后引擎自动派生岗位档案条目入 knowledge/roles.md（岗位入库自动链），无需额外操作；',
     '4) 提交成功后用中文简述分析要点（职责拆解/门槛/加分项）；匹配与差距由系统展示，不输出画像匹配结论。',
     '纪律：',
     '- 工具调用前后不输出过程叙述（不输出 "Let me..."/Now let me... 之类英文过程描述），全部输出用中文；',
