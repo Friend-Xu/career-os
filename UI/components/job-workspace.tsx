@@ -130,12 +130,12 @@ function cleanJd(jd: string, job: JobRecord): string {
 /** 岗位工作区状态（从数据派生）：分析/建档/投递/面试
  *  - ADR-019：投递记录由用户「开始投递流程」创建（PREPARING 起）——applied 判定：
  *    状态推进到 SUBMITTED（已投递）才算投出
- *  - 占位公司（validation invalid）= 待尽调，不视为已尽调 */
-function deriveStatus(job: JobRecord, decisions: { title: string; skill?: string; subjectId?: string }[], company: CompanyWithValidation | undefined, appliedStatus?: string) {
-  // 已分析判定：该岗位的 jd-analysis 决策（subjectId 直连优先，存量标题回退——同公司多 JD 不误判）
-  const analyzed = decisions.some(
-    (d) => d.skill === 'jd-analysis' && decisionMatchesJob(d, job),
-  )
+ *  - 占位公司（validation invalid）= 待尽调，不视为已尽调
+ *  - analyzed 判定 = 岗位智能段存在（Engine parseJobIntelligence → responsibilities source=ai 确定性产物）：
+ *    「分析完成」的事实是能力段已落盘，不是 jd-analysis 决策记录（决策记录是 M7 独立功能，非投递前置） */
+function deriveStatus(job: JobRecord, company: CompanyWithValidation | undefined, appliedStatus?: string) {
+  // 已分析判定：岗位智能段（source=ai）存在——能力段是分析完成的确定性事实
+  const analyzed = job.responsibilities.some((r) => r.source === 'ai')
   const dueDiligence = company !== undefined && company.validation?.status !== 'invalid'
   const applied = appliedStatus === 'SUBMITTED' || appliedStatus === 'COMMUNICATING' || appliedStatus === 'INTERVIEWING' || appliedStatus === 'OFFERED'
   const interviewing = appliedStatus === 'INTERVIEWING'
@@ -206,7 +206,7 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
   const job = jobs.find((j) => j.id === jobId)
   const company = job ? resolveCompanyReference(companies, job.company) : undefined
   const app = job ? applications.find((a) => a.jobId === job.id) : undefined
-  const st = job ? deriveStatus(job, decisions, company, app?.status) : null
+  const st = job ? deriveStatus(job, company, app?.status) : null
 
   useEffect(() => {
     setGap(null)
@@ -258,14 +258,11 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
     setPage('resumes')
   }
   /** 发起投递（ADR-019 用户行动事实——显式「开始投递」创建，Agent 禁止创建）：
-   *  decisionId 取本岗位最新 jd-analysis 决策——B 落地后 jobDecisions 由 subjectId 精确过滤，不会串到同公司其他 JD */
+   *  decisionId 挂本岗位最新 jd-analysis 决策（可选——决策记录是 M7 独立功能，非投递前置；
+   *  engine CreateApplicationRequest.decisionId optional，无决策也允许创建）。 */
   const startApply = (): void => {
     const newest = [...jobDecisions].sort((a, b) => `${b.createdAt}${b.id}`.localeCompare(`${a.createdAt}${a.id}`))[0]
-    if (!newest) {
-      push('warning', '该岗位暂无分析决策——先完成 JD 分析再发起投递')
-      return
-    }
-    createApplication({ jobId: job.id, decisionId: newest.id }).then(
+    createApplication({ jobId: job.id, ...(newest ? { decisionId: newest.id } : {}) }).then(
       () => {
         push('success', `已发起投递流程：${job.company} · ${job.title}（准备投递）`)
         setPage('applications')
@@ -445,6 +442,24 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
               </Button>
             )}
           </Stack>
+
+          {/* 投递资格提示：缺什么 + 原因 + 下一步（避免「神秘拒绝」——前置条件对用户可见） */}
+          {!app && !st.analyzed && (
+            <Box sx={{ mt: 1, p: 1, borderRadius: '8px', bgcolor: alpha(COLORS.border, 0.12), border: `1px dashed ${alpha(COLORS.border, 0.6)}` }}>
+              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
+                投递暂不可用 · <b style={{ color: COLORS.text }}>还差:JD 分析</b>
+                <Box component="span" sx={{ ml: 1, fontSize: 11, color: COLORS.textMuted }}>分析岗位要求后生成能力模型,即可推进投递</Box>
+              </Typography>
+            </Box>
+          )}
+          {!app && st.analyzed && !st.dueDiligence && (
+            <Box sx={{ mt: 1, p: 1, borderRadius: '8px', bgcolor: alpha(COLORS.border, 0.12), border: `1px dashed ${alpha(COLORS.border, 0.6)}` }}>
+              <Typography sx={{ fontSize: 12, color: COLORS.textSecondary }}>
+                投递暂不可用 · <b style={{ color: COLORS.text }}>还差:公司尽调</b>
+                <Box component="span" sx={{ ml: 1, fontSize: 11, color: COLORS.textMuted }}>完成公司尽调后档案生效,即可推进投递</Box>
+              </Typography>
+            </Box>
+          )}
         </Box>
 
         {/* 职位描述（JD 原文 markdown 排版） */}

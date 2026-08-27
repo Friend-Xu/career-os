@@ -42,8 +42,10 @@ test('buildTaskProtocol：company_research 注入证据充分性协议（9 维/�
   // limitation 类型语义（Phase 4 真机发现：uncertainty 仅用于 UNCERTAIN 维度；限定措辞进 note）
   assert.ok(p.includes('仅当存在状态为 UNCERTAIN 的维度'), '协议须明确 uncertainty limitation 的使用条件')
   assert.ok(p.includes('不写入 limitations'), '协议须明确限定措辞不进 limitations')
-  // 语义边界：不输出公司评分 / 不写文件
+  // 语义边界：不输出公司评分；档案写入经 Proposal 通道（Producer Ownership，不直接写文件）
   assert.ok(p.includes('Company Assessment 由系统计算'), '协议须明确不做公司评分')
+  assert.ok(p.includes('submit_company_research'), '协议须声明公司尽调提案提交工具')
+  assert.ok(p.includes('禁止用 Edit/Write 直接改档案文件'), '协议须禁止 Agent 直接写公司档案')
   // 中文输出
   assert.ok(p.includes('中文'), '协议须要求中文输出')
 })

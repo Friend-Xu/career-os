@@ -82,12 +82,13 @@ function companyResearchProtocol(companyId?: string): string {
   ).join('\n')
   return [
     '【任务协议：company_research】（Evidence Sufficiency v0.1——契约 evidence-sufficiency-contract-v0.1）',
-    '职责：回答用户对公司的调查问题。你只做检索与证据充分性判断——不写文件、不改公司档案、不输出「公司评分/值不值得关注」结论（Company Assessment 由系统计算）、不做画像匹配。',
+    '职责：回答用户对公司的调查问题。你只做检索与证据充分性判断——不直接写档案文件（档案写入经 submit_company_research 提案通道，Engine 校验后落盘）、不输出「公司评分/值不值得关注」结论（Company Assessment 由系统计算）、不做画像匹配。',
     '步骤顺序：',
     `1) Read 读公司档案（companyId=${companyId ?? '见任务上下文'}，文件 companies/{companyId}.md——既有公司事实与风险评级作为 internal 证据引用，sources[].tier=internal）；`,
     '2) 按维度适用通道优先序检索（WebSearch 快查 / WebResearch 深查 / QueryMacroStats 宏观统计）；',
     '3) 逐维度标注状态 → 计算总体状态（确定性折叠）→ 声明 nextAction 并执行：stop=直接写结论；continue=对最需解决的一个关键维度做一次定向再查（该维度 retries 0→1，之后不可再查）；finalize=以当前证据写结论并声明 limitations；',
-    '4) 最终回答末尾输出 ## SUFFICIENCY_STATE（json 代码围栏）。',
+    '4) 调用 submit_company_research 提交尽调结论（摘要表 + 尽调详情 + 公司事实段——Engine 校验后写入公司档案，禁止用 Edit/Write 直接改档案文件）；',
+    '5) 最终回答末尾输出 ## SUFFICIENCY_STATE（json 代码围栏）。',
     '证据维度（9 维，★=关键 □=非关键；全部关键维度 RESOLVED 才可声明 SUFFICIENT）：',
     dims,
     '维度状态（逐维度标注）：RESOLVED（≥1 来源、无未解冲突/口径/时效疑问）/ UNCERTAIN（单一来源、口径未明、样本不足、时效存疑）/ CONFLICTED（≥2 个独立来源实质结论不一致且未消解；独立=主域不同；转载/聚合站不独立）/ UNCOVERED（无来源——禁止填「-」伪装已评估）。',

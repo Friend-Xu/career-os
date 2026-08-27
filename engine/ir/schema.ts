@@ -206,6 +206,46 @@ export interface JDAnalysisValidationIssue {
   severity: 'reject' | 'warn'
 }
 
+// ─── Company Research Proposal（company-file-contract：Agent 结构化结论 → Engine 校验落盘）──
+
+/** 尽调摘要表字段（company-file-contract §字段与值格式——引擎严格校验） */
+export interface CompanyResearchSummaryProposal {
+  city?: string
+  industry?: string
+  matchScore?: string
+  riskLevel?: string
+  source?: string
+  tags?: string
+  contacted?: '是' | '否'
+  aliases?: string
+}
+
+/** 公司事实行（Company Intelligence v0.1：类型 ∈ 7 枚举；value ∈ 评估契约 §4 规则表 value 枚举） */
+export interface CompanyFactProposal {
+  type: string
+  value: string
+  source: string
+  url?: string
+}
+
+/** 公司尽调 Proposal（同 JDAnalysisProposal 模式：Agent 只提交候选，Engine 校验后写档）。
+ *  detail = 尽调详情正文（## 尽调详情 段）；facts = 公司事实段（§4 枚举，枚举外不计分）。 */
+export interface CompanyResearchProposal {
+  companyId: string
+  artifactVersion: 2
+  summary: CompanyResearchSummaryProposal
+  detail?: string
+  facts?: CompanyFactProposal[]
+  generatedAt: string
+}
+
+/** 公司尽调 Proposal 校验结果（同 JDAnalysisValidationIssue：reject = 不写入；warn = 写入但记录） */
+export interface CompanyResearchValidationIssue {
+  path: string
+  reason: string
+  severity: 'reject' | 'warn'
+}
+
 // ─── M6.5：Person Intelligence Layer（persons/{person_id}/ 主体资产，ADR-009）──
 
 /** 身份基本信息（identity.md 基本信息表投影——用户确认事实；简历身份字段 seed 来源） */

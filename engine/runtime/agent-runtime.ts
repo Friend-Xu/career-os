@@ -15,6 +15,7 @@ import { resolveLanguageModel } from '../agent/providers/model.ts'
 import type { WebSearchMode } from '../agent/providers/capabilities.ts'
 import { buildFsTools, FS_TOOL_META } from '../agent/tools/fs-tools.ts'
 import { createSubmitJdAnalysisTool } from '../agent/tools/jd-proposal-tool.ts'
+import { createSubmitCompanyResearchTool } from '../agent/tools/company-research-proposal-tool.ts'
 import { buildWebSearchTool, createSearchSession, WEB_SEARCH_TOOL_META, type CacheEntry } from '../agent/tools/web-search.ts'
 import {
   buildExaTools,
@@ -398,9 +399,14 @@ export class AgentRuntime {
       allowedTools: params.allowedTools ?? defaults.allowedTools,
       stageTools: params.stageTools,
       // 任务协议工具（按 taskType 引擎单方注入；submit_jd_analysis = job_analysis 的 Proposal 通道——
-      // 契约 v0.1 方案 B：Agent 无 Artifact 写权限，提交经 Validator+Writer 写档）
+      // 契约 v0.1 方案 B：Agent 无 Artifact 写权限，提交经 Validator+Writer 写档；
+      // submit_company_research = company_research 的同构 Proposal 通道（company-file-contract））
       taskTools:
-        params.taskType === 'job_analysis' ? { submit_jd_analysis: createSubmitJdAnalysisTool(workspace) } : undefined,
+        params.taskType === 'job_analysis'
+          ? { submit_jd_analysis: createSubmitJdAnalysisTool(workspace) }
+          : params.taskType === 'company_research'
+            ? { submit_company_research: createSubmitCompanyResearchTool(workspace) }
+            : undefined,
       permissionMode: params.permissionMode ?? defaults.permissionMode,
       maxTurns: params.maxTurns ?? defaults.maxTurns,
       outputBudget: params.outputBudget,

@@ -26,7 +26,6 @@ import { useToastStore } from '../store/toast-store'
 import { computePoolStats } from '../store/engine-client'
 import { alpha, COLORS, RISK_COLOR } from '../data/constants'
 import { resolveCompanyReference } from '../data/company-ref'
-import { decisionMatchesJob } from '../utils/decision-job-link'
 import type { InfoNode } from '../types'
 
 /**
@@ -847,26 +846,23 @@ export function InfoPoolPage() {
               <MenuItem
                 onClick={() => {
                   setMenu(null)
-                  // ADR-019 Step 4.3：仅「有岗位分析决策」的公司可发起投递（决策 → 行动链；
-                  // subjectId 直连优先，存量标题回退——同一公司多 JD 时不再取错岗位）
-                  const decision = decisions.find(
-                    (d) => d.skill === 'jd-analysis' && jobs.some((j) => j.company === menuCompany.name && decisionMatchesJob(d, j)),
+                  // ADR-019 Step 4.3：仅「已分析岗位」的公司可发起投递（决策 → 行动链；
+                  // analyzed 判定 = 岗位智能段 source=ai 存在——能力段是分析完成的确定性事实，
+                  // 非 jd-analysis 决策记录（决策是 M7 独立功能，投递可选挂载））
+                  const analyzedJobs = jobs.filter(
+                    (j) => j.company === menuCompany.name && j.responsibilities.some((r) => r.source === 'ai'),
                   )
-                  if (!decision) {
-                    push('warning', `「${menuCompany.name}」暂无岗位分析决策——先分析该公司的 JD 生成决策，才能发起投递`)
+                  if (analyzedJobs.length === 0) {
+                    push('warning', `「${menuCompany.name}」尚无已分析岗位——先分析该公司的 JD 后再发起投递`)
                     return
                   }
-                  const job = jobs.find((j) => decisionMatchesJob(decision, j))
-                  if (!job) {
-                    push('warning', `「${menuCompany.name}」的决策未关联岗位档案（JD 池无匹配）`)
-                    return
-                  }
+                  const job = analyzedJobs[0]
                   if (applications.some((a) => a.jobId === job.id)) {
                     push('info', '该岗位已有投递记录——到投递管理推进状态')
                     setPage('applications')
                     return
                   }
-                  void createApplication({ jobId: job.id, decisionId: decision.id }).then(
+                  void createApplication({ jobId: job.id }).then(
                     () => {
                       push('success', `已发起投递流程：${job.company} · ${job.title}（准备投递）`)
                       setPage('applications')
