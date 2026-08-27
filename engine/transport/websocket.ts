@@ -1132,7 +1132,7 @@ function settingsUpdateParams(v: unknown): {
   allowedTools?: string[]
   maxTurns?: number
   map?: { apiKey?: string; securityJsCode?: string }
-  document?: { vision?: { provider?: 'zhipu'; model?: string; apiKey?: string } }
+  document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
 } {
   if (typeof v !== 'object' || v === null) throw new Error('settings/update 需要 params 对象')
   const p = v as Record<string, unknown>
@@ -1211,12 +1211,14 @@ function settingsUpdateParams(v: unknown): {
         throw new Error('params.document.vision 应为对象 { provider?, model?, apiKey? }')
       }
       const v = d.vision as Record<string, unknown>
-      if (v.provider !== undefined && v.provider !== 'zhipu') throw new Error('params.document.vision.provider 当前仅支持 zhipu')
+      if (v.provider !== undefined && v.provider !== 'zhipu' && v.provider !== 'deepseek') {
+        throw new Error("params.document.vision.provider 仅支持 'zhipu' | 'deepseek'")
+      }
       if (v.model !== undefined && typeof v.model !== 'string') throw new Error('params.document.vision.model 应为字符串')
       if (v.apiKey !== undefined && typeof v.apiKey !== 'string') throw new Error('params.document.vision.apiKey 应为字符串')
       out.document = {
         vision: {
-          ...(v.provider !== undefined ? { provider: v.provider as 'zhipu' } : {}),
+          ...(v.provider !== undefined ? { provider: v.provider as 'zhipu' | 'deepseek' } : {}),
           ...(v.model !== undefined ? { model: v.model as string } : {}),
           ...(v.apiKey !== undefined ? { apiKey: v.apiKey as string } : {}),
         },
