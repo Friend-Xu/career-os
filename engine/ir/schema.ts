@@ -1055,6 +1055,10 @@ export type AgentErrorCode =
   | 'api_error'
   | 'cancelled'
   | 'timeout'
+  /** 空输出（R004 语义：模型未生成有效内容——如推理模型思考耗尽输出预算被截断、text 未开始。
+   *  引擎 runner 显式产出该错误（2026-08-28 真机：deepseek-flash 长任务思考 8K 截断 → 静默空 done）
+   *  与 UI 改写通道的 empty_output 先例同码；retryable=true 的显示语义由消费端复用） */
+  | 'empty_output'
   | 'unknown'
 export interface AgentError {
   code: AgentErrorCode

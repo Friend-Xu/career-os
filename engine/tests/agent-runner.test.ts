@@ -150,7 +150,7 @@ test('allowedTools 白名单：未列出的工具不注册（Write 不出现）'
   assert.ok(events.every((e) => e.type !== 'tool_start' || e.name !== 'Write'))
 })
 
-test('outputBudget：预算下发 provider 请求体（max_tokens）；缺省 = 8000', async () => {
+test('outputBudget：预算下发 provider 请求体（max_tokens）；缺省 = 16384', async () => {
   // 显式预算：4096 → 请求体 max_tokens = 4096
   const server = await startFakeAnthropicServer([textTurn('完成')])
   const ws = tmpWorkspace()
@@ -159,14 +159,33 @@ test('outputBudget：预算下发 provider 请求体（max_tokens）；缺省 = 
   await server.close()
   const body = server.requests[0] as Record<string, unknown>
   assert.equal(body.max_tokens, 4096)
-  // 缺省（普通过话/Stage 未挂预算）：runner 8K 默认——兼容模式 4096 截断事故的显式防线
+  // 缺省（普通过话/Stage 未挂预算）：runner 16K 默认——与聚合任务 16384 档一致；
+  // 2026-08-28 真机：推理模型 thinking 计入 max_tokens，8K 会被长任务思考耗尽截断（空输出）
   const server2 = await startFakeAnthropicServer([textTurn('完成')])
   const ws2 = tmpWorkspace()
   const handle2 = createAgentRunner(runnerOpts(server2, ws2))
   await collect(handle2)
   await server2.close()
   const body2 = server2.requests[0] as Record<string, unknown>
-  assert.equal(body2.max_tokens, 8000)
+  assert.equal(body2.max_tokens, 16384)
+})
+
+test('空输出：模型未生成文本（thinking 耗尽截断）→ error empty_output（不做静默空 done）', async () => {
+  // textTurn('') 模拟：流结束、无 text 块内容（推理模型思考耗尽 max_tokens 后 text 未开始的形状）
+  const server = await startFakeAnthropicServer([textTurn('')])
+  const ws = tmpWorkspace()
+  const handle = createAgentRunner(runnerOpts(server, ws))
+  const events = await collect(handle)
+  await server.close()
+  const done = events.find((e) => e.type === 'done')
+  assert.equal(done, undefined, '空输出不得产生 done（静默成功）')
+  const err = events.find((e) => e.type === 'error')
+  assert.ok(err && err.type === 'error', '应产生 error 事件')
+  if (err !== undefined && err.type === 'error') {
+    assert.equal(err.error.code, 'empty_output')
+    assert.equal(err.error.retryable, true)
+    assert.match(err.error.message, /未生成有效内容/)
+  }
 })
 
 test('Tool Evidence Contract：tool_done 携带装配层生产方证据（evidence 访问器 → 取即清）', async () => {

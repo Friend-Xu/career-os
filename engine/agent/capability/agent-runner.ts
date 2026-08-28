@@ -36,7 +36,9 @@ export interface AgentRunnerOptions {
   permissionMode: 'acceptEdits' | 'ask' | 'bypassPermissions'
   maxTurns?: number
   /** 单步输出预算（token；Control Plane 按 Stage Policy 下发——见 workflow-registry StageSpec.task.outputBudget）。
-   *  缺省 8_000 = 通用默认；不随模型成本策略变化。 */
+   *  缺省 16_384 = 对话通用默认（2026-08-28 真机定位：deepseek-flash 为推理模型，长任务思考
+   *  消耗可超 8K——自由对话 8K 预算下 thinking 截断 → 空输出（用户视角"卡死无回复"）；
+   *  与聚合任务 16384 档先例一致（8/22 真机达标），思考 + 答案一次容下）。 */
   outputBudget?: number
   abortController?: AbortController
   logger?: Logger
@@ -227,9 +229,10 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
         ...(opts.system !== undefined && opts.system !== '' ? { system: opts.system } : {}),
         tools: wrappedTools,
         // 显式输出上限：@ai-sdk/anthropic 对未知模型走兼容模式时默认 4096（实测会截断长任务——
-        // 工具调用 JSON 被切断 → 任务看似 done 实则未写产物）。DeepSeek 支持 8K 输出。
-        // 预算来源：Stage Policy（Control Plane 按阶段下发；成本优化与防截断的同一旋钮）
-        maxOutputTokens: opts.outputBudget ?? 8_000,
+        // 工具调用 JSON 被切断 → 任务看似 done 实则未写产物）。DeepSeek 支持 8K+ 输出。
+        // 预算来源：Stage Policy（Control Plane 按阶段下发；成本优化与防截断的同一旋钮）。
+        // 缺省 16_384（对话通用档——推理模型 thinking 计入 max_tokens，8K 会被思考耗尽截断）
+        maxOutputTokens: opts.outputBudget ?? 16_384,
         // maxTurns → 步数上限；未设（工作流默认）→ 25 步护栏（防模型自我循环）。
         // v7 默认 stopWhen = stepCountIs(1)，工具循环会一步即停，必须显式覆盖）
         stopWhen: stepCountIs(opts.maxTurns ?? MAX_STEPS),
@@ -273,7 +276,20 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
       void (async () => {
         try {
           const text = await stream.text
-          push({ type: 'done', result: text })
+          // R004 语义（与 UI 改写通道 empty_output 先例同码）：空输出 ≠ 静默成功。
+          // 推理模型 thinking 计入 max_tokens——思考耗尽预算后 text 从未开始（stop_reason=max_tokens），
+          // 2026-08-28 真机：deepseek-flash 长任务 8K 截断 → 空 done → Frame 丢回答、UI 空白（"卡死"观感）。
+          // 防御面：显式 empty_output（retryable）——UI 错误卡提示重试，执行状态 failed 而非伪 completed。
+          if (text.trim().length === 0) {
+            finalError = {
+              code: 'empty_output',
+              message: '模型未生成有效内容（输出预算可能被思考耗尽或服务异常）——请重试或缩短消息后重发',
+              retryable: true,
+            }
+            push({ type: 'error', error: finalError })
+          } else {
+            push({ type: 'done', result: text })
+          }
         } catch (err) {
           finalError = mapRunnerError(err, aborted())
           push({ type: 'error', error: finalError })
