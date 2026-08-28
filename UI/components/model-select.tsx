@@ -29,6 +29,7 @@ export function ModelSelect({
       options={options ?? []}
       value={value}
       onChange={(_e, v) => onChange(v ?? '')}
+      popupIcon={null}
       renderInput={(params) => (
         <TextField
           {...params}
@@ -80,7 +81,7 @@ export function ModelSelect({
       slotProps={{
         paper: {
           sx: {
-            fontSize: 12.5,
+            fontSize: 12,
             borderRadius: '12px',
             border: `1px solid ${COLORS.border}`,
             boxShadow: 3,
@@ -88,14 +89,13 @@ export function ModelSelect({
         },
         listbox: {
           sx: {
-            fontSize: 12.5,
+            fontSize: 12,
             py: 0.5,
             '& .MuiAutocomplete-option': {
               borderRadius: '8px',
               mx: 0.5,
               '&:hover': { bgcolor: alpha(COLORS.accent, 0.1) },
-              '&.Mui-focused': { bgcolor: alpha(COLORS.accent, 0.08) },
-                '&[aria-selected="true"]': { bgcolor: `${alpha(COLORS.accent, 0.14)} !important`, fontWeight: 600 },
+              '&[aria-selected="true"]': { bgcolor: `${alpha(COLORS.accent, 0.14)} !important`, fontWeight: 600 },
             },
           },
         },

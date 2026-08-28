@@ -31,6 +31,7 @@ export function ReasoningSelect({
         size="small"
         value={value}
         onChange={(e) => onChange(e.target.value as ReasoningLevel)}
+        IconComponent={() => null}
         renderValue={(v) => (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <PsychologyIcon sx={{ fontSize: 13, color: COLORS.accent, flexShrink: 0 }} />
@@ -48,7 +49,6 @@ export function ReasoningSelect({
           '&:hover': { borderColor: alpha(COLORS.accent, 0.5) },
           '&.Mui-focused': { borderColor: COLORS.accent },
           '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-          '& .MuiSvgIcon-root': { fontSize: 16 },
         }}
         MenuProps={{
           slotProps: {
