@@ -18,6 +18,8 @@ import {
 } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
 import StopCircleIcon from '@mui/icons-material/StopCircle'
+import OpenInFullIcon from '@mui/icons-material/OpenInFull'
+import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -775,6 +777,8 @@ export function AgentPage() {
   const setAgentReasoning = useAppStore((s) => s.setAgentReasoning)
   const push = useToastStore((s) => s.push)
   const [demoAnchor, setDemoAnchor] = useState<HTMLElement | null>(null)
+  /** 输入框展开态（微信式"全屏输入"：右上角角标点击向上展开更大编辑空间） */
+  const [inputExpanded, setInputExpanded] = useState(false)
 
   /** Initialization Shell：当前人初始化中 → 全屏初始化空间（左对话 + 右理解草稿） */
   const initMode = person.initStatus === 'pending'
@@ -1067,36 +1071,58 @@ export function AgentPage() {
               </Button>
             </Stack>
           )}
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
-            <TextField
-              fullWidth
-              multiline
-              maxRows={6}
-              placeholder={
-                taskRunning
-                  ? '任务运行中…（可点 ⏹ 停止）'
-                  : inputLocked
-                    ? `完成「${person.name}」初始化后可继续对话`
-                    : initMode
-                      ? '回复 Agent 的问题…（Enter 发送，Shift+Enter 换行）'
-                      : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'
-              }
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && draft.trim() && !inputLocked) {
-                  e.preventDefault()
-                  send(draft.trim())
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Box sx={{ position: 'relative', flex: 1, alignSelf: 'stretch' }}>
+              <TextField
+                fullWidth
+                multiline
+                minRows={1}
+                maxRows={inputExpanded ? 20 : 6}
+                placeholder={
+                  taskRunning
+                    ? '任务运行中…（可点 ⏹ 停止）'
+                    : inputLocked
+                      ? `完成「${person.name}」初始化后可继续对话`
+                      : initMode
+                        ? '回复 Agent 的问题…（Enter 发送，Shift+Enter 换行）'
+                        : '描述你的决策问题…（Enter 发送，Shift+Enter 换行）'
                 }
-              }}
-              disabled={taskRunning || inputLocked}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: COLORS.bgElevated,
-                  fontSize: 13,
-                },
-              }}
-            />
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && draft.trim() && !inputLocked) {
+                    e.preventDefault()
+                    send(draft.trim())
+                  }
+                }}
+                disabled={taskRunning || inputLocked}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    bgcolor: COLORS.bgElevated,
+                    fontSize: 13,
+                    alignItems: 'flex-start',
+                    ...(inputExpanded
+                      ? { '& textarea': { minHeight: '38vh', pr: '38px', py: 1.2 } }
+                      : { '& textarea': { pr: '38px', py: 1 } }),
+                  },
+                }}
+              />
+              <IconButton
+                size="small"
+                aria-label={inputExpanded ? '收起输入框' : '展开输入框'}
+                onClick={() => setInputExpanded((v) => !v)}
+                sx={{
+                  position: 'absolute',
+                  top: 3,
+                  right: 4,
+                  p: 0.4,
+                  color: inputExpanded ? COLORS.accent : COLORS.textMuted,
+                  '&:hover': { bgcolor: alpha(COLORS.accent, 0.12), color: COLORS.accent },
+                }}
+              >
+                {inputExpanded ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+              </IconButton>
+            </Box>
             {taskRunning && (
               <Tooltip title="停止当前 Agent 任务">
                 <IconButton
