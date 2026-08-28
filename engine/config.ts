@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { ReasoningLevel } from './ir/schema.ts'
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(ENGINE_DIR, '..')
@@ -146,6 +147,9 @@ export interface EngineConfig {
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
+    /** 推理等级（thinking 控制；缺省 = auto = 端点自适应——2026-08-28 探针实测最优：
+     *  deepseek-flash 长任务思考自适应受控，文本全、快 2.6 倍；见 ir/schema ReasoningLevel） */
+    reasoning?: ReasoningLevel
   }
   paths: {
     workspace: string
@@ -253,6 +257,15 @@ function assertPermissionMode(v: unknown, source: ConfigSource): PermissionMode 
     throw new ConfigError('agent.permissionMode', v, PERMISSION_MODES.join('/'), source)
   }
   return v as PermissionMode
+}
+
+const REASONING_LEVELS: ReasoningLevel[] = ['auto', 'low', 'high', 'off']
+
+function assertReasoningLevel(v: unknown, source: ConfigSource): ReasoningLevel {
+  if (typeof v !== 'string' || !REASONING_LEVELS.includes(v as ReasoningLevel)) {
+    throw new ConfigError('agent.reasoning', v, REASONING_LEVELS.join('/'), source)
+  }
+  return v as ReasoningLevel
 }
 
 function assertTools(v: unknown, source: ConfigSource): string[] {
@@ -625,6 +638,7 @@ export function loadConfig(args: string[] = []): { config: EngineConfig; firstRu
       if (file.agent.permissionMode !== undefined) config.agent.permissionMode = assertPermissionMode(file.agent.permissionMode, 'config.json')
       if (file.agent.allowedTools !== undefined) config.agent.allowedTools = assertTools(file.agent.allowedTools, 'config.json')
       if (file.agent.maxTurns !== undefined) config.agent.maxTurns = assertMaxTurns(file.agent.maxTurns, 'config.json')
+      if (file.agent.reasoning !== undefined) config.agent.reasoning = assertReasoningLevel(file.agent.reasoning, 'config.json')
     }
     if (file.paths) {
       if (file.paths.workspace !== undefined) config.paths.workspace = resolvePath(file.paths.workspace, 'config.json')
@@ -699,6 +713,7 @@ export function describeConfig(config: EngineConfig): string[] {
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,
+    `agent.reasoning = ${config.agent.reasoning ?? 'auto（thinking 端点自适应——2026-08-28 实测默认档）'}`,
     `agent.search = budgetPerTask ${config.agent.search?.budgetPerTask ?? DEFAULT_SEARCH_BUDGET} 次 / cacheTtl ${config.agent.search?.cacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES} 分钟 / timeout ${config.agent.search?.timeoutMs ?? '引擎默认(60s)'}ms（WebSearch 治理旋钮）`,
     `paths.workspace = ${config.paths.workspace}（信息池真相源）`,
     `paths.skills = ${config.paths.skills}（skill 加载目录）`,

@@ -13,7 +13,7 @@
 import { APICallError, stepCountIs, streamText, tool } from 'ai'
 import { z } from 'zod'
 import type { LanguageModel, Tool } from 'ai'
-import type { AgentError, AgentQuestion, ToolEvidence } from '../../ir/schema.ts'
+import type { AgentError, AgentQuestion, ReasoningLevel, ToolEvidence } from '../../ir/schema.ts'
 import type { Logger } from '../../logger.ts'
 import type { AgentEvent, AgentHandle } from '../../ir/agent-event.ts'
 import { assembleTools, type ToolRuntimeMeta, type ToolSourceDef } from '../tools/tool-assembly.ts'
@@ -40,6 +40,8 @@ export interface AgentRunnerOptions {
    *  消耗可超 8K——自由对话 8K 预算下 thinking 截断 → 空输出（用户视角"卡死无回复"）；
    *  与聚合任务 16384 档先例一致（8/22 真机达标），思考 + 答案一次容下）。 */
   outputBudget?: number
+  /** 推理等级（thinking 控制；缺省 undefined = auto = 端点自适应——2026-08-28 探针实测最优） */
+  reasoning?: ReasoningLevel
   abortController?: AbortController
   logger?: Logger
   /** 权限决策源（permissionMode='ask' 时文件工具执行前询问）；缺省 = 直接放行 */
@@ -83,6 +85,25 @@ function mapRunnerError(err: unknown, aborted: boolean): AgentError {
   const m = err instanceof Error ? err.message : String(err)
   if (/timeout|timed out/i.test(m)) return { code: 'timeout', message: m, retryable: true }
   return { code: 'unknown', message: m, retryable: true }
+}
+
+/** 固定档思考预算（token；仅 low/high 用——Anthropic 要求 budget ≥ 1024 且 max_tokens > budget + 预留） */
+const REASONING_BUDGET: Record<'low' | 'high', number> = { low: 2048, high: 8192 }
+
+/** reasoning → Anthropic providerOptions（2026-08-28 探针实测驱动；缺省 auto）：
+ *  - auto → thinking adaptive（端点自适应权衡——长任务思考受控、文本全、耗时短 2.6×）
+ *  - low/high → thinking enabled + budget_tokens（clamp 到 max_tokens−1024：协议要求文本预留空间）
+ *  - off → thinking disabled（关闭内部推理）
+ *  注：providerOptions 按 provider 命名空间隔离——openai 线格式 provider 忽略 anthropic 键（无副作用）。 */
+export function reasoningProviderOptions(
+  level: ReasoningLevel | undefined,
+  maxTokens: number,
+): { anthropic: { thinking: { type: 'adaptive' } | { type: 'enabled'; budgetTokens: number } | { type: 'disabled' } } } {
+  const lv = level ?? 'auto'
+  if (lv === 'auto') return { anthropic: { thinking: { type: 'adaptive' } } }
+  if (lv === 'off') return { anthropic: { thinking: { type: 'disabled' } } }
+  const budget = Math.min(REASONING_BUDGET[lv], Math.max(1024, maxTokens - 1024))
+  return { anthropic: { thinking: { type: 'enabled', budgetTokens: budget } } }
 }
 
 export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
@@ -221,6 +242,11 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
     let finalError: AgentError | undefined
     try {
       const prompt = opts.context === undefined ? opts.task : `${opts.task}\n\n${opts.context}`
+      // 显式输出上限：@ai-sdk/anthropic 对未知模型走兼容模式时默认 4096（实测会截断长任务——
+      // 工具调用 JSON 被切断 → 任务看似 done 实则未写产物）。DeepSeek 支持 8K+ 输出。
+      // 预算来源：Stage Policy（Control Plane 按阶段下发；成本优化与防截断的同一旋钮）。
+      // 缺省 16_384（对话通用档——推理模型 thinking 计入 max_tokens，8K 会被思考耗尽截断）
+      const maxOutputTokens = opts.outputBudget ?? 16_384
       const stream = streamText({
         model: opts.model,
         prompt,
@@ -228,11 +254,9 @@ export function createAgentRunner(opts: AgentRunnerOptions): AgentHandle {
         // 模型感知优先级最高（v0.1 曾拼入 user 消息尾部——协议面被长任务上下文稀释，行为漂移）
         ...(opts.system !== undefined && opts.system !== '' ? { system: opts.system } : {}),
         tools: wrappedTools,
-        // 显式输出上限：@ai-sdk/anthropic 对未知模型走兼容模式时默认 4096（实测会截断长任务——
-        // 工具调用 JSON 被切断 → 任务看似 done 实则未写产物）。DeepSeek 支持 8K+ 输出。
-        // 预算来源：Stage Policy（Control Plane 按阶段下发；成本优化与防截断的同一旋钮）。
-        // 缺省 16_384（对话通用档——推理模型 thinking 计入 max_tokens，8K 会被思考耗尽截断）
-        maxOutputTokens: opts.outputBudget ?? 16_384,
+        maxOutputTokens,
+        // 推理等级（thinking 控制；缺省 auto = 端点自适应——Anthropic 命名空间，openai 线 provider 忽略）
+        providerOptions: reasoningProviderOptions(opts.reasoning, maxOutputTokens),
         // maxTurns → 步数上限；未设（工作流默认）→ 25 步护栏（防模型自我循环）。
         // v7 默认 stopWhen = stepCountIs(1)，工具循环会一步即停，必须显式覆盖）
         stopWhen: stepCountIs(opts.maxTurns ?? MAX_STEPS),

@@ -1060,6 +1060,14 @@ export type AgentErrorCode =
    *  与 UI 改写通道的 empty_output 先例同码；retryable=true 的显示语义由消费端复用） */
   | 'empty_output'
   | 'unknown'
+
+/** 推理等级（thinking 控制——2026-08-28 探针实测驱动；Anthropic 线格式 providerOptions 映射）：
+ *  - auto：adaptive（端点自适应权衡思考/文本——实测最优：思考受控、文本全、耗时短）
+ *  - low：thinking enabled + budget_tokens 2048（快速响应档）
+ *  - high：thinking enabled + budget_tokens 8192（深度思考档；注入时 clamp 到 max_tokens−1024）
+ *  - off：thinking disabled（关闭内部推理）
+ *  缺省 undefined = 引擎默认（engine config agent.reasoning；未配置 = auto） */
+export type ReasoningLevel = 'auto' | 'low' | 'high' | 'off'
 export interface AgentError {
   code: AgentErrorCode
   message: string

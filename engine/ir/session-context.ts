@@ -32,5 +32,8 @@ export interface SessionContextFrame {
 export const SESSION_FRAME_MAX_FOCUS = 3
 /** recentTurns 有界（契约 §C.3：FIFO 追加，丢最旧） */
 export const SESSION_FRAME_MAX_TURNS = 6
-/** 单条文本有界（契约 §C.3：保留首尾，中间删） */
-export const SESSION_FRAME_MAX_TURN_TEXT = 500
+/** 单条文本有界（契约 §C.3：保留首尾，中间删；总长 = SESSION_FRAME_MAX_TURN_TEXT。
+ *  2026-08-28 提档 500→2000：真机定位——500 字截断让下一轮 recentTurns 只剩首尾残片
+ *  （HR 回复类长消息的中间信息全丢——模型看到的是断裂文本）；2000 覆盖典型单条消息。
+ *  输入侧边界：6 条 × 2000 ≈ 12K 字符 ≈ 8K tokens，与输出预算 16K 无冲突。 */
+export const SESSION_FRAME_MAX_TURN_TEXT = 2000

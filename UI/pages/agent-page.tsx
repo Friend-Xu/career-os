@@ -33,6 +33,7 @@ import { useToastStore } from '../store/toast-store'
 import { executionPhaseOf, formatElapsed, lastContentSegmentOf, PHASE_META } from '../store/agent-phase'
 import type { StreamPhase } from '../store/agent-phase'
 import { ModelSelect } from '../components/model-select'
+import { ReasoningSelect } from '../components/reasoning-select'
 import { MarkdownView } from '../components/markdown-view'
 import { QuestionCardView } from '../components/agent/question-card-view'
 import { useSessionScroll } from '../hooks/use-session-scroll'
@@ -771,6 +772,7 @@ export function AgentPage() {
   const cancelCurrentTask = useAppStore((s) => s.cancelCurrentTask)
   const agentSettings = useAppStore((s) => s.agentSettings)
   const setAgentModel = useAppStore((s) => s.setAgentModel)
+  const setAgentReasoning = useAppStore((s) => s.setAgentReasoning)
   const push = useToastStore((s) => s.push)
   const [demoAnchor, setDemoAnchor] = useState<HTMLElement | null>(null)
 
@@ -1133,13 +1135,22 @@ export function AgentPage() {
               <SendIcon sx={{ fontSize: 18 }} />
             </IconButton>
             {!initMode && (
-              <ModelSelect
-                compact
-                value={agentSettings.model}
-                onChange={(m) => setAgentModel(m)}
-                options={providerModels}
-                freeInput={false}
-              />
+              <>
+                <ReasoningSelect
+                  value={agentSettings.reasoning ?? 'auto'}
+                  onChange={(level) => {
+                    setAgentReasoning(level)
+                    push('info', level === 'auto' ? '推理等级：自动（思考自适应）' : `推理等级：${level}`)
+                  }}
+                />
+                <ModelSelect
+                  compact
+                  value={agentSettings.model}
+                  onChange={(m) => setAgentModel(m)}
+                  options={providerModels}
+                  freeInput={false}
+                />
+              </>
             )}
           </Stack>
         </Box>

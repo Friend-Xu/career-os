@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, defaultConfig, resolveAgentConnection, resolveModel, resolveTaskModel, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
-import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ResumeRewriteContext } from '../ir/schema.ts'
+import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ReasoningLevel, ResumeRewriteContext } from '../ir/schema.ts'
 import { DecisionRuntime } from '../runtime/decision-runtime.ts'
 import { AgentRuntime, type AgentStartParams } from '../runtime/agent-runtime.ts'
 import { ExecutionRegistry } from '../runtime/execution-registry.ts'
@@ -1118,6 +1118,13 @@ function agentStartParams(v: unknown): AgentStartParams {
     }
     out.baseUrl = p.baseUrl
   }
+  // 推理等级（thinking 控制——每轮覆盖；缺省 undefined = 引擎默认 auto）
+  if (p.reasoning !== undefined) {
+    if (typeof p.reasoning !== 'string' || !['auto', 'low', 'high', 'off'].includes(p.reasoning as string)) {
+      throw new Error('params.reasoning 应为一档（auto/low/high/off）')
+    }
+    out.reasoning = p.reasoning as ReasoningLevel
+  }
   return out
 }
 
@@ -1131,6 +1138,7 @@ function settingsUpdateParams(v: unknown): {
   permissionMode?: PermissionMode
   allowedTools?: string[]
   maxTurns?: number
+  reasoning?: ReasoningLevel
   map?: { apiKey?: string; securityJsCode?: string }
   document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
 } {
@@ -1186,6 +1194,12 @@ function settingsUpdateParams(v: unknown): {
   if (p.maxTurns !== undefined) {
     if (typeof p.maxTurns !== 'number' || p.maxTurns < 1) throw new Error('params.maxTurns 应为正整数')
     out.maxTurns = p.maxTurns
+  }
+  if (p.reasoning !== undefined) {
+    if (typeof p.reasoning !== 'string' || !['auto', 'low', 'high', 'off'].includes(p.reasoning as string)) {
+      throw new Error('params.reasoning 应为一档（auto/low/high/off）')
+    }
+    out.reasoning = p.reasoning as ReasoningLevel
   }
   if (p.map !== undefined) {
     if (typeof p.map !== 'object' || p.map === null || Array.isArray(p.map)) {
@@ -1931,6 +1945,7 @@ export async function startServer(opts: {
       permissionMode: config.agent.permissionMode,
       allowedTools: config.agent.allowedTools,
       maxTurns: config.agent.maxTurns,
+      reasoning: config.agent.reasoning,
       map: config.map,
       document: config.document,
     }),
@@ -1945,6 +1960,7 @@ export async function startServer(opts: {
       if (patch.permissionMode !== undefined) config.agent.permissionMode = patch.permissionMode
       if (patch.allowedTools !== undefined) config.agent.allowedTools = patch.allowedTools
       if (patch.maxTurns !== undefined) config.agent.maxTurns = patch.maxTurns
+      if (patch.reasoning !== undefined) config.agent.reasoning = patch.reasoning
       if (patch.map !== undefined) config.map = { provider: config.map.provider, ...patch.map }
       if (patch.document !== undefined) {
         config.document = { vision: { provider: 'zhipu', ...config.document.vision, ...patch.document.vision } }

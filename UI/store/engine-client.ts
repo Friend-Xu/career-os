@@ -870,6 +870,8 @@ export class EngineClient {
     model?: string
     apiKey?: string
     baseUrl?: string
+    /** 推理等级（thinking 控制：auto/low/high/off；缺省 = 引擎默认 auto = 端点自适应） */
+    reasoning?: 'auto' | 'low' | 'high' | 'off'
   }): Promise<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }> {
     return this.rpc<{ taskId: string; executionId: string; contextBundle?: AgentContextBundle }>(METHODS.agentStart, params)
   }
@@ -942,6 +944,7 @@ export class EngineClient {
     permissionMode?: string
     allowedTools?: string[]
     maxTurns?: number
+    reasoning?: 'auto' | 'low' | 'high' | 'off'
     map?: MapSettings
     document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
   }> {
@@ -955,6 +958,7 @@ export class EngineClient {
     enabled?: boolean
     providers?: AgentProviderView[]
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
+    reasoning?: 'auto' | 'low' | 'high' | 'off'
     map?: { apiKey?: string; securityJsCode?: string }
     document?: { vision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string } }
   }): Promise<unknown> {

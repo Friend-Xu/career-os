@@ -178,7 +178,7 @@ interface AppState {
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
   /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
-  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { provider: 'zhipu' | 'deepseek'; model: string; apiKey: string }; permissionMode: string };
+  agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { provider: 'zhipu' | 'deepseek'; model: string; apiKey: string }; permissionMode: string; reasoning?: 'auto' | 'low' | 'high' | 'off' };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };
   /** 投递记录视图（ADR-019：用户行动事实资产，引擎 applications/list 实时派生，不持久化——Engine Registry 是唯一事实源；allowedTransitions 随 RPC 返回） */
@@ -415,9 +415,13 @@ interface AppState {
     documentVision?: { provider?: 'zhipu' | 'deepseek'; model?: string; apiKey?: string }
     /** 工具授权模式：bypassPermissions = 自动授权所有工具；ask = 逐个询问 */
     permissionMode?: 'acceptEdits' | 'ask' | 'bypassPermissions'
+    /** 推理等级（thinking 控制：auto/low/high/off；缺省 auto = 端点自适应） */
+    reasoning?: 'auto' | 'low' | 'high' | 'off'
   }) => Promise<void>;
   /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings */
   setAgentModel: (model: string) => void;
+  /** 推理等级切换器：即时保存（与模型同语义——切换后下一轮生效） */
+  setAgentReasoning: (level: 'auto' | 'low' | 'high' | 'off') => void;
   /** 权限消费入口（真实 Agent 流 + 演示共用）：会话内已批量放行 → 立即放行；否则挂起弹窗等待决策 */
   requestPermission: (toolName: string, description: string, anchor?: { executionId?: string; taskId?: string; requestId?: string }) => Promise<boolean>;
   approvePermission: () => void;
@@ -586,7 +590,7 @@ export const useAppStore = create<AppState>()(
       /** 当前会话焦点投影（ADR-036 Phase 4：引擎 Frame 只读——UI 展示胶囊；不持久化） */
       sessionFocus: null,
       now: Date.now(),
-      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp', apiKey: '' }, permissionMode: 'bypassPermissions' },
+      agentSettings: { model: '', apiKey: '', baseUrl: '', enabled: true, providers: [], map: { provider: 'amap' }, documentVision: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp', apiKey: '' }, permissionMode: 'bypassPermissions', reasoning: 'auto' },
       availableModels: { source: 'cli', models: [] },
       applications: [],
       deletedAppJobIds: [],
@@ -1353,6 +1357,7 @@ export const useAppStore = create<AppState>()(
             apiKey: s.document?.vision?.apiKey ?? '',
           },
           permissionMode: s.permissionMode ?? 'bypassPermissions',
+          reasoning: s.reasoning ?? 'auto',
         },
       })
     } catch {
@@ -1380,6 +1385,7 @@ export const useAppStore = create<AppState>()(
       providers: patch.providers,
       map: patch.map,
       permissionMode: patch.permissionMode,
+      ...(patch.reasoning !== undefined ? { reasoning: patch.reasoning } : {}),
       ...(patch.documentVision !== undefined
         ? { document: { vision: { provider: 'zhipu', ...patch.documentVision } } }
         : {}),
@@ -1398,8 +1404,16 @@ export const useAppStore = create<AppState>()(
             : s.agentSettings.documentVision,
         permissionMode:
           patch.permissionMode !== undefined ? patch.permissionMode : s.agentSettings.permissionMode,
+        reasoning:
+          patch.reasoning !== undefined ? patch.reasoning : s.agentSettings.reasoning,
       },
     }))
+  },
+
+  /** 推理等级切换器：即时保存（与模型同语义——切换后下一轮生效） */
+  setAgentReasoning: (level) => {
+    set((s) => ({ agentSettings: { ...s.agentSettings, reasoning: level } }))
+    void get().saveAgentSettings({ reasoning: level })
   },
 
   /** 模型切换器：仅内存生效（跟随发送），持久化走 saveAgentSettings。
@@ -2620,6 +2634,9 @@ async function runAgentTask(
         : {}),
       ...(useAppStore.getState().agentSettings.baseUrl
         ? { baseUrl: useAppStore.getState().agentSettings.baseUrl }
+        : {}),
+      ...(useAppStore.getState().agentSettings.reasoning !== undefined && useAppStore.getState().agentSettings.reasoning !== 'auto'
+        ? { reasoning: useAppStore.getState().agentSettings.reasoning }
         : {}),
     })
     // ADR-020：Bundle = 显式上下文（执行期快照）——存 Session（UI 只投影不解释），不塞 message

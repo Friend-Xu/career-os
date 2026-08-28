@@ -56,12 +56,8 @@ import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import { ExecutionRegistry, isTerminalExecutionStatus, type PendingInteraction } from './execution-registry.ts'
 /** Agent Task & Context（ADR-020，ir 共享契约）——taskType/contextRefs/outputTarget/trigger */
-import type {
-  AgentTaskType,
-  ContextReference,
-  OutputTarget,
-  TaskTrigger,
-} from '../ir/agent-task.ts'
+import type { AgentTaskType, ContextReference, OutputTarget, TaskTrigger } from '../ir/agent-task.ts'
+import type { ReasoningLevel } from '../ir/schema.ts'
 
 export type { AgentRuntimeEvent }
 
@@ -241,6 +237,8 @@ export interface AgentStartParams {
   apiKey?: string
   /** API 端点根地址覆盖（缺省用引擎 config.agent.baseUrl；空 = 官方） */
   baseUrl?: string
+  /** 推理等级（thinking 控制——每轮覆盖；缺省 = 引擎默认 auto = 端点自适应） */
+  reasoning?: ReasoningLevel
   /** 本轮显式引用的解析投影（websocket 层 resolveContextRefs 后注入；ADR-036 Frame focus 更新源。
    *  Agent 不感知——仅 Context Compiler（引擎）消费，与 task 的引用装配正交） */
   resolvedFocus?: SessionFocusRef[]
@@ -410,6 +408,7 @@ export class AgentRuntime {
       permissionMode: params.permissionMode ?? defaults.permissionMode,
       maxTurns: params.maxTurns ?? defaults.maxTurns,
       outputBudget: params.outputBudget,
+      reasoning: params.reasoning,
       abortController: abort,
       logger: this.logger,
       onPermissionRequest: (tool) =>

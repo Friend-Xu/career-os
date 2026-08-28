@@ -138,6 +138,16 @@ test('fail fast：非法 permissionMode → ConfigError', () => {
   rmSync(join(path, '..'), { recursive: true, force: true })
 })
 
+test('reasoning：合法档位加载生效；非法/非字符串 → ConfigError（fail fast）', () => {
+  const ok = loadConfig(['--config', tempConfigFile({ agent: { reasoning: 'high' } })]).config
+  assert.equal(ok.agent.reasoning, 'high')
+  const bad1 = tempConfigFile({ agent: { reasoning: 'ultra' } })
+  assert.throws(() => loadConfig(['--config', bad1]), ConfigError)
+  const bad2 = tempConfigFile({ agent: { reasoning: 3 } })
+  assert.throws(() => loadConfig(['--config', bad2]), ConfigError)
+  for (const p of [bad1, bad2]) rmSync(join(p, '..'), { recursive: true, force: true })
+})
+
 test('fail fast：config.json 非法 JSON → ConfigError', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cos-config-'))
   const path = join(dir, 'bad.json')
