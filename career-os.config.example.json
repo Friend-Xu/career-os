@@ -18,13 +18,14 @@
       "QueryMacroStats",
       "CompareRegionProfiles"
     ],
+    "reasoning": "high",
     "model": "deepseek-v4-flash",
     "enabled": true,
     "providers": [
       {
         "id": "deepseek",
         "label": "DeepSeek",
-        "baseUrl": "https://api.deepseek.com/anthropic",
+        "baseUrl": "https://api.deepseek.com",
         "apiKey": "",
         "enabled": true,
         "models": [
