@@ -138,9 +138,12 @@ test('fail fast：非法 permissionMode → ConfigError', () => {
   rmSync(join(path, '..'), { recursive: true, force: true })
 })
 
-test('reasoning：合法档位加载生效；非法/非字符串 → ConfigError（fail fast）', () => {
+test('reasoning：合法档位加载生效；旧值 auto 迁移为 high；非法/非字符串 → ConfigError（fail fast）', () => {
   const ok = loadConfig(['--config', tempConfigFile({ agent: { reasoning: 'high' } })]).config
   assert.equal(ok.agent.reasoning, 'high')
+  // 旧值迁移（v0.1 auto = Anthropic adaptive 语义 → DeepSeek 原生默认档 high）
+  const migrated = loadConfig(['--config', tempConfigFile({ agent: { reasoning: 'auto' } })]).config
+  assert.equal(migrated.agent.reasoning, 'high')
   const bad1 = tempConfigFile({ agent: { reasoning: 'ultra' } })
   assert.throws(() => loadConfig(['--config', bad1]), ConfigError)
   const bad2 = tempConfigFile({ agent: { reasoning: 3 } })

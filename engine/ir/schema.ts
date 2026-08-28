@@ -1061,13 +1061,16 @@ export type AgentErrorCode =
   | 'empty_output'
   | 'unknown'
 
-/** 推理等级（thinking 控制——2026-08-28 探针实测驱动；Anthropic 线格式 providerOptions 映射）：
- *  - auto：adaptive（端点自适应权衡思考/文本——实测最优：思考受控、文本全、耗时短）
- *  - low：thinking enabled + budget_tokens 2048（快速响应档）
- *  - high：thinking enabled + budget_tokens 8192（深度思考档；注入时 clamp 到 max_tokens−1024）
- *  - off：thinking disabled（关闭内部推理）
- *  缺省 undefined = 引擎默认（engine config agent.reasoning；未配置 = auto） */
-export type ReasoningLevel = 'auto' | 'low' | 'high' | 'off'
+/** 推理等级（DeepSeek 原生 reasoning_effort 语义——2026-08-28 原生端点探针实测：
+ *  - off：关闭推理（thinking disabled——思考 0、最快、文本最全）
+ *  - low：effort low（思考 tokens ≈ 400，快速档）
+ *  - high：effort high（思考 tokens ≈ 700，均衡档；引擎缺省）
+ *  - max：effort max（思考 tokens ≈ 1400，深度档）
+ *  映射按线格式分派（agent/providers/reasoning.ts）：OpenAI 兼容线（createDeepSeek）→
+ *  providerOptions.deepseek{ thinking|reasoningEffort }；Anthropic 线（createAnthropic）→
+ *  providerOptions.anthropic.thinking{budget_tokens}。缺省 = high（确定性优于端点默认——实测
+ *  无参数时思考 6745 tokens、73s，不可控）。 */
+export type ReasoningLevel = 'off' | 'low' | 'high' | 'max'
 export interface AgentError {
   code: AgentErrorCode
   message: string

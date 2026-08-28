@@ -11,6 +11,7 @@ import type { IncomingMessage } from 'node:http'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_CONFIG_PATH, defaultConfig, resolveAgentConnection, resolveModel, resolveTaskModel, type AgentProvider, type EngineConfig, type PermissionMode } from '../config.ts'
+import { reasoningProviderOptions } from '../agent/providers/reasoning.ts'
 import type { Workspace } from '../storage/workspace.ts'
 import type { Logger } from '../logger.ts'
 import type { ApplicationStatus, DecisionAggregate, DecisionHistory, DecisionRecord, ConstraintMatchRow, DecisionCandidate, EvidenceRef, GapResult, JDAnalysisProposal, JDIntelligenceResult, Person, PersonSkill, ReasoningLevel, ResumeRewriteContext } from '../ir/schema.ts'
@@ -185,7 +186,7 @@ import { buildCoverLetterTraceability } from '../artifact-traceability/cover-let
 import { deleteCompanyFile, readCompanyFile, setCompanyContacted, type CompanyView, type ProjectionStore } from '../storage/projection.ts'
 import { extractJdFieldsDirect } from '../runtime/jd-extract.ts'
 import { generateInterviewCandidates, generateResumeCandidates } from '../runtime/resume-facts.ts'
-import { resolveLanguageModel } from '../agent/providers/model.ts'
+import { resolveLanguageModel, wireFormatOf } from '../agent/providers/model.ts'
 import { checkAgentHealth } from '../runtime/agent-health.ts'
 import {
   applicationView,
@@ -1118,10 +1119,10 @@ function agentStartParams(v: unknown): AgentStartParams {
     }
     out.baseUrl = p.baseUrl
   }
-  // 推理等级（thinking 控制——每轮覆盖；缺省 undefined = 引擎默认 auto）
+  // 推理等级（thinking 控制——每轮覆盖；缺省 = 引擎默认 high）
   if (p.reasoning !== undefined) {
-    if (typeof p.reasoning !== 'string' || !['auto', 'low', 'high', 'off'].includes(p.reasoning as string)) {
-      throw new Error('params.reasoning 应为一档（auto/low/high/off）')
+    if (typeof p.reasoning !== 'string' || !['off', 'low', 'high', 'max'].includes(p.reasoning as string)) {
+      throw new Error('params.reasoning 应为一档（off/low/high/max）')
     }
     out.reasoning = p.reasoning as ReasoningLevel
   }
@@ -1196,8 +1197,8 @@ function settingsUpdateParams(v: unknown): {
     out.maxTurns = p.maxTurns
   }
   if (p.reasoning !== undefined) {
-    if (typeof p.reasoning !== 'string' || !['auto', 'low', 'high', 'off'].includes(p.reasoning as string)) {
-      throw new Error('params.reasoning 应为一档（auto/low/high/off）')
+    if (typeof p.reasoning !== 'string' || !['off', 'low', 'high', 'max'].includes(p.reasoning as string)) {
+      throw new Error('params.reasoning 应为一档（off/low/high/max）')
     }
     out.reasoning = p.reasoning as ReasoningLevel
   }
@@ -1860,6 +1861,12 @@ export async function startServer(opts: {
       if (!conn) throw new Error('未配置已启用的服务商——请在设置页添加并启用服务商后再试')
       const taskModel = resolveTaskModel(conn, config, 'career_analysis')
       const taskConn = { ...conn, model: taskModel }
+      // 推理等级 providerOptions（引擎按线格式组装——agent/providers/reasoning.ts：
+      // DeepSeek 原生 openai 线 = reasoning_effort 语义（实测单调）；Anthropic 线 = thinking budget。
+      // 缺省 = config.agent.reasoning ?? 'high'（确定性优于端点默认——实测无参思考 6745 tokens 不可控））
+      const taskBudget = stageBudget ?? aggregateTaskBudget(p.taskType)
+      const reasoningLevel = p.reasoning ?? config.agent.reasoning ?? 'high'
+      const providerOptions = reasoningProviderOptions(wireFormatOf(taskConn), reasoningLevel, taskBudget ?? 16_384)
       const { taskId, executionId } = agentRuntime.start(
         {
           ...p,
@@ -1868,8 +1875,9 @@ export async function startServer(opts: {
           model: resolveModel(taskConn, p.model),
           // 输出预算：Stage 任务按 StageSpec（客户端不可设）；非 Stage 聚合任务提档
           // （16384——8/22 真机：flash 长叙述 + 多工具调用 8192 截断、16384 达标）；
-          // 普通过话 undefined → runner 8K 默认。
-          outputBudget: stageBudget ?? aggregateTaskBudget(p.taskType),
+          // 普通过话 undefined → runner 16K 默认。
+          outputBudget: taskBudget,
+          providerOptions,
           stageTools,
           // 系统协议段（身份/Stage Envelope/任务协议）→ AI SDK system 通道（v0.1 拼接在
           // user 尾部被长任务稀释——协议面必须与用户任务分离）；user 通道只留任务 + 附加上下文。

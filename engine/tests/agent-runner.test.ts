@@ -253,40 +253,36 @@ test('任务协议工具：taskTools 注入（白名单外亦可调用）+ 审�
   assert.equal(server.requests.length, 2, '工具结果回合已回传')
 })
 
-test('推理等级：缺省 auto → thinking adaptive；low/high budget（clamp to max_tokens−1024）；off → disabled', async () => {
-  // 缺省（auto）：thinking adaptive（2026-08-28 探针实测默认档——思考受控、文本全、快 2.6×）
+test('推理等级 providerOptions：透传给请求体（anthropic 线 thinking 序列化）；缺省不注入', async () => {
+  // 引擎按线格式组装的 providerOptions（agent/providers/reasoning.ts）原样透传——
+  // 断言 SDK 序列化结果：thinking enabled + budget_tokens
   const server1 = await startFakeAnthropicServer([textTurn('完成')])
   const ws1 = tmpWorkspace()
-  const h1 = createAgentRunner(runnerOpts(server1, ws1))
+  const h1 = createAgentRunner(
+    runnerOpts(server1, ws1, { providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 3072 } } } }),
+  )
   await collect(h1)
   await server1.close()
   const body1 = server1.requests[0] as Record<string, unknown>
-  assert.deepEqual(body1.thinking, { type: 'adaptive' }, '缺省 = auto → thinking.adaptive')
+  assert.deepEqual(body1.thinking, { type: 'enabled', budget_tokens: 3072 }, 'providerOptions → body.thinking')
 
-  // high + 显式 4096 预算：clamp → budget_tokens 3072（max_tokens−1024 预留文本空间）
+  // off 档：thinking disabled
   const server2 = await startFakeAnthropicServer([textTurn('完成')])
   const ws2 = tmpWorkspace()
-  const h2 = createAgentRunner(runnerOpts(server2, ws2, { reasoning: 'high', outputBudget: 4096 }))
+  const h2 = createAgentRunner(
+    runnerOpts(server2, ws2, { providerOptions: { anthropic: { thinking: { type: 'disabled' } } } }),
+  )
   await collect(h2)
   await server2.close()
   const body2 = server2.requests[0] as Record<string, unknown>
-  assert.deepEqual(body2.thinking, { type: 'enabled', budget_tokens: 3072 }, 'high + 4096 → budget 3072（clamp）')
+  assert.deepEqual(body2.thinking, { type: 'disabled' }, 'off → body.thinking disabled')
 
-  // high + 缺省 16K：预算全额 8192
+  // 缺省：不注入 providerOptions → 请求体无 thinking 字段（端点默认行为）
   const server3 = await startFakeAnthropicServer([textTurn('完成')])
   const ws3 = tmpWorkspace()
-  const h3 = createAgentRunner(runnerOpts(server3, ws3, { reasoning: 'high' }))
+  const h3 = createAgentRunner(runnerOpts(server3, ws3))
   await collect(h3)
   await server3.close()
   const body3 = server3.requests[0] as Record<string, unknown>
-  assert.deepEqual(body3.thinking, { type: 'enabled', budget_tokens: 8192 }, 'high + 16K → budget 8192')
-
-  // off：thinking disabled（无内部推理）
-  const server4 = await startFakeAnthropicServer([textTurn('完成')])
-  const ws4 = tmpWorkspace()
-  const h4 = createAgentRunner(runnerOpts(server4, ws4, { reasoning: 'off' }))
-  await collect(h4)
-  await server4.close()
-  const body4 = server4.requests[0] as Record<string, unknown>
-  assert.deepEqual(body4.thinking, { type: 'disabled' }, 'off → thinking.disabled')
+  assert.equal(body3.thinking, undefined, '缺省不注入 → 无 thinking 字段')
 })

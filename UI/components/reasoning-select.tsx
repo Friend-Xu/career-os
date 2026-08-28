@@ -1,20 +1,20 @@
 /**
- * 推理等级选择器（Agent 会话模型选择器旁）：thinking 控制档位。
- * - 档位映射（引擎 runner 实测驱动，2026-08-28）：auto=端点自适应（默认，最优）/
- *   low=思考预算 2K / high=思考预算 8K / off=关闭内部推理
+ * 推理等级选择器（Agent 会话模型选择器旁）：DeepSeek 原生 reasoning_effort 四档。
+ * - 档位（2026-08-28 原生端点实测）：关闭=thinking disabled（思考 0、最快）；
+ *   低=effort low（思考≈400 tokens）；高=effort high（≈700，默认档）；最大=effort max（≈1400）
  * - 即时保存（setAgentReasoning → settings/update），下一轮生效（与模型切换同语义）
  */
 import PsychologyIcon from '@mui/icons-material/Psychology'
 import { Box, MenuItem, Select, Tooltip, Typography } from '@mui/material'
 import { COLORS, alpha } from '../data/constants'
 
-export type ReasoningLevel = 'auto' | 'low' | 'high' | 'off'
+export type ReasoningLevel = 'off' | 'low' | 'high' | 'max'
 
 const LEVELS: { value: ReasoningLevel; label: string; desc: string }[] = [
-  { value: 'auto', label: '自动', desc: '思考自适应（默认）——模型按任务复杂度权衡，响应快且思考充分' },
-  { value: 'low', label: '快速', desc: '思考预算 2K——优先响应速度，复杂任务可能欠思考' },
-  { value: 'high', label: '深度', desc: '思考预算 8K——优先思考深度，适合复杂分析（更慢）' },
-  { value: 'off', label: '关闭', desc: '关闭内部推理——最快，但复杂分析易缺关键判断' },
+  { value: 'off', label: '关闭', desc: '关闭思考推理——响应最快' },
+  { value: 'low', label: '低', desc: '轻量思考——响应快，复杂任务可能欠思考' },
+  { value: 'high', label: '高', desc: '标准思考（默认档）——均衡' },
+  { value: 'max', label: '最大', desc: '深度思考——最严谨，耗时最长' },
 ]
 
 export function ReasoningSelect({
@@ -26,7 +26,7 @@ export function ReasoningSelect({
 }) {
   const current = LEVELS.find((l) => l.value === value) ?? LEVELS[0]!
   return (
-    <Tooltip title={`推理等级：${current.desc}`} placement="top">
+    <Tooltip title={`推理等级：${current.desc}`} placement="bottom" enterDelay={400}>
       <Select
         size="small"
         value={value}

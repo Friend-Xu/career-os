@@ -51,6 +51,7 @@ import type { AgentRuntimeEvent, SufficiencyValidationSummary } from '../ir/sche
 import { validateEvidenceSufficiency } from './evidence-sufficiency-validator.ts'
 import { SessionContextStore } from './session-context-store.ts'
 import type { SessionFocusRef } from '../ir/session-context.ts'
+import type { JSONObject } from '@ai-sdk/provider'
 import { buildSessionContextSection } from '../agent/context/session-context-compiler.ts'
 import type { Logger } from '../logger.ts'
 import type { Workspace } from '../storage/workspace.ts'
@@ -237,8 +238,11 @@ export interface AgentStartParams {
   apiKey?: string
   /** API 端点根地址覆盖（缺省用引擎 config.agent.baseUrl；空 = 官方） */
   baseUrl?: string
-  /** 推理等级（thinking 控制——每轮覆盖；缺省 = 引擎默认 auto = 端点自适应） */
+  /** 推理等级（thinking 控制——每轮覆盖；缺省 = 引擎默认 high = DeepSeek effort high） */
   reasoning?: ReasoningLevel
+  /** 推理等级 providerOptions（引擎按线格式组装——agent/providers/reasoning.ts；客户端不可设）
+   *  websocket 接线层据 wire + reasoning + outputBudget 组装后传入；缺省 = undefined */
+  providerOptions?: Record<string, JSONObject>
   /** 本轮显式引用的解析投影（websocket 层 resolveContextRefs 后注入；ADR-036 Frame focus 更新源。
    *  Agent 不感知——仅 Context Compiler（引擎）消费，与 task 的引用装配正交） */
   resolvedFocus?: SessionFocusRef[]
@@ -408,7 +412,7 @@ export class AgentRuntime {
       permissionMode: params.permissionMode ?? defaults.permissionMode,
       maxTurns: params.maxTurns ?? defaults.maxTurns,
       outputBudget: params.outputBudget,
-      reasoning: params.reasoning,
+      providerOptions: params.providerOptions,
       abortController: abort,
       logger: this.logger,
       onPermissionRequest: (tool) =>

@@ -147,8 +147,8 @@ export interface EngineConfig {
     permissionMode: PermissionMode
     allowedTools: string[]
     maxTurns?: number
-    /** 推理等级（thinking 控制；缺省 = auto = 端点自适应——2026-08-28 探针实测最优：
-     *  deepseek-flash 长任务思考自适应受控，文本全、快 2.6 倍；见 ir/schema ReasoningLevel） */
+    /** 推理等级（reasoning_effort 语义——DeepSeek 原生线实测单调：off=关闭/low=快速/high=均衡(缺省)/max=深度。
+     *  缺省 = 'high'（确定性优于端点默认——实测无参思考 6745 tokens 不可控）；见 ir/schema ReasoningLevel） */
     reasoning?: ReasoningLevel
   }
   paths: {
@@ -259,10 +259,13 @@ function assertPermissionMode(v: unknown, source: ConfigSource): PermissionMode 
   return v as PermissionMode
 }
 
-const REASONING_LEVELS: ReasoningLevel[] = ['auto', 'low', 'high', 'off']
+const REASONING_LEVELS: ReasoningLevel[] = ['off', 'low', 'high', 'max']
 
 function assertReasoningLevel(v: unknown, source: ConfigSource): ReasoningLevel {
-  if (typeof v !== 'string' || !REASONING_LEVELS.includes(v as ReasoningLevel)) {
+  if (typeof v !== 'string') throw new ConfigError('agent.reasoning', v, REASONING_LEVELS.join('/'), source)
+  // 旧值迁移：v0.1 'auto'（Anthropic adaptive 语义）→ 'high'（DeepSeek 原生 effort 默认档）
+  if (v === 'auto') return 'high'
+  if (!REASONING_LEVELS.includes(v as ReasoningLevel)) {
     throw new ConfigError('agent.reasoning', v, REASONING_LEVELS.join('/'), source)
   }
   return v as ReasoningLevel
@@ -713,7 +716,7 @@ export function describeConfig(config: EngineConfig): string[] {
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,
-    `agent.reasoning = ${config.agent.reasoning ?? 'auto（thinking 端点自适应——2026-08-28 实测默认档）'}`,
+    `agent.reasoning = ${config.agent.reasoning ?? 'high（DeepSeek 原生 reasoning_effort 默认档）'}`,
     `agent.search = budgetPerTask ${config.agent.search?.budgetPerTask ?? DEFAULT_SEARCH_BUDGET} 次 / cacheTtl ${config.agent.search?.cacheTtlMinutes ?? DEFAULT_SEARCH_CACHE_TTL_MINUTES} 分钟 / timeout ${config.agent.search?.timeoutMs ?? '引擎默认(60s)'}ms（WebSearch 治理旋钮）`,
     `paths.workspace = ${config.paths.workspace}（信息池真相源）`,
     `paths.skills = ${config.paths.skills}（skill 加载目录）`,

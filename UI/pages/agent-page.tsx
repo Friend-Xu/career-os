@@ -1137,10 +1137,10 @@ export function AgentPage() {
             {!initMode && (
               <>
                 <ReasoningSelect
-                  value={agentSettings.reasoning ?? 'auto'}
+                  value={agentSettings.reasoning ?? 'high'}
                   onChange={(level) => {
                     setAgentReasoning(level)
-                    push('info', level === 'auto' ? '推理等级：自动（思考自适应）' : `推理等级：${level}`)
+                    push('info', `推理等级：${level === 'off' ? '关闭' : level === 'low' ? '低' : level === 'high' ? '高' : '最大'}`)
                   }}
                 />
                 <ModelSelect
