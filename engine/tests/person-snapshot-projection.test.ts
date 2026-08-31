@@ -182,3 +182,24 @@ test('投影 career_profile.md：仅薪资/城市载荷（无意向岗位）→ 
   assert.ok(!written.includes('career_profile.md'))
   assert.ok(!ws.exists(`persons/${pid}/snapshot/current/career_profile.md`))
 })
+
+test('投影 skill_inventory.md：registry_skill_id 绑定列合并保留（v0.3——绑定为系统事实,不因候选重建丢失）', () => {
+  const { ws, pid } = PERSON()
+  seedCandidates(ws, pid, ['| c-101 | pending | 技能 | 机械结构设计 | user_reported | 技能=机械结构设计；级别=applied-professional；场景=结构设计 |'])
+  resolveCandidate(ws, { personId: pid, candidateId: 'c-101', action: 'confirmed' })
+  projectPersonSnapshots(ws, pid)
+  const rel = `persons/${pid}/snapshot/current/skill_inventory.md`
+  // 手工登记绑定（模拟 Engine 登记写入 + 既有绑定）
+  const withBind = ws.read(rel).replace(
+    '| skill_001 | 机械结构设计 | applied-professional | 结构设计 |',
+    '| skill_001 | 机械结构设计 | applied-professional | 结构设计 | skill_00001 |',
+  )
+  ws.write(rel, withBind)
+  // 重投影（如候选变更触发）→ 绑定保留
+  projectPersonSnapshots(ws, pid)
+  const after = ws.read(rel)
+  assert.ok(after.includes('| skill_001 | 机械结构设计 | applied-professional | 结构设计 | skill_00001 |'), '投影合并保留 registry_skill_id')
+  // scanPersons 回读闭环
+  const p = scanPersons(ws)[0]!
+  assert.equal(p.skills![0]!.registry_skill_id, 'skill_00001')
+})

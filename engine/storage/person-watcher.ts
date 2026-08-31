@@ -682,14 +682,16 @@ function deriveTools(name: string): string[] {
  * "be generous" 匹配的同义归一入口。列序不固定（4 列旧格式 / 6 列扩展格式并存），
  * 按表头列名定位（无 aliases 列 → 缺省）。
  */
-function parseSkillInventory(md: string): { skills: PersonSkill[]; version: string } {
+export function parseSkillInventory(md: string): { skills: PersonSkill[]; version: string } {
   const lines = md.split('\n')
   let aliasCol = -1
+  let regCol = -1
   for (const line of lines) {
     if (!line.trim().startsWith('|')) continue
     const cells = line.split('|').map((c) => c.trim())
     if (cells.includes('skill_id')) {
       aliasCol = cells.indexOf('aliases')
+      regCol = cells.indexOf('registry_skill_id')
       break
     }
   }
@@ -711,12 +713,15 @@ function parseSkillInventory(md: string): { skills: PersonSkill[]; version: stri
             .map((s) => s.trim())
             .filter((s) => s.length > 0)
         : []
+    const registrySkillId = regCol >= 0 ? (cells[regCol] ?? '').trim() : ''
     skills.push({
       skillId,
       name,
       level,
       ...(tools.length > 0 ? { tools } : {}),
       ...(aliases.length > 0 ? { aliases } : {}),
+      // v0.3（ADR-031）：全局技能身份绑定（Skill Registry skill_id）——Engine 登记写入，投影保留；`-` = 未绑定
+      ...(registrySkillId && registrySkillId !== '-' ? { registry_skill_id: registrySkillId } : {}),
     })
   }
   const version = md.match(/^status:\s*(v[\w.-]+)/m)?.[1] ?? 'v1'

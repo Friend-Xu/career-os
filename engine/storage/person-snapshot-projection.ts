@@ -22,7 +22,7 @@
  * （"没有证据的字段就不存在"——缺值不生成字段，不用 `-` 占位）。
  */
 import type { Workspace } from './workspace.ts'
-import { listCandidates, parseEducationFacts, parseExperienceFacts } from './person-watcher.ts'
+import { listCandidates, parseEducationFacts, parseExperienceFacts, parseSkillInventory } from './person-watcher.ts'
 import { parseCityCandidateId, scanPromotions } from './promotion-registry.ts'
 
 // ─── 技能候选结构化载荷（与 education/experience 键值段同形态）──────────────
@@ -174,13 +174,23 @@ const SKILL_LEVEL_ALIAS: Record<string, string> = {
   入门: 'applied-basic',
 }
 
-/** skill_inventory.md：confirmed 技能候选（结构化 payload）投影 */
+/** skill_inventory.md：confirmed 技能候选（结构化 payload）投影
+ *  v0.3（ADR-031）：registry_skill_id 列 = 画像技能 ↔ Skill Registry 绑定（Engine 登记写入）——
+ *  事实源（候选）无此信息，投影从现有文件合并保留（绑定属系统事实,非候选 payload,不因候选重建丢失） */
 function projectSkillInventory(ws: Workspace, personId: string): string | null {
   const confirmed = listCandidates(ws, personId).filter((c) => c.status === 'confirmed' && c.category === 'skill')
   const skills = confirmed
     .map((c) => ({ payload: parseSkillPayload(c.payload), content: c.content }))
     .filter((s) => s.payload !== undefined)
   if (skills.length === 0) return null
+  // 现有绑定映射（技能名 → registry_skill_id）——投影合并保留
+  const binds = new Map<string, string>()
+  const rel = `persons/${personId}/snapshot/current/skill_inventory.md`
+  if (ws.exists(rel)) {
+    for (const s of parseSkillInventory(ws.read(rel)).skills) {
+      if (s.registry_skill_id) binds.set(s.name, s.registry_skill_id)
+    }
+  }
   const rows: string[] = [
     '---',
     `id: ${personId}`,
@@ -197,13 +207,13 @@ function projectSkillInventory(ws: Workspace, personId: string): string | null {
     '',
     '## A. 技能清单',
     '',
-    '| skill_id | 技能 | level | usage_context |',
-    '|----------|------|-------|---------------|',
+    '| skill_id | 技能 | level | usage_context | registry_skill_id |',
+    '|----------|------|-------|---------------|------------------|',
   ]
   skills.forEach((s, i) => {
     const p = s.payload!
     const level = SKILL_LEVEL_ALIAS[p.level ?? ''] ?? (p.level ?? 'applied')
-    rows.push(`| skill_${String(i + 1).padStart(3, '0')} | ${cell(p.skill)} | ${level} | ${cell(p.context ?? '-')} |`)
+    rows.push(`| skill_${String(i + 1).padStart(3, '0')} | ${cell(p.skill)} | ${level} | ${cell(p.context ?? '-')} | ${binds.get(p.skill) ?? '-'} |`)
   })
   rows.push('')
   return rows.join('\n')

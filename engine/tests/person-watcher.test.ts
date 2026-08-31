@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initWorkspace } from '../storage/workspace.ts'
-import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSnapshotTable, reconcilePersonInitStates, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths, watchPersons } from '../storage/person-watcher.ts'
+import { appendCandidates, appendSessionTurn, completePersonInit, createPersonSession, deletePerson, listCandidates, parsePersonManifest, parseSkillInventory, parseSnapshotTable, reconcilePersonInitStates, resetPerson, resolveCandidate, scanPersons, upsertSummaryStrengths, watchPersons } from '../storage/person-watcher.ts'
 import { createResumeArtifact } from '../storage/pdf-artifact.ts'
 
 const manifestMd = `---
@@ -703,4 +703,22 @@ test('upsertSummaryStrengths：引用不存在 / 未可信 / 文本空 → fail 
   } finally {
     cleanup(dir)
   }
+})
+
+test('parseSkillInventory：registry_skill_id 列 → PersonSkill.registry_skill_id（v0.3 Skill Registry 绑定；缺列 → 不产出）', () => {
+  const md = [
+    '---',
+    'id: person_001',
+    'status: v1',
+    '---',
+    '# 技能清单',
+    '## A. 技能清单',
+    '| skill_id | 技能 | level | usage_context | registry_skill_id |',
+    '|----------|------|-------|---------------|------------------|',
+    '| skill_001 | 机械结构设计 | applied-professional | 结构设计 | skill_00001 |',
+    '| skill_002 | 有限元仿真 | applied | 静力仿真 | - |',
+  ].join('\n')
+  const { skills } = parseSkillInventory(md)
+  assert.equal(skills[0]!.registry_skill_id, 'skill_00001')
+  assert.equal(skills[1]!.registry_skill_id, undefined) // 未绑定 → 不产出字段
 })
