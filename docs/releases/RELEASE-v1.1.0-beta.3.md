@@ -1,8 +1,8 @@
 # Career OS v1.1.0-beta.3 发布说明
 
-- **发布日期**：2026-08-28
+- **发布日期**：2026-08-28（2026-08-31 重新发布：Tag 重打至最新提交，追加 5 个提交）
 - **Tag**：`v1.1.0-beta.3`
-- **范围**：自 `v1.1.0-beta.2` 起 125 个提交
+- **范围**：自 `v1.1.0-beta.2` 起 130 个提交
 
 ## 本版要点
 
@@ -57,7 +57,17 @@
 - 模型/推理等级选择器美化（去下拉小三角、弹出样式对齐、Tooltip 移除——说明内嵌菜单选项）
 - 输入框微信式展开角标（右上角展开/收起大编辑区）+ 右侧操作区垂直居中
 
-## 变更提交（125，自 v1.1.0-beta.2）
+### 7. 发布后修整（8/28-8/31，重新发布追加）：插件形态退役 + 公司评分修复 + Skill Registry v0.3（ADR-031）
+- **公司职业价值评分链路修复**：事实段枚举值域协议自包含注入（Agent 不可读契约文件 → 全量 narrative 事实 → 全部 INSUFFICIENT_DATA）；ASSESSMENT_RULES 补 GROWTH 行 + 枚举单一事实源（COMPANY_FACT_VALUES 派生）
+- **Claude Code 插件形态退役（ADR-030 H）**：删除 `.claude-plugin`（已非插件体系）；运行时直连 LLM 服务商；AGENTS/README/ARCHITECTURE/CLI-COMPAT 全仓宣称校准 + CLI 时代话术残留清理
+- **Skill Registry v0.3（ADR-031 域身份治理）**——索引数据生产权收归 Registration：
+  - 事故定性：Skill Matching Failure = Identity Ownership Violation（「画像声明 4 项技能却报未声明」的根因是 JD 长句直接成为身份键）
+  - Identity/Reference/Content 三层分离；四态判定（EXISTING / NEW_PROPOSAL / REGISTERED / REJECTED）+ 形态规则闸门（≤12 字/无工具词括号/无句标点）+ soft 域分类（Capability Matching Boundary 执行）
+  - `--skill-search`（match 分级：exact 才自动绑定，substring 仅候选展示）/ `--skill-submit`（Proposal ≠ Registration）提案通道；skills.md/roles.md 投影 v2（skill_id｜canonical（来源；原文））
+  - 差距分析修复：personSkillCount 分流「未声明」vs「已声明未命中」+「已声明 4 项」不再误报
+  - 存量迁移（复制区）：画像 4 技能绑定 registry_skill_id + 9 岗位 200+ 技能需求解析到 skill_id 引用（soft/长句确定性剔除并审计）——端到端验证：机械结构设计（同 id skill_00001）真实命中
+
+## 变更提交（130，自 v1.1.0-beta.2）
 
 ### 二期：公司适配榜 + 薪资基准
 - 29209ca feat: 公司适配榜数据层——rating 回链 + 候选池/岗位线索登记（契约 v0.1 §2）
@@ -195,3 +205,10 @@
 - 835bfdf docs(config): 示例配置更新——agent.reasoning（DeepSeek 推理等级四档）+ provider baseUrl 切换原生端点
 - 63de55b fix(ui): 推理等级移除 Tooltip——说明内嵌菜单选项（曾浮层遮挡后面内容）
 - d30dcbd feat(ui): 输入框微信式展开角标（右上角）+ 右侧操作区垂直居中
+
+### 重新发布追加（5 个提交，指向 2026-08-31）
+- c92afec fix(engine): 公司职业价值评分链路修复——事实段枚举值域协议自包含注入（Agent 不可读契约致全量 narrative→全部 INSUFFICIENT_DATA）+ GROWTH 规则补缺（契约 §3/§4 自洽）+ 枚举单一事实源（ASSESSMENT_RULES 派生）
+- 6d3a32f refactor(docs,engine,ui): Claude Code 插件形态退役——删除 .claude-plugin + 全仓宣称校准（AGENTS/README/ARCHITECTURE/CLI-COMPAT）+ CLI 时代话术残留清理（config/UI/websocket 注释与描述、providers 启动摘要）
+- 68c7934 feat(engine/UI): Skill Registry v0.3——索引数据生产权收归 Registration（ADR-031）：提案通道（--skill-search/--skill-submit 四态判定）+ 形态规则 + soft 域分类 + roles.md 投影 v2 + 差距分析 personSkillCount 分流
+- 5440c25 feat(engine): 画像技能 Registry 绑定列——parseSkillInventory 识别 registry_skill_id + 投影合并保留（绑定=系统事实，不因候选重建丢失）
+- 7755d59 feat(engine): skill 提案支持 proposed_by 来源参数——画像资产迁移（用户确认技能）与 Agent 提案区分（Proposal ≠ Registration 语义）
