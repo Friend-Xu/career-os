@@ -899,11 +899,28 @@ export interface CompanyAssessment {
 
 // ─── V2 知识层：Skill/Role 领域对象（knowledge/*.md 真相源，V3 Capability 复用同一技能词表）──
 
-/** 技能（受控词表叶技能，别名归一化；不建技能树——个人规模扁平词表足够） */
+/** 技能（受控词表叶技能，别名归一化；不建技能树——个人规模扁平词表足够）
+ *  v0.3（ADR-031）：id = Registry 身份（skill_00001…Engine 派生）；name = canonical 属性（可变更）；
+ *  status/provenance 行内元字段（seed/active/deprecated + 提议者/登记人/来源——Proposal ≠ Registration）。 */
 export interface Skill {
   name: string
   aliases: string[] // 别名归一化（LinkedIn Skills Graph 37 万别名归一化的小规模版）
   anchor?: string[] // 熟练度 1-5 级行为锚点（SFIA 式：每级一句行为描述，可缺省）
+  id?: string // v0.3 Registry 身份（Engine 派生；存量兼容可缺省）
+  status?: 'seed' | 'active' | 'deprecated' // v0.3（缺省 active；deprecated 预留随合并功能启用）
+  proposedBy?: 'agent_proposal' | 'seed_standard' | 'user' // 谁提议（≠谁登记）
+  registeredBy?: 'engine' | 'user' // 谁行使登记授权（engine = 证据+形态规则通过）
+  source?: string // 来源标识（JD-{公司}-{日期} / 标准-{名称} / 用户）
+}
+
+/** 技能需求引用（Roles 条目——v0.3 Identity/Reference 分离；skill_id 为匹配键）
+ *  渐进兼容：skill_id 缺省 = legacy 条目（JD 原文短语），匹配降级按 name；source_phrase = JD 原文（回溯）。 */
+export interface RoleSkill {
+  skill_id?: string // v0.3 Identity——匹配键（Engine 登记后投影写入）
+  name: string // canonical_name（registered）或 JD 原文短语（legacy）
+  source: string // 证据文档标识（既有字段）
+  source_phrase?: string // v0.3 Reference——JD 原文短语（与 canonical 分离，「回溯 vs 归一」解耦）
+  essential: boolean
 }
 
 /** 岗位（挂载在公司下；技能需求带必需/可选 + 来源引用） */
@@ -911,19 +928,21 @@ export interface Role {
   id: string
   name: string
   company: string
-  skills: { name: string; essential: boolean; source: string }[]
+  skills: RoleSkill[]
 }
 
 /** 画像技能声明（profiles/{名字}.md `## 技能` 段落 legacy；M6.6.5 起 Person.skills 由 skill_inventory.md 派生） */
 export interface PersonSkill {
   name: string
   level: number // 1-5（SFIA 式行为锚点）
-  /** skill_inventory 的 skill_id（M6.6.5：Decision inputs.skillRefs 的 provenance 键） */
+  /** skill_inventory 的 skill_id（M6.6.5：Decision inputs.skillRefs 的 provenance 键——person 局部资产键，非全局身份） */
   skillId?: string
   /** 声明侧别名（Skill Representation v0.1 契约形态；v0.1 无数据源，来源登记后续，消费端已支持） */
   aliases?: string[]
   /** 工具词（注册时 Engine 从 name 括号确定性派生：「电气制图与接线设计（SolidWorks/Creo/AutoCAD）」→ SolidWorks/Creo/AutoCAD） */
   tools?: string[]
+  /** v0.3 全局技能身份（绑定 Skill Registry——ADR-031 单通道硬规则；采集/确认流程登记；存量未绑定合法 = 降级 v0.1 字符串匹配） */
+  registry_skill_id?: string
 }
 
 /** 差距分析（纯派生视图：目标 Role 技能矩阵 vs 画像技能声明；引擎不自己打分，只做清单） */
@@ -939,6 +958,7 @@ export interface GapResult {
   satisfied: { name: string; level: number; via?: string }[] // 声明水平 ≥3（可独立产出）；via = 命中键（工具词/别名，UI 显示来源）
   transferable: { name: string; level: number; via?: string }[] // 声明水平 1-2（有基础需补强）
   missing: SkillGap[] // 未声明（需学习）
+  personSkillCount: number // 画像声明技能基数（ADR-031 v0.3：UI 区分「未声明」vs「已声明但未命中」——全 missing 不等于未声明）
 }
 
 /** 画像摘要（Agent 上下文与聚合视图用，来自 profiles/{name}.md） */

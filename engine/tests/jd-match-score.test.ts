@@ -15,6 +15,7 @@ function gap(partial: Partial<GapResult>): GapResult {
     satisfied: [],
     transferable: [],
     missing: [],
+    personSkillCount: 0,
     ...partial,
   } as GapResult
 }

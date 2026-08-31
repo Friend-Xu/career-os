@@ -130,8 +130,7 @@ test('JD 分析落盘 → 自动派生角色提案并投影 roles.md（source/es
     [
       { name: '办公软件', essential: true },
       { name: '数据整理', essential: true },
-      { name: '跨部门协作', essential: false },
-    ],
+    ], // 跨部门协作（category=soft）被域分类整组过滤——Capability Matching Boundary v0.1（v0.3 行为变更）
   )
 
   const roles = rolesMd(ws)

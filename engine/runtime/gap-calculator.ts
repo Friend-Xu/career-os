@@ -40,7 +40,13 @@ export function computeGap(opts: {
     const cur = declared.get(key)
     if (!cur || ps.level > cur.level) declared.set(key, ps)
   }
+  // v0.3（ADR-031）：id 索引——匹配键 = registry_skill_id ↔ RoleSkill.skill_id（身份对齐；name 仅展示/降级）
+  const declaredById = new Map<string, PersonSkill>()
   for (const ps of personSkills) {
+    if (ps.registry_skill_id) {
+      const cur = declaredById.get(ps.registry_skill_id)
+      if (!cur || ps.level > cur.level) declaredById.set(ps.registry_skill_id, ps)
+    }
     const canonical = index.get(ps.name) ?? ps.name
     declare(canonical, ps)
     for (const a of ps.aliases ?? []) declare(a, ps)
@@ -51,6 +57,17 @@ export function computeGap(opts: {
   const transferable: { name: string; level: number; via?: string }[] = []
   const missing: SkillGap[] = []
   for (const req of role.skills) {
+    // 需求侧先按 id 对齐（v0.3 契约）；声明侧未绑定（兼容期）→ 降级 name 匹配——迁移完成前不比旧行为差
+    if (req.skill_id) {
+      const hitById = declaredById.get(req.skill_id)
+      if (hitById) {
+        const bucket = hitById.level >= 3 ? satisfied : transferable
+        if (!bucket.some((e) => e.name === hitById.name)) {
+          bucket.push({ name: hitById.name, level: hitById.level, ...(req.name !== hitById.name ? { via: req.name } : {}) })
+        }
+        continue
+      }
+    }
     const canonical = index.get(req.name) ?? req.name
     const hit = declared.get(canonical)
     if (hit) {
@@ -63,5 +80,5 @@ export function computeGap(opts: {
       missing.push({ name: req.name, essential: req.essential, source: req.source, action: missingAction(req.name) })
     }
   }
-  return { role, person, satisfied, transferable, missing }
+  return { role, person, satisfied, transferable, missing, personSkillCount: personSkills.length }
 }

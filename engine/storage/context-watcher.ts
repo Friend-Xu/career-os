@@ -63,9 +63,10 @@ export interface ParsedContext {
   sections: ContextSections
 }
 
-/** 逗号/全角逗号拆分（knowledge 词表别名、related_decisions 等共用） */
+/** 逗号/全角逗号拆分（knowledge 词表别名、related_decisions 等共用）
+ *  v0.3（ADR-031 skill-registry-contract §三）：投影格式别名用顿号 —— 顿号/分号一并支持 */
 export function splitList(v: string): string[] {
-  return v.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+  return v.split(/[,，、;；]/).map((s) => s.trim()).filter(Boolean)
 }
 
 function parseStatus(v: string): DecisionStatus | undefined {

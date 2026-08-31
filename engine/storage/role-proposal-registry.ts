@@ -10,9 +10,10 @@
  *   （roles.md 投影变化 → UI 差距分析/图谱按需重拉）
  */
 import { watch } from 'chokidar'
-import type { Role } from '../ir/schema.ts'
+import type { Role, RoleSkill } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { parseRolesMarkdown, serializeRolesMarkdown } from './knowledge-watcher.ts'
+import { isSoftSkill, loadSkills } from './skill-registry.ts'
 
 export const ROLE_PROPOSAL_SPEC = {
   type: 'role_proposal',
@@ -26,7 +27,10 @@ export interface RoleProposalInput {
   company: string // canonical 公司名（须已登记 companies/ 档案；简称/全称容错同占位建档）
   name: string // 岗位名（JD/尽调中的正式岗位名）
   source: string // 来源标识：JD-{公司}-{日期} / 公司档案-{公司}（证据锚点，必填）
-  skills: { name: string; essential: boolean }[] // 技能需求（从 JD/尽调提取；非空）
+  /** 技能需求（从 JD/尽调提取；非空）
+   *  v0.3（ADR-031）：skill_id = Registry 引用（设置时校验存在性）；source_phrase = JD 原文（回溯）；
+   *  未带 skill_id → legacy 条目（匹配降级 name——兼容期）；soft/非技能词一律拒绝（域分类闸门） */
+  skills: { name: string; essential: boolean; skill_id?: string; source_phrase?: string }[]
 }
 
 export interface RoleProposal extends RoleProposalInput {
@@ -97,6 +101,17 @@ function validateRoleInput(ws: Workspace, input: RoleProposalInput): void {
   }
   for (const s of input.skills) {
     if (!s.name?.trim()) throw new Error('skills 项缺技能名')
+    // 域分类闸门（Capability Matching Boundary v0.1 执行）：soft/非技能词不进技能矩阵——数据污染修复（ADR-031 §2.5）
+    if (isSoftSkill(s.name)) {
+      throw new Error(`soft/非技能词不得登记为技能需求：${JSON.stringify(s.name)}（Capability Matching Boundary——抗压能力/主动性等属域分类层）`)
+    }
+    // Referential Integrity（skill-registry-contract-v0.3 §五）：引用必须存在且未废弃
+    if (s.skill_id) {
+      const hit = loadSkills(ws).find((k) => k.id === s.skill_id)
+      if (!hit || hit.status === 'deprecated') {
+        throw new Error(`skill_id 不存在或已废弃：${JSON.stringify(s.skill_id)}（技能候选须先经 --skill-search/提案登记）`)
+      }
+    }
   }
 }
 
@@ -123,7 +138,14 @@ export function submitRoleProposal(ws: Workspace, input: RoleProposalInput, now:
     id: roleId,
     name: proposal.name,
     company: proposal.company,
-    skills: proposal.skills.map((s) => ({ name: s.name, essential: s.essential, source: proposal.source })),
+    // v0.3：skill_id/source_phrase 进投影（Referential Integrity 已在 validateRoleInput 校验）
+    skills: input.skills.map((s) => ({
+      name: s.name.trim(),
+      essential: s.essential,
+      source: proposal.source,
+      ...(s.skill_id ? { skill_id: s.skill_id } : {}),
+      ...(s.source_phrase ? { source_phrase: s.source_phrase.trim() } : {}),
+    })),
   })
   return proposal
 }

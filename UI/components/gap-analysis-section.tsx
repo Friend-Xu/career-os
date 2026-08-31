@@ -84,12 +84,12 @@ export function GapAnalysisSection({ companyName }: { companyName: string }) {
 }
 
 function GapResultView({ gap }: { gap: GapResult }) {
-  // 画像无技能声明：满足/有基础为空且缺失覆盖岗位全量技能 → 结论存疑
-  const noDeclaration =
-    gap.satisfied.length === 0 &&
-    gap.transferable.length === 0 &&
-    gap.missing.length > 0 &&
-    gap.missing.length === gap.role.skills.length
+  // ADR-031 v0.3：区分「画像未声明技能」与「已声明但全未命中」——
+  // personSkillCount = 画像声明基数（skill_inventory.md 派生），全 missing 不等于未声明。
+  // 旧引擎（RPC 无该字段）→ 退化为全 missing 判定（不新增误导文案）。
+  const declared = gap.personSkillCount ?? 0
+  const noDeclaration = declared === 0 && gap.missing.length > 0 && gap.missing.length === gap.role.skills.length
+  const noMatch = !noDeclaration && gap.satisfied.length === 0 && gap.transferable.length === 0 && gap.missing.length > 0
 
   return (
     <>
@@ -109,7 +109,23 @@ function GapResultView({ gap }: { gap: GapResult }) {
           }}
         >
           <Typography sx={{ fontSize: 11.5, color: RISK_COLOR.medium, lineHeight: 1.6 }}>
-            画像未声明技能（profiles/ 加 ## 技能 段落），结论存疑
+            画像未声明技能（persons/…/snapshot/current/skill_inventory.md 登记后自动生效），结论存疑
+          </Typography>
+        </Box>
+      )}
+      {noMatch && (
+        <Box
+          sx={{
+            p: 1,
+            borderRadius: '6px',
+            bgcolor: alpha(RISK_COLOR.medium, 0.08),
+            border: `1px solid ${alpha(RISK_COLOR.medium, 0.3)}`,
+            mb: 1.5,
+          }}
+        >
+          <Typography sx={{ fontSize: 11.5, color: RISK_COLOR.medium, lineHeight: 1.6 }}>
+            画像已声明 {declared} 项技能，均未与岗位技能名直接匹配（岗位技能取自 JD 原文短语，未落词表/别名归一）——
+            实际差距可能小于所列，不代表不具备
           </Typography>
         </Box>
       )}

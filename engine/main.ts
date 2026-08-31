@@ -40,6 +40,7 @@ import { buildBridgeContext, submitOpportunityProposal, buildClaimBridgeContext,
 import { buildStrengthProposalContext, submitStrengthProposals, watchStrengthProposals, type StrengthProposalInput } from './storage/strength-proposal-registry.ts'
 import { buildDeriveContext, submitDerivationProposal, watchDerivationProposals, type DerivationProposalInput } from './storage/derivation-proposal-registry.ts'
 import { registerPendingRoleProposals, submitRoleProposal, watchRoleProposals, type RoleProposalInput } from './storage/role-proposal-registry.ts'
+import { resolveSkillProposal, searchSkills, type SkillProposalInput } from './storage/skill-registry.ts'
 import { backfillRoleProposalsFromJobs } from './storage/role-derivation.ts'
 import { watchWorkflows } from './storage/workflow-registry.ts'
 import { computeObservationStats } from './runtime/observation.ts'
@@ -223,6 +224,25 @@ async function main(args: string[]): Promise<void> {
       if (!file) throw new Error('--role-submit 需要 {json文件}')
       const input = JSON.parse(readFileSync(file, 'utf8')) as RoleProposalInput
       console.log(JSON.stringify(submitRoleProposal(ws, input), null, 2))
+      return
+    }
+
+    // ─── Skill Bridge（skill-registry-contract-v0.3 §四）：技能候选 Agent 消费通道。
+    //      --skill-search {词}：Registry 检索（返回 match 分级——exact 才自动绑定资格）；
+    //      --skill-submit {file}：四态判定（EXISTING / NEW_PROPOSAL→REGISTERED / REJECTED）——Proposal ≠ Registration。
+    if (args.includes('--skill-search')) {
+      const idx = args.indexOf('--skill-search')
+      const term = args[idx + 1]
+      if (!term) throw new Error('--skill-search 需要 {检索词}')
+      console.log(JSON.stringify(searchSkills(ws, term), null, 2))
+      return
+    }
+    if (args.includes('--skill-submit')) {
+      const idx = args.indexOf('--skill-submit')
+      const file = args[idx + 1]
+      if (!file) throw new Error('--skill-submit 需要 {json文件}')
+      const input = JSON.parse(readFileSync(file, 'utf8')) as SkillProposalInput
+      console.log(JSON.stringify(resolveSkillProposal(ws, input), null, 2))
       return
     }
 

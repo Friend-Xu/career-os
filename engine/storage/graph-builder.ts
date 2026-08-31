@@ -65,9 +65,10 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
   }
 
   // V2 知识层：技能节点（词表）+ 岗位节点（雇佣/需求边；invalid 知识文件 → 空列表，无节点可加）
+  // v0.3（ADR-031）：节点 id = skill:{skill_id}（Registry 身份）；canonical_name 仅 label；legacy 条目（无 id）降级按名
   const skillIndex = buildSkillIndex(input.skills ?? [])
   for (const s of input.skills ?? []) {
-    addNode({ id: `skill:${s.name}`, label: s.name, type: 'skill' })
+    addNode({ id: `skill:${s.id ?? s.name}`, label: s.name, type: 'skill' })
   }
   const companyNodeByName = new Map<string, string>() // canonical/alias → 节点 id（精确解析；档案缺失的公司无雇佣边）
   for (const c of input.companies) {
@@ -81,8 +82,8 @@ export function buildGraph(input: GraphInput): { nodes: PoolNode[]; edges: PoolE
     const cid = companyNodeByName.get(r.company)
     if (cid) addEdge(cid, rid, '雇佣', 'medium')
     for (const req of r.skills) {
-      const canonical = skillIndex.get(req.name) ?? req.name
-      const sid = `skill:${canonical}`
+      // v0.3：需求侧按 skill_id 连线（id 对齐）；legacy 需求（无 id）按词表别名归一降级
+      const sid = req.skill_id ? `skill:${req.skill_id}` : `skill:${skillIndex.get(req.name) ?? req.name}`
       if (nodes.has(sid)) addEdge(rid, sid, '需求', req.essential ? 'high' : 'medium')
     }
   }

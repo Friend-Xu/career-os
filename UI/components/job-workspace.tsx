@@ -707,9 +707,21 @@ export function JobWorkspace({ jobId }: { jobId: string }) {
                       <Typography sx={{ fontSize: 12.5, color: RISK_COLOR.high }}>
                         未覆盖能力：{gap.missing.map((m) => m.name).join('、')}
                       </Typography>
-                      <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
-                        岗位要求这些能力，画像未声明——不代表不具备；可在画像中补充确认
-                      </Typography>
+                      {/* ADR-031 v0.3：区分未声明 vs 已声明未命中（旧引擎缺 personSkillCount → 退化为未声明文案） */}
+                      {(gap.personSkillCount ?? 0) === 0 ? (
+                        <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                          岗位要求这些能力，画像未声明——不代表不具备；可在画像中补充确认
+                        </Typography>
+                      ) : gap.satisfied.length === 0 && gap.transferable.length === 0 ? (
+                        <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                          画像已声明 {gap.personSkillCount} 项技能，均未与岗位技能名直接匹配（取自 JD 原文短语，未词表化）——
+                          实际差距可能小于所列，不代表不具备
+                        </Typography>
+                      ) : (
+                        <Typography sx={{ fontSize: 11, color: COLORS.textMuted }}>
+                          未命中的岗位能力——不代表不具备；可在画像中补充确认
+                        </Typography>
+                      )}
                     </Stack>
                   )}
                 </Stack>

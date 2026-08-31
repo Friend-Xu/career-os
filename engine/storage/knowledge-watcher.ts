@@ -41,6 +41,15 @@ const ALIAS_RE = /^别名[：:]\s*(.+)$/
 const ANCHOR_RE = /^(\d+)级[：:]\s*(.+)$/
 const SOURCE_RE = /（来源[：:](.+?)）$/
 const COMPANY_RE = /^(.+?)[（(]([^（()]*?)[）)]$/
+// ─── v0.3（ADR-031）Skill Registry 行内元字段：id = Registry 身份;状态/provenance = 登记信息 ───
+const SKILL_ID_RE = /^id[：:]\s*([^\s]+)$/
+const SKILL_STATUS_RE = /^状态[：:]\s*([^\s]+)$/
+const SKILL_PROPOSED_RE = /^提议[：:]\s*([^\s]+)$/
+const SKILL_REGISTERED_RE = /^登记[：:]\s*([^\s]+)$/
+const SKILL_SOURCE_LINE_RE = /^来源[：:]\s*(.+)$/
+const SKILL_STATUSES = new Set(['seed', 'active', 'deprecated'])
+const SKILL_PROPOSED_BY = new Set(['agent_proposal', 'seed_standard', 'user'])
+const SKILL_REGISTERED_BY = new Set(['engine', 'user'])
 
 /** 词表别名索引：词表名/别名 → 规范名（未入表的名原样返回自身） */
 export function buildSkillIndex(skills: Skill[]): Map<string, string> {
@@ -57,7 +66,9 @@ export function canonicalSkillName(name: string, index: Map<string, string>): st
   return index.get(name) ?? name
 }
 
-/** skills.md → Skill[]：整文件无 `## 技能名` → invalid；单条目缺列表项/锚点级别越界/重复名 → degraded */
+/** skills.md → Skill[]：整文件无 `## 技能名` → invalid；单条目缺列表项/锚点级别越界/重复名/id 非法 → degraded
+ *  v0.3（ADR-031）：行内元字段 `id:`/`状态:`/`提议:`/`登记:`/`来源:`——Registry 身份与登记信息（引擎投影写入；
+ *  旧文件无元字段 → 兼容缺省（id 缺省 = legacy 条目，匹配降级 name）） */
 export function parseSkillsMarkdown(md: string, sourceFile: string): Validated<Skill[]> {
   const headings = [...md.matchAll(H2_RE)].map((m) => m[1]!.trim())
   if (headings.length === 0) {
@@ -69,6 +80,7 @@ export function parseSkillsMarkdown(md: string, sourceFile: string): Validated<S
   const checks: FieldCheck[] = []
   const skills: Skill[] = []
   const seen = new Set<string>()
+  const seenIds = new Set<string>()
   for (const name of headings) {
     if (seen.has(name)) {
       checks.push({ path: name, reason: '重复技能名（受控词表应唯一，仅保留首个）', severity: 'warn' })
@@ -95,14 +107,74 @@ export function parseSkillsMarkdown(md: string, sourceFile: string): Validated<S
         }
         continue
       }
-      checks.push({ path: name, reason: `无法识别的列表项 ${JSON.stringify(item)}（合法项：别名：… / N级：…）`, severity: 'warn' })
+      const idm = item.match(SKILL_ID_RE)
+      if (idm) {
+        if (/^skill_\d+$/.test(idm[1]!)) {
+          if (seenIds.has(idm[1]!)) {
+            checks.push({ path: name, reason: `重复 skill_id ${idm[1]}（仅保留首个）`, severity: 'warn' })
+          } else {
+            seenIds.add(idm[1]!)
+            skill.id = idm[1]!
+          }
+        } else {
+          checks.push({ path: name, reason: `非法 skill_id ${JSON.stringify(idm[1])}（合法：skill_数字）`, severity: 'warn' })
+        }
+        continue
+      }
+      const stm = item.match(SKILL_STATUS_RE)
+      if (stm) {
+        if (SKILL_STATUSES.has(stm[1]!)) skill.status = stm[1] as Skill['status']
+        else checks.push({ path: name, reason: `非法状态 ${JSON.stringify(stm[1])}（合法：seed/active/deprecated）`, severity: 'warn' })
+        continue
+      }
+      const pm = item.match(SKILL_PROPOSED_RE)
+      if (pm) {
+        if (SKILL_PROPOSED_BY.has(pm[1]!)) skill.proposedBy = pm[1] as Skill['proposedBy']
+        else checks.push({ path: name, reason: `非法提议者 ${JSON.stringify(pm[1])}（合法：agent_proposal/seed_standard/user）`, severity: 'warn' })
+        continue
+      }
+      const rm = item.match(SKILL_REGISTERED_RE)
+      if (rm) {
+        if (SKILL_REGISTERED_BY.has(rm[1]!)) skill.registeredBy = rm[1] as Skill['registeredBy']
+        else checks.push({ path: name, reason: `非法登记人 ${JSON.stringify(rm[1])}（合法：engine/user）`, severity: 'warn' })
+        continue
+      }
+      const src = item.match(SKILL_SOURCE_LINE_RE)
+      if (src) {
+        skill.source = src[1]!.trim()
+        continue
+      }
+      checks.push({ path: name, reason: `无法识别的列表项 ${JSON.stringify(item)}（合法项：id/状态/提议/登记/来源/别名：… / N级：…）`, severity: 'warn' })
     }
     if (itemCount === 0) {
-      checks.push({ path: name, reason: '缺列表项（未声明别名/锚点）', severity: 'warn' })
+      checks.push({ path: name, reason: '缺列表项（未声明 id/别名/锚点等）', severity: 'warn' })
     }
     skills.push(skill)
   }
   return finalize(skills, checks)
+}
+
+/** skills.md 投影序列化 v2（Engine Registration 单方写——skill-registry 登记后落盘；对齐 serializeRolesMarkdown）。
+ *  Agent 直写 skills.md 被禁止（skill-registry-contract-v0.3 §三）；id/状态/provenance 由登记信息回写。 */
+export function serializeSkillsMarkdown(skills: Skill[]): string {
+  const lines = [
+    '# 技能词表（Skill Registry 投影——Engine 单方维护，禁止手写；技能候选走 skill-proposals/ 提案通道）',
+    '',
+  ]
+  for (const s of skills) {
+    lines.push(`## ${s.name}`, '')
+    if (s.id) lines.push(`- id: ${s.id}`)
+    if (s.status) lines.push(`- 状态: ${s.status}`)
+    if (s.proposedBy) lines.push(`- 提议: ${s.proposedBy}`)
+    if (s.registeredBy) lines.push(`- 登记: ${s.registeredBy}`)
+    if (s.source) lines.push(`- 来源: ${s.source}`)
+    if (s.aliases.length > 0) lines.push(`- 别名: ${s.aliases.join('、')}`)
+    for (const [i, a] of (s.anchor ?? []).entries()) {
+      if (a) lines.push(`- ${i + 1}级: ${a}`)
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
 }
 
 /** roles.md → Role[]：整文件无 `## 岗位名` → invalid；缺公司名/缺需求列表项/重复 id → degraded */
@@ -140,13 +212,33 @@ export function parseRolesMarkdown(md: string, sourceFile: string): Validated<Ro
         checks.push({ path: heading, reason: `无法识别的需求项 ${JSON.stringify(item)}（合法项：essential：… / nice-to-have：…）`, severity: 'warn' })
         continue
       }
+      const essential = kind === 'essential'
+      // v0.3 投影 v2：`skill_00001｜机械结构设计（来源: JD-…；原文: 机械结构设计方法）`——Identity/Reference 分离
+      const v2 = rest.match(/^([\w-]+)｜(.+)$/)
+      if (v2) {
+        const [id, namePart] = [v2[1]!.trim(), v2[2]!.trim()]
+        const src = namePart.match(/（来源[：:](.+?)(?:；原文[：:](.+?))?）$/)
+        const canonical = (src ? namePart.slice(0, src.index) : namePart).trim()
+        if (!canonical) {
+          checks.push({ path: heading, reason: `需求项缺技能名：${JSON.stringify(item)}`, severity: 'warn' })
+          continue
+        }
+        skills.push({
+          skill_id: id,
+          name: canonical,
+          essential,
+          source: src ? src[1]!.trim() : '',
+          ...(src?.[2] ? { source_phrase: src[2]!.trim() } : {}),
+        })
+        continue
+      }
       const src = rest.match(SOURCE_RE)
       const skillName = (src ? rest.slice(0, src.index) : rest).trim()
       if (!skillName) {
         checks.push({ path: heading, reason: `需求项缺技能名：${JSON.stringify(item)}`, severity: 'warn' })
         continue
       }
-      skills.push({ name: skillName, essential: kind === 'essential', source: src ? src[1]!.trim() : '' })
+      skills.push({ name: skillName, essential, source: src ? src[1]!.trim() : '' })
     }
     if (itemCount === 0) {
       checks.push({ path: heading, reason: '缺列表项（未声明技能需求）', severity: 'warn' })
@@ -178,7 +270,12 @@ export function serializeRolesMarkdown(roles: Role[]): string {
   for (const r of roles) {
     lines.push(`## ${r.name}（${r.company}）`, '')
     for (const s of r.skills) {
-      lines.push(`- ${s.essential ? 'essential' : 'nice-to-have'}: ${s.name}（来源: ${s.source}）`)
+      // v0.3（ADR-031）投影 v2：skill_id｜canonical（来源: …；原文: JD 原文短语）——Identity/Reference 分离
+      const head = s.skill_id ? `${s.skill_id}｜${s.name}` : s.name
+      const tail = s.source_phrase
+        ? `（来源: ${s.source}；原文: ${s.source_phrase}）`
+        : `（来源: ${s.source}）`
+      lines.push(`- ${s.essential ? 'essential' : 'nice-to-have'}: ${head}${tail}`)
     }
     lines.push('')
   }

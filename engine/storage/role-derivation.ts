@@ -9,6 +9,7 @@
 import type { JobRecord } from '../ir/schema.ts'
 import type { Workspace } from './workspace.ts'
 import { scanJobs } from './job-watcher.ts'
+import { resolveSkillProposal } from './skill-registry.ts'
 import {
   submitRoleProposal,
   scanRoleProposals,
@@ -27,25 +28,32 @@ export function resolveCompanyCanonical(ws: Workspace, company: string): string 
   return hit ? hit.replace(/\.md$/, '') : null
 }
 
-/** JD 智能段 → 角色提案输入（skills = ai 责任单元能力词，essential = priority must；去重；不可派生 → null） */
+/** JD 智能段 → 角色提案输入（v0.3 编排：先 skill 提案循环——检索/绑定/登记——后以 skill_id 引用；
+ *  域分类结构性过滤 category=soft/preference 不进技能矩阵（Capability Matching Boundary v0.1）；
+ *  形态不合格能力词 → resolve 拒绝并跳过（审计见 skill-proposals/，Engine 不替 Agent 提炼）） */
 export function deriveRoleInputFromJob(ws: Workspace, job: JobRecord): RoleProposalInput | null {
   const canonical = resolveCompanyCanonical(ws, job.company)
   if (!canonical) return null
   const date = job.id.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? job.createdAt
   if (!date) return null
+  const source = `JD-${canonical}-${date}`
   const seen = new Set<string>()
-  const skills: { name: string; essential: boolean }[] = []
+  const skills: RoleProposalInput['skills'] = []
   for (const r of job.responsibilities) {
     if (r.source !== 'ai') continue // 只认引擎校验过的岗位智能段（建档 user 责任段不是技能提取）
+    if (r.category === 'soft' || r.category === 'preference') continue // 域分类：soft/preference 不进匹配
     for (const cap of r.capabilities) {
       const n = cap.trim()
       if (!n || seen.has(n)) continue
       seen.add(n)
-      skills.push({ name: n, essential: r.priority === 'must' })
+      // 编排内联提案（proposed_by=agent_proposal，来源=JD 智能段——审计落盘）；引用字段本身无 creation side effect（模式 A）
+      const res = resolveSkillProposal(ws, { source_phrase: n, proposed_name: n, evidence_source: source })
+      if (res.outcome === 'rejected') continue // soft/形态不合格 → 跳过该能力词（不阻塞整单；可人工补提案）
+      skills.push({ name: n, essential: r.priority === 'must', skill_id: res.skillId, source_phrase: n })
     }
   }
   if (skills.length === 0) return null
-  return { company: canonical, name: job.title.trim(), source: `JD-${canonical}-${date}`, skills }
+  return { company: canonical, name: job.title.trim(), source, skills }
 }
 
 /** 自动链入口：岗位已分析且可派生 → 幂等登记投影（覆盖更新）；不可派生/岗位不存在 → null */

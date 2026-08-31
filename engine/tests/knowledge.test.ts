@@ -225,6 +225,7 @@ test('computeGap：satisfied(≥3)/transferable(1-2)/missing 分档 + action 模
   })
   assert.equal(gap.person, '我')
   assert.equal(gap.role.id, 'r-1')
+  assert.equal(gap.personSkillCount, 2) // ADR-031 v0.3：画像声明基数（UI 区分未声明 vs 已声明未命中）
   assert.deepEqual(gap.satisfied, [{ name: '机械设计', level: 4 }]) // ≥3 可独立产出
   assert.deepEqual(gap.transferable, [{ name: '减速器设计', level: 2 }]) // 1-2 有基础需补强
   assert.equal(gap.missing.length, 0)
@@ -275,6 +276,7 @@ test('computeGap：未声明 → missing（essential/source 透传 + 模板化 a
     personSkills: [], // 画像无技能声明 → 全 missing
     skills: [],
   })
+  assert.equal(gap.personSkillCount, 0)
   assert.deepEqual(gap.satisfied, [])
   assert.deepEqual(gap.transferable, [])
   assert.deepEqual(gap.missing, [

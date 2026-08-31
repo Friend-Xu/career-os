@@ -40,6 +40,7 @@ export interface WorkspacePaths {
   strengthProposals: string
   derivationProposals: string
   roleProposals: string
+  skillProposals: string
   workflows: string
   resumes: string
   workingCopies: string
@@ -99,6 +100,7 @@ export function buildPaths(root: string): WorkspacePaths {
     strengthProposals: join(root, 'strength-proposals'),
     derivationProposals: join(root, 'derivation-proposals'),
     roleProposals: join(root, 'role-proposals'),
+    skillProposals: join(root, 'skill-proposals'),
     workflows: join(root, 'workflows'),
     resumes: join(root, 'resumes'),
     workingCopies: join(root, 'resumes', 'working-copies'),
@@ -173,6 +175,7 @@ export function initWorkspace(root: string): Workspace {
     mkdirSync(paths.strengthProposals, { recursive: true })
     mkdirSync(paths.derivationProposals, { recursive: true })
     mkdirSync(paths.roleProposals, { recursive: true })
+    mkdirSync(paths.skillProposals, { recursive: true })
     mkdirSync(paths.workflows, { recursive: true })
     mkdirSync(paths.applyTransactions, { recursive: true })
     mkdirSync(paths.opportunityHistory, { recursive: true })
