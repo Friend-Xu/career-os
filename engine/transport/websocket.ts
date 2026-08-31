@@ -1266,7 +1266,7 @@ function settingsModelsParams(v: unknown): { apiKey?: string; baseUrl?: string }
 }
 
 /** 可用模型列表：只从 API 提取（不预制）——有 apiKey 时探测端点拉真实可用模型；
- * 无 key（CLI 模式）→ 空列表（模型由 claude CLI 决定，UI 仅自由输入）。
+ * 未配置 key → 空列表（模型留空 = 服务商默认，UI 仅自由输入）。
  * 探测链（第三方兼容网关差异适配，外部 API 边界）：Anthropic 标准 /v1/models →
  * OpenAI 风格 /models → baseUrl 以 /anthropic 结尾时去掉后缀探测根 /models（DeepSeek 类网关：
  * 兼容端点无模型列表，原生端点有）。401/403 直接判定 Key 无效（其余路径必同结果），

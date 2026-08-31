@@ -113,11 +113,11 @@ export interface EngineConfig {
   }
   agent: {
     model?: string
-    /** API 密钥（可选）：传则走 API 模式；留空复用本机 claude CLI 登录态 */
+    /** API 密钥（旧单字段，迁移兼容——服务商级配置见 providers[].apiKey） */
     apiKey?: string
-    /** API 端点根地址（可选）：默认官方 https://api.anthropic.com；留空 = 官方 */
+    /** API 端点根地址（旧单字段，迁移兼容——服务商级配置见 providers[].baseUrl） */
     baseUrl?: string
-    /** 启用 API 模型配置（设置页大胶囊勾选）；false = 忽略 apiKey/baseUrl/model，Agent 走 CLI 登录态 */
+    /** 启用 API 模型配置（旧单字段，迁移兼容——服务商启用见 providers[].enabled） */
     enabled?: boolean
     /** 服务商连接数组（设置页卡片式管理的唯一事实源；旧 model/apiKey/baseUrl 字段仅迁移兼容） */
     providers?: AgentProvider[]
@@ -709,10 +709,11 @@ export function describeConfig(config: EngineConfig): string[] {
   return [
     `server.host = ${config.server.host}（监听地址，个人使用默认仅回环）`,
     `server.port = ${config.server.port}（与前端 5288 相邻；占用时 +1 递增兜底）`,
-    `agent.model = ${config.agent.model ?? '（空）用 claude CLI 默认模型'}`,
-    `agent.apiKey = ${config.agent.apiKey ? '已配置（API 模式）' : '（空）复用本机 claude CLI 登录态'}`,
-    `agent.baseUrl = ${config.agent.baseUrl ?? '（空）官方 API https://api.anthropic.com'}`,
-    `agent.enabled = ${config.agent.enabled === false ? 'false（未启用：Agent 走本机 CLI 登录态）' : 'true（启用 API 模型配置）'}`,
+    `agent.providers = ${config.agent.providers?.map((p) => `${p.id}${p.enabled === false ? '（禁用）' : ''}`).join(', ') ?? '（空）'}（服务商唯一事实源；旧 model/apiKey/baseUrl/enabled 字段仅迁移兼容）`,
+    `agent.model = ${config.agent.model ?? '（空）'}`,
+    `agent.apiKey = ${config.agent.apiKey ? '已配置（旧字段，迁移兼容）' : '（未配置——服务商 key 走 providers[].apiKey）'}`,
+    `agent.baseUrl = ${config.agent.baseUrl ?? '（空——服务商端点走 providers[].baseUrl）'}`,
+    `agent.enabled = ${config.agent.enabled === false ? 'false（旧字段禁用——服务商启用见 providers[].enabled）' : 'true'}`,
     `agent.permissionMode = ${config.agent.permissionMode}（权限模式：acceptEdits 自动放行 Read/Write/Edit/Grep/Glob）`,
     `agent.allowedTools = [${config.agent.allowedTools.join(', ')}]`,
     `agent.maxTurns = ${config.agent.maxTurns ?? '（空）不限制'}`,

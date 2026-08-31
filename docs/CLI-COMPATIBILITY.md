@@ -55,7 +55,6 @@ args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp", "-h", "Authorization: Bear
 
 | CLI | skills 目录 | 命令 |
 |-----|------------|------|
-| Claude Code（插件） | 仓库内 `.claude-plugin/` | `claude --plugin-dir .` |
 | Claude Code（手动） | `~/.claude/skills/` | `bash scripts/install-to-cli.sh --agents` 后复制，或手动 `cp -R` |
 | Codex | `~/.codex/skills/` | `bash scripts/install-to-cli.sh --codex` |
 | OpenCode | `~/.config/opencode/skills/` | `bash scripts/install-to-cli.sh --opencode` |

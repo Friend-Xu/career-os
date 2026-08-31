@@ -33,8 +33,8 @@ export function ModelSelect({
       renderInput={(params) => (
         <TextField
           {...params}
-          placeholder={compact ? '模型' : '选择或输入模型（留空 = CLI 默认）'}
-          title="模型（留空 = 使用 claude CLI 默认模型）"
+          placeholder={compact ? '模型' : '选择或输入模型（留空 = 服务商默认）'}
+          title="模型（留空 = 服务商默认模型）"
           sx={{
             '& .MuiOutlinedInput-root': {
               fontSize: compact ? 11.5 : 13,

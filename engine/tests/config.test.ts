@@ -197,7 +197,7 @@ test('resolveAgentConnection：config.agent.model 命中服务商模型列表 �
   assert.equal(resolveAgentConnection(config)?.model, 'deepseek-v4-pro')
 })
 
-test('resolveAgentConnection：enabled=false → undefined（走 CLI 登录态）', () => {
+test('resolveAgentConnection：enabled=false → undefined（服务商未启用——连接不可用）', () => {
   const config = agentConfigWith(
     [{ id: 'deepseek', apiKey: 'sk-1', enabled: true, models: ['deepseek-v4-flash'] }],
     { enabled: false },

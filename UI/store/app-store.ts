@@ -177,7 +177,7 @@ interface AppState {
   sessionFocus: SessionContextFrame | null;
   /** 任务心跳时间源（有任务时每秒 tick；消息内/顶部状态条/会话列表共用，不持久化） */
   now: number;
-  /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 使用本机 claude CLI 登录态，不持久化） */
+  /** Agent 设置（引擎 config.json 同步；apiKey 留空 = 未配置——服务商级 key 走 providers[].apiKey，不持久化） */
   agentSettings: { model: string; apiKey: string; baseUrl: string; enabled: boolean; providers: AgentProviderView[]; map: MapSettings; documentVision: { provider: 'zhipu' | 'deepseek'; model: string; apiKey: string }; permissionMode: string; reasoning?: 'off' | 'low' | 'high' | 'max' };
   /** 可用模型列表（引擎 settings/models：apiKey 配置时来自 API 提取；模型切换器 options） */
   availableModels: { source: 'api' | 'cli' | 'api_error'; models: string[]; error?: 'auth' | 'no_endpoint' | 'network' };

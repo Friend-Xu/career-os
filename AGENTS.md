@@ -1,18 +1,11 @@
 # 职业决策分析系统
 
-本项目是 Claude Code Plugin，入口 `.claude-plugin/plugin.json`，技能文件 `skills/career-advisor/SKILL.md`。
+Career OS 是本地工作台：`engine/`（Node 24 原生 TS 零构建引擎：markdown 真相源 → IR 契约 → WebSocket RPC/事件）+ `UI/`（Vite + React 19 工作台）+ `skills/career-advisor/`（协议与知识资产——Agent 运行时不直读，引擎按需注入协议段）。**已非 Claude Code 插件体系**（ADR-030 H：运行时直连 LLM 服务商，claude-agent-sdk / CLI 登录态全部退役）。
 
 ## 使用
-- Claude Code: `--plugin-dir .` 加载，或 `/plugin install` 后直接 `/career-advisor`
-- 也可直接说"我想转行"/"选方向"/"分析JD"
-- 其他工具: 阅读 `skills/career-advisor/SKILL.md` 了解完整协议
-
-## 安装
-```
-git clone <repo>
-claude --plugin-dir .
-```
-无需 `npm install`，MCP 依赖通过 npx 自动解析。
+- 启动：`node runtime/supervisor.mjs`（或双击 StartWebUI.bat）→ 打开 http://localhost:5288
+- 引擎 WS：ws://127.0.0.1:5289（仅本机回环）
+- 配置：`career-os.config.json`（首次运行自动生成；来源优先级 CLI > env > 文件 > 默认）
 
 ## 工作目录
 运行时数据存储在 `workspace/career-advisor/`（gitignored，首次运行自动创建）。

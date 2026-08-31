@@ -75,7 +75,7 @@ node runtime/supervisor.mjs     # Windows: double-click StartWebUI.bat (bundled 
 ```
 Stop: `node runtime/stop-all.mjs` or double-click stop-all.bat · Diagnose: `node runtime/doctor.mjs`.
 
-Open **http://localhost:5288**: decision chains, info-pool graph, company due diligence and application boards, all visualized. The "Decision Agent" panel chats with a real LLM (reuses your local Claude CLI login — streaming replies, question cards, permission dialogs, thinking process).
+Open **http://localhost:5288**: decision chains, info-pool graph, company due diligence and application boards, all visualized. The "Decision Agent" panel chats with a real LLM (engine connects directly to your configured provider — streaming replies, question cards, permission dialogs, thinking process).
 
 The `workspace/` directory is created automatically on first run. No setup required. Full workflow: [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -97,14 +97,6 @@ Guarantees:
 - **Unified shutdown**: Ctrl+C / Ctrl+Break / window close all trigger the same cleanup sequence; deletion of `runtime.json` marks a clean shutdown
 
 > Process ownership is decided by command-line verification (PID alive + belongs to this project). Ports are symptoms, never the basis for killing.
-
-**Option 2: Claude Code plugin (optional)**
-
-```bash
-claude --plugin-dir .
-```
-
-Then just say what you need in Claude Code: `"help me write a resume"` / `"is this JD legit?"` / `"what direction should I go?"` / `"which city should I choose?"` / `"give me a conclusion"`.
 
 ## What We Believe
 

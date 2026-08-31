@@ -1,14 +1,14 @@
 # Career OS 架构与现状总览
 
-> 2026-08-16 校准 | 反映当前实现状态（M6 Target Intelligence 引擎进链 + M6.5 Person Foundation + P3-P6 机会/投递闭环 + 2026-08 断链审计修复），非愿景
+> 2026-08-16 校准 | 2026-08-31 追加：Claude Code 插件形态退役（ADR-030 H：运行时直连 LLM 服务商，claude-agent-sdk 移除，`agent/adapter/` 目录不复存在）| 反映当前实现状态（M6 Target Intelligence 引擎进链 + M6.5 Person Foundation + P3-P6 机会/投递闭环 + 2026-08 断链审计修复），非愿景
 
 ## 0. 一句话概括
 
-Career OS 是一个**基于证据链的职业决策 + Artifact Evolution 系统**（Decision → Evolution Pipeline）：输入方向/JD/公司/行业信息，经分析、映射、验证、决策，输出可验证职业资产（Resume / Portfolio / Interview）。三件套：`skills/`（Claude Code 插件：知识与分析协议源）+ `engine/`（本地 Node 引擎：markdown 真相源 → IR 契约 → SQLite 投影 → WebSocket RPC/事件）+ `UI/`（React 工作台：可视化 + 常驻 AI 面板）。
+Career OS 是一个**基于证据链的职业决策 + Artifact Evolution 系统**（Decision → Evolution Pipeline）：输入方向/JD/公司/行业信息，经分析、映射、验证、决策，输出可验证职业资产（Resume / Portfolio / Interview）。三件套：`skills/`（协议与知识资产：引擎按需注入协议段，Agent 不直读）+ `engine/`（本地 Node 引擎：markdown 真相源 → IR 契约 → SQLite 投影 → WebSocket RPC/事件）+ `UI/`（React 工作台：可视化 + 常驻 AI 面板）。
 
 ```mermaid
 flowchart LR
-    subgraph 技能层["skills/ 插件层（Claude Code）"]
+    subgraph 技能层["skills/ 协议与知识层"]
         SK["SKILL.md 意图路由 + 8 子流程"]
         DIR["references/directions/ 8 方向画像卡"]
         PROT["references/protocols/ 输出协议"]
@@ -20,7 +20,7 @@ flowchart LR
         PROJ["storage/projection.ts<br/>better-sqlite3 4 张投影表"]
         WATCH["19 个目录 watcher<br/>（含 targets/claim-proposals/<br/>opportunity-proposals/working-copies/<br/>knowledge，guarded 管线守护）"]
         RUNTIME["runtime/ 决策历史投影 + Agent 运行时 + 差距分析"]
-        AGENT["agent/adapter/claude.ts<br/>claude-agent-sdk 封装"]
+        AGENT["agent/ 直连运行时<br/>DeepSeek 原生端点（reasoning_effort）+ 任务协议注入 + 工具装配"]
     end
 
     subgraph 前端["UI/ 工作台（Vite + React 19 + MUI）"]
@@ -64,7 +64,7 @@ flowchart LR
 
 | 层 | 目录 | 职责 | 关键点 |
 |----|------|------|--------|
-| 技能层 | `skills/career-advisor/` | 分析协议与知识源：意图路由、8 子流程、8 方向画像卡、14 字段摘要协议 | Claude Code 插件，`--plugin-dir .` 加载；产出 markdown 真相源 |
+| 技能层 | `skills/career-advisor/` | 分析协议与知识源：意图路由、8 子流程、8 方向画像卡、14 字段摘要协议 | 协议与知识资产（Agent 运行时不直读——协议经引擎按任务注入）；产出 markdown 真相源 |
 | 引擎层 | `engine/` | markdown 真相源 → IR 契约 → SQLite 投影 → WS RPC/事件；Agent 对话通道；**Artifact 演化（Resume/Portfolio/Interview：Fact → Proposal → 用户决策 → 版本）** | Node 24 原生 TS（type-stripping，零构建、仅 erasable syntax）；**零依赖外部服务**（除 better-sqlite3/chokidar/ws/SDK） |
 | 前端层 | `UI/` | 工作台可视化 + AI 对话 | React 19 + Vite 5 + MUI + zustand 5；浅色瑞士风默认 |
 | 运行时层 | `runtime/` | 应用生命周期守护（横切启动层）：supervisor（recovery → 端口预检 → spawn → 统一关闭）+ stop-all + doctor | Node 24 原生 ESM，零依赖；runtime.json 原子写（gitignored） |
@@ -125,14 +125,14 @@ engine/（203 个 .ts，node_modules 除外——完整清单以目录为准）
 │   ├── projection.ts       better-sqlite3 4 张投影表（decisions/timeline/persons/applications；SCHEMA_VERSION 7）
 │   └── graph-builder.ts    图谱派生（pool/graph）
 ├── benchmark/              M3-3 Artifact Evolution Benchmark：确定性审计，无 AI Judge、无总分、无 ranking
-├── context/career-context.ts AI Read Model（CareerContext 投影——AI 不直接读 IR）
+├── agent/                 直连运行时：provider 适配（DeepSeek 原生 reasoning_effort）+ 任务协议注入（task-protocol）+ 工具装配 + 提案校验（Producer Ownership）
+├── context/               career-context.ts AI Read Model（CareerContext 投影——AI 不直接读 IR）
 ├── runtime/                decision-runtime（历史投影）/ gap-calculator（差距分析，不打分）/
 │                           claim-coverage/selector、evidence-coverage、jd-*、opportunity、observation、
 │                           evolution-query、agent-runtime（任务注册表 + 权限挂起 + cancel）
 ├── export/resume-export.ts Resume PDF 导出（Edge headless，复现三元组 + checksum）
 ├── feedback/writer.ts      rewrite/feedback 事件记录（只记录不学习）
 ├── health/checker.ts       健康投影（--doctor 与 system/health 同一计算源）
-├── agent/adapter/claude.ts claude-agent-sdk 封装：事件归一化 + 权限握手 + resume + 回答通道 + 思考事件
 └── transport/
     ├── protocol.ts         ★ RPC 方法清单 + 事件清单（权威源，见下）
     └── websocket.ts        WS 桥 :5289（RPC + 事件广播 + 优雅关闭）

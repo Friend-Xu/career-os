@@ -89,10 +89,11 @@ export const SKILL_VIEW_LABEL: Record<string, string> = {
 
 /**
  * Agent API 服务商预设（设置页 Base URL 一键填入）。
- * 只收录确认支持 Anthropic 兼容端点的服务商（DeepSeek 官方文档明示 /anthropic 端点；
- * 其余网关大多仅 OpenAI 兼容，不列以免误导）。
+ * DeepSeek = 原生 OpenAI 兼容端点（reasoning_effort 语义真实生效——/anthropic 兼容网关
+ * 仅接受 thinking 参数不实现语义）；Anthropic 官方端点保留（官方网关实现 thinking budget）。
+ * 其余网关大多仅 OpenAI 兼容，不列以免误导。
  */
 export const PROVIDER_PRESETS: { id: string; label: string; desc: string; baseUrl: string }[] = [
-  { id: 'anthropic', label: 'Anthropic 官方', desc: '默认端点', baseUrl: 'https://api.anthropic.com' },
-  { id: 'deepseek', label: 'DeepSeek 兼容', desc: 'Anthropic 兼容端点，claude-* 模型名自动映射', baseUrl: 'https://api.deepseek.com/anthropic' },
+  { id: 'anthropic', label: 'Anthropic 官方', desc: '官方端点（thinking budget 语义）', baseUrl: 'https://api.anthropic.com' },
+  { id: 'deepseek', label: 'DeepSeek 原生', desc: 'OpenAI 兼容原生端点（reasoning_effort 语义生效）', baseUrl: 'https://api.deepseek.com' },
 ]

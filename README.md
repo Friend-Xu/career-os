@@ -84,17 +84,9 @@ node runtime/supervisor.mjs     # Windows 也可双击 StartWebUI.bat
 
 关闭：`node runtime/stop-all.mjs` 或双击 stop-all.bat；诊断：`node runtime/doctor.mjs`。
 
-打开 **http://localhost:5288**：决策链、信息池图谱、公司尽调、投递看板全部可视化；右上角「决策 Agent」直接与真实 LLM 对话（复用本机 Claude CLI 登录态，支持流式回复 / 提问卡片 / 权限弹窗 / 思考过程）。
+打开 **http://localhost:5288**：决策链、信息池图谱、公司尽调、投递看板全部可视化；右上角「决策 Agent」直接与真实 LLM 对话（引擎直连服务商，支持流式回复 / 提问卡片 / 权限弹窗 / 思考过程）。
 
 首次使用自动创建 `workspace/` 工作目录，无需配置。完整工作流见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-
-**方式二：Claude Code 插件（可选）**
-
-```bash
-claude --plugin-dir .
-```
-
-在 Claude Code 中直接说需求：`"帮我写简历"` / `"分析一下这个 JD"` / `"我该做什么方向"` / `"去哪个城市发展比较好"` / `"出个结论"`。
 
 ## 引擎与数据
 
