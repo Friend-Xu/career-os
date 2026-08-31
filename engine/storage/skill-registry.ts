@@ -31,6 +31,8 @@ export interface SkillProposalInput {
   binds_to_id?: string // Agent 推荐绑定（Engine 只验存在性；substring 候选允许显式绑定并留痕）
   evidence_source: string // 来源标识（JD-{公司}-{日期} / 简历标识 / 用户）
   aliases?: string[]
+  /** 提案来源（契约 §三 provenance.proposed_by；缺省 agent_proposal——画像资产迁移传 user） */
+  proposed_by?: 'agent_proposal' | 'seed_standard' | 'user'
 }
 
 export interface SkillProposalRecord extends SkillProposalInput {
@@ -266,7 +268,7 @@ export function resolveSkillProposal(ws: Workspace, input: SkillProposalInput, n
     name: proposedName,
     aliases: input.aliases ?? [],
     status: 'active',
-    proposedBy: 'agent_proposal',
+    proposedBy: input.proposed_by ?? 'agent_proposal',
     registeredBy: 'engine',
     source: evidence,
   })
