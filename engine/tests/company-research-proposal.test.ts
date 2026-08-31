@@ -101,10 +101,11 @@ test('submit_company_research：事实段枚举外值 → warn（记录不拒写
   assert.equal(parsed.skipped.includes('facts[1].value'), false, 'warn 不 skip（写入但计分侧忽略）')
 })
 
-test('validateCompanyResearchProposal：枚举表与契约 §4 对齐（12 个 value）', () => {
-  assert.equal(COMPANY_FACT_VALUES.length, 12, '§4 规则表 12 行')
+test('validateCompanyResearchProposal：枚举表与契约 §4 对齐（规则表派生，13 个 value）', () => {
+  assert.equal(COMPANY_FACT_VALUES.length, 13, '§4 规则表 13 行（v2 补 GROWTH）')
   assert.ok(COMPANY_FACT_VALUES.includes('国家级专精特新小巨人'))
   assert.ok(COMPANY_FACT_VALUES.includes('大额诉讼 / 劳动纠纷频繁'))
+  assert.ok(COMPANY_FACT_VALUES.includes('营收增长（近 1 年）'), 'GROWTH 枚举必须从 ASSESSMENT_RULES 派生')
 })
 
 test('submit_company_research：重复尽调 → 同段替换（无重复段落）', async () => {

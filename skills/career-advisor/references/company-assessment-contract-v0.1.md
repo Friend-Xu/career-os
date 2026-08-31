@@ -16,6 +16,11 @@ AssessmentRule 层（Fact 不直接映射 points，调权重不改事实）④ �
 （认证取最高级别 / 融资取最新最高轮 / 风险可叠加）⑤ 评估 = 纯 Projection，Engine
 **不回写** markdown ⑥ UI 不用星级（Evidence > Impression，分数 + 证据）。
 
+**冻结后修订（2026-08-31，评分链路失效根因修复）**：§4 规则表补 GROWTH 行（契约 §3 维度归属
+「成长性 growth | FINANCING / GROWTH」但规则表遗漏 GROWTH——成长性维度无枚举输入，Agent 无法
+合规采集）；规则版本升 `2026-08-company-quality-v2`。修订旁证：真机尽调事实段全量 narrative
+（枚举外 → 全部 UNKNOWN_VALUE → INSUFFICIENT_DATA → UI「信息不足」）。
+
 **冻结后补充（2026-08-08，调研 grounding + 实现前检查）**：
 - **信号调研 grounding**——规则表与数据源对齐主流企业信用评价体系（启信分 6 大类 /
   GB/T 22120-2025《企业信用数据项要求》/ 国务院 2026 企业信用综合评价方案），
@@ -103,6 +108,7 @@ interface CompanyFact {
 | FINANCING | A 轮（近 3 年） | growth +5 | 同上 |
 | PATENT | 核心专利（产品/工艺相关） | technology +5 | 国家知识产权局专利检索 / 企查查知识产权板块 |
 | PATENT | 研发人员占比 ≥ 30% | technology +5 | 年报 / 招聘信息 / 公司公开资料 |
+| GROWTH | 营收增长（近 1 年） | growth +5 | 年报 / 公司公开资料（营收同比，需来源引用） |
 | INDUSTRY_STATUS | 细分领域头部 / 市占率领先 | credibility +5 | 行业报告 / 公司公开资料（需来源引用） |
 | OPPORTUNITY | 招聘活跃（近 3 个月有岗位发布） | opportunity +5 | BOSS直聘 / 猎聘 / 智联 / 公司招聘页 |
 | RISK | 经营异常 | stability -20 | 国家企业信用信息公示系统（经营异常名录） |
@@ -150,7 +156,7 @@ type AssessmentStatus = 'EVALUATED' | 'PARTIAL' | 'INSUFFICIENT_DATA'
 
 interface CompanyAssessment {
   version: 'v0.1'             // 评分规则版本（契约冻结时定）
-  ruleVersion: string         // 规则表版本标识（如 '2026-08-company-quality-v1'）
+  ruleVersion: string         // 规则表版本标识（如 '2026-08-company-quality-v2'）
   assessedAt: string          // ISO 时间——「为什么去年 85 现在 78」的可审计锚点
   status: AssessmentStatus
   qualityScore: number | null

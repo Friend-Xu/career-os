@@ -64,7 +64,7 @@ test('Case B：有事实段 → assessment 计分（EVALUATED + qualityScore）'
   assert.equal(v.assessment.status, 'EVALUATED')
   assert.equal(v.assessment.qualityScore, 75) // 50 + 专精特新10 + B轮10 + 招聘5
   assert.equal(v.assessment.signals.length, 3)
-  assert.equal(v.assessment.ruleVersion, '2026-08-company-quality-v1')
+  assert.equal(v.assessment.ruleVersion, '2026-08-company-quality-v2')
 })
 
 test('Case C：matchScore 与 assessment 独立并存（两字段互不影响）', () => {

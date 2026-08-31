@@ -12,7 +12,7 @@ import type { Tool } from 'ai'
 import type { CompanyResearchProposal } from '../../ir/schema.ts'
 import type { Workspace } from '../../storage/workspace.ts'
 import { writeCompanyResearch } from '../../storage/company-research-writer.ts'
-import { validateCompanyResearchProposal } from '../../runtime/company-research-validator.ts'
+import { validateCompanyResearchProposal, COMPANY_FACT_VALUES } from '../../runtime/company-research-validator.ts'
 
 const summarySchema = z.object({
   city: z.string().min(1),
@@ -36,8 +36,9 @@ export function createSubmitCompanyResearchTool(ws: Workspace): Tool<any, any> {
   return tool({
     description:
       '提交公司尽调结果（Proposal Channel）：摘要表（city/industry/match_score/risk_level/source/tags/contacted/aliases，' +
-      'match_score 只写 85% 或 8.2/10，contacted 只写 是/否，tags 逗号分隔）+ 尽调详情正文 + 公司事实段（type ∈ 7 枚举，' +
-      'value ∈ 评估契约 §4 枚举，来源必填）——引擎校验后写入公司档案（companies 文件）。' +
+      'match_score 只写 85% 或 8.2/10，contacted 只写 是/否，tags 逗号分隔）+ 尽调详情正文 + 公司事实段（type ∈ 7 枚举；' +
+      `value 必须逐字使用以下枚举值（精确匹配，叙述性长句不算——枚举外不计分）：${COMPANY_FACT_VALUES.join(' / ')}；` +
+      '来源必填）——引擎校验后写入公司档案（companies 文件）。' +
       'companyId = 任务上下文中声明的公司 ID（读档时确认的公司档案名）。尽调完成后必须调用本工具提交，' +
       '禁止直接编辑公司档案文件。',
     inputSchema: z.object({

@@ -6,23 +6,11 @@
  * 与 jd-analysis-validator 同构（submit_jd_analysis 模式的 Company 侧对应）。
  */
 import type { CompanyResearchProposal, CompanyResearchValidationIssue } from '../ir/schema.ts'
+import { ASSESSMENT_RULES } from './company-assessment-rules.ts'
 export type { CompanyResearchValidationIssue }
 
-/** 评估契约 §4 规则表 value 枚举（单一事实源 = company-assessment-contract-v0.1 §4；枚举外 → 不计分） */
-export const COMPANY_FACT_VALUES = [
-  '国家级专精特新小巨人',
-  '省级专精特新 / 潜在独角兽',
-  '高新技术企业',
-  'B 轮及以上（近 3 年）',
-  'A 轮（近 3 年）',
-  '核心专利（产品/工艺相关）',
-  '研发人员占比 ≥ 30%',
-  '细分领域头部 / 市占率领先',
-  '招聘活跃（近 3 个月有岗位发布）',
-  '经营异常',
-  '失信 / 被执行人',
-  '大额诉讼 / 劳动纠纷频繁',
-] as const
+/** 评估契约 §4 规则表 value 枚举（单一事实源 = ASSESSMENT_RULES；枚举外 → 不计分） */
+export const COMPANY_FACT_VALUES = ASSESSMENT_RULES.map((r) => r.value)
 
 /** 事实类型枚举（CompanyFactType，ir/schema.ts） */
 export const COMPANY_FACT_TYPES = ['CERTIFICATION', 'FINANCING', 'PATENT', 'INDUSTRY_STATUS', 'GROWTH', 'OPPORTUNITY', 'RISK'] as const

@@ -44,7 +44,15 @@ test('Case C：完整企业（4 维命中）→ EVALUATED', () => {
   assert.deepEqual(a.dimensions, { credibility: 5, growth: 15, technology: 5, opportunity: 5, stability: 0 })
   assert.equal(a.signals.length, 4)
   assert.equal(a.version, 'v0.1')
-  assert.equal(a.ruleVersion, '2026-08-company-quality-v1')
+  assert.equal(a.ruleVersion, '2026-08-company-quality-v2')
+})
+
+test('Case C2：GROWTH 营收增长（近 1 年）→ growth +5（契约 §3/§4 自洽——规则表补遗漏）', () => {
+  const a = computeCompanyAssessment([fact('GROWTH', '营收增长（近 1 年）')])
+  assert.equal(a.status, 'PARTIAL')
+  assert.equal(a.qualityScore, 55) // 50 + growth 5
+  assert.equal(a.dimensions.growth, 5)
+  assert.equal(a.signals.length, 1)
 })
 
 test('Case D：认证去重——国家级覆盖高新技术企业（不叠加）', () => {

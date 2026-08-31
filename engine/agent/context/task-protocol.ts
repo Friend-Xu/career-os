@@ -12,6 +12,7 @@
  *   COMPANY_RESEARCH_DIMENSIONS 是契约 §B 的代码投影（单一事实源），Phase 3 Validator 复用。
  */
 import type { AgentTaskType } from '../../ir/agent-task.ts'
+import { ASSESSMENT_RULES } from '../../runtime/company-assessment-rules.ts'
 
 /** 聚合任务输出预算（非 Stage 路径；无对应档位 = undefined → runner 8K 默认） */
 export function aggregateTaskBudget(taskType: AgentTaskType | undefined): number | undefined {
@@ -75,11 +76,23 @@ function jobAnalysisProtocol(jobId?: string): string {
   ].join('\n')
 }
 
+/** company_research 事实段枚举值域（Agent 不可读技能文件——协议必须自包含，由规则表渲染，单一事实源） */
+function companyFactEnumLines(): string[] {
+  const byType = new Map<string, string[]>()
+  for (const r of ASSESSMENT_RULES) {
+    const list = byType.get(r.factType) ?? []
+    list.push(r.value)
+    byType.set(r.factType, list)
+  }
+  return [...byType.entries()].map(([t, vs]) => `  - ${t}: ${vs.join(' / ')}`)
+}
+
 /** company_research 专属协议（Evidence Sufficiency v0.1——契约 §A–§I 的 Agent 可执行投影） */
 function companyResearchProtocol(companyId?: string): string {
   const dims = COMPANY_RESEARCH_DIMENSIONS.map(
     (d) => `- ${d.key} ${d.label} ${d.critical ? '★' : '□'} ${d.channels}`,
   ).join('\n')
+  const factEnums = companyFactEnumLines().join('\n')
   return [
     '【任务协议：company_research】（Evidence Sufficiency v0.1——契约 evidence-sufficiency-contract-v0.1）',
     '职责：回答用户对公司的调查问题。你只做检索与证据充分性判断——不直接写档案文件（档案写入经 submit_company_research 提案通道，Engine 校验后落盘）、不输出「公司评分/值不值得关注」结论（Company Assessment 由系统计算）、不做画像匹配。',
@@ -97,6 +110,12 @@ function companyResearchProtocol(companyId?: string): string {
     '有界再查（每关键维度至多 1 次——不要无谓小步搜索）：UNCOVERED→目标来源直接尝试 1 次；UNCERTAIN→更高质量来源 1 次（按该维度适用通道优先序）；CONFLICTED→至多 1 个新独立来源域。非关键维度不触发再查（记录 note/conflicts 即可）。',
     '预算：检索被拒（预算用尽）后不得再调用该通道，该通道视为不可用；被拒事实记入 limitations。',
     'limitations 类型语义（按契约 §H）：budget_exhausted=通道被拒的事实记录（channel 必填）；gap=存在 UNCOVERED 的关键维度（无来源）时才用；uncertainty=仅当存在状态为 UNCERTAIN 的维度（含非关键维度）时用，用于声明"该维度带不确定性结束"；conflict=存在未消解冲突。结论内部的限定措辞（如"未检索到 ≠ 不存在"）写在对应维度的 note 里，不写入 limitations。',
+    '【公司事实段写法】（Company Intelligence v0.1——职业价值评估输入；4 列表格：类型/内容/来源/链接（链接可选））',
+    '- 类型必须 ∈ CERTIFICATION / FINANCING / PATENT / INDUSTRY_STATUS / GROWTH / OPPORTUNITY / RISK；',
+    '- 内容列必须逐字使用以下枚举值（Engine 精确匹配——叙述性长句/数字细节/自造措辞不是枚举值，禁止写入，归尽调详情正文）：',
+    factEnums,
+    '- 未命中枚举的发现跳过不写行；来源必填（外部公开渠道）；禁止编造信号凑分（检索没查到的信号不写）；',
+    '- 无可用信号 → facts 空数组（= 待评估，诚实状态），禁止用叙述/长句填充。',
     '纪律：',
     '- 工具调用前后不输出过程叙述（无 "Let me..."/"Now..."），全部输出中文；',
     '- 每维度结论标注来源：正文给出引用（URL 级）；SUFFICIENCY_STATE 的 sources 只填主域+tier，不要粘贴长引文（URL/原文由检索 trace 记录）；',

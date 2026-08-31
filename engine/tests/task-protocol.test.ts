@@ -46,6 +46,13 @@ test('buildTaskProtocol：company_research 注入证据充分性协议（9 维/�
   assert.ok(p.includes('Company Assessment 由系统计算'), '协议须明确不做公司评分')
   assert.ok(p.includes('submit_company_research'), '协议须声明公司尽调提案提交工具')
   assert.ok(p.includes('禁止用 Edit/Write 直接改档案文件'), '协议须禁止 Agent 直接写公司档案')
+  // 公司事实段协议（2026-08-31 评分链路失效根因：枚举值域必须自包含注入——Agent 不可读技能文件）
+  assert.ok(p.includes('公司事实段写法'), '协议须含公司事实段写法')
+  assert.ok(p.includes('逐字使用以下枚举值'), '协议须声明内容列枚举精确匹配')
+  assert.ok(p.includes('国家级专精特新小巨人'), '协议须内嵌认证枚举值')
+  assert.ok(p.includes('营收增长（近 1 年）'), '协议须内嵌 GROWTH 枚举值（契约 §3/§4 自洽）')
+  assert.ok(p.includes('禁止编造信号'), '协议须禁止编造信号凑分')
+  assert.ok(p.includes('无可用信号 → facts 空数组'), '协议须声明无信号留空（诚实状态，narrative 禁止入表）')
   // 中文输出
   assert.ok(p.includes('中文'), '协议须要求中文输出')
 })

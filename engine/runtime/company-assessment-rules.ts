@@ -7,7 +7,7 @@ import type { CompanyDimension, CompanyFactType } from '../ir/schema.ts'
  */
 
 export interface AssessmentRule {
-  group: 'certification' | 'financing' | 'patent' | 'industry' | 'opportunity' | 'risk'
+  group: 'certification' | 'financing' | 'patent' | 'growth' | 'industry' | 'opportunity' | 'risk'
   factType: CompanyFactType
   value: string
   contribution: Partial<Record<CompanyDimension, number>>
@@ -24,6 +24,8 @@ export const ASSESSMENT_RULES: AssessmentRule[] = [
   // 技术（同组不同 value 可并存）
   { group: 'patent', factType: 'PATENT', value: '核心专利（产品/工艺相关）', contribution: { technology: 5 } },
   { group: 'patent', factType: 'PATENT', value: '研发人员占比 ≥ 30%', contribution: { technology: 5 } },
+  // 成长性（契约 §3 维度归属 growth | FINANCING / GROWTH；同组不同 value 可并存）
+  { group: 'growth', factType: 'GROWTH', value: '营收增长（近 1 年）', contribution: { growth: 5 } },
   // 行业地位 / 职业机会（自然单条）
   { group: 'industry', factType: 'INDUSTRY_STATUS', value: '细分领域头部 / 市占率领先', contribution: { credibility: 5 } },
   { group: 'opportunity', factType: 'OPPORTUNITY', value: '招聘活跃（近 3 个月有岗位发布）', contribution: { opportunity: 5 } },
@@ -34,7 +36,7 @@ export const ASSESSMENT_RULES: AssessmentRule[] = [
 ]
 
 /** 规则表版本标识（评分规则变更时递增——历史分数经 ruleVersion 可审计） */
-export const RULE_VERSION = '2026-08-company-quality-v1'
+export const RULE_VERSION = '2026-08-company-quality-v2'
 
 /** value 精确匹配（枚举外 → undefined，调用方标记 degraded） */
 export function ruleOf(factType: CompanyFactType, value: string): AssessmentRule | undefined {
