@@ -1,6 +1,10 @@
 <div align="center">
 
+<img src="docs/Logo/Logo.png" alt="Career OS Logo" width="180"/>
+
 # Career OS
+
+**Your Career, Clearly.**
 
 **求职最贵的不是投简历，是选错方向。**
 

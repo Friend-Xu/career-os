@@ -1,6 +1,10 @@
 <div align="center">
 
+<img src="docs/Logo/Logo.png" alt="Career OS Logo" width="180"/>
+
 # Career OS
+
+**Your Career, Clearly.**
 
 **The most expensive part of a job search isn't sending resumes. It's picking the wrong direction.**
 

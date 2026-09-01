@@ -26,6 +26,8 @@ docs/*
 !docs/PRINCIPLES.md
 !docs/case-studies/
 !docs/screenshots/
+# 品牌 Logo（README 公开交付物，入库）
+!docs/Logo/
 # 验收手册（I. User Journey Acceptance——P0-1/P0-2/P1 裁决与复验记录，公开交付物）
 !docs/AGENT-RUNTIME-ACCEPTANCE-v1.md
 # 用户旅程（产品核心流程文档，公开交付物）
